@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Mplacas | Painel Executivo</title>
+  <link rel="stylesheet" href="/dashboard-assets/dashboard.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">MPLACAS</p>
+      <h1>Painel Executivo de Energia</h1>
+    </div>
+    <button id="refresh" class="secondary" type="button">Atualizar</button>
+  </header>
+
+  <main>
+    <section id="setup" class="panel setup" aria-labelledby="setup-title">
+      <div>
+        <h2 id="setup-title">Conectar ao painel</h2>
+        <p>Informe o identificador da usina e a chave operacional. A chave permanece somente nesta aba.</p>
+      </div>
+      <form id="setup-form">
+        <label>Plant ID<input id="plant-id" name="plant-id" type="text" autocomplete="off" required></label>
+        <label>Chave operacional<input id="api-key" name="api-key" type="password" autocomplete="off" required></label>
+        <button type="submit">Carregar indicadores</button>
+      </form>
+    </section>
+
+    <section id="loading" class="panel state hidden" aria-live="polite">Carregando dados consolidados…</section>
+    <section id="error" class="panel state error hidden" role="alert"></section>
+
+    <div id="dashboard" class="hidden">
+      <section class="hero panel">
+        <div>
+          <p id="reference" class="eyebrow"></p>
+          <h2 id="headline"></h2>
+        </div>
+        <div id="status" class="status-pill"></div>
+      </section>
+
+      <section class="metric-grid" aria-label="Indicadores principais">
+        <article class="metric-card"><span>Produção</span><strong id="production">—</strong><small>kWh no ciclo</small></article>
+        <article class="metric-card"><span>Consumo estimado</span><strong id="consumption">—</strong><small>kWh no ciclo</small></article>
+        <article class="metric-card"><span>Autossuficiência</span><strong id="self-sufficiency">—</strong><small>percentual do consumo</small></article>
+        <article class="metric-card"><span>Saúde da usina</span><strong id="health">—</strong><small>índice de 0 a 100</small></article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel">
+          <h2>Fluxo energético</h2>
+          <dl class="detail-list">
+            <div><dt>Importada da rede</dt><dd id="imported">—</dd></div>
+            <div><dt>Injetada na rede</dt><dd id="injected">—</dd></div>
+            <div><dt>Autoconsumo estimado</dt><dd id="self-consumption">—</dd></div>
+            <div><dt>Dependência da rede</dt><dd id="grid-dependency">—</dd></div>
+            <div><dt>Cobertura por créditos</dt><dd id="credit-coverage">—</dd></div>
+            <div><dt>Componente energético</dt><dd id="bill-energy">—</dd></div>
+          </dl>
+        </article>
+
+        <article class="panel">
+          <h2>Qualidade dos dados</h2>
+          <dl class="detail-list">
+            <div><dt>Dias ausentes</dt><dd id="missing-days">—</dd></div>
+            <div><dt>Dias provisórios</dt><dd id="provisional-days">—</dd></div>
+            <div><dt>Dias incompletos</dt><dd id="incomplete-days">—</dd></div>
+            <div><dt>Dias indisponíveis</dt><dd id="unavailable-days">—</dd></div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel">
+          <h2>Tendências</h2>
+          <div id="trend-empty" class="muted">Ainda não há dois ciclos confirmados para comparação.</div>
+          <div id="trends" class="trend-list hidden"></div>
+        </article>
+        <article class="panel">
+          <h2>Ações prioritárias</h2>
+          <ol id="actions" class="actions"></ol>
+        </article>
+      </section>
+    </div>
+  </main>
+
+  <footer>Indicadores calculados pelo backend determinístico do Mplacas.</footer>
+  <script src="/dashboard-assets/dashboard.js" defer></script>
+</body>
+</html>
