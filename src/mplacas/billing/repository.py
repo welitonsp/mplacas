@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.db_models import BillStatus, UtilityBillRecord
@@ -40,6 +41,18 @@ class UtilityBillRepository:
         self._session.add(record)
         await self._session.flush()
         return record
+
+    async def get(self, record_id: uuid.UUID) -> UtilityBillRecord | None:
+        return await self._session.get(UtilityBillRecord, record_id)
+
+    async def list_pending(self, limit: int = 20) -> list[UtilityBillRecord]:
+        result = await self._session.execute(
+            select(UtilityBillRecord)
+            .where(UtilityBillRecord.status == BillStatus.PENDING_REVIEW)
+            .order_by(desc(UtilityBillRecord.created_at))
+            .limit(max(1, min(limit, 100)))
+        )
+        return list(result.scalars())
 
     async def confirm(self, record: UtilityBillRecord) -> UtilityBillRecord:
         if record.status is not BillStatus.PENDING_REVIEW:
