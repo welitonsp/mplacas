@@ -7,6 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from mplacas.core.security import require_operations_key
 from mplacas.db.session import SessionFactory
+from mplacas.intelligence.anomaly_service import (
+    AnomalyDataNotFoundError,
+    analyze_recent_persisted_anomalies,
+)
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError, analyze_persisted_cycle
 from mplacas.intelligence.executive_service import build_executive_dashboard
 from mplacas.intelligence.history_service import (
@@ -104,6 +108,47 @@ def _serialize_executive(result) -> dict[str, object]:
     }
 
 
+def _serialize_anomalies(result) -> dict[str, object]:
+    return {
+        "plant_id": str(result.plant_id),
+        "period": {"start_date": result.start_date.isoformat(), "end_date": result.end_date.isoformat()},
+        "days_analyzed": result.days_analyzed,
+        "current_streak_days": result.current_streak_days,
+        "worst_level": result.worst_level.value,
+        "daily": [
+            {
+                "date": item.observation_date.isoformat(),
+                "actual_production_kwh": str(item.actual_production_kwh),
+                "expected_production_kwh": str(item.expected_production_kwh),
+                "irradiation_kwh_m2": (
+                    str(item.irradiation_kwh_m2) if item.irradiation_kwh_m2 is not None else None
+                ),
+                "level": item.assessment.level.value,
+                "deviation_kwh": (
+                    str(item.assessment.deviation_kwh)
+                    if item.assessment.deviation_kwh is not None
+                    else None
+                ),
+                "deviation_percent": (
+                    str(item.assessment.deviation_percent)
+                    if item.assessment.deviation_percent is not None
+                    else None
+                ),
+                "diagnostics": [
+                    {
+                        "code": diagnostic.code,
+                        "level": diagnostic.level.value,
+                        "message": diagnostic.message,
+                        "recommended_action": diagnostic.recommended_action,
+                    }
+                    for diagnostic in item.assessment.diagnostics
+                ],
+            }
+            for item in result.daily
+        ],
+    }
+
+
 @router.get("/cycles/{bill_id}")
 async def energy_cycle_summary(
     bill_id: uuid.UUID,
@@ -157,3 +202,22 @@ async def latest_executive_dashboard(
         except EnergyCycleNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _serialize_executive(result)
+
+
+@router.get("/anomalies/latest")
+async def latest_energy_anomalies(
+    plant_id: uuid.UUID = Query(...),
+    expected_daily_production_kwh: Decimal = Query(..., gt=0),
+    days: int = Query(default=7, ge=1, le=90),
+) -> dict[str, object]:
+    async with SessionFactory() as session:
+        try:
+            result = await analyze_recent_persisted_anomalies(
+                session,
+                plant_id=plant_id,
+                expected_daily_production_kwh=expected_daily_production_kwh,
+                days=days,
+            )
+        except AnomalyDataNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _serialize_anomalies(result)
