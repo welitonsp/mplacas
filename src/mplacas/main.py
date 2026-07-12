@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from mplacas import __version__
@@ -8,6 +11,7 @@ from mplacas.db.session import SessionFactory
 from mplacas.intelligence.router import router as intelligence_router
 from mplacas.operations.router import router as operations_router
 from mplacas.telegram.router import router as telegram_router
+from mplacas.web.router import router as web_router
 
 app = FastAPI(
     title="Mplacas API",
@@ -18,6 +22,12 @@ app.include_router(operations_router)
 app.include_router(billing_router)
 app.include_router(telegram_router)
 app.include_router(intelligence_router)
+app.include_router(web_router)
+app.mount(
+    "/dashboard-assets",
+    StaticFiles(directory=Path(__file__).parent / "web" / "static"),
+    name="dashboard-assets",
+)
 
 
 @app.get("/health", tags=["operational"])
