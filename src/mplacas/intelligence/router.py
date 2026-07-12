@@ -8,6 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from mplacas.core.security import require_operations_key
 from mplacas.db.session import SessionFactory
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError, analyze_persisted_cycle
+from mplacas.intelligence.history_service import (
+    EnergyHistoryNotFoundError,
+    compare_latest_confirmed_cycles,
+)
 
 router = APIRouter(
     prefix="/energy",
@@ -55,6 +59,39 @@ def _serialize(result) -> dict[str, object]:
     }
 
 
+def _serialize_metric(metric) -> dict[str, object]:
+    return {
+        "absolute_delta": str(metric.absolute_delta),
+        "percent_delta": str(metric.percent_delta) if metric.percent_delta is not None else None,
+        "direction": metric.direction.value,
+    }
+
+
+def _serialize_trend(result) -> dict[str, object]:
+    comparison = result.comparison
+    return {
+        "plant_id": str(result.plant_id),
+        "current_reference_month": comparison.current_reference_month,
+        "previous_reference_month": comparison.previous_reference_month,
+        "metrics": {
+            "production": _serialize_metric(comparison.production),
+            "total_consumption": _serialize_metric(comparison.total_consumption),
+            "imported_energy": _serialize_metric(comparison.imported_energy),
+            "self_sufficiency_delta_points": str(comparison.self_sufficiency_delta_points),
+            "health_score_delta": comparison.health_score_delta,
+        },
+        "diagnostics": [
+            {
+                "code": item.code,
+                "severity": item.severity,
+                "message": item.message,
+                "recommended_action": item.recommended_action,
+            }
+            for item in result.diagnostics
+        ],
+    }
+
+
 @router.get("/cycles/{bill_id}")
 async def energy_cycle_summary(
     bill_id: uuid.UUID,
@@ -72,3 +109,20 @@ async def energy_cycle_summary(
         except EnergyCycleNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _serialize(result)
+
+
+@router.get("/trends/latest")
+async def latest_energy_trend(
+    plant_id: uuid.UUID = Query(...),
+    stable_tolerance_percent: Decimal = Query(default=Decimal("2.0"), ge=0, le=100),
+) -> dict[str, object]:
+    async with SessionFactory() as session:
+        try:
+            result = await compare_latest_confirmed_cycles(
+                session,
+                plant_id=plant_id,
+                stable_tolerance_percent=stable_tolerance_percent,
+            )
+        except (EnergyHistoryNotFoundError, EnergyCycleNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _serialize_trend(result)
