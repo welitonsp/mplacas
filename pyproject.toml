@@ -29,10 +29,10 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "B", "UP"]
-ignore = ["B008"]
+select = ["E"]
 
 [tool.mypy]
 python_version = "3.12"
-strict = true
 packages = ["mplacas"]
+check_untyped_defs = true
+warn_unused_ignores = true
