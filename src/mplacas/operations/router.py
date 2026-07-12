@@ -4,6 +4,7 @@ from fastapi import APIRouter, Query
 
 from mplacas.db.session import SessionFactory
 from mplacas.operations.repository import JobRunRepository
+from mplacas.operations.status import build_operational_status
 
 router = APIRouter(prefix="/operations", tags=["operational"])
 
@@ -30,3 +31,10 @@ async def recent_jobs(limit: int = Query(default=20, ge=1, le=100)) -> dict[str,
             for run in runs
         ],
     }
+
+
+@router.get("/status")
+async def operational_status(limit: int = Query(default=100, ge=1, le=100)) -> dict[str, object]:
+    async with SessionFactory() as session:
+        repository = JobRunRepository(session)
+        return await build_operational_status(repository, limit=limit)
