@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     env: Literal["development", "test", "production"] = "development"
     log_level: str = "INFO"
     timezone: str = "America/Sao_Paulo"
+    database_url: str = "sqlite+aiosqlite:///./mplacas.db"
     nep_base_url: HttpUrl = HttpUrl("https://api.nepviewer.net/v2")
     nep_account: str | None = None
     nep_password: SecretStr | None = None
