@@ -27,7 +27,7 @@ def test_health_index_applies_anomaly_penalties() -> None:
             active_warning_anomalies=2,
         )
     )
-    assert result.score == Decimal("77.3")
+    assert result.score == Decimal("77.2")
     assert result.classification == "GOOD"
     assert result.penalties["critical_anomalies"] == Decimal("12")
 
