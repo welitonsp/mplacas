@@ -4,12 +4,14 @@ from sqlalchemy import text
 from mplacas import __version__
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
+from mplacas.operations.router import router as operations_router
 
 app = FastAPI(
     title="Mplacas API",
     version=__version__,
     description="Inteligência, auditoria e gestão energética residencial.",
 )
+app.include_router(operations_router)
 
 
 @app.get("/health", tags=["operational"])
