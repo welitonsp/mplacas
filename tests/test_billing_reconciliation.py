@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -31,8 +32,7 @@ def test_reconciliation_uses_exact_billing_cycle_values() -> None:
 
 
 def test_bill_rejects_inconsistent_cycle_days() -> None:
-    bill = make_bill()
-    invalid = UtilityBill(**{**bill.__dict__, "billed_days": 31})
+    invalid = replace(make_bill(), billed_days=31)
     with pytest.raises(ValueError, match="billed days"):
         invalid.validate()
 
