@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from mplacas.core.security import require_operations_key
 from mplacas.db.session import SessionFactory
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError, analyze_persisted_cycle
+from mplacas.intelligence.executive_service import build_executive_dashboard
 from mplacas.intelligence.history_service import (
     EnergyHistoryNotFoundError,
     compare_latest_confirmed_cycles,
@@ -92,6 +93,17 @@ def _serialize_trend(result) -> dict[str, object]:
     }
 
 
+def _serialize_executive(result) -> dict[str, object]:
+    return {
+        "plant_id": str(result.plant_id),
+        "status": result.status.value,
+        "headline": result.headline,
+        "priority_actions": list(result.priority_actions),
+        "current_cycle": _serialize(result.current_cycle),
+        "trend": _serialize_trend(result.trend) if result.trend is not None else None,
+    }
+
+
 @router.get("/cycles/{bill_id}")
 async def energy_cycle_summary(
     bill_id: uuid.UUID,
@@ -126,3 +138,22 @@ async def latest_energy_trend(
         except (EnergyHistoryNotFoundError, EnergyCycleNotFoundError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _serialize_trend(result)
+
+
+@router.get("/executive/latest")
+async def latest_executive_dashboard(
+    plant_id: uuid.UUID = Query(...),
+    expected_production_kwh: Decimal | None = Query(default=None, ge=0),
+    stable_tolerance_percent: Decimal = Query(default=Decimal("2.0"), ge=0, le=100),
+) -> dict[str, object]:
+    async with SessionFactory() as session:
+        try:
+            result = await build_executive_dashboard(
+                session,
+                plant_id=plant_id,
+                expected_production_kwh=expected_production_kwh,
+                stable_tolerance_percent=stable_tolerance_percent,
+            )
+        except EnergyCycleNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _serialize_executive(result)
