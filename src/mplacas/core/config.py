@@ -22,11 +22,19 @@ class Settings(BaseSettings):
     nep_base_url: HttpUrl = HttpUrl("https://api.nepviewer.net/v2")
     nep_account: str | None = None
     nep_password: SecretStr | None = None
+    operations_api_key: SecretStr | None = None
+    telegram_bot_token: SecretStr | None = None
+    telegram_allowed_user_id: int | None = None
+    bill_text_max_bytes: int = 250_000
     request_timeout_seconds: float = 20.0
 
     @property
     def nep_configured(self) -> bool:
         return bool(self.nep_account and self.nep_password)
+
+    @property
+    def telegram_configured(self) -> bool:
+        return bool(self.telegram_bot_token and self.telegram_allowed_user_id)
 
 
 @lru_cache

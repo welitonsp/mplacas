@@ -11,6 +11,7 @@ from mplacas.core.config import get_settings
 from mplacas.db.base import Base
 from mplacas.db import models  # noqa: F401
 from mplacas.operations import models as operation_models  # noqa: F401
+from mplacas.billing import db_models as billing_models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:
