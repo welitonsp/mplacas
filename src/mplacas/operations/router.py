@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Query
+
+from mplacas.db.session import SessionFactory
+from mplacas.operations.repository import JobRunRepository
+
+router = APIRouter(prefix="/operations", tags=["operational"])
+
+
+@router.get("/jobs")
+async def recent_jobs(limit: int = Query(default=20, ge=1, le=100)) -> dict[str, object]:
+    async with SessionFactory() as session:
+        runs = await JobRunRepository(session).list_recent(limit)
+    return {
+        "count": len(runs),
+        "items": [
+            {
+                "id": str(run.id),
+                "job_name": run.job_name,
+                "status": run.status.value,
+                "started_at": run.started_at,
+                "finished_at": run.finished_at,
+                "duration_ms": run.duration_ms,
+                "records_seen": run.records_seen,
+                "records_changed": run.records_changed,
+                "metrics": run.metrics,
+                "error_code": run.error_code,
+            }
+            for run in runs
+        ],
+    }
