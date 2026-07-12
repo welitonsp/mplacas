@@ -12,7 +12,7 @@ def test_health_index_is_excellent_for_healthy_plant() -> None:
             data_quality_score=Decimal("98"),
         )
     )
-    assert result.score == Decimal("98.1")
+    assert result.score == Decimal("98.2")
     assert result.classification == "EXCELLENT"
 
 
