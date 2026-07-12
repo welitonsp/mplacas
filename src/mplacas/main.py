@@ -5,6 +5,7 @@ from mplacas import __version__
 from mplacas.billing.router import router as billing_router
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
+from mplacas.intelligence.router import router as intelligence_router
 from mplacas.operations.router import router as operations_router
 from mplacas.telegram.router import router as telegram_router
 
@@ -16,6 +17,7 @@ app = FastAPI(
 app.include_router(operations_router)
 app.include_router(billing_router)
 app.include_router(telegram_router)
+app.include_router(intelligence_router)
 
 
 @app.get("/health", tags=["operational"])
