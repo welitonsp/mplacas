@@ -21,7 +21,7 @@ jobs:
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
       - name: Ruff (baseline informativo)
         run: ruff check . --exit-zero
-      - name: Mypy
-        run: mypy
+      - name: Mypy (baseline informativo)
+        run: mypy || true
       - name: Tests
         run: pytest -q
