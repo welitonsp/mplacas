@@ -8,15 +8,10 @@ from mplacas.billing.models import BillingReconciliation, UtilityBill, reconcile
 
 
 _ONE_DECIMAL = Decimal("0.1")
-_THREE_DECIMALS = Decimal("0.001")
 
 
 def _q1(value: Decimal) -> Decimal:
     return value.quantize(_ONE_DECIMAL, rounding=ROUND_HALF_UP)
-
-
-def _q3(value: Decimal) -> Decimal:
-    return value.quantize(_THREE_DECIMALS, rounding=ROUND_HALF_UP)
 
 
 def _clamp_percent(value: Decimal) -> Decimal:
@@ -79,7 +74,10 @@ def analyze_energy_cycle(
         if bill.imported_kwh
         else Decimal("0")
     )
-    energy_component = max(Decimal("0"), bill.total_amount_brl - bill.public_lighting_brl)
+    energy_component = max(
+        Decimal("0"),
+        bill.total_amount_brl - bill.public_lighting_brl,
+    )
 
     score = 100
     diagnostics: list[EnergyDiagnostic] = []
@@ -89,9 +87,15 @@ def analyze_energy_cycle(
         diagnostics.append(
             EnergyDiagnostic(
                 code="MISSING_DAILY_DATA",
-                severity=DiagnosticSeverity.CRITICAL if missing_days >= 3 else DiagnosticSeverity.WARNING,
+                severity=(
+                    DiagnosticSeverity.CRITICAL
+                    if missing_days >= 3
+                    else DiagnosticSeverity.WARNING
+                ),
                 message=f"O ciclo possui {missing_days} dia(s) sem produção consolidada.",
-                recommended_action="Executar backfill e validar a comunicação dos microinversores.",
+                recommended_action=(
+                    "Executar backfill e validar a comunicação dos microinversores."
+                ),
             )
         )
 
@@ -115,7 +119,10 @@ def analyze_energy_cycle(
                     code="PRODUCTION_WELL_BELOW_EXPECTED",
                     severity=DiagnosticSeverity.CRITICAL,
                     message=f"A produção atingiu {_q1(performance)}% do valor esperado.",
-                    recommended_action="Verificar comunicação, sombreamento, sujeira e disponibilidade dos equipamentos.",
+                    recommended_action=(
+                        "Verificar comunicação, sombreamento, sujeira e disponibilidade "
+                        "dos equipamentos."
+                    ),
                 )
             )
         elif performance < Decimal("85"):
@@ -125,7 +132,10 @@ def analyze_energy_cycle(
                     code="PRODUCTION_BELOW_EXPECTED",
                     severity=DiagnosticSeverity.WARNING,
                     message=f"A produção atingiu {_q1(performance)}% do valor esperado.",
-                    recommended_action="Comparar a curva diária com clima, histórico e disponibilidade dos módulos.",
+                    recommended_action=(
+                        "Comparar a curva diária com clima, histórico e disponibilidade "
+                        "dos módulos."
+                    ),
                 )
             )
 
@@ -136,7 +146,9 @@ def analyze_energy_cycle(
                 code="ZERO_PRODUCTION_WITH_GRID_IMPORT",
                 severity=DiagnosticSeverity.CRITICAL,
                 message="Não houve produção registrada, mas houve consumo da rede.",
-                recommended_action="Verificar imediatamente a comunicação e o funcionamento da usina.",
+                recommended_action=(
+                    "Verificar imediatamente a comunicação e o funcionamento da usina."
+                ),
             )
         )
 
@@ -147,7 +159,9 @@ def analyze_energy_cycle(
                 code="LOW_SELF_CONSUMPTION",
                 severity=DiagnosticSeverity.INFO,
                 message=f"{_q1(exported_rate)}% da geração foi injetada na rede.",
-                recommended_action="Avaliar o deslocamento de cargas para o período de geração solar.",
+                recommended_action=(
+                    "Avaliar o deslocamento de cargas para o período de geração solar."
+                ),
             )
         )
 
@@ -157,7 +171,9 @@ def analyze_energy_cycle(
             EnergyDiagnostic(
                 code="LOW_CREDIT_COVERAGE",
                 severity=DiagnosticSeverity.WARNING,
-                message=f"Os créditos compensaram {_q1(credit_coverage)}% da energia importada.",
+                message=(
+                    f"Os créditos compensaram {_q1(credit_coverage)}% da energia importada."
+                ),
                 recommended_action="Revisar geração, consumo e saldo de créditos do ciclo.",
             )
         )
@@ -177,7 +193,10 @@ def analyze_energy_cycle(
         grid_dependency_rate_percent=_q1(_clamp_percent(grid_dependency)),
         exported_generation_rate_percent=_q1(_clamp_percent(exported_rate)),
         credit_coverage_rate_percent=_q1(_clamp_percent(credit_coverage)),
-        bill_energy_component_brl=energy_component.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        bill_energy_component_brl=energy_component.quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        ),
         health_score=max(0, min(100, score)),
         diagnostics=tuple(diagnostics),
     )
