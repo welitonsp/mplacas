@@ -89,12 +89,12 @@ async def telegram_webhook(
             message.document.file_id,
             max_bytes=settings.telegram_document_max_bytes,
         )
+        source_text = extract_pdf_text(downloaded.content)
         processed = process_pdf_bill(
             downloaded.content,
-            extract_text=extract_pdf_text,
+            extract_text=lambda _: source_text,
             max_text_bytes=settings.bill_text_max_bytes,
         )
-        source_text = extract_pdf_text(downloaded.content)
         async with SessionFactory() as session:
             record = await UtilityBillRepository(session).create_pending(
                 processed.bill,
