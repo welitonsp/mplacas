@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from mplacas import __version__
+from mplacas.billing.router import router as billing_router
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
 from mplacas.operations.router import router as operations_router
@@ -12,6 +13,7 @@ app = FastAPI(
     description="Inteligência, auditoria e gestão energética residencial.",
 )
 app.include_router(operations_router)
+app.include_router(billing_router)
 
 
 @app.get("/health", tags=["operational"])
@@ -36,5 +38,7 @@ async def ready() -> dict[str, object]:
         "environment": settings.env,
         "database_ready": database_ready,
         "nepviewer_configured": settings.nep_configured,
+        "telegram_configured": settings.telegram_configured,
+        "operational_auth_configured": settings.operations_api_key is not None,
         "timezone": settings.timezone,
     }
