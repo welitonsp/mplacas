@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     climate_archive_base_url: HttpUrl = HttpUrl("https://archive-api.open-meteo.com/v1/archive")
     climate_maximum_backfill_days: int = 366
     pipeline_stale_lock_timeout_minutes: int = 60
+    explanation_api_url: HttpUrl | None = None
+    explanation_api_key: SecretStr | None = None
+    explanation_model: str | None = None
+    explanation_timeout_seconds: float = 15.0
     operations_api_key: SecretStr | None = None
     telegram_bot_token: SecretStr | None = None
     telegram_webhook_secret: SecretStr | None = None
@@ -49,6 +53,10 @@ class Settings(BaseSettings):
     @property
     def telegram_alerts_configured(self) -> bool:
         return bool(self.telegram_bot_token and self.telegram_alert_chat_id)
+
+    @property
+    def explanation_provider_configured(self) -> bool:
+        return self.explanation_api_url is not None
 
 
 @lru_cache
