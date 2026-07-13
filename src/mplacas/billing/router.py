@@ -19,12 +19,14 @@ router = APIRouter(
 
 
 class BillTextIntake(BaseModel):
+    plant_id: uuid.UUID
     text: str = Field(min_length=20)
 
 
 def _serialize(record) -> dict[str, object]:
     return {
         "id": str(record.id),
+        "plant_id": str(record.plant_id) if record.plant_id else None,
         "distributor": record.distributor,
         "reference_month": record.reference_month,
         "cycle_start": record.cycle_start,
@@ -54,26 +56,39 @@ async def intake_bill_text(payload: BillTextIntake) -> dict[str, object]:
 
     async with SessionFactory() as session:
         repository = UtilityBillRepository(session)
-        record = await repository.create_pending(bill, source_text=payload.text)
+        try:
+            record = await repository.create_pending(
+                bill,
+                plant_id=payload.plant_id,
+                source_text=payload.text,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         await session.commit()
         await session.refresh(record)
     return {"status": "pending_review", "bill": _serialize(record)}
 
 
 @router.get("/pending")
-async def pending_bills(limit: int = Query(default=20, ge=1, le=100)) -> dict[str, object]:
+async def pending_bills(
+    plant_id: uuid.UUID,
+    limit: int = Query(default=20, ge=1, le=100),
+) -> dict[str, object]:
     async with SessionFactory() as session:
-        records = await UtilityBillRepository(session).list_pending(limit)
+        records = await UtilityBillRepository(session).list_pending(
+            plant_id=plant_id,
+            limit=limit,
+        )
     return {"count": len(records), "items": [_serialize(record) for record in records]}
 
 
 @router.post("/{bill_id}/confirm")
-async def confirm_bill(bill_id: uuid.UUID) -> dict[str, object]:
+async def confirm_bill(bill_id: uuid.UUID, plant_id: uuid.UUID) -> dict[str, object]:
     async with SessionFactory() as session:
         repository = UtilityBillRepository(session)
-        record = await repository.get(bill_id)
+        record = await repository.get(bill_id, plant_id=plant_id)
         if record is None:
-            raise HTTPException(status_code=404, detail="bill not found")
+            raise HTTPException(status_code=404, detail="bill not found for plant")
         try:
             await repository.confirm(record)
         except ValueError as exc:
@@ -84,12 +99,12 @@ async def confirm_bill(bill_id: uuid.UUID) -> dict[str, object]:
 
 
 @router.post("/{bill_id}/reject")
-async def reject_bill(bill_id: uuid.UUID) -> dict[str, object]:
+async def reject_bill(bill_id: uuid.UUID, plant_id: uuid.UUID) -> dict[str, object]:
     async with SessionFactory() as session:
         repository = UtilityBillRepository(session)
-        record = await repository.get(bill_id)
+        record = await repository.get(bill_id, plant_id=plant_id)
         if record is None:
-            raise HTTPException(status_code=404, detail="bill not found")
+            raise HTTPException(status_code=404, detail="bill not found for plant")
         try:
             await repository.reject(record)
         except ValueError as exc:
