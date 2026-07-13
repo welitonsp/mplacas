@@ -125,14 +125,19 @@ async def compare_latest_confirmed_cycles(
         (
             await session.execute(
                 select(UtilityBillRecord)
-                .where(UtilityBillRecord.status == BillStatus.CONFIRMED)
+                .where(
+                    UtilityBillRecord.status == BillStatus.CONFIRMED,
+                    UtilityBillRecord.plant_id == plant_id,
+                )
                 .order_by(desc(UtilityBillRecord.cycle_end), desc(UtilityBillRecord.created_at))
                 .limit(2)
             )
         ).scalars()
     )
     if len(bills) < 2:
-        raise EnergyHistoryNotFoundError("at least two confirmed bills are required")
+        raise EnergyHistoryNotFoundError(
+            "at least two confirmed bills are required for the requested plant"
+        )
 
     current_result = await analyze_persisted_cycle(
         session,
