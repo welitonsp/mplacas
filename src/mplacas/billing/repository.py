@@ -20,19 +20,22 @@ class UtilityBillRepository:
         self,
         bill: UtilityBill,
         *,
-        plant_id: uuid.UUID,
         source_text: str,
+        plant_id: uuid.UUID | None = None,
     ) -> UtilityBillRecord:
         bill.validate()
-        if await self._session.get(Plant, plant_id) is None:
+        if plant_id is not None and await self._session.get(Plant, plant_id) is None:
             raise ValueError("plant not found")
         source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
         existing = await self._session.scalar(
             select(UtilityBillRecord).where(UtilityBillRecord.source_hash == source_hash)
         )
         if existing is not None:
-            if existing.plant_id != plant_id:
+            if plant_id is not None and existing.plant_id not in {None, plant_id}:
                 raise ValueError("bill source is already associated with another plant")
+            if existing.plant_id is None and plant_id is not None:
+                existing.plant_id = plant_id
+                await self._session.flush()
             return existing
         record = UtilityBillRecord(
             plant_id=plant_id,
@@ -67,20 +70,37 @@ class UtilityBillRepository:
 
     async def list_pending(
         self,
-        *,
-        plant_id: uuid.UUID,
         limit: int = 20,
+        *,
+        plant_id: uuid.UUID | None = None,
     ) -> list[UtilityBillRecord]:
+        statement = select(UtilityBillRecord).where(
+            UtilityBillRecord.status == BillStatus.PENDING_REVIEW
+        )
+        if plant_id is not None:
+            statement = statement.where(UtilityBillRecord.plant_id == plant_id)
         result = await self._session.execute(
-            select(UtilityBillRecord)
-            .where(
-                UtilityBillRecord.status == BillStatus.PENDING_REVIEW,
-                UtilityBillRecord.plant_id == plant_id,
+            statement.order_by(desc(UtilityBillRecord.created_at)).limit(
+                max(1, min(limit, 100))
             )
-            .order_by(desc(UtilityBillRecord.created_at))
-            .limit(max(1, min(limit, 100)))
         )
         return list(result.scalars())
+
+    async def assign_legacy(
+        self,
+        record: UtilityBillRecord,
+        *,
+        plant_id: uuid.UUID,
+    ) -> UtilityBillRecord:
+        if record.plant_id is not None:
+            if record.plant_id != plant_id:
+                raise ValueError("bill is already assigned to another plant")
+            return record
+        if await self._session.get(Plant, plant_id) is None:
+            raise ValueError("plant not found")
+        record.plant_id = plant_id
+        await self._session.flush()
+        return record
 
     async def confirm(self, record: UtilityBillRecord) -> UtilityBillRecord:
         if record.plant_id is None:
