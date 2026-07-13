@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from mplacas.alerts import db_models as alert_models  # noqa: F401
 from mplacas.billing import db_models as billing_models  # noqa: F401
+from mplacas.climate import db_models as climate_models  # noqa: F401
 from mplacas.core.config import get_settings
 from mplacas.db import models  # noqa: F401
 from mplacas.db.base import Base
