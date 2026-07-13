@@ -155,7 +155,7 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 ## Auditoria e decisões
 
 - ADRs: diretório `docs/`;
-- auditoria das PRs nº 1 a nº 27: `docs/AUDITORIA_PRS_01_27_2026-07-13.md`;
+- auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - checkpoint histórico: `docs/CHECKPOINT_PROJETO_2026-07-12.md`.
 
 ## Regra de entrega

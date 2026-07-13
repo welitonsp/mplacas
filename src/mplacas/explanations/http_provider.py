@@ -83,7 +83,9 @@ class StructuredHttpExplanationProvider:
                 )
             else:
                 async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-                    response = await client.post(self._endpoint_url, json=payload, headers=headers)
+                    response = await client.post(
+                        self._endpoint_url, json=payload, headers=headers
+                    )
             response.raise_for_status()
             body = response.json()
         except (httpx.HTTPError, ValueError) as exc:
@@ -96,7 +98,9 @@ class StructuredHttpExplanationProvider:
         next_steps = body.get("next_steps")
         if not isinstance(summary, str) or not isinstance(what_it_means, str):
             raise ExplanationProviderError("explanation provider omitted required text fields")
-        if not isinstance(next_steps, list) or not all(isinstance(item, str) for item in next_steps):
+        if not isinstance(next_steps, list) or not all(
+            isinstance(item, str) for item in next_steps
+        ):
             raise ExplanationProviderError("explanation provider returned invalid next steps")
 
         result = GroundedExplanation(

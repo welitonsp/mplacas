@@ -31,7 +31,10 @@ async def get_latest_pipeline_execution(
     record = await session.scalar(
         select(PipelineExecutionRecord)
         .where(PipelineExecutionRecord.plant_id == plant_id)
-        .order_by(desc(PipelineExecutionRecord.target_date), desc(PipelineExecutionRecord.started_at))
+        .order_by(
+            desc(PipelineExecutionRecord.target_date),
+            desc(PipelineExecutionRecord.started_at),
+        )
         .limit(1)
     )
     if record is None:

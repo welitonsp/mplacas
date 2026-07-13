@@ -46,8 +46,12 @@ class UtilityBillRecord(Base):
     compensated_kwh: Mapped[Decimal] = mapped_column(Numeric(12, 3))
     credit_balance_kwh: Mapped[Decimal] = mapped_column(Numeric(12, 3))
     total_amount_brl: Mapped[Decimal] = mapped_column(Numeric(12, 2))
-    public_lighting_brl: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
-    status: Mapped[BillStatus] = mapped_column(Enum(BillStatus), default=BillStatus.PENDING_REVIEW, index=True)
+    public_lighting_brl: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal("0")
+    )
+    status: Mapped[BillStatus] = mapped_column(
+        Enum(BillStatus), default=BillStatus.PENDING_REVIEW, index=True
+    )
     source_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

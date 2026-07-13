@@ -111,7 +111,10 @@ def _serialize_executive(result) -> dict[str, object]:
 def _serialize_anomalies(result) -> dict[str, object]:
     return {
         "plant_id": str(result.plant_id),
-        "period": {"start_date": result.start_date.isoformat(), "end_date": result.end_date.isoformat()},
+        "period": {
+            "start_date": result.start_date.isoformat(),
+            "end_date": result.end_date.isoformat(),
+        },
         "days_analyzed": result.days_analyzed,
         "current_streak_days": result.current_streak_days,
         "worst_level": result.worst_level.value,

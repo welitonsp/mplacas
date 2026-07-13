@@ -75,7 +75,9 @@ def assess_daily_performance(
             code="INCOMPLETE_INPUT_DATA",
             level=AnomalyLevel.ATTENTION,
             message="Os dados do dia estão incompletos; a classificação de desempenho é limitada.",
-            recommended_action="Consolidar os dados de produção e clima antes de concluir a análise.",
+            recommended_action=(
+                "Consolidar os dados de produção e clima antes de concluir a análise."
+            ),
         )
         return DailyAnomalyAssessment(
             level=AnomalyLevel.ATTENTION,
@@ -90,7 +92,9 @@ def assess_daily_performance(
             code="EXPECTED_PRODUCTION_UNAVAILABLE",
             level=AnomalyLevel.ATTENTION,
             message="Não há produção esperada válida para calcular o desvio do dia.",
-            recommended_action="Disponibilizar uma linha de base técnica antes de classificar anomalias.",
+            recommended_action=(
+                "Disponibilizar uma linha de base técnica antes de classificar anomalias."
+            ),
         )
         return DailyAnomalyAssessment(
             level=AnomalyLevel.ATTENTION,
@@ -146,8 +150,14 @@ def assess_daily_performance(
             AnomalyDiagnostic(
                 code="LOW_PRODUCTION_WITHOUT_CLIMATE_CONTEXT",
                 level=level,
-                message="A produção ficou abaixo do esperado, mas não há contexto climático disponível.",
-                recommended_action="Coletar dados climáticos e verificar disponibilidade e comunicação do sistema.",
+                message=(
+                    "A produção ficou abaixo do esperado, mas não há contexto "
+                    "climático disponível."
+                ),
+                recommended_action=(
+                    "Coletar dados climáticos e verificar disponibilidade e "
+                    "comunicação do sistema."
+                ),
             )
         )
     else:
@@ -155,8 +165,14 @@ def assess_daily_performance(
             AnomalyDiagnostic(
                 code="LOW_PRODUCTION_NOT_EXPLAINED_BY_LOW_IRRADIATION",
                 level=level,
-                message="A produção ficou abaixo do esperado sem baixa irradiação suficiente para explicar o desvio.",
-                recommended_action="Verificar inversor, comunicação, sombreamento, sujeira e indisponibilidade operacional.",
+                message=(
+                    "A produção ficou abaixo do esperado sem baixa irradiação "
+                    "suficiente para explicar o desvio."
+                ),
+                recommended_action=(
+                    "Verificar inversor, comunicação, sombreamento, sujeira e "
+                    "indisponibilidade operacional."
+                ),
             )
         )
 

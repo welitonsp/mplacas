@@ -45,10 +45,10 @@ class ObservableJobRunner:
             return result
         except Exception as exc:
             await self._session.rollback()
-            run = await self._session.get(type(run), run.id)
-            if run is not None:
+            refreshed_run = await self._session.get(type(run), run.id)
+            if refreshed_run is not None:
                 await self._runs.fail(
-                    run,
+                    refreshed_run,
                     started,
                     error_code=type(exc).__name__,
                     error_message=str(exc) or "Falha sem mensagem",

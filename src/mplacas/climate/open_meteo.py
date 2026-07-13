@@ -37,7 +37,7 @@ class OpenMeteoHistoricalProvider:
         start_date: date,
         end_date: date,
     ) -> tuple[DailyClimateObservation, ...]:
-        params = {
+        params: dict[str, str | float] = {
             "latitude": latitude,
             "longitude": longitude,
             "start_date": start_date.isoformat(),
@@ -79,9 +79,14 @@ class OpenMeteoHistoricalProvider:
         radiation = daily.get("shortwave_radiation_sum")
         cloud_cover = daily.get("cloud_cover_mean")
         precipitation = daily.get("precipitation_sum")
-        arrays = (dates, radiation, cloud_cover, precipitation)
-        if not all(isinstance(item, list) for item in arrays):
+        if (
+            not isinstance(dates, list)
+            or not isinstance(radiation, list)
+            or not isinstance(cloud_cover, list)
+            or not isinstance(precipitation, list)
+        ):
             raise OpenMeteoProviderError("weather provider returned incomplete daily arrays")
+        arrays = (dates, radiation, cloud_cover, precipitation)
         if len({len(item) for item in arrays}) != 1:
             raise OpenMeteoProviderError("weather provider returned misaligned daily arrays")
 
@@ -113,6 +118,8 @@ class OpenMeteoHistoricalProvider:
                 )
                 observation.validate()
             except (ValueError, ArithmeticError) as exc:
-                raise OpenMeteoProviderError("weather provider returned invalid daily values") from exc
+                raise OpenMeteoProviderError(
+                    "weather provider returned invalid daily values"
+                ) from exc
             observations.append(observation)
         return tuple(observations)

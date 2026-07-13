@@ -4,7 +4,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from mplacas.alerts.ledger import AlertDeliveryLedger
-from mplacas.alerts.models import AlertCandidate, AlertDeliveryStatus, AlertDispatchResult, AlertSeverity
+from mplacas.alerts.models import (
+    AlertCandidate,
+    AlertDeliveryStatus,
+    AlertDispatchResult,
+    AlertSeverity,
+)
 from mplacas.alerts.provider import AlertProvider
 from mplacas.alerts.runtime import dispatch_alert_with_ledger
 

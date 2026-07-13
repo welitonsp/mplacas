@@ -17,7 +17,8 @@ _FIELD_PATTERNS: dict[str, tuple[str, ...]] = {
     "cycle_end": (r"(?:leitura atual|fim do ciclo)\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})",),
     "billed_days": (r"(?:dias faturados|dias de consumo)\s*[:\-]?\s*(\d{1,3})",),
     "imported_kwh": (
-        r"(?:energia ativa consumida|consumo medido|energia importada)\s*[:\-]?\s*([\d\.]+(?:,\d+)?)\s*kwh",
+        r"(?:energia ativa consumida|consumo medido|energia importada)\s*[:\-]?\s*"
+        r"([\d\.]+(?:,\d+)?)\s*kwh",
     ),
     "injected_kwh": (
         r"(?:energia injetada|gera[cç][aã]o injetada)\s*[:\-]?\s*([\d\.]+(?:,\d+)?)\s*kwh",
@@ -30,7 +31,9 @@ _FIELD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "total_amount_brl": (r"(?:total a pagar|valor total)\s*[:\-]?\s*r?\$?\s*([\d\.]+(?:,\d+)?)",),
     "public_lighting_brl": (
-        r"(?:contribui[cç][aã]o de ilumina[cç][aã]o p[uú]blica|custeio de ilumina[cç][aã]o p[uú]blica|cip)\s*[:\-]?\s*r?\$?\s*([\d\.]+(?:,\d+)?)",
+        r"(?:contribui[cç][aã]o de ilumina[cç][aã]o p[uú]blica|"
+        r"custeio de ilumina[cç][aã]o p[uú]blica|cip)\s*[:\-]?\s*r?\$?\s*"
+        r"([\d\.]+(?:,\d+)?)",
     ),
 }
 
@@ -47,7 +50,14 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
 
     values: dict[str, str] = {}
     for field, patterns in _FIELD_PATTERNS.items():
-        match = next((re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in patterns if re.search(pattern, normalized, flags=re.IGNORECASE)), None)
+        match = next(
+            (
+                found
+                for pattern in patterns
+                if (found := re.search(pattern, normalized, flags=re.IGNORECASE))
+            ),
+            None,
+        )
         if match:
             values[field] = match.group(1)
 

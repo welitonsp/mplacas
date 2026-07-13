@@ -86,7 +86,9 @@ class NepViewerClient(SolarProvider):
         if response.status_code >= 500:
             raise ProviderUnavailableError("NEPViewer apresentou falha temporária")
         if response.status_code >= 400:
-            raise ProviderSchemaError(f"Resposta HTTP inesperada da NEPViewer: {response.status_code}")
+            raise ProviderSchemaError(
+                f"Resposta HTTP inesperada da NEPViewer: {response.status_code}"
+            )
 
         try:
             body = response.json()
@@ -128,7 +130,9 @@ class NepViewerClient(SolarProvider):
             devices.append(
                 SolarDevice(
                     serial_number=row["sn"],
-                    model_name=row.get("modelName") if isinstance(row.get("modelName"), str) else None,
+                    model_name=(
+                        row.get("modelName") if isinstance(row.get("modelName"), str) else None
+                    ),
                     city=row.get("city") if isinstance(row.get("city"), str) else None,
                     last_update=self._datetime(row.get("lastUpdate")),
                 )

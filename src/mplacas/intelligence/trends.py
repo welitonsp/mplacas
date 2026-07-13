@@ -61,7 +61,12 @@ class EnergyCycleComparison:
     health_score_delta: int
 
 
-def _trend(current: Decimal, previous: Decimal, *, stable_tolerance_percent: Decimal) -> MetricTrend:
+def _trend(
+    current: Decimal,
+    previous: Decimal,
+    *,
+    stable_tolerance_percent: Decimal,
+) -> MetricTrend:
     absolute_delta = (current - previous).quantize(_THREE_DECIMALS, rounding=ROUND_HALF_UP)
     if previous == 0:
         direction = TrendDirection.STABLE if current == 0 else TrendDirection.UP
