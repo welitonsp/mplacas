@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     nep_base_url: HttpUrl = HttpUrl("https://api.nepviewer.net/v2")
     nep_account: str | None = None
     nep_password: SecretStr | None = None
+    climate_archive_base_url: HttpUrl = HttpUrl("https://archive-api.open-meteo.com/v1/archive")
+    climate_maximum_backfill_days: int = 366
     operations_api_key: SecretStr | None = None
     telegram_bot_token: SecretStr | None = None
     telegram_webhook_secret: SecretStr | None = None
