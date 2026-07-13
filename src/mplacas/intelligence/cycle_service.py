@@ -59,8 +59,12 @@ async def analyze_persisted_cycle(
     expected_production_kwh: Decimal | None = None,
 ) -> PersistedCycleIntelligence:
     bill_record = await session.get(UtilityBillRecord, bill_id)
-    if bill_record is None or bill_record.status is not BillStatus.CONFIRMED:
-        raise EnergyCycleNotFoundError("confirmed bill not found")
+    if (
+        bill_record is None
+        or bill_record.status is not BillStatus.CONFIRMED
+        or bill_record.plant_id != plant_id
+    ):
+        raise EnergyCycleNotFoundError("confirmed bill not found for plant")
 
     rows = (
         await session.execute(
