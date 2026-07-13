@@ -12,6 +12,7 @@ from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
 from mplacas.intelligence.router import router as intelligence_router
 from mplacas.operations.router import router as operations_router
+from mplacas.orchestration.router import router as orchestration_router
 from mplacas.telegram.router import router as telegram_router
 from mplacas.web.router import router as web_router
 
@@ -26,6 +27,7 @@ app.include_router(telegram_router)
 app.include_router(intelligence_router)
 app.include_router(alerts_router)
 app.include_router(climate_router)
+app.include_router(orchestration_router)
 app.include_router(web_router)
 app.mount(
     "/dashboard-assets",
@@ -59,6 +61,7 @@ async def ready() -> dict[str, object]:
         "telegram_configured": settings.telegram_configured,
         "telegram_alerts_configured": settings.telegram_alerts_configured,
         "climate_provider_configured": bool(settings.climate_archive_base_url),
+        "pipeline_runtime_configured": settings.pipeline_stale_lock_timeout_minutes > 0,
         "operational_auth_configured": settings.operations_api_key is not None,
         "timezone": settings.timezone,
     }

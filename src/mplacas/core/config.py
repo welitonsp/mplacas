@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     nep_password: SecretStr | None = None
     climate_archive_base_url: HttpUrl = HttpUrl("https://archive-api.open-meteo.com/v1/archive")
     climate_maximum_backfill_days: int = 366
+    pipeline_stale_lock_timeout_minutes: int = 60
     operations_api_key: SecretStr | None = None
     telegram_bot_token: SecretStr | None = None
     telegram_webhook_secret: SecretStr | None = None
