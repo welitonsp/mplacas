@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from mplacas import __version__
+from mplacas.alerts.router import router as alerts_router
 from mplacas.billing.router import router as billing_router
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
@@ -22,6 +23,7 @@ app.include_router(operations_router)
 app.include_router(billing_router)
 app.include_router(telegram_router)
 app.include_router(intelligence_router)
+app.include_router(alerts_router)
 app.include_router(web_router)
 app.mount(
     "/dashboard-assets",
@@ -53,6 +55,7 @@ async def ready() -> dict[str, object]:
         "database_ready": database_ready,
         "nepviewer_configured": settings.nep_configured,
         "telegram_configured": settings.telegram_configured,
+        "telegram_alerts_configured": settings.telegram_alerts_configured,
         "operational_auth_configured": settings.operations_api_key is not None,
         "timezone": settings.timezone,
     }
