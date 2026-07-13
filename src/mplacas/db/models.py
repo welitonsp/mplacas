@@ -25,6 +25,8 @@ class Plant(Base):
     name: Mapped[str] = mapped_column(String(120))
     timezone: Mapped[str] = mapped_column(String(64), default="America/Sao_Paulo")
     installed_power_kwp: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
+    longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     devices: Mapped[list[Device]] = relationship(back_populates="plant", cascade="all, delete-orphan")
