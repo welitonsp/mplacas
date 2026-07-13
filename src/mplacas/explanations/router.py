@@ -11,6 +11,7 @@ from mplacas.core.security import require_operations_key
 from mplacas.db.session import SessionFactory
 from mplacas.explanations.executive import executive_explanation_request
 from mplacas.explanations.http_provider import StructuredHttpExplanationProvider
+from mplacas.explanations.provider import ExplanationProvider
 from mplacas.explanations.service import explain_with_fallback
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError
 from mplacas.intelligence.executive_service import build_executive_dashboard
@@ -31,7 +32,7 @@ async def latest_explanation(
     stable_tolerance_percent: Decimal = Query(default=Decimal("2.0"), ge=0),
 ) -> dict[str, object]:
     settings = get_settings()
-    provider = None
+    provider: ExplanationProvider | None = None
     if settings.explanation_api_url is not None:
         provider = StructuredHttpExplanationProvider(
             endpoint_url=str(settings.explanation_api_url),
