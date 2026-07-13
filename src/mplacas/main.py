@@ -10,6 +10,7 @@ from mplacas.billing.router import router as billing_router
 from mplacas.climate.router import router as climate_router
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
+from mplacas.explanations.router import router as explanations_router
 from mplacas.intelligence.router import router as intelligence_router
 from mplacas.operations.router import router as operations_router
 from mplacas.orchestration.router import router as orchestration_router
@@ -25,6 +26,7 @@ app.include_router(operations_router)
 app.include_router(billing_router)
 app.include_router(telegram_router)
 app.include_router(intelligence_router)
+app.include_router(explanations_router)
 app.include_router(alerts_router)
 app.include_router(climate_router)
 app.include_router(orchestration_router)
@@ -62,6 +64,7 @@ async def ready() -> dict[str, object]:
         "telegram_alerts_configured": settings.telegram_alerts_configured,
         "climate_provider_configured": bool(settings.climate_archive_base_url),
         "pipeline_runtime_configured": settings.pipeline_stale_lock_timeout_minutes > 0,
+        "explanation_provider_configured": settings.explanation_provider_configured,
         "operational_auth_configured": settings.operations_api_key is not None,
         "timezone": settings.timezone,
     }
