@@ -82,12 +82,15 @@ async def build_executive_dashboard(
 ) -> ExecutiveEnergyDashboard:
     latest_bill = await session.scalar(
         select(UtilityBillRecord)
-        .where(UtilityBillRecord.status == BillStatus.CONFIRMED)
+        .where(
+            UtilityBillRecord.status == BillStatus.CONFIRMED,
+            UtilityBillRecord.plant_id == plant_id,
+        )
         .order_by(desc(UtilityBillRecord.cycle_end), desc(UtilityBillRecord.created_at))
         .limit(1)
     )
     if latest_bill is None:
-        raise EnergyCycleNotFoundError("confirmed bill not found")
+        raise EnergyCycleNotFoundError("confirmed bill not found for plant")
 
     current = await analyze_persisted_cycle(
         session,
