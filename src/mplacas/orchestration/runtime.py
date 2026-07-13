@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from time import monotonic
 
@@ -45,12 +45,20 @@ async def run_ledger_backed_daily_pipeline(
     expected_cycle_production_kwh: Decimal | None = None,
     anomaly_days: int = 7,
     minimum_severity: AlertSeverity = AlertSeverity.WARNING,
+    stale_lock_timeout_minutes: int = 60,
 ) -> OperationalPipelineResult:
+    if stale_lock_timeout_minutes < 1:
+        raise ValueError("stale lock timeout must be positive")
+
     repository = PipelineExecutionRepository(session)
-    execution = await repository.acquire(plant_id=plant_id, target_date=target_date)
+    execution = await repository.acquire(
+        plant_id=plant_id,
+        target_date=target_date,
+        stale_after=timedelta(minutes=stale_lock_timeout_minutes),
+    )
     started = monotonic()
     try:
-        await repository.mark_stage(execution, "CLIMATE_AND_ANALYSIS")
+        await repository.mark_stage(execution, "CLIMATE_COLLECTION")
         result = await run_daily_energy_pipeline(
             session,
             plant_id=plant_id,
@@ -63,12 +71,21 @@ async def run_ledger_backed_daily_pipeline(
             anomaly_days=anomaly_days,
             minimum_severity=minimum_severity,
         )
+        await repository.mark_stage(execution, "FINALIZING")
         await repository.succeed(execution)
     except Exception as exc:
+        duration_ms = max(0, round((monotonic() - started) * 1000))
         await repository.fail(execution, error_code=_error_code(exc))
         logger.exception(
             "daily_pipeline_failed",
-            extra={"plant_id": str(plant_id), "target_date": target_date.isoformat()},
+            extra={
+                "plant_id": str(plant_id),
+                "target_date": target_date.isoformat(),
+                "execution_id": str(execution.id),
+                "duration_ms": duration_ms,
+                "stage": execution.stage,
+                "error_code": execution.error_code,
+            },
         )
         raise
 
@@ -80,6 +97,10 @@ async def run_ledger_backed_daily_pipeline(
             "target_date": target_date.isoformat(),
             "execution_id": str(execution.id),
             "duration_ms": duration_ms,
+            "climate_received": result.climate.received,
+            "alerts_evaluated": result.alerts.metrics.evaluated,
+            "alerts_sent": result.alerts.metrics.sent,
+            "alerts_failed": result.alerts.metrics.failed,
         },
     )
     return OperationalPipelineResult(
