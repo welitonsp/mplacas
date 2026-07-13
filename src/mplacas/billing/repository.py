@@ -103,10 +103,16 @@ class UtilityBillRepository:
         return record
 
     async def confirm(self, record: UtilityBillRecord) -> UtilityBillRecord:
-        if record.plant_id is None:
-            raise ValueError("legacy bill must be assigned to a plant before confirmation")
         if record.status is not BillStatus.PENDING_REVIEW:
             raise ValueError("only pending bills can be confirmed")
+        if record.plant_id is None:
+            plant_ids = list(
+                (await self._session.execute(select(Plant.id).limit(2))).scalars()
+            )
+            if len(plant_ids) == 1:
+                record.plant_id = plant_ids[0]
+            elif len(plant_ids) > 1:
+                raise ValueError("legacy bill must be assigned to a plant before confirmation")
         record.status = BillStatus.CONFIRMED
         record.reviewed_at = datetime.now(UTC)
         await self._session.flush()
