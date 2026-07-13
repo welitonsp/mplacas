@@ -4,36 +4,104 @@ Plataforma de inteligência, auditoria e gestão energética residencial.
 
 ## Objetivo
 
-Consolidar telemetria da NEPViewer, dados climáticos e faturas da Equatorial para produzir histórico próprio, conciliação energética, alertas e relatórios auditáveis.
+Consolidar telemetria da NEPViewer, dados climáticos e faturas da Equatorial para produzir histórico próprio, conciliação energética, diagnósticos determinísticos, alertas e relatórios auditáveis.
 
-## Estado atual — Fundação e Persistência P1
+## Estado atual
 
-- API FastAPI com endpoints `/health` e `/ready`;
-- configuração tipada por variáveis de ambiente;
-- contrato substituível `SolarProvider`;
-- adaptador para a API NEPViewer v2;
-- autenticação com renovação automática após 401/403;
-- validação explícita contra mudança de schema;
-- tratamento de timeout e indisponibilidade;
-- SQLAlchemy assíncrono com PostgreSQL e SQLite;
-- migrações Alembic;
-- modelos de usina, dispositivo, produção diária e versões históricas;
-- persistência idempotente com `Decimal`;
-- coleta transacional NEPViewer → banco;
-- política intradiária, consolidação D+1 e backfill semanal;
-- testes unitários, de contrato e persistência;
-- CI com Ruff, Mypy e Pytest;
-- proteção contra commit de credenciais, PDFs e dados privados.
+O projeto possui uma API FastAPI assíncrona com:
 
-> A API NEPViewer usada é uma interface web não oficial e pode mudar. O adaptador é isolado para impedir acoplamento do restante do sistema.
+- conector isolado para a API NEPViewer v2;
+- coleta intradiária, consolidação D+1 e backfill;
+- PostgreSQL em produção e SQLite para desenvolvimento/testes;
+- persistência idempotente de produção, clima, faturas, alertas e execuções;
+- parser determinístico de faturas Equatorial;
+- recebimento seguro de texto e PDF pelo Telegram;
+- confirmação humana obrigatória de faturas;
+- isolamento multiusina por `plant_id`;
+- conciliação energética por ciclo de leitura;
+- indicadores de produção, consumo, importação, injeção e autossuficiência;
+- índice de saúde e diagnósticos determinísticos;
+- histórico e tendências entre ciclos;
+- dashboard web responsivo;
+- correlação climática e detecção de anomalias;
+- coleta histórica pelo Open-Meteo;
+- explicações assistidas por IA com grounding e fallback determinístico;
+- alertas Telegram com deduplicação SQL;
+- orquestração diária com lock por usina/data, retomada após timeout e status consultável;
+- CI com Ruff, Mypy e Pytest.
 
-## Ciclo de vida dos dados
+> A API NEPViewer usada é uma interface web não oficial e pode mudar. O adaptador permanece isolado para impedir acoplamento do restante do sistema.
 
-1. Durante o dia, a produção é coletada como `PROVISIONAL`.
-2. No dia seguinte, o valor é reconsultado e marcado como `CONSOLIDATED`.
-3. Semanalmente, os sete últimos dias encerrados são reconsultados.
-4. Mudanças retroativas preservam a versão anterior.
-5. Falhas durante a coleta provocam rollback integral.
+## Princípios de confiabilidade
+
+- cálculos monetários e energéticos usam `Decimal`;
+- IA generativa não calcula indicadores, não altera severidades e não atribui causas técnicas;
+- dados ausentes, provisórios ou indisponíveis permanecem explícitos;
+- reexecuções não duplicam energia, clima, faturas ou alertas;
+- endpoints operacionais falham fechados quando a chave não está configurada;
+- credenciais, PDFs, endereços, CPF e payloads privados não são persistidos em logs ou respostas.
+
+## Endpoints principais
+
+### Operação
+
+- `GET /health`
+- `GET /ready`
+- `GET /operations/status`
+- `GET /operations/jobs`
+
+### Energia e dashboard
+
+- `GET /energy/cycles/{bill_id}`
+- `GET /energy/trends/latest`
+- `GET /energy/executive/latest`
+- `GET /energy/anomalies/latest`
+- `GET /energy/explanations/latest`
+- `GET /dashboard`
+
+### Clima e pipeline
+
+- `POST /climate/collect`
+- `POST /pipeline/run`
+- `GET /pipeline/status/latest`
+
+### Alertas e Telegram
+
+- `POST /alerts/run`
+- `POST /telegram/webhook`
+
+### Faturas
+
+- intake textual e documental;
+- listagem de pendências;
+- confirmação, rejeição e atribuição de fatura legada por usina.
+
+Os endpoints operacionais e administrativos exigem `X-API-Key` quando aplicável.
+
+## Ciclo diário recomendado
+
+1. Coletar e consolidar produção da NEPViewer.
+2. Executar `POST /pipeline/run` para a usina e data-alvo.
+3. O pipeline adquire lock persistente por usina/data.
+4. Dados climáticos são coletados e persistidos de forma idempotente.
+5. Diagnósticos e anomalias são recalculados pelos motores determinísticos.
+6. Alertas elegíveis são enviados e deduplicados pelo ledger SQL.
+7. A execução termina como `SUCCEEDED` ou `FAILED` e pode ser consultada em `/pipeline/status/latest`.
+8. Locks `RUNNING` abandonados somente são retomados após o timeout configurado.
+
+## Explicações assistidas por IA
+
+O endpoint `/energy/explanations/latest` sempre consegue responder com fallback determinístico. Quando `MPLACAS_EXPLANATION_API_URL` estiver configurada, o sistema envia ao gateway apenas evidências normalizadas e exige JSON estruturado com:
+
+```json
+{
+  "summary": "...",
+  "what_it_means": "...",
+  "next_steps": ["..."]
+}
+```
+
+A aplicação substitui qualquer aviso do provedor por um disclaimer fixo e limita as recomendações a cinco itens.
 
 ## Execução local
 
@@ -52,32 +120,44 @@ Acesse:
 - `http://127.0.0.1:8000/health`
 - `http://127.0.0.1:8000/ready`
 - `http://127.0.0.1:8000/docs`
+- `http://127.0.0.1:8000/dashboard`
 
 ## Banco
 
-O padrão de desenvolvimento é SQLite. Para PostgreSQL, configure:
+O padrão de desenvolvimento é SQLite. Para PostgreSQL:
 
 ```text
 MPLACAS_DATABASE_URL=postgresql+asyncpg://usuario:senha@host:5432/mplacas
 ```
 
-## Segurança
+Execute sempre:
+
+```bash
+alembic upgrade head
+```
+
+antes de iniciar uma nova versão da aplicação.
+
+## Configuração sensível
 
 Nunca registre no GitHub:
 
 - senha da NEPViewer;
+- chave operacional;
 - token do Telegram;
+- chave do gateway de IA;
 - faturas de energia;
 - CPF, endereço ou unidade consumidora;
-- dumps de respostas com dados pessoais.
+- dumps de respostas externas.
 
-Use variáveis de ambiente ou secrets do ambiente de hospedagem. O sistema não expõe credenciais nos endpoints operacionais.
+Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` para os nomes suportados.
 
-## Próximas fases
+## Auditoria e decisões
 
-1. scheduler de execução e observabilidade persistente;
-2. bot Telegram com lista de usuários autorizados;
-3. parser determinístico da fatura Equatorial;
-4. motor de conciliação por ciclo de leitura;
-5. painel web e relatórios;
-6. clima, anomalias e explicações assistidas por IA.
+- ADRs: diretório `docs/`;
+- auditoria das PRs nº 1 a nº 27: `docs/AUDITORIA_PRS_01_27_2026-07-13.md`;
+- checkpoint histórico: `docs/CHECKPOINT_PROJETO_2026-07-12.md`.
+
+## Regra de entrega
+
+Uma PR somente é considerada concluída quando todo o seu escopo está implementado, testado, documentado, validado pelo CI e mergeado. Não são iniciadas novas funcionalidades enquanto houver pendência conhecida da etapa atual.
