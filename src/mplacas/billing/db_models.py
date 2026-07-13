@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from mplacas.db.base import Base
@@ -19,9 +19,23 @@ class BillStatus(str, enum.Enum):
 
 class UtilityBillRecord(Base):
     __tablename__ = "utility_bills"
-    __table_args__ = (UniqueConstraint("distributor", "reference_month", "cycle_start", "cycle_end"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "plant_id",
+            "distributor",
+            "reference_month",
+            "cycle_start",
+            "cycle_end",
+            name="uq_utility_bills_plant_cycle",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    plant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("plants.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     distributor: Mapped[str] = mapped_column(String(60), index=True)
     reference_month: Mapped[str] = mapped_column(String(7), index=True)
     cycle_start: Mapped[date] = mapped_column(Date)
