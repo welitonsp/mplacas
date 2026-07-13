@@ -30,7 +30,12 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=120), nullable=False),
         sa.Column("timezone", sa.String(length=64), nullable=False),
         sa.Column("installed_power_kwp", sa.Numeric(10, 3), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_table(
@@ -40,7 +45,12 @@ def upgrade() -> None:
         sa.Column("provider", sa.String(length=40), nullable=False),
         sa.Column("serial_number", sa.String(length=120), nullable=False),
         sa.Column("model_name", sa.String(length=120), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["plant_id"], ["plants.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("provider", "serial_number"),
@@ -53,8 +63,18 @@ def upgrade() -> None:
         sa.Column("energy_kwh", sa.Numeric(12, 3), nullable=False),
         sa.Column("status", data_status, nullable=False),
         sa.Column("source", sa.String(length=40), nullable=False),
-        sa.Column("collected_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "collected_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["device_id"], ["devices.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("device_id", "production_date"),
@@ -65,7 +85,12 @@ def upgrade() -> None:
         sa.Column("daily_energy_id", sa.Uuid(), nullable=False),
         sa.Column("energy_kwh", sa.Numeric(12, 3), nullable=False),
         sa.Column("status", data_status, nullable=False),
-        sa.Column("recorded_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "recorded_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["daily_energy_id"], ["daily_energy.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )

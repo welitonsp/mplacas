@@ -12,7 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mplacas.alerts.models import AlertSeverity
 from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.climate.provider import ClimateProvider
-from mplacas.orchestration.daily_pipeline import DailyEnergyPipelineResult, run_daily_energy_pipeline
+from mplacas.orchestration.daily_pipeline import (
+    DailyEnergyPipelineResult,
+    run_daily_energy_pipeline,
+)
 from mplacas.orchestration.execution_repository import PipelineExecutionRepository
 
 logger = logging.getLogger(__name__)

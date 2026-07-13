@@ -29,7 +29,9 @@ class Plant(Base):
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    devices: Mapped[list[Device]] = relationship(back_populates="plant", cascade="all, delete-orphan")
+    devices: Mapped[list[Device]] = relationship(
+        back_populates="plant", cascade="all, delete-orphan"
+    )
 
 
 class Device(Base):
@@ -59,7 +61,9 @@ class DailyEnergy(Base):
     energy_kwh: Mapped[Decimal] = mapped_column(Numeric(12, 3))
     status: Mapped[DataStatus] = mapped_column(Enum(DataStatus), default=DataStatus.PROVISIONAL)
     source: Mapped[str] = mapped_column(String(40), default="NEPVIEWER_V2")
-    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    collected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -79,6 +83,8 @@ class DailyEnergyVersion(Base):
     )
     energy_kwh: Mapped[Decimal] = mapped_column(Numeric(12, 3))
     status: Mapped[DataStatus] = mapped_column(Enum(DataStatus))
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     daily_energy: Mapped[DailyEnergy] = relationship(back_populates="versions")

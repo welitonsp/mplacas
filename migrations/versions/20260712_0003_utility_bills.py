@@ -32,7 +32,12 @@ def upgrade() -> None:
         sa.Column("public_lighting_brl", sa.Numeric(12, 2), nullable=False),
         sa.Column("status", bill_status, nullable=False),
         sa.Column("source_hash", sa.String(length=64), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("distributor", "reference_month", "cycle_start", "cycle_end"),

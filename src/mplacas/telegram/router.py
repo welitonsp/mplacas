@@ -34,18 +34,30 @@ async def telegram_webhook(
 ) -> dict[str, object]:
     settings = get_settings()
     if not settings.telegram_configured or settings.telegram_webhook_secret is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Telegram is not configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telegram is not configured",
+        )
 
     expected = settings.telegram_webhook_secret.get_secret_value()
+    allowed_user_id = settings.telegram_allowed_user_id
+    if allowed_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telegram is not configured",
+        )
     if not x_telegram_bot_api_secret_token or not secrets.compare_digest(
         x_telegram_bot_api_secret_token, expected
     ):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook secret")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook secret",
+        )
 
     try:
         message = parse_authorized_update(
             payload,
-            allowed_user_id=settings.telegram_allowed_user_id,
+            allowed_user_id=allowed_user_id,
             max_document_bytes=settings.telegram_document_max_bytes,
         )
     except TelegramUpdateError as exc:
@@ -67,7 +79,10 @@ async def telegram_webhook(
     if message.kind == "text":
         assert message.text is not None
         if len(message.text.encode("utf-8")) > settings.bill_text_max_bytes:
-            raise HTTPException(status_code=413, detail="bill text exceeds configured size limit")
+            raise HTTPException(
+                status_code=413,
+                detail="bill text exceeds configured size limit",
+            )
         try:
             bill = parse_equatorial_bill_text(message.text)
             async with SessionFactory() as session:

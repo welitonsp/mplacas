@@ -80,7 +80,10 @@ async def run_pipeline(
             ) from exc
         except ValueError as exc:
             await session.rollback()
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
         except Exception as exc:
             await session.commit()
             raise HTTPException(
@@ -108,7 +111,10 @@ async def latest_pipeline_status(plant_id: uuid.UUID) -> dict[str, object]:
     async with SessionFactory() as session:
         snapshot = await get_latest_pipeline_execution(session, plant_id=plant_id)
     if snapshot is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="pipeline execution not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="pipeline execution not found",
+        )
     return {
         "execution_id": str(snapshot.execution_id),
         "plant_id": str(snapshot.plant_id),

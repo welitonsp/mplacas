@@ -58,7 +58,8 @@ def _diagnostics(comparison: EnergyCycleComparison) -> tuple[HistoricalDiagnosti
                 severity="WARNING",
                 message="A produção do ciclo atual caiu em relação ao ciclo anterior.",
                 recommended_action=(
-                    "Comparar clima, disponibilidade, comunicação, sombreamento e limpeza dos módulos."
+                    "Comparar clima, disponibilidade, comunicação, sombreamento "
+                    "e limpeza dos módulos."
                 ),
             )
         )
@@ -68,7 +69,9 @@ def _diagnostics(comparison: EnergyCycleComparison) -> tuple[HistoricalDiagnosti
                 code="PRODUCTION_TREND_UP",
                 severity="INFO",
                 message="A produção do ciclo atual aumentou em relação ao ciclo anterior.",
-                recommended_action="Manter o acompanhamento para confirmar a tendência nos próximos ciclos.",
+                recommended_action=(
+                    "Manter o acompanhamento para confirmar a tendência nos próximos ciclos."
+                ),
             )
         )
     if comparison.imported_energy.direction is TrendDirection.UP:
@@ -77,7 +80,10 @@ def _diagnostics(comparison: EnergyCycleComparison) -> tuple[HistoricalDiagnosti
                 code="GRID_IMPORT_TREND_UP",
                 severity="WARNING",
                 message="A energia importada da rede aumentou em relação ao ciclo anterior.",
-                recommended_action="Revisar a evolução do consumo e a distribuição das cargas ao longo do dia.",
+                recommended_action=(
+                    "Revisar a evolução do consumo e a distribuição das cargas "
+                    "ao longo do dia."
+                ),
             )
         )
     if comparison.self_sufficiency_delta_points <= Decimal("-5.0"):
@@ -86,7 +92,9 @@ def _diagnostics(comparison: EnergyCycleComparison) -> tuple[HistoricalDiagnosti
                 code="SELF_SUFFICIENCY_DECLINED",
                 severity="WARNING",
                 message="A autossuficiência caiu pelo menos 5 pontos percentuais.",
-                recommended_action="Verificar simultaneamente geração, consumo e importação da rede.",
+                recommended_action=(
+                    "Verificar simultaneamente geração, consumo e importação da rede."
+                ),
             )
         )
     if comparison.health_score_delta <= -10:
@@ -95,7 +103,10 @@ def _diagnostics(comparison: EnergyCycleComparison) -> tuple[HistoricalDiagnosti
                 code="HEALTH_SCORE_DECLINED",
                 severity="CRITICAL",
                 message="O índice de saúde caiu pelo menos 10 pontos.",
-                recommended_action="Priorizar a revisão dos diagnósticos e da qualidade dos dados do ciclo atual.",
+                recommended_action=(
+                    "Priorizar a revisão dos diagnósticos e da qualidade dos dados "
+                    "do ciclo atual."
+                ),
             )
         )
     if not items:
@@ -103,7 +114,10 @@ def _diagnostics(comparison: EnergyCycleComparison) -> tuple[HistoricalDiagnosti
             HistoricalDiagnostic(
                 code="HISTORICAL_TREND_STABLE",
                 severity="INFO",
-                message="Não foram identificadas variações históricas relevantes pelos critérios atuais.",
+                message=(
+                    "Não foram identificadas variações históricas relevantes "
+                    "pelos critérios atuais."
+                ),
                 recommended_action="Manter o acompanhamento periódico dos ciclos confirmados.",
             )
         )

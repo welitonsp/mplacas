@@ -64,13 +64,13 @@ def _priority_actions(
     limit: int = 5,
 ) -> tuple[str, ...]:
     actions: list[str] = []
-    for diagnostic in current.intelligence.diagnostics:
-        if diagnostic.recommended_action not in actions:
-            actions.append(diagnostic.recommended_action)
+    for current_diagnostic in current.intelligence.diagnostics:
+        if current_diagnostic.recommended_action not in actions:
+            actions.append(current_diagnostic.recommended_action)
     if trend is not None:
-        for diagnostic in trend.diagnostics:
-            if diagnostic.recommended_action not in actions:
-                actions.append(diagnostic.recommended_action)
+        for trend_diagnostic in trend.diagnostics:
+            if trend_diagnostic.recommended_action not in actions:
+                actions.append(trend_diagnostic.recommended_action)
     return tuple(actions[:limit])
 
 
