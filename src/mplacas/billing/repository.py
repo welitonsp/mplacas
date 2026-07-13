@@ -9,21 +9,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.db_models import BillStatus, UtilityBillRecord
 from mplacas.billing.models import UtilityBill
+from mplacas.db.models import Plant
 
 
 class UtilityBillRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create_pending(self, bill: UtilityBill, *, source_text: str) -> UtilityBillRecord:
+    async def create_pending(
+        self,
+        bill: UtilityBill,
+        *,
+        plant_id: uuid.UUID,
+        source_text: str,
+    ) -> UtilityBillRecord:
         bill.validate()
+        if await self._session.get(Plant, plant_id) is None:
+            raise ValueError("plant not found")
         source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
         existing = await self._session.scalar(
             select(UtilityBillRecord).where(UtilityBillRecord.source_hash == source_hash)
         )
         if existing is not None:
+            if existing.plant_id != plant_id:
+                raise ValueError("bill source is already associated with another plant")
             return existing
         record = UtilityBillRecord(
+            plant_id=plant_id,
             distributor=bill.distributor,
             reference_month=bill.reference_month,
             cycle_start=bill.cycle_start,
@@ -42,19 +54,37 @@ class UtilityBillRepository:
         await self._session.flush()
         return record
 
-    async def get(self, record_id: uuid.UUID) -> UtilityBillRecord | None:
-        return await self._session.get(UtilityBillRecord, record_id)
+    async def get(
+        self,
+        record_id: uuid.UUID,
+        *,
+        plant_id: uuid.UUID | None = None,
+    ) -> UtilityBillRecord | None:
+        record = await self._session.get(UtilityBillRecord, record_id)
+        if record is None or (plant_id is not None and record.plant_id != plant_id):
+            return None
+        return record
 
-    async def list_pending(self, limit: int = 20) -> list[UtilityBillRecord]:
+    async def list_pending(
+        self,
+        *,
+        plant_id: uuid.UUID,
+        limit: int = 20,
+    ) -> list[UtilityBillRecord]:
         result = await self._session.execute(
             select(UtilityBillRecord)
-            .where(UtilityBillRecord.status == BillStatus.PENDING_REVIEW)
+            .where(
+                UtilityBillRecord.status == BillStatus.PENDING_REVIEW,
+                UtilityBillRecord.plant_id == plant_id,
+            )
             .order_by(desc(UtilityBillRecord.created_at))
             .limit(max(1, min(limit, 100)))
         )
         return list(result.scalars())
 
     async def confirm(self, record: UtilityBillRecord) -> UtilityBillRecord:
+        if record.plant_id is None:
+            raise ValueError("legacy bill must be assigned to a plant before confirmation")
         if record.status is not BillStatus.PENDING_REVIEW:
             raise ValueError("only pending bills can be confirmed")
         record.status = BillStatus.CONFIRMED
