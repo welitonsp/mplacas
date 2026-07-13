@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.db_models import BillStatus, UtilityBillRecord
 from mplacas.billing.models import UtilityBill
-from mplacas.db.models import DailyEnergy, DataStatus, Device
+from mplacas.db.models import DailyEnergy, DataStatus, Device, Plant
 from mplacas.intelligence.energy_engine import EnergyCycleIntelligence, analyze_energy_cycle
 
 
@@ -51,6 +51,15 @@ def _to_domain_bill(record: UtilityBillRecord) -> UtilityBill:
     )
 
 
+async def _legacy_bill_matches_only_plant(
+    session: AsyncSession,
+    *,
+    plant_id: uuid.UUID,
+) -> bool:
+    plants = list((await session.execute(select(Plant.id).limit(2))).scalars())
+    return plants == [plant_id]
+
+
 async def analyze_persisted_cycle(
     session: AsyncSession,
     *,
@@ -59,11 +68,12 @@ async def analyze_persisted_cycle(
     expected_production_kwh: Decimal | None = None,
 ) -> PersistedCycleIntelligence:
     bill_record = await session.get(UtilityBillRecord, bill_id)
-    if (
-        bill_record is None
-        or bill_record.status is not BillStatus.CONFIRMED
-        or bill_record.plant_id != plant_id
-    ):
+    if bill_record is None or bill_record.status is not BillStatus.CONFIRMED:
+        raise EnergyCycleNotFoundError("confirmed bill not found for plant")
+    if bill_record.plant_id is None:
+        if not await _legacy_bill_matches_only_plant(session, plant_id=plant_id):
+            raise EnergyCycleNotFoundError("legacy bill is not safely scoped to plant")
+    elif bill_record.plant_id != plant_id:
         raise EnergyCycleNotFoundError("confirmed bill not found for plant")
 
     rows = (
