@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+# shellcheck disable=SC2034
+# The readonly arrays below are the public API consumed by scripts that source this library.
 
 readonly MPLACAS_ALLOWED_REGION="us-central1"
 readonly MPLACAS_REQUIRED_APIS=(
