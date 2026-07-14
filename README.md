@@ -23,6 +23,8 @@ O projeto possui uma API FastAPI assíncrona com:
 - índice de saúde e diagnósticos determinísticos;
 - histórico e tendências entre ciclos;
 - dashboard web responsivo;
+- relatório mensal auditável em JSON e CSV;
+- rastreabilidade de métricas por fonte, natureza, unidade, período e versão;
 - correlação climática e detecção de anomalias;
 - coleta histórica pelo Open-Meteo;
 - explicações assistidas por IA com grounding e fallback determinístico;
@@ -40,6 +42,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - IA generativa não calcula indicadores, não altera severidades e não atribui causas técnicas;
 - dados ausentes, provisórios ou indisponíveis permanecem explícitos;
 - reexecuções não duplicam energia, clima, faturas ou alertas;
+- relatórios e exportações não recalculam indicadores;
 - endpoints operacionais falham fechados quando a chave não está configurada;
 - credenciais, PDFs, endereços, CPF e payloads privados não são persistidos em logs ou respostas.
 
@@ -60,6 +63,18 @@ O projeto possui uma API FastAPI assíncrona com:
 - `GET /energy/anomalies/latest`
 - `GET /energy/explanations/latest`
 - `GET /dashboard`
+
+### Relatórios e exportações
+
+- `GET /reports/monthly/latest`
+- `GET /reports/monthly/latest.csv`
+
+O relatório mensal usa o mesmo resultado determinístico do painel executivo. Cada indicador inclui
+valor, unidade, natureza e fonte. A resposta também registra mês de referência, identificadores da
+usina e da fatura, versão do esquema, versão do cálculo, qualidade dos dados, diagnósticos, ações
+prioritárias e tendência quando existem dois ciclos confirmados.
+
+O CSV usa UTF-8 com BOM, é entregue como anexo e não pode ser armazenado em cache pelo cliente.
 
 ### Clima e pipeline
 
@@ -207,6 +222,7 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 ## Auditoria e decisões
 
 - ADRs: diretório `docs/`;
+- relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - checkpoint histórico: `docs/CHECKPOINT_PROJETO_2026-07-12.md`.
 
