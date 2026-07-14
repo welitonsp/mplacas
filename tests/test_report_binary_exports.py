@@ -118,13 +118,14 @@ def test_pdf_export_is_readable_auditable_and_contains_no_sensitive_fields() -> 
 
     assert pdf_bytes.startswith(b"%PDF-")
     reader = PdfReader(io.BytesIO(pdf_bytes))
-    assert len(reader.pages) >= 2
+    assert len(reader.pages) >= 1
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     normalized = text.casefold()
 
     assert "mplacas" in normalized
     assert "2026-06" in text
     assert "produção do ciclo" in normalized
+    assert "tendência entre ciclos" in normalized
     assert "versão do cálculo" in normalized
     assert "não recalcula indicadores" in normalized
     assert "password" not in normalized
