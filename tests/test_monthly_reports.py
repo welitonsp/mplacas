@@ -36,11 +36,13 @@ class FakeSession:
 
 
 def _dashboard(plant_id: uuid.UUID) -> SimpleNamespace:
-    metric_trend = lambda absolute, percent, direction: SimpleNamespace(
-        absolute_delta=Decimal(absolute),
-        percent_delta=Decimal(percent) if percent is not None else None,
-        direction=SimpleNamespace(value=direction),
-    )
+    def metric_trend(absolute: str, percent: str | None, direction: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            absolute_delta=Decimal(absolute),
+            percent_delta=Decimal(percent) if percent is not None else None,
+            direction=SimpleNamespace(value=direction),
+        )
+
     return SimpleNamespace(
         plant_id=plant_id,
         status=SimpleNamespace(value="HEALTHY"),
