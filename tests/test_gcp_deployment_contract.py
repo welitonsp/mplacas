@@ -43,6 +43,27 @@ def test_config_locks_initial_cost_guardrails() -> None:
     assert required.issubset(set(config.splitlines()))
 
 
+def test_gcloudignore_excludes_local_and_sensitive_artifacts() -> None:
+    patterns = set(read(".gcloudignore").splitlines())
+    required = {
+        ".git/",
+        ".github/",
+        ".venv/",
+        ".env",
+        ".env.*",
+        "infra/gcp/config.env",
+        "tests/",
+        "docs/",
+        "storage/",
+        "reports/",
+        "*.db",
+        "*.sqlite3",
+        "*.dump",
+        "*.pdf",
+    }
+    assert required.issubset(patterns)
+
+
 def test_library_uses_stable_billing_command_and_revision_annotations() -> None:
     library = read("infra/gcp/lib.sh")
 
