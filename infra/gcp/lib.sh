@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-# shellcheck disable=SC2034
-# The readonly arrays below are the public API consumed by scripts that source this library.
 
+# The readonly arrays below are the public API consumed by scripts that source this library.
 readonly MPLACAS_ALLOWED_REGION="us-central1"
+# shellcheck disable=SC2034
 readonly MPLACAS_REQUIRED_APIS=(
   "run.googleapis.com"
   "cloudbuild.googleapis.com"
@@ -11,6 +11,7 @@ readonly MPLACAS_REQUIRED_APIS=(
   "secretmanager.googleapis.com"
   "iam.googleapis.com"
 )
+# shellcheck disable=SC2034
 readonly MPLACAS_SECRET_NAMES=(
   "mplacas-database-url"
   "mplacas-operations-api-key"
