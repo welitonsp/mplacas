@@ -25,3 +25,80 @@ jobs:
         run: mypy
       - name: Tests
         run: pytest -q
+
+  container:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: mplacas-cloud-run:test
+      CONTAINER_NAME: mplacas-cloud-run-smoke
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container
+        run: docker build -t "$IMAGE_NAME" .
+      - name: Verify image contents and user
+        run: |
+          docker run --rm -i --entrypoint python "$IMAGE_NAME" - <<'PY'
+          import os
+          forbidden = [
+              '/app/.git',
+              '/app/.env',
+              '/app/tests',
+              '/app/docs',
+              '/app/mplacas.db',
+          ]
+          forbidden_suffixes = ('.pdf', '.dump', '.sqlite3')
+          present = [path for path in forbidden if os.path.exists(path)]
+          for root, dirs, files in os.walk('/app'):
+              for name in files:
+                  if name.endswith(forbidden_suffixes):
+                      present.append(os.path.join(root, name))
+          if os.getuid() == 0:
+              raise SystemExit('container must not run as root')
+          if present:
+              raise SystemExit('forbidden files in image: ' + ', '.join(present))
+          PY
+      - name: Run container
+        run: |
+          docker run -d \
+            --name "$CONTAINER_NAME" \
+            --network host \
+            -e MPLACAS_ENVIRONMENT=production \
+            -e MPLACAS_DATABASE_URL="postgresql+asyncpg://postgres@localhost:5432/postgres" \
+            -e MPLACAS_OPERATIONS_API_KEY=synthetic-key \
+            -e PORT=8080 \
+            "$IMAGE_NAME"
+      - name: Smoke test health and readiness
+        run: |
+          timeout 30s bash -c 'until curl -fsS http://127.0.0.1:8080/health; do sleep 1; done'
+          python - <<'PY'
+          import json
+          import urllib.request
+
+          health = urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=5)
+          if health.status != 200:
+              raise SystemExit(f"unexpected health status {health.status}")
+          ready = urllib.request.urlopen("http://127.0.0.1:8080/ready", timeout=5)
+          payload = json.loads(ready.read().decode("utf-8"))
+          if ready.status != 200 or payload.get("status") != "ready":
+              raise SystemExit(f"unexpected readiness response: {payload}")
+          serialized = json.dumps(payload).lower()
+          if "postgres:" in serialized or "password" in serialized or "synthetic-key" in serialized:
+              raise SystemExit("readiness leaked sensitive configuration")
+          PY
+      - name: Stop container
+        if: always()
+        run: docker ps -aq --filter "name=$CONTAINER_NAME" | xargs -r docker rm -f

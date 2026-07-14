@@ -1,6 +1,7 @@
+import asyncio
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -44,19 +45,37 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/ready", tags=["operational"])
-async def ready() -> dict[str, object]:
-    settings = get_settings()
+async def ready(response: Response) -> dict[str, object]:
+    try:
+        settings = get_settings()
+    except Exception:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {
+            "status": "degraded",
+            "configuration_valid": False,
+            "database_ready": False,
+        }
+
     database_ready = False
     try:
         async with SessionFactory() as session:
-            await session.execute(text("SELECT 1"))
+            await asyncio.wait_for(
+                session.execute(text("SELECT 1")),
+                timeout=settings.readiness_timeout_seconds,
+            )
         database_ready = True
+    except TimeoutError:
+        database_ready = False
     except Exception:
         database_ready = False
 
-    status = "ready" if database_ready else "degraded"
+    if not database_ready:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    ready_status = "ready" if database_ready else "degraded"
     return {
-        "status": status,
+        "status": ready_status,
+        "configuration_valid": True,
         "environment": settings.env,
         "database_ready": database_ready,
         "nepviewer_configured": settings.nep_configured,

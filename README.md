@@ -28,6 +28,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - explicações assistidas por IA com grounding e fallback determinístico;
 - alertas Telegram com deduplicação SQL;
 - orquestração diária com lock por usina/data, retomada após timeout e status consultável;
+- imagem de produção e comandos de jobs prontos para implantação no Google Cloud Run;
 - CI com Ruff, Mypy e Pytest.
 
 > A API NEPViewer usada é uma interface web não oficial e pode mudar. O adaptador permanece isolado para impedir acoplamento do restante do sistema.
@@ -122,12 +123,43 @@ Acesse:
 - `http://127.0.0.1:8000/docs`
 - `http://127.0.0.1:8000/dashboard`
 
+## Contêiner e Cloud Run
+
+O repositório está pronto para implantação no Google Cloud Run, sem criar recursos Google
+Cloud automaticamente nesta PR. A imagem de produção usa usuário não root e inicia a API com:
+
+```bash
+python -m mplacas.cloud_run
+```
+
+O processo escuta em `0.0.0.0` e usa `PORT`, com fallback local 8080.
+
+Build local:
+
+```bash
+docker build -t mplacas-cloud-run:local .
+```
+
+Cloud Run Jobs disponíveis:
+
+```bash
+python -m mplacas.cloud_jobs migrate
+python -m mplacas.cloud_jobs daily-pipeline
+```
+
+O Scheduler futuro deve acionar Cloud Run Jobs autenticados por IAM, não endpoints públicos
+administrativos sem autenticação. Consulte:
+
+- `docs/RUNBOOK_GOOGLE_CLOUD_RUN.md`;
+- `docs/COST_GUARDRAILS_GOOGLE_CLOUD.md`;
+- `docs/ADR-025-google-cloud-run-platform.md`.
+
 ## Banco
 
 O padrão de desenvolvimento é SQLite. Para PostgreSQL:
 
 ```text
-MPLACAS_DATABASE_URL=postgresql+asyncpg://usuario:senha@host:5432/mplacas
+MPLACAS_DATABASE_URL=postgresql+asyncpg://usuario@host:5432/mplacas
 ```
 
 Execute sempre:
