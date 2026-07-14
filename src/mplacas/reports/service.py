@@ -405,6 +405,28 @@ def serialize_monthly_report(report: MonthlyEnergyReport) -> dict[str, object]:
     }
 
 
+def _write_metric_row(
+    writer: object,
+    *,
+    section: str,
+    metric: ReportMetric,
+    reference_month: str,
+) -> None:
+    writer.writerow(
+        [
+            section,
+            metric.key,
+            metric.label,
+            metric.value,
+            metric.unit or "",
+            metric.nature,
+            metric.source,
+            reference_month,
+            "",
+        ]
+    )
+
+
 def monthly_report_to_csv(report: MonthlyEnergyReport) -> str:
     output = io.StringIO(newline="")
     writer = csv.writer(output, lineterminator="\n")
@@ -443,32 +465,32 @@ def monthly_report_to_csv(report: MonthlyEnergyReport) -> str:
                 "",
             ]
         )
-    for item in (*report.metrics, *report.quality):
-        writer.writerow(
-            [
-                "metric" if item in report.metrics else "quality",
-                item.key,
-                item.label,
-                item.value,
-                item.unit or "",
-                item.nature,
-                item.source,
-                report.reference_month,
-                "",
-            ]
+    for metric in report.metrics:
+        _write_metric_row(
+            writer,
+            section="metric",
+            metric=metric,
+            reference_month=report.reference_month,
         )
-    for item in report.diagnostics:
+    for quality_metric in report.quality:
+        _write_metric_row(
+            writer,
+            section="quality",
+            metric=quality_metric,
+            reference_month=report.reference_month,
+        )
+    for diagnostic in report.diagnostics:
         writer.writerow(
             [
                 "diagnostic",
-                item.code,
-                item.message,
-                item.severity,
+                diagnostic.code,
+                diagnostic.message,
+                diagnostic.severity,
                 "",
                 "DETERMINISTIC_DIAGNOSTIC",
                 _ENGINE_SOURCE,
                 report.reference_month,
-                item.recommended_action,
+                diagnostic.recommended_action,
             ]
         )
     for index, action in enumerate(report.priority_actions, start=1):
@@ -489,37 +511,37 @@ def monthly_report_to_csv(report: MonthlyEnergyReport) -> str:
         trend_reference = (
             f"{report.trend.previous_reference_month}->{report.trend.current_reference_month}"
         )
-        for item in report.trend.metrics:
+        for trend_metric in report.trend.metrics:
             percent_detail = (
-                f"percent_delta={item.percent_delta};direction={item.direction}"
-                if item.percent_delta is not None
-                else f"direction={item.direction}"
+                f"percent_delta={trend_metric.percent_delta};direction={trend_metric.direction}"
+                if trend_metric.percent_delta is not None
+                else f"direction={trend_metric.direction}"
             )
             writer.writerow(
                 [
                     "trend",
-                    item.key,
-                    item.label,
-                    item.absolute_delta,
-                    item.unit,
+                    trend_metric.key,
+                    trend_metric.label,
+                    trend_metric.absolute_delta,
+                    trend_metric.unit,
                     "CALCULATED_DELTA",
                     _ENGINE_SOURCE,
                     trend_reference,
                     percent_detail,
                 ]
             )
-        for item in report.trend.diagnostics:
+        for trend_diagnostic in report.trend.diagnostics:
             writer.writerow(
                 [
                     "trend_diagnostic",
-                    item.code,
-                    item.message,
-                    item.severity,
+                    trend_diagnostic.code,
+                    trend_diagnostic.message,
+                    trend_diagnostic.severity,
                     "",
                     "DETERMINISTIC_DIAGNOSTIC",
                     _ENGINE_SOURCE,
                     trend_reference,
-                    item.recommended_action,
+                    trend_diagnostic.recommended_action,
                 ]
             )
     return "\ufeff" + output.getvalue()
