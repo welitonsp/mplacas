@@ -76,13 +76,15 @@ def test_secret_access_is_scoped_to_each_secret() -> None:
     assert "roles/editor" not in script.lower()
 
 
-def test_deploy_uses_cloud_build_source_and_exact_limits() -> None:
+def test_deploy_uses_cloud_build_source_and_revision_limits() -> None:
     script = read("infra/gcp/deploy-service.sh")
 
     assert "gcloud run deploy" in script
     assert '--source "$(repo_root)"' in script
-    assert '--min "$GCP_MIN_INSTANCES"' in script
-    assert '--max "$GCP_MAX_INSTANCES"' in script
+    assert '--min-instances "$GCP_MIN_INSTANCES"' in script
+    assert '--max-instances "$GCP_MAX_INSTANCES"' in script
+    assert '--min "$GCP_MIN_INSTANCES"' not in script
+    assert '--max "$GCP_MAX_INSTANCES"' not in script
     assert '--cpu "$GCP_CPU"' in script
     assert '--memory "$GCP_MEMORY"' in script
     assert "validate_cloud_run_limits" in script
