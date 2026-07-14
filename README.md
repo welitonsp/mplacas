@@ -29,7 +29,8 @@ O projeto possui uma API FastAPI assíncrona com:
 - alertas Telegram com deduplicação SQL;
 - orquestração diária com lock por usina/data, retomada após timeout e status consultável;
 - imagem de produção e comandos de jobs prontos para implantação no Google Cloud Run;
-- CI com Ruff, Mypy e Pytest.
+- automação segura de implantação pelo Google Cloud Shell, sem Docker ou `gcloud` no Windows;
+- CI com Ruff, Mypy, Pytest, validação Bash, ShellCheck e smoke test do contêiner.
 
 > A API NEPViewer usada é uma interface web não oficial e pode mudar. O adaptador permanece isolado para impedir acoplamento do restante do sistema.
 
@@ -125,8 +126,7 @@ Acesse:
 
 ## Contêiner e Cloud Run
 
-O repositório está pronto para implantação no Google Cloud Run, sem criar recursos Google
-Cloud automaticamente nesta PR. A imagem de produção usa usuário não root e inicia a API com:
+A imagem de produção usa usuário não root e inicia a API com:
 
 ```bash
 python -m mplacas.cloud_run
@@ -134,11 +134,25 @@ python -m mplacas.cloud_run
 
 O processo escuta em `0.0.0.0` e usa `PORT`, com fallback local 8080.
 
-Build local:
+Build local opcional:
 
 ```bash
 docker build -t mplacas-cloud-run:local .
 ```
+
+A implantação oficial não exige Docker local. Os scripts em `infra/gcp/` executam o fluxo pelo
+Google Cloud Shell e usam build gerenciado com `gcloud run deploy --source`.
+
+Guardrails iniciais obrigatórios:
+
+- região `us-central1`;
+- mínimo de 0 instâncias;
+- máximo de 1 instância;
+- 1 CPU;
+- 512 MiB de memória;
+- service account de runtime dedicada;
+- segredos no Secret Manager com IAM por segredo;
+- nenhuma criação de Compute Engine, Cloud SQL, load balancer dedicado ou Scheduler.
 
 Cloud Run Jobs disponíveis:
 
@@ -147,12 +161,16 @@ python -m mplacas.cloud_jobs migrate
 python -m mplacas.cloud_jobs daily-pipeline
 ```
 
-O Scheduler futuro deve acionar Cloud Run Jobs autenticados por IAM, não endpoints públicos
-administrativos sem autenticação. Consulte:
+A migração é executada explicitamente por Cloud Run Job e nunca no startup do serviço web. O
+Scheduler futuro deve acionar jobs autenticados por IAM, não endpoints administrativos públicos.
 
-- `docs/RUNBOOK_GOOGLE_CLOUD_RUN.md`;
-- `docs/COST_GUARDRAILS_GOOGLE_CLOUD.md`;
-- `docs/ADR-025-google-cloud-run-platform.md`.
+Documentação operacional:
+
+- `docs/RUNBOOK_GOOGLE_CLOUD_DEPLOYMENT.md` — implantação completa pelo Cloud Shell;
+- `docs/ADR-026-google-cloud-deployment-automation.md` — decisão e controles da automação;
+- `docs/RUNBOOK_GOOGLE_CLOUD_RUN.md` — arquitetura e operação da plataforma;
+- `docs/COST_GUARDRAILS_GOOGLE_CLOUD.md` — controles de custo;
+- `docs/ADR-025-google-cloud-run-platform.md` — decisão da plataforma.
 
 ## Banco
 
@@ -180,7 +198,9 @@ Nunca registre no GitHub:
 - chave do gateway de IA;
 - faturas de energia;
 - CPF, endereço ou unidade consumidora;
-- dumps de respostas externas.
+- dumps de respostas externas;
+- `infra/gcp/config.env`;
+- valores usados no Secret Manager.
 
 Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` para os nomes suportados.
 
