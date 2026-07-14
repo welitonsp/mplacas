@@ -3,8 +3,10 @@ from __future__ import annotations
 import csv
 import io
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +17,10 @@ REPORT_SCHEMA_VERSION = "1.0"
 _ENGINE_SOURCE = "MPLACAS_DETERMINISTIC_ENGINE"
 _BILL_SOURCE = "UTILITY_BILL_CONFIRMED"
 _DAILY_SOURCE = "DAILY_ENERGY_AGGREGATE"
+
+
+class CsvRowWriter(Protocol):
+    def writerow(self, row: Iterable[object]) -> object: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,7 +412,7 @@ def serialize_monthly_report(report: MonthlyEnergyReport) -> dict[str, object]:
 
 
 def _write_metric_row(
-    writer: object,
+    writer: CsvRowWriter,
     *,
     section: str,
     metric: ReportMetric,
