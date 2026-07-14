@@ -33,8 +33,7 @@ _WHITE = colors.white
 
 
 def _safe_text(value: object) -> str:
-    text = escape(str(value), quote=False).replace("\n", "<br/>")
-    return text.replace("_", "_&#8203;")
+    return escape(str(value), quote=False).replace("\n", "<br/>")
 
 
 def _styles() -> dict[str, ParagraphStyle]:
@@ -97,6 +96,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             leading=9.5,
             textColor=_DARK,
             alignment=TA_LEFT,
+            wordWrap="CJK",
         ),
         "metadata_label": ParagraphStyle(
             "MplacasMetadataLabel",
@@ -316,53 +316,59 @@ def build_monthly_report_pdf(report: MonthlyEnergyReport) -> bytes:
         )
 
     if report.trend is not None:
-        story.extend(
+        trend_table = _table(
+            ("Indicador", "Delta", "Unidade", "Delta percentual", "Direção"),
             [
-                Paragraph("Tendência entre ciclos", styles["section"]),
-                Paragraph(
-                    (
-                        f"Comparação: {report.trend.previous_reference_month} para "
-                        f"{report.trend.current_reference_month}."
-                    ),
-                    styles["body"],
-                ),
-                Spacer(1, 2 * mm),
-                _table(
-                    ("Indicador", "Delta", "Unidade", "Delta percentual", "Direção"),
-                    [
+                (
+                    metric.label,
+                    metric.absolute_delta,
+                    metric.unit,
+                    metric.percent_delta or "-",
+                    metric.direction,
+                )
+                for metric in report.trend.metrics
+            ],
+            widths=(52 * mm, 30 * mm, 31 * mm, 33 * mm, 28 * mm),
+            styles=styles,
+        )
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph("Tendência entre ciclos", styles["section"]),
+                    Paragraph(
                         (
-                            metric.label,
-                            metric.absolute_delta,
-                            metric.unit,
-                            metric.percent_delta or "-",
-                            metric.direction,
-                        )
-                        for metric in report.trend.metrics
-                    ],
-                    widths=(52 * mm, 30 * mm, 31 * mm, 33 * mm, 28 * mm),
-                    styles=styles,
-                ),
-            ]
+                            f"Comparação: {report.trend.previous_reference_month} para "
+                            f"{report.trend.current_reference_month}."
+                        ),
+                        styles["body"],
+                    ),
+                    Spacer(1, 2 * mm),
+                    trend_table,
+                ]
+            )
         )
         if report.trend.diagnostics:
-            story.extend(
+            trend_diagnostics_table = _table(
+                ("Código", "Severidade", "Mensagem", "Ação recomendada"),
                 [
-                    Paragraph("Diagnósticos de tendência", styles["section"]),
-                    _table(
-                        ("Código", "Severidade", "Mensagem", "Ação recomendada"),
-                        [
-                            (
-                                diagnostic.code,
-                                diagnostic.severity,
-                                diagnostic.message,
-                                diagnostic.recommended_action,
-                            )
-                            for diagnostic in report.trend.diagnostics
-                        ],
-                        widths=(38 * mm, 25 * mm, 56 * mm, 55 * mm),
-                        styles=styles,
-                    ),
-                ]
+                    (
+                        diagnostic.code,
+                        diagnostic.severity,
+                        diagnostic.message,
+                        diagnostic.recommended_action,
+                    )
+                    for diagnostic in report.trend.diagnostics
+                ],
+                widths=(38 * mm, 25 * mm, 56 * mm, 55 * mm),
+                styles=styles,
+            )
+            story.append(
+                KeepTogether(
+                    [
+                        Paragraph("Diagnósticos de tendência", styles["section"]),
+                        trend_diagnostics_table,
+                    ]
+                )
             )
 
     story.extend(
