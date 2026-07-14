@@ -22,7 +22,20 @@ jobs:
       - name: Ruff
         run: ruff check .
       - name: Mypy
-        run: mypy
+        run: |
+          if ! mypy > mypy-report.txt 2>&1; then
+            cat mypy-report.txt
+            exit 1
+          fi
+          cat mypy-report.txt
+      - name: Upload Mypy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mypy-report
+          path: mypy-report.txt
+          if-no-files-found: error
+          retention-days: 7
       - name: Tests
         run: pytest -q
 
