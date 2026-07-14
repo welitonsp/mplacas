@@ -73,14 +73,6 @@ def _styles() -> dict[str, ParagraphStyle]:
             textColor=_DARK,
             alignment=TA_LEFT,
         ),
-        "small": ParagraphStyle(
-            "MplacasSmall",
-            fontName="Helvetica",
-            fontSize=7.5,
-            leading=10,
-            textColor=_MID_GRAY,
-            alignment=TA_LEFT,
-        ),
         "table_header": ParagraphStyle(
             "MplacasTableHeader",
             fontName="Helvetica-Bold",
@@ -257,7 +249,7 @@ def build_monthly_report_pdf(report: MonthlyEnergyReport) -> bytes:
     story: list[Flowable] = [
         Paragraph("Mplacas - Relatório Mensal de Energia", styles["title"]),
         Paragraph(
-            "Exportação auditável dos resultados produzidos pelo motor determinístico.",
+            "Exportação auditável: este documento não recalcula indicadores.",
             styles["subtitle"],
         ),
         _metadata_table(report, styles),
@@ -272,14 +264,14 @@ def build_monthly_report_pdf(report: MonthlyEnergyReport) -> bytes:
         _table(
             ("Indicador", "Valor", "Unidade", "Natureza", "Fonte"),
             _metric_rows(report.metrics),
-            widths=(50 * mm, 24 * mm, 18 * mm, 35 * mm, 47 * mm),
+            widths=(48 * mm, 22 * mm, 22 * mm, 36 * mm, 46 * mm),
             styles=styles,
         ),
         Paragraph("Qualidade dos dados", styles["section"]),
         _table(
             ("Indicador", "Valor", "Unidade", "Natureza", "Fonte"),
             _metric_rows(report.quality),
-            widths=(50 * mm, 24 * mm, 18 * mm, 35 * mm, 47 * mm),
+            widths=(48 * mm, 22 * mm, 22 * mm, 36 * mm, 46 * mm),
             styles=styles,
         ),
     ]
@@ -299,7 +291,7 @@ def build_monthly_report_pdf(report: MonthlyEnergyReport) -> bytes:
                         )
                         for diagnostic in report.diagnostics
                     ],
-                    widths=(38 * mm, 25 * mm, 56 * mm, 55 * mm),
+                    widths=(44 * mm, 24 * mm, 53 * mm, 53 * mm),
                     styles=styles,
                 ),
             ]
@@ -359,7 +351,7 @@ def build_monthly_report_pdf(report: MonthlyEnergyReport) -> bytes:
                     )
                     for diagnostic in report.trend.diagnostics
                 ],
-                widths=(38 * mm, 25 * mm, 56 * mm, 55 * mm),
+                widths=(44 * mm, 24 * mm, 53 * mm, 53 * mm),
                 styles=styles,
             )
             story.append(
@@ -371,19 +363,6 @@ def build_monthly_report_pdf(report: MonthlyEnergyReport) -> bytes:
                 )
             )
 
-    story.extend(
-        [
-            Spacer(1, 5 * mm),
-            Paragraph(
-                (
-                    "Nota de rastreabilidade: este documento não recalcula indicadores. "
-                    "Os valores, diagnósticos e recomendações são projeções do relatório "
-                    "mensal auditado produzido pelo backend do Mplacas."
-                ),
-                styles["small"],
-            ),
-        ]
-    )
     decorate = _page_decorator(report)
     document.build(
         story,
