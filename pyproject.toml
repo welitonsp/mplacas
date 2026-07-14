@@ -23,7 +23,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.3,<9", "pytest-asyncio>=0.25,<1", "ruff>=0.11,<1", "mypy>=1.15,<2"]
+dev = [
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.25,<1",
+  "ruff>=0.11,<1",
+  "mypy>=1.15,<2",
+  "types-reportlab>=4.5.1.20260712,<5",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mplacas"]
@@ -42,5 +48,6 @@ select = ["E"]
 [tool.mypy]
 python_version = "3.12"
 packages = ["mplacas"]
+mypy_path = "typings"
 check_untyped_defs = true
 warn_unused_ignores = true
