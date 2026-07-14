@@ -37,8 +37,8 @@ gcloud run deploy "$GCP_SERVICE_NAME" \
   --region "$GCP_REGION" \
   --project "$GCP_PROJECT_ID" \
   --service-account "$(runtime_service_account_email)" \
-  --min "$GCP_MIN_INSTANCES" \
-  --max "$GCP_MAX_INSTANCES" \
+  --min-instances "$GCP_MIN_INSTANCES" \
+  --max-instances "$GCP_MAX_INSTANCES" \
   --cpu "$GCP_CPU" \
   --memory "$GCP_MEMORY" \
   --concurrency "$GCP_CONCURRENCY" \
