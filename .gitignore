@@ -16,6 +16,7 @@ storage/
 reports/private/
 *.pdf
 !.github/**/*.pdf
+infra/gcp/config.env
 .DS_Store
 .vscode/
 .idea/
