@@ -39,7 +39,20 @@ jobs:
             bash -n "$script"
           done < <(find infra/gcp -maxdepth 1 -type f -name '*.sh' -print0 | sort -z)
       - name: ShellCheck
-        run: shellcheck infra/gcp/*.sh
+        run: |
+          if ! shellcheck infra/gcp/*.sh > shellcheck-report.txt 2>&1; then
+            cat shellcheck-report.txt
+            exit 1
+          fi
+          cat shellcheck-report.txt
+      - name: Upload ShellCheck report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shellcheck-report
+          path: shellcheck-report.txt
+          if-no-files-found: error
+          retention-days: 7
 
   container:
     runs-on: ubuntu-latest
