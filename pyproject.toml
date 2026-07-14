@@ -17,6 +17,7 @@ dependencies = [
   "asyncpg>=0.30,<1",
   "aiosqlite>=0.21,<1",
   "pypdf>=5.7,<6",
+  "tzdata>=2025.2",
 ]
 
 [project.optional-dependencies]
