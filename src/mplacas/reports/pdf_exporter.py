@@ -13,7 +13,6 @@ from reportlab.platypus import (
     Flowable,
     KeepTogether,
     LongTable,
-    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -34,7 +33,8 @@ _WHITE = colors.white
 
 
 def _safe_text(value: object) -> str:
-    return escape(str(value), quote=False).replace("\n", "<br/>")
+    text = escape(str(value), quote=False).replace("\n", "<br/>")
+    return text.replace("_", "_&#8203;")
 
 
 def _styles() -> dict[str, ParagraphStyle]:
@@ -95,6 +95,22 @@ def _styles() -> dict[str, ParagraphStyle]:
             fontName="Helvetica",
             fontSize=7.7,
             leading=9.5,
+            textColor=_DARK,
+            alignment=TA_LEFT,
+        ),
+        "metadata_label": ParagraphStyle(
+            "MplacasMetadataLabel",
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=10,
+            textColor=_NAVY,
+            alignment=TA_LEFT,
+        ),
+        "metadata_value": ParagraphStyle(
+            "MplacasMetadataValue",
+            fontName="Helvetica",
+            fontSize=8,
+            leading=10,
             textColor=_DARK,
             alignment=TA_LEFT,
         ),
@@ -183,35 +199,37 @@ def _page_decorator(
     return draw_page
 
 
-def _metadata_table(report: MonthlyEnergyReport) -> Table:
+def _metadata_table(
+    report: MonthlyEnergyReport,
+    styles: dict[str, ParagraphStyle],
+) -> Table:
+    rows = (
+        ("Mês de referência", report.reference_month),
+        ("Status", report.status),
+        ("Usina", str(report.plant_id)),
+        ("Fatura", str(report.bill_id)),
+        ("Versão do esquema", report.schema_version),
+        ("Versão do cálculo", report.calculation_version),
+    )
     table = Table(
         [
-            ["Mês de referência", report.reference_month, "Status", report.status],
-            ["Usina", str(report.plant_id), "Fatura", str(report.bill_id)],
             [
-                "Versão do esquema",
-                report.schema_version,
-                "Versão do cálculo",
-                report.calculation_version,
-            ],
+                Paragraph(_safe_text(label), styles["metadata_label"]),
+                Paragraph(_safe_text(value), styles["metadata_value"]),
+            ]
+            for label, value in rows
         ],
-        colWidths=[35 * mm, 52 * mm, 35 * mm, 52 * mm],
+        colWidths=[45 * mm, 129 * mm],
         hAlign="LEFT",
     )
     table.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (0, -1), _LIGHT_BLUE),
-                ("BACKGROUND", (2, 0), (2, -1), _LIGHT_BLUE),
-                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 7.8),
-                ("TEXTCOLOR", (0, 0), (-1, -1), _DARK),
                 ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#CBD5E1")),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
                 ("TOPPADDING", (0, 0), (-1, -1), 4),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ]
@@ -242,7 +260,7 @@ def build_monthly_report_pdf(report: MonthlyEnergyReport) -> bytes:
             "Exportação auditável dos resultados produzidos pelo motor determinístico.",
             styles["subtitle"],
         ),
-        _metadata_table(report),
+        _metadata_table(report, styles),
         Spacer(1, 5 * mm),
         KeepTogether(
             [
@@ -300,7 +318,6 @@ def build_monthly_report_pdf(report: MonthlyEnergyReport) -> bytes:
     if report.trend is not None:
         story.extend(
             [
-                PageBreak(),
                 Paragraph("Tendência entre ciclos", styles["section"]),
                 Paragraph(
                     (
