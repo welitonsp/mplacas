@@ -23,7 +23,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - índice de saúde e diagnósticos determinísticos;
 - histórico e tendências entre ciclos;
 - dashboard web responsivo;
-- relatório mensal auditável em JSON e CSV;
+- relatório mensal auditável em JSON, CSV, PDF e XLSX;
 - rastreabilidade de métricas por fonte, natureza, unidade, período e versão;
 - correlação climática e detecção de anomalias;
 - coleta histórica pelo Open-Meteo;
@@ -68,13 +68,18 @@ O projeto possui uma API FastAPI assíncrona com:
 
 - `GET /reports/monthly/latest`
 - `GET /reports/monthly/latest.csv`
+- `GET /reports/monthly/latest.pdf`
+- `GET /reports/monthly/latest.xlsx`
 
 O relatório mensal usa o mesmo resultado determinístico do painel executivo. Cada indicador inclui
 valor, unidade, natureza e fonte. A resposta também registra mês de referência, identificadores da
 usina e da fatura, versão do esquema, versão do cálculo, qualidade dos dados, diagnósticos, ações
 prioritárias e tendência quando existem dois ciclos confirmados.
 
-O CSV usa UTF-8 com BOM, é entregue como anexo e não pode ser armazenado em cache pelo cliente.
+O CSV usa UTF-8 com BOM. O PDF é paginado em A4 e registra as versões no rodapé. O XLSX possui abas
+separadas para resumo, indicadores, qualidade, diagnósticos, tendências e metadados. Nenhum desses
+formatos recalcula indicadores. Os downloads são entregues como anexos e não podem ser armazenados
+em cache pelo cliente.
 
 ### Clima e pipeline
 
@@ -222,6 +227,7 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 ## Auditoria e decisões
 
 - ADRs: diretório `docs/`;
+- PDF e XLSX: `docs/ADR-028-pdf-and-xlsx-report-exports.md`;
 - relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - checkpoint histórico: `docs/CHECKPOINT_PROJETO_2026-07-12.md`.
