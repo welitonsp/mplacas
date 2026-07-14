@@ -38,6 +38,35 @@ jobs:
           retention-days: 7
       - name: Tests
         run: pytest -q
+      - name: Generate report export samples
+        run: |
+          mkdir -p artifacts/report-samples
+          python - <<'PY'
+          from pathlib import Path
+          import runpy
+
+          from mplacas.reports.exporters import (
+              build_monthly_report_pdf,
+              build_monthly_report_xlsx,
+          )
+
+          namespace = runpy.run_path("tests/test_report_binary_exports.py")
+          report = namespace["_sample_report"]()
+          output = Path("artifacts/report-samples")
+          (output / "mplacas-monthly-sample.pdf").write_bytes(
+              build_monthly_report_pdf(report)
+          )
+          (output / "mplacas-monthly-sample.xlsx").write_bytes(
+              build_monthly_report_xlsx(report)
+          )
+          PY
+      - name: Upload report export samples
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-export-samples
+          path: artifacts/report-samples
+          if-no-files-found: error
+          retention-days: 7
 
   gcp-deployment-contract:
     runs-on: ubuntu-latest
