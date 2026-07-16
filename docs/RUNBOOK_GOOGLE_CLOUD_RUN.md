@@ -65,6 +65,7 @@ Variáveis não sensíveis:
 MPLACAS_ENVIRONMENT=production
 MPLACAS_TIMEZONE=America/Sao_Paulo
 MPLACAS_LOG_LEVEL=INFO
+MPLACAS_EXTERNAL_HTTP_ALLOWED_HOSTS=api.nepviewer.net,archive-api.open-meteo.com
 PORT=8080
 MPLACAS_READINESS_TIMEOUT_SECONDS=3
 ```
@@ -73,6 +74,7 @@ Segredos previstos no Secret Manager:
 
 - `DATABASE_URL`
 - `OPERATIONS_API_KEY`
+- `OPERATIONS_READ_API_KEY` opcional para consumidores somente leitura
 - `NEP_ACCOUNT`
 - `NEP_PASSWORD`
 - `TELEGRAM_BOT_TOKEN`
@@ -80,7 +82,8 @@ Segredos previstos no Secret Manager:
 - `EXPLANATION_API_KEY`
 
 Mapeie os segredos para variáveis `MPLACAS_DATABASE_URL`,
-`MPLACAS_OPERATIONS_API_KEY`, `MPLACAS_NEP_ACCOUNT`, `MPLACAS_NEP_PASSWORD`,
+`MPLACAS_OPERATIONS_API_KEY`, `MPLACAS_OPERATIONS_READ_API_KEY` quando houver consumidores somente
+leitura, `MPLACAS_NEP_ACCOUNT`, `MPLACAS_NEP_PASSWORD`,
 `MPLACAS_TELEGRAM_BOT_TOKEN`, `MPLACAS_TELEGRAM_WEBHOOK_SECRET` e
 `MPLACAS_EXPLANATION_API_KEY`.
 

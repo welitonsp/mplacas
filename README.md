@@ -52,8 +52,8 @@ O projeto possui uma API FastAPI assíncrona com:
 
 - `GET /health`
 - `GET /ready`
-- `GET /operations/status`
-- `GET /operations/jobs`
+- `GET /operations/status` (`X-API-Key`)
+- `GET /operations/jobs` (`X-API-Key`)
 
 ### Energia e dashboard
 
@@ -98,7 +98,10 @@ em cache pelo cliente.
 - listagem de pendências;
 - confirmação, rejeição e atribuição de fatura legada por usina.
 
-Os endpoints operacionais e administrativos exigem `X-API-Key` quando aplicável.
+Os endpoints operacionais e administrativos exigem `X-API-Key`, exceto `/health`, `/ready` e a
+página estática `/dashboard`. `MPLACAS_OPERATIONS_API_KEY` tem papel administrativo; a chave opcional
+`MPLACAS_OPERATIONS_READ_API_KEY` permite apenas endpoints de leitura, como relatórios, energia,
+explicações e status operacional.
 
 ## Ciclo diário recomendado
 
@@ -124,6 +127,10 @@ O endpoint `/energy/explanations/latest` sempre consegue responder com fallback 
 ```
 
 A aplicação substitui qualquer aviso do provedor por um disclaimer fixo e limita as recomendações a cinco itens.
+
+Em produção, endpoints HTTP externos configuráveis precisam usar HTTPS e estar listados em
+`MPLACAS_EXTERNAL_HTTP_ALLOWED_HOSTS`. O padrão permite apenas NEPViewer e Open-Meteo; inclua o host
+do gateway de explicações somente quando esse provedor for realmente usado.
 
 ## Execução local
 
@@ -228,9 +235,14 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 
 - ADRs: diretório `docs/`;
 - PDF e XLSX: `docs/ADR-028-pdf-and-xlsx-report-exports.md`;
+- segurança de egress e request ID: `docs/ADR-030-production-egress-and-request-tracing.md`;
+- papel operacional somente leitura: `docs/ADR-031-operational-read-role-api-key.md`;
+- trilha auditável de credencial operacional: `docs/ADR-032-operational-credential-audit-trail.md`;
 - relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
-- checkpoint histórico: `docs/CHECKPOINT_PROJETO_2026-07-12.md`.
+- auditoria técnica profunda: `docs/AUDITORIA_TECNICA_PROFUNDA_2026-07-16.md`;
+- checkpoint histórico: `docs/CHECKPOINT_PROJETO_2026-07-12.md`;
+- checkpoint atual: `docs/CHECKPOINT_PROJETO_2026-07-16.md`.
 
 ## Regra de entrega
 

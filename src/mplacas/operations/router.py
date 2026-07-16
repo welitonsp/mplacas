@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from mplacas.core.security import require_operations_read
 from mplacas.db.session import SessionFactory
 from mplacas.operations.repository import JobRunRepository
 from mplacas.operations.status import build_operational_status
 
-router = APIRouter(prefix="/operations", tags=["operational"])
+router = APIRouter(
+    prefix="/operations",
+    tags=["operational"],
+    dependencies=[Depends(require_operations_read)],
+)
 
 
 @router.get("/jobs")

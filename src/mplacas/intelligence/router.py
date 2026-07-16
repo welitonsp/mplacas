@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from mplacas.core.security import require_operations_key
+from mplacas.core.security import require_operations_read
 from mplacas.db.session import SessionFactory
 from mplacas.intelligence.anomaly_service import (
     AnomalyDataNotFoundError,
@@ -21,7 +21,7 @@ from mplacas.intelligence.history_service import (
 router = APIRouter(
     prefix="/energy",
     tags=["energy"],
-    dependencies=[Depends(require_operations_key)],
+    dependencies=[Depends(require_operations_read)],
 )
 
 

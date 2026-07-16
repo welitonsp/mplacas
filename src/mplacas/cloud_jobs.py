@@ -144,7 +144,7 @@ async def run_daily_pipeline(
             )
             await session.commit()
         except Exception:
-            await session.rollback()
+            await session.commit()
             raise
     logger.info(
         "cloud_job_daily_pipeline_completed",

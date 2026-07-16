@@ -39,7 +39,10 @@ class Device(Base):
     __table_args__ = (UniqueConstraint("provider", "serial_number"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    plant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("plants.id", ondelete="CASCADE"))
+    plant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("plants.id", ondelete="CASCADE"),
+        index=True,
+    )
     provider: Mapped[str] = mapped_column(String(40), default="NEPVIEWER")
     serial_number: Mapped[str] = mapped_column(String(120))
     model_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -79,7 +82,8 @@ class DailyEnergyVersion(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     daily_energy_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("daily_energy.id", ondelete="CASCADE")
+        ForeignKey("daily_energy.id", ondelete="CASCADE"),
+        index=True,
     )
     energy_kwh: Mapped[Decimal] = mapped_column(Numeric(12, 3))
     status: Mapped[DataStatus] = mapped_column(Enum(DataStatus))
