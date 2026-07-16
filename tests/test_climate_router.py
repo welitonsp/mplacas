@@ -23,6 +23,17 @@ class FakeSession:
         return None
 
 
+class FakeAuditEventRepository:
+    events: list[dict[str, object]] = []
+
+    def __init__(self, session) -> None:
+        self.session = session
+
+    async def record(self, request, **kwargs):
+        self.events.append(kwargs)
+        return SimpleNamespace()
+
+
 def _configure(monkeypatch) -> None:
     monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-key")
     get_settings.cache_clear()
@@ -43,6 +54,8 @@ def test_climate_collection_endpoint_returns_persistence_metrics(monkeypatch) ->
 
     monkeypatch.setattr(climate_router, "SessionFactory", lambda: FakeSession())
     monkeypatch.setattr(climate_router, "collect_and_persist_daily_climate", fake_collect)
+    FakeAuditEventRepository.events = []
+    monkeypatch.setattr(climate_router, "AuditEventRepository", FakeAuditEventRepository)
 
     client = TestClient(app)
     unauthorized = client.post(
@@ -67,6 +80,19 @@ def test_climate_collection_endpoint_returns_persistence_metrics(monkeypatch) ->
     assert response.status_code == 200
     assert response.json()["received"] == 2
     assert response.json()["persistence"] == {"inserted": 1, "updated": 1, "unchanged": 0}
+    event = FakeAuditEventRepository.events[-1]
+    assert event["action"] == "climate.collect"
+    assert event["resource_id"] == str(plant_id)
+    assert event["outcome"] == "SUCCEEDED"
+    assert event["details"] == {
+        "start_date": "2026-07-12",
+        "end_date": "2026-07-13",
+        "provider": "OPEN_METEO_ARCHIVE",
+        "received": 2,
+        "inserted": 1,
+        "updated": 1,
+        "unchanged": 0,
+    }
     get_settings.cache_clear()
 
 

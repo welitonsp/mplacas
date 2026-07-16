@@ -4,8 +4,9 @@ import logging
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from mplacas.audit.repository import AuditEventRepository
 from mplacas.climate.collection_service import (
     ClimateCollectionError,
     collect_and_persist_daily_climate,
@@ -26,6 +27,7 @@ router = APIRouter(
 
 @router.post("/collect", status_code=status.HTTP_200_OK)
 async def collect_climate(
+    request: Request,
     plant_id: uuid.UUID,
     start_date: date,
     end_date: date,
@@ -44,6 +46,22 @@ async def collect_climate(
                 start_date=start_date,
                 end_date=end_date,
                 maximum_days=settings.climate_maximum_backfill_days,
+            )
+            await AuditEventRepository(session).record(
+                request,
+                action="climate.collect",
+                resource_type="plant",
+                resource_id=str(result.plant_id),
+                outcome="SUCCEEDED",
+                details={
+                    "start_date": result.start_date.isoformat(),
+                    "end_date": result.end_date.isoformat(),
+                    "provider": OpenMeteoHistoricalProvider.SOURCE,
+                    "received": result.received,
+                    "inserted": result.persistence.inserted,
+                    "updated": result.persistence.updated,
+                    "unchanged": result.persistence.unchanged,
+                },
             )
             await session.commit()
     except ClimateCollectionError as exc:
