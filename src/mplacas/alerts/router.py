@@ -4,8 +4,9 @@ import hashlib
 import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from mplacas.audit.repository import AuditEventRepository
 from mplacas.alerts.models import AlertSeverity
 from mplacas.alerts.operations import run_operational_alert_pipeline
 from mplacas.alerts.telegram import TelegramAlertProvider
@@ -27,6 +28,7 @@ def _destination_ref(chat_id: str) -> str:
 
 @router.post("/run", status_code=status.HTTP_200_OK)
 async def run_alerts(
+    request: Request,
     plant_id: uuid.UUID,
     expected_daily_production_kwh: Decimal = Query(gt=0),
     expected_cycle_production_kwh: Decimal | None = Query(default=None, gt=0),
@@ -58,6 +60,25 @@ async def run_alerts(
             anomaly_days=anomaly_days,
             minimum_severity=minimum_severity,
         )
+        await AuditEventRepository(session).record(
+            request,
+            action="alerts.run",
+            resource_type="plant",
+            resource_id=str(result.plant_id),
+            outcome="SUCCEEDED",
+            details={
+                "executive_available": result.executive_available,
+                "anomaly_available": result.anomaly_available,
+                "evaluated": result.metrics.evaluated,
+                "sent": result.metrics.sent,
+                "skipped": result.metrics.skipped,
+                "failed": result.metrics.failed,
+                "duplicates": result.metrics.duplicates,
+                "below_minimum_severity": result.metrics.below_minimum_severity,
+                "minimum_severity": minimum_severity.value,
+            },
+        )
+        await session.commit()
 
     return {
         "plant_id": str(result.plant_id),

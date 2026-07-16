@@ -68,7 +68,7 @@ def _serialize(record) -> dict[str, object]:
 
 
 @router.post("/intake-text", status_code=status.HTTP_202_ACCEPTED)
-async def intake_bill_text(payload: BillTextIntake) -> dict[str, object]:
+async def intake_bill_text(request: Request, payload: BillTextIntake) -> dict[str, object]:
     settings = get_settings()
     if len(payload.text.encode("utf-8")) > settings.bill_text_max_bytes:
         raise HTTPException(status_code=413, detail="bill text exceeds configured size limit")
@@ -88,6 +88,18 @@ async def intake_bill_text(payload: BillTextIntake) -> dict[str, object]:
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await AuditEventRepository(session).record(
+            request,
+            action="billing.intake_text",
+            resource_type="utility_bill",
+            resource_id=str(record.id),
+            outcome="SUCCEEDED",
+            details={
+                "plant_id": str(record.plant_id) if record.plant_id else None,
+                "reference_month": record.reference_month,
+                "status": record.status.value,
+            },
+        )
         await session.commit()
         await session.refresh(record)
     return {"status": "pending_review", "bill": _serialize(record)}
