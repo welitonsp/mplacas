@@ -5,8 +5,9 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from mplacas.audit.repository import AuditEventRepository
 from mplacas.alerts.models import AlertSeverity
 from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.climate.open_meteo import OpenMeteoHistoricalProvider
@@ -30,6 +31,7 @@ def _destination_ref(chat_id: str) -> str:
 
 @router.post("/run", status_code=status.HTTP_200_OK)
 async def run_pipeline(
+    request: Request,
     plant_id: uuid.UUID,
     target_date: date,
     expected_daily_production_kwh: Decimal = Query(gt=0),
@@ -71,6 +73,19 @@ async def run_pipeline(
                 minimum_severity=minimum_severity,
                 stale_lock_timeout_minutes=settings.pipeline_stale_lock_timeout_minutes,
             )
+            await AuditEventRepository(session).record(
+                request,
+                action="pipeline.run",
+                resource_type="pipeline_execution",
+                resource_id=str(result.execution_id),
+                outcome="SUCCEEDED",
+                details={
+                    "plant_id": str(result.plant_id),
+                    "target_date": result.target_date.isoformat(),
+                    "alerts_sent": result.pipeline.alerts.metrics.sent,
+                    "alerts_failed": result.pipeline.alerts.metrics.failed,
+                },
+            )
             await session.commit()
         except PipelineExecutionAlreadyRunningError as exc:
             await session.rollback()
@@ -85,6 +100,22 @@ async def run_pipeline(
                 detail=str(exc),
             ) from exc
         except Exception as exc:
+            execution_id = None
+            latest = await get_latest_pipeline_execution(session, plant_id=plant_id)
+            if latest is not None and latest.target_date == target_date:
+                execution_id = str(latest.execution_id)
+            await AuditEventRepository(session).record(
+                request,
+                action="pipeline.run",
+                resource_type="pipeline_execution",
+                resource_id=execution_id,
+                outcome="FAILED",
+                details={
+                    "plant_id": str(plant_id),
+                    "target_date": target_date.isoformat(),
+                    "error_code": type(exc).__name__,
+                },
+            )
             await session.commit()
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,

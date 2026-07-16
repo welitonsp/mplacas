@@ -26,6 +26,17 @@ class FakeSession:
         return None
 
 
+class FakeAuditEventRepository:
+    events: list[dict[str, object]] = []
+
+    def __init__(self, session) -> None:
+        self.session = session
+
+    async def record(self, request, **kwargs):
+        self.events.append(kwargs)
+        return SimpleNamespace()
+
+
 def _configure(monkeypatch) -> None:
     monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-key")
     monkeypatch.setenv("MPLACAS_TELEGRAM_BOT_TOKEN", "synthetic-token")
@@ -53,6 +64,8 @@ def test_pipeline_run_endpoint_is_protected_and_returns_sanitized_metrics(monkey
 
     monkeypatch.setattr(orchestration_router, "SessionFactory", lambda: FakeSession())
     monkeypatch.setattr(orchestration_router, "run_ledger_backed_daily_pipeline", fake_runtime)
+    FakeAuditEventRepository.events = []
+    monkeypatch.setattr(orchestration_router, "AuditEventRepository", FakeAuditEventRepository)
 
     client = TestClient(app)
     unauthorized = client.post(
@@ -80,6 +93,8 @@ def test_pipeline_run_endpoint_is_protected_and_returns_sanitized_metrics(monkey
     assert payload["duration_ms"] == 125
     assert payload["alerts"] == {"evaluated": 2, "sent": 1, "skipped": 1, "failed": 0}
     assert "synthetic-token" not in response.text
+    assert FakeAuditEventRepository.events[-1]["action"] == "pipeline.run"
+    assert FakeAuditEventRepository.events[-1]["outcome"] == "SUCCEEDED"
     assert "synthetic-chat" not in response.text
     get_settings.cache_clear()
 

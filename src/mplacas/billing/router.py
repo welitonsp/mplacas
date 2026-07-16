@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mplacas.audit.repository import AuditEventRepository
 from mplacas.billing.parser import BillParseError, parse_equatorial_bill_text
 from mplacas.billing.repository import UtilityBillRepository
 from mplacas.core.config import get_settings
@@ -108,6 +109,7 @@ async def pending_bills(
 
 @router.post("/{bill_id}/confirm")
 async def confirm_bill(
+    request: Request,
     bill_id: uuid.UUID,
     plant_id: uuid.UUID | None = None,
 ) -> dict[str, object]:
@@ -121,6 +123,17 @@ async def confirm_bill(
             await repository.confirm(record)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await AuditEventRepository(session).record(
+            request,
+            action="billing.confirm",
+            resource_type="utility_bill",
+            resource_id=str(record.id),
+            outcome="SUCCEEDED",
+            details={
+                "plant_id": str(record.plant_id) if record.plant_id else None,
+                "reference_month": record.reference_month,
+            },
+        )
         await session.commit()
         await session.refresh(record)
     return {"status": "confirmed", "bill": _serialize(record)}
@@ -128,6 +141,7 @@ async def confirm_bill(
 
 @router.post("/{bill_id}/reject")
 async def reject_bill(
+    request: Request,
     bill_id: uuid.UUID,
     plant_id: uuid.UUID | None = None,
 ) -> dict[str, object]:
@@ -141,6 +155,17 @@ async def reject_bill(
             await repository.reject(record)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await AuditEventRepository(session).record(
+            request,
+            action="billing.reject",
+            resource_type="utility_bill",
+            resource_id=str(record.id),
+            outcome="SUCCEEDED",
+            details={
+                "plant_id": str(record.plant_id) if record.plant_id else None,
+                "reference_month": record.reference_month,
+            },
+        )
         await session.commit()
         await session.refresh(record)
     return {"status": "rejected", "bill": _serialize(record)}
