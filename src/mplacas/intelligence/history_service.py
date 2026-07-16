@@ -4,11 +4,10 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import desc, or_, select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.db_models import BillStatus, UtilityBillRecord
-from mplacas.db.models import Plant
 from mplacas.intelligence.cycle_service import analyze_persisted_cycle
 from mplacas.intelligence.trends import (
     EnergyCycleComparison,
@@ -124,27 +123,19 @@ def _diagnostics(comparison: EnergyCycleComparison) -> tuple[HistoricalDiagnosti
     return tuple(items)
 
 
-async def _allow_legacy_scope(session: AsyncSession, plant_id: uuid.UUID) -> bool:
-    plant_ids = list((await session.execute(select(Plant.id).limit(2))).scalars())
-    return plant_ids == [plant_id]
-
-
 async def compare_latest_confirmed_cycles(
     session: AsyncSession,
     *,
     plant_id: uuid.UUID,
     stable_tolerance_percent: Decimal = Decimal("2.0"),
 ) -> PersistedEnergyTrend:
-    scope = UtilityBillRecord.plant_id == plant_id
-    if await _allow_legacy_scope(session, plant_id):
-        scope = or_(scope, UtilityBillRecord.plant_id.is_(None))
     bills = list(
         (
             await session.execute(
                 select(UtilityBillRecord)
                 .where(
                     UtilityBillRecord.status == BillStatus.CONFIRMED,
-                    scope,
+                    UtilityBillRecord.plant_id == plant_id,
                 )
                 .order_by(desc(UtilityBillRecord.cycle_end), desc(UtilityBillRecord.created_at))
                 .limit(2)

@@ -25,6 +25,7 @@ async def test_analyzes_confirmed_bill_with_persisted_daily_energy() -> None:
         session.add(device)
         await session.flush()
         bill = UtilityBillRecord(
+            plant_id=plant.id,
             distributor="EQUATORIAL_GO",
             reference_month="2026-06",
             cycle_start=date(2026, 6, 1),
@@ -83,7 +84,11 @@ async def test_rejects_unconfirmed_bill() -> None:
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async with factory() as session:
+        plant = Plant(name="Synthetic plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
         bill = UtilityBillRecord(
+            plant_id=plant.id,
             distributor="EQUATORIAL_GO",
             reference_month="2026-06",
             cycle_start=date(2026, 6, 1),

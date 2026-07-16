@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import secrets
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.parser import BillParseError, parse_equatorial_bill_text
 from mplacas.billing.repository import UtilityBillRepository
 from mplacas.core.config import get_settings
+from mplacas.db.models import Plant
 from mplacas.db.session import SessionFactory
 from mplacas.telegram.client import TelegramClient, TelegramClientError
 from mplacas.telegram.document_processing import (
@@ -24,6 +28,16 @@ def _pending_message(reference_month: str) -> str:
     return (
         f"Fatura {reference_month} recebida e analisada. "
         "Ela ficou pendente de revisão humana antes da consolidação."
+    )
+
+
+async def _resolve_telegram_plant_scope(session: AsyncSession) -> uuid.UUID:
+    plant_ids = list((await session.execute(select(Plant.id).limit(2))).scalars())
+    if len(plant_ids) == 1:
+        return plant_ids[0]
+    raise HTTPException(
+        status_code=409,
+        detail="Telegram bill intake requires exactly one configured plant",
     )
 
 
@@ -86,8 +100,11 @@ async def telegram_webhook(
         try:
             bill = parse_equatorial_bill_text(message.text)
             async with SessionFactory() as session:
+                plant_id = await _resolve_telegram_plant_scope(session)
                 record = await UtilityBillRepository(session).create_pending(
-                    bill, source_text=message.text
+                    bill,
+                    plant_id=plant_id,
+                    source_text=message.text,
                 )
                 await session.commit()
                 reference_month = record.reference_month
@@ -111,8 +128,10 @@ async def telegram_webhook(
             max_text_bytes=settings.bill_text_max_bytes,
         )
         async with SessionFactory() as session:
+            plant_id = await _resolve_telegram_plant_scope(session)
             record = await UtilityBillRepository(session).create_pending(
                 processed.bill,
+                plant_id=plant_id,
                 source_text=source_text,
             )
             await session.commit()

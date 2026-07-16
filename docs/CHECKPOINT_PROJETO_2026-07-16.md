@@ -3,8 +3,8 @@
 ## Estado atual
 
 - Branch auditada e atualizada: `main`.
-- Ultimo commit integrado antes desta fase: `27a4b51` - PR no 36, auditoria persistente de acoes
-  sensiveis.
+- Ultimo commit integrado antes desta fase: `f1df195` - PR no 37, auditoria persistente ampliada
+  para mutacoes administrativas.
 - PRs no 1 a no 28: encerradas sem pendencias conhecidas pela auditoria de rastreabilidade.
 - PR no 29: auditoria documental das PRs 1 a 28.
 - PR no 31: preparacao para Cloud Run.
@@ -13,10 +13,11 @@
 - PR no 34: exportacoes PDF e XLSX.
 - PR no 35: endurecimento operacional apos auditoria tecnica profunda.
 - PR no 36: auditoria persistente inicial de acoes sensiveis.
+- PR no 37: auditoria persistente ampliada para mutacoes administrativas.
 
 O checkpoint antigo de 12/07/2026 indicava retomada na PR no 21, mas esse plano ja foi executado e
 superado. A fonte de continuidade e a auditoria tecnica profunda de 16/07/2026, acompanhada pelas
-ADRs 029 a 034.
+ADRs 029 a 035.
 
 ## Fases recentes
 
@@ -66,12 +67,19 @@ ADRs 029 a 034.
 4. manter detalhes apenas com IDs, datas, status e contadores;
 5. documentar a decisao no ADR-034.
 
+### Escopo obrigatorio de faturas por usina
+
+1. tornar `utility_bills.plant_id` obrigatorio no modelo e na migration;
+2. fazer backfill automatico apenas quando existe exatamente uma planta;
+3. remover atalhos de fatura legada dos servicos de inteligencia;
+4. exigir `plant_id` resolvido nos repositorios e fluxos de intake;
+5. documentar a decisao no ADR-035.
+
 ## Proximas melhorias ainda abertas
 
 1. Evoluir de API keys para usuarios/tenants/claims e escopo por `plant_id`.
-2. Migrar faturas legadas para `plant_id` obrigatorio.
-3. Refatorar relatorios em modulos menores depois que a superficie operacional estiver estavel.
-4. Adicionar metricas OpenTelemetry/Prometheus e alertas de SLO.
+2. Refatorar relatorios em modulos menores depois que a superficie operacional estiver estavel.
+3. Adicionar metricas OpenTelemetry/Prometheus e alertas de SLO.
 
 ## Regra de retomada
 

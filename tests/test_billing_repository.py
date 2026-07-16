@@ -8,6 +8,7 @@ from mplacas.billing.db_models import BillStatus
 from mplacas.billing.models import UtilityBill
 from mplacas.billing.repository import UtilityBillRepository
 from mplacas.db.base import Base
+from mplacas.db.models import Plant
 
 
 @pytest.mark.asyncio
@@ -30,10 +31,22 @@ async def test_bill_requires_human_confirmation_and_is_idempotent() -> None:
         public_lighting_brl=Decimal("30.21"),
     )
     async with factory() as session:
+        plant = Plant(name="Synthetic plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
         repository = UtilityBillRepository(session)
-        first = await repository.create_pending(bill, source_text="synthetic bill text")
-        second = await repository.create_pending(bill, source_text="synthetic bill text")
+        first = await repository.create_pending(
+            bill,
+            plant_id=plant.id,
+            source_text="synthetic bill text",
+        )
+        second = await repository.create_pending(
+            bill,
+            plant_id=plant.id,
+            source_text="synthetic bill text",
+        )
         assert first.id == second.id
+        assert first.plant_id == plant.id
         assert first.status is BillStatus.PENDING_REVIEW
         await repository.confirm(first)
         assert first.status is BillStatus.CONFIRMED

@@ -33,6 +33,7 @@ async def test_builds_dashboard_with_current_cycle_and_no_trend() -> None:
         session.add(device)
         await session.flush()
         bill = UtilityBillRecord(
+            plant_id=plant.id,
             distributor="EQUATORIAL_GO",
             reference_month="2026-06",
             cycle_start=date(2026, 6, 1),
@@ -90,6 +91,7 @@ async def test_prioritizes_critical_cycle_and_includes_historical_actions() -> N
         await session.flush()
 
         previous = UtilityBillRecord(
+            plant_id=plant.id,
             distributor="EQUATORIAL_GO",
             reference_month="2026-05",
             cycle_start=date(2026, 5, 1),
@@ -105,6 +107,7 @@ async def test_prioritizes_critical_cycle_and_includes_historical_actions() -> N
             source_hash="d" * 64,
         )
         current = UtilityBillRecord(
+            plant_id=plant.id,
             distributor="EQUATORIAL_GO",
             reference_month="2026-06",
             cycle_start=date(2026, 6, 1),
