@@ -30,7 +30,7 @@ class BillTextIntake(BaseModel):
 async def _resolve_plant_scope(
     session: AsyncSession,
     requested: uuid.UUID | None,
-) -> uuid.UUID | None:
+) -> uuid.UUID:
     if requested is not None:
         if await session.get(Plant, requested) is None:
             raise HTTPException(status_code=404, detail="plant not found")
@@ -43,13 +43,16 @@ async def _resolve_plant_scope(
             status_code=409,
             detail="plant_id is required when more than one plant exists",
         )
-    return None
+    raise HTTPException(
+        status_code=409,
+        detail="plant_id is required when no plant can be inferred",
+    )
 
 
 def _serialize(record) -> dict[str, object]:
     return {
         "id": str(record.id),
-        "plant_id": str(record.plant_id) if record.plant_id else None,
+        "plant_id": str(record.plant_id),
         "distributor": record.distributor,
         "reference_month": record.reference_month,
         "cycle_start": record.cycle_start,
@@ -95,7 +98,7 @@ async def intake_bill_text(request: Request, payload: BillTextIntake) -> dict[st
             resource_id=str(record.id),
             outcome="SUCCEEDED",
             details={
-                "plant_id": str(record.plant_id) if record.plant_id else None,
+                "plant_id": str(record.plant_id),
                 "reference_month": record.reference_month,
                 "status": record.status.value,
             },
@@ -142,7 +145,7 @@ async def confirm_bill(
             resource_id=str(record.id),
             outcome="SUCCEEDED",
             details={
-                "plant_id": str(record.plant_id) if record.plant_id else None,
+                "plant_id": str(record.plant_id),
                 "reference_month": record.reference_month,
             },
         )
@@ -174,7 +177,7 @@ async def reject_bill(
             resource_id=str(record.id),
             outcome="SUCCEEDED",
             details={
-                "plant_id": str(record.plant_id) if record.plant_id else None,
+                "plant_id": str(record.plant_id),
                 "reference_month": record.reference_month,
             },
         )

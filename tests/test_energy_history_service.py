@@ -30,6 +30,7 @@ async def test_compares_two_latest_confirmed_cycles_from_persisted_data() -> Non
         await session.flush()
 
         previous = UtilityBillRecord(
+            plant_id=plant.id,
             distributor="EQUATORIAL_GO",
             reference_month="2026-05",
             cycle_start=date(2026, 5, 1),
@@ -45,6 +46,7 @@ async def test_compares_two_latest_confirmed_cycles_from_persisted_data() -> Non
             source_hash="c" * 64,
         )
         current = UtilityBillRecord(
+            plant_id=plant.id,
             distributor="EQUATORIAL_GO",
             reference_month="2026-06",
             cycle_start=date(2026, 6, 1),

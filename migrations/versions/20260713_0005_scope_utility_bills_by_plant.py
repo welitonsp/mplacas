@@ -12,9 +12,19 @@ down_revision = "20260713_0004"
 branch_labels = None
 depends_on = None
 
+_BILL_NAMING_CONVENTION = {
+    "uq": (
+        "uq_%(table_name)s_%(column_0_name)s_%(column_1_name)s_"
+        "%(column_2_name)s_%(column_3_name)s"
+    )
+}
+
 
 def upgrade() -> None:
-    with op.batch_alter_table("utility_bills") as batch_op:
+    with op.batch_alter_table(
+        "utility_bills",
+        naming_convention=_BILL_NAMING_CONVENTION,
+    ) as batch_op:
         batch_op.add_column(sa.Column("plant_id", sa.Uuid(), nullable=True))
         batch_op.create_foreign_key(
             "fk_utility_bills_plant_id_plants",

@@ -48,9 +48,9 @@ class UtilityBillRecord(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    plant_id: Mapped[uuid.UUID | None] = mapped_column(
+    plant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("plants.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
     distributor: Mapped[str] = mapped_column(String(60), index=True)

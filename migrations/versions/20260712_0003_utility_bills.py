@@ -40,7 +40,13 @@ def upgrade() -> None:
         ),
         sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("distributor", "reference_month", "cycle_start", "cycle_end"),
+        sa.UniqueConstraint(
+            "distributor",
+            "reference_month",
+            "cycle_start",
+            "cycle_end",
+            name="uq_utility_bills_distributor_reference_month_cycle_start_cycle_end",
+        ),
         sa.UniqueConstraint("source_hash"),
     )
     op.create_index("ix_utility_bills_distributor", "utility_bills", ["distributor"])

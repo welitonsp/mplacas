@@ -5,11 +5,10 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import desc, or_, select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.db_models import BillStatus, UtilityBillRecord
-from mplacas.db.models import Plant
 from mplacas.intelligence.cycle_service import (
     EnergyCycleNotFoundError,
     PersistedCycleIntelligence,
@@ -74,11 +73,6 @@ def _priority_actions(
     return tuple(actions[:limit])
 
 
-async def _allow_legacy_scope(session: AsyncSession, plant_id: uuid.UUID) -> bool:
-    plant_ids = list((await session.execute(select(Plant.id).limit(2))).scalars())
-    return plant_ids == [plant_id]
-
-
 async def build_executive_dashboard(
     session: AsyncSession,
     *,
@@ -86,14 +80,11 @@ async def build_executive_dashboard(
     expected_production_kwh: Decimal | None = None,
     stable_tolerance_percent: Decimal = Decimal("2.0"),
 ) -> ExecutiveEnergyDashboard:
-    scope = UtilityBillRecord.plant_id == plant_id
-    if await _allow_legacy_scope(session, plant_id):
-        scope = or_(scope, UtilityBillRecord.plant_id.is_(None))
     latest_bill = await session.scalar(
         select(UtilityBillRecord)
         .where(
             UtilityBillRecord.status == BillStatus.CONFIRMED,
-            scope,
+            UtilityBillRecord.plant_id == plant_id,
         )
         .order_by(desc(UtilityBillRecord.cycle_end), desc(UtilityBillRecord.created_at))
         .limit(1)

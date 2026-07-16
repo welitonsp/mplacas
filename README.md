@@ -17,6 +17,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - parser determinístico de faturas Equatorial;
 - recebimento seguro de texto e PDF pelo Telegram;
 - confirmação humana obrigatória de faturas;
+- faturas sempre vinculadas a uma usina por `plant_id`;
 - isolamento multiusina por `plant_id`;
 - conciliação energética por ciclo de leitura;
 - indicadores de produção, consumo, importação, injeção e autossuficiência;
@@ -96,7 +97,7 @@ em cache pelo cliente.
 
 - intake textual e documental;
 - listagem de pendências;
-- confirmação, rejeição e atribuição de fatura legada por usina.
+- confirmação e rejeição de faturas sempre escopadas por usina.
 
 Os endpoints operacionais e administrativos exigem `X-API-Key`, exceto `/health`, `/ready` e a
 página estática `/dashboard`. `MPLACAS_OPERATIONS_API_KEY` tem papel administrativo; a chave opcional
@@ -240,6 +241,7 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 - trilha auditável de credencial operacional: `docs/ADR-032-operational-credential-audit-trail.md`;
 - auditoria persistente de ações sensíveis: `docs/ADR-033-persistent-sensitive-action-audit.md`;
 - auditoria persistente ampliada: `docs/ADR-034-expanded-administrative-audit-events.md`;
+- escopo obrigatorio de faturas por usina: `docs/ADR-035-mandatory-utility-bill-plant-scope.md`;
 - relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - auditoria técnica profunda: `docs/AUDITORIA_TECNICA_PROFUNDA_2026-07-16.md`;
