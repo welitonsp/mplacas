@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from mplacas.core.security import require_operations_key
+from mplacas.core.security import require_operations_read
 from mplacas.db.session import SessionFactory
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError
 from mplacas.reports.exporters import (
@@ -24,7 +24,7 @@ from mplacas.reports.service import (
 router = APIRouter(
     prefix="/reports",
     tags=["reports"],
-    dependencies=[Depends(require_operations_key)],
+    dependencies=[Depends(require_operations_read)],
 )
 
 

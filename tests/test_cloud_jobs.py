@@ -90,6 +90,34 @@ def test_daily_pipeline_uses_yesterday_in_configured_timezone(monkeypatch) -> No
     get_settings.cache_clear()
 
 
+def test_daily_pipeline_commits_failed_ledger_state(monkeypatch) -> None:
+    plant_id = uuid.UUID("00000000-0000-0000-0000-000000000035")
+    monkeypatch.setenv("MPLACAS_CLOUD_JOB_PLANT_ID", str(plant_id))
+    monkeypatch.setenv("MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH", "12.5")
+    monkeypatch.setenv("MPLACAS_TELEGRAM_BOT_TOKEN", "synthetic-token")
+    monkeypatch.setenv("MPLACAS_TELEGRAM_ALERT_CHAT_ID", "synthetic-chat")
+    get_settings.cache_clear()
+    session = FakeSession()
+
+    async def failing_runtime(*args, **kwargs):
+        raise RuntimeError("pipeline failed after ledger update")
+
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", lambda: session)
+    monkeypatch.setattr(cloud_jobs, "run_ledger_backed_daily_pipeline", failing_runtime)
+
+    with pytest.raises(RuntimeError, match="pipeline failed"):
+        cloud_jobs.asyncio.run(
+            cloud_jobs.run_daily_pipeline(
+                target_date="2026-07-15",
+                now=datetime.fromisoformat("2026-07-16T00:30:00-03:00"),
+            )
+        )
+
+    assert session.committed is True
+    assert session.rolled_back is False
+    get_settings.cache_clear()
+
+
 def test_daily_pipeline_help() -> None:
     with pytest.raises(SystemExit) as exc:
         main(["daily-pipeline", "--help"])

@@ -5,7 +5,17 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Numeric, String, UniqueConstraint, func
+from sqlalchemy import (
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from mplacas.db.base import Base
@@ -27,6 +37,13 @@ class UtilityBillRecord(Base):
             "cycle_start",
             "cycle_end",
             name="uq_utility_bills_plant_cycle",
+        ),
+        Index(
+            "ix_utility_bills_plant_status_cycle",
+            "plant_id",
+            "status",
+            "cycle_end",
+            "created_at",
         ),
     )
 

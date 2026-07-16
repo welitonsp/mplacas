@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from functools import lru_cache
 from decimal import Decimal
+from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, HttpUrl, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,6 +33,7 @@ class Settings(BaseSettings):
     nep_account: str | None = None
     nep_password: SecretStr | None = None
     climate_archive_base_url: HttpUrl = HttpUrl("https://archive-api.open-meteo.com/v1/archive")
+    external_http_allowed_hosts: str = "api.nepviewer.net,archive-api.open-meteo.com"
     climate_maximum_backfill_days: int = 366
     pipeline_stale_lock_timeout_minutes: int = 60
     explanation_api_url: HttpUrl | None = None
@@ -39,6 +41,7 @@ class Settings(BaseSettings):
     explanation_model: str | None = None
     explanation_timeout_seconds: float = 15.0
     operations_api_key: SecretStr | None = None
+    operations_read_api_key: SecretStr | None = None
     telegram_bot_token: SecretStr | None = None
     telegram_webhook_secret: SecretStr | None = None
     telegram_allowed_user_id: int | None = None
@@ -70,6 +73,14 @@ class Settings(BaseSettings):
     @property
     def explanation_provider_configured(self) -> bool:
         return self.explanation_api_url is not None
+
+    @property
+    def external_http_allowed_host_set(self) -> frozenset[str]:
+        return frozenset(
+            host.strip().lower()
+            for host in self.external_http_allowed_hosts.split(",")
+            if host.strip()
+        )
 
     @field_validator("port")
     @classmethod
@@ -111,6 +122,25 @@ class Settings(BaseSettings):
             or not self.operations_api_key.get_secret_value().strip()
         ):
             raise ValueError("operational API key is required in production")
+        allowed_hosts = self.external_http_allowed_host_set
+        if not allowed_hosts:
+            raise ValueError("at least one external HTTP host must be allowed in production")
+        _validate_production_external_url(
+            name="MPLACAS_NEP_BASE_URL",
+            url=str(self.nep_base_url),
+            allowed_hosts=allowed_hosts,
+        )
+        _validate_production_external_url(
+            name="MPLACAS_CLIMATE_ARCHIVE_BASE_URL",
+            url=str(self.climate_archive_base_url),
+            allowed_hosts=allowed_hosts,
+        )
+        if self.explanation_api_url is not None:
+            _validate_production_external_url(
+                name="MPLACAS_EXPLANATION_API_URL",
+                url=str(self.explanation_api_url),
+                allowed_hosts=allowed_hosts,
+            )
         return self
 
     def safe_summary(self) -> dict[str, object]:
@@ -120,6 +150,8 @@ class Settings(BaseSettings):
             "port": self.port,
             "timezone": self.timezone,
             "operational_auth_configured": self.operations_api_key is not None,
+            "operational_read_auth_configured": self.operations_read_api_key is not None,
+            "external_http_allowed_host_count": len(self.external_http_allowed_host_set),
         }
 
 
@@ -130,6 +162,20 @@ def _database_backend(database_url: str) -> str:
     if lowered.startswith("postgresql") or lowered.startswith("postgres"):
         return "postgresql"
     return "unknown"
+
+
+def _validate_production_external_url(
+    *,
+    name: str,
+    url: str,
+    allowed_hosts: frozenset[str],
+) -> None:
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https":
+        raise ValueError(f"{name} must use HTTPS in production")
+    if not host or host not in allowed_hosts:
+        raise ValueError(f"{name} host is not in MPLACAS_EXTERNAL_HTTP_ALLOWED_HOSTS")
 
 
 @lru_cache

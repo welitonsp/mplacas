@@ -1,7 +1,10 @@
 import asyncio
+import logging
 from pathlib import Path
+from time import monotonic
+from uuid import uuid4
 
-from fastapi import FastAPI, Response, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -19,11 +22,59 @@ from mplacas.reports.router import router as reports_router
 from mplacas.telegram.router import router as telegram_router
 from mplacas.web.router import router as web_router
 
+logger = logging.getLogger(__name__)
+_REQUEST_ID_HEADER = "X-Request-ID"
+_MAX_REQUEST_ID_LENGTH = 128
+
+
+def _normalize_request_id(value: str | None) -> str:
+    if value is None:
+        return uuid4().hex
+    cleaned = value.strip()
+    if not cleaned or len(cleaned) > _MAX_REQUEST_ID_LENGTH:
+        return uuid4().hex
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:")
+    if any(character not in allowed for character in cleaned):
+        return uuid4().hex
+    return cleaned
+
+
 app = FastAPI(
     title="Mplacas API",
     version=__version__,
     description="Inteligência, auditoria e gestão energética residencial.",
 )
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = _normalize_request_id(request.headers.get(_REQUEST_ID_HEADER))
+    request.state.request_id = request_id
+    started = monotonic()
+    response = await call_next(request)
+    duration_ms = max(0, round((monotonic() - started) * 1000))
+    response.headers[_REQUEST_ID_HEADER] = request_id
+    principal = getattr(request.state, "operations_principal", None)
+    audit_fields: dict[str, object] = {}
+    if principal is not None:
+        audit_fields = {
+            "operations_role": principal.role.value,
+            "operations_credential_id": principal.credential_id,
+        }
+    logger.info(
+        "http_request_completed",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": duration_ms,
+            **audit_fields,
+        },
+    )
+    return response
+
+
 app.include_router(operations_router)
 app.include_router(billing_router)
 app.include_router(telegram_router)

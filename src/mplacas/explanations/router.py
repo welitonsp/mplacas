@@ -7,7 +7,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from mplacas.core.config import get_settings
-from mplacas.core.security import require_operations_key
+from mplacas.core.security import require_operations_read
 from mplacas.db.session import SessionFactory
 from mplacas.explanations.executive import executive_explanation_request
 from mplacas.explanations.http_provider import StructuredHttpExplanationProvider
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/energy/explanations",
     tags=["explanations"],
-    dependencies=[Depends(require_operations_key)],
+    dependencies=[Depends(require_operations_read)],
 )
 
 
