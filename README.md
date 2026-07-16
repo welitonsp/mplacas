@@ -238,6 +238,7 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 - segurança de egress e request ID: `docs/ADR-030-production-egress-and-request-tracing.md`;
 - papel operacional somente leitura: `docs/ADR-031-operational-read-role-api-key.md`;
 - trilha auditável de credencial operacional: `docs/ADR-032-operational-credential-audit-trail.md`;
+- auditoria persistente de ações sensíveis: `docs/ADR-033-persistent-sensitive-action-audit.md`;
 - relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - auditoria técnica profunda: `docs/AUDITORIA_TECNICA_PROFUNDA_2026-07-16.md`;

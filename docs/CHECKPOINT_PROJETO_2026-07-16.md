@@ -58,8 +58,18 @@ Escopo implementado na fase de trilha operacional:
 
 Próximas melhorias ainda abertas:
 
+Escopo implementado na fase de auditoria persistente:
+
+1. criar tabela `audit_events`;
+2. registrar eventos de confirmação/rejeição de faturas;
+3. registrar sucesso/falha operacional de execução de pipeline;
+4. manter detalhes sem payloads privados ou segredos;
+5. documentar a decisão no ADR-033.
+
+Próximas melhorias ainda abertas:
+
 1. Evoluir de API keys para usuários/tenants/claims e escopo por `plant_id`.
-2. Criar auditoria persistente de ações de negócio sensíveis.
+2. Ampliar auditoria persistente para outras mutações administrativas.
 3. Migrar faturas legadas para `plant_id` obrigatório.
 4. Refatorar relatórios em módulos menores depois que a superfície operacional estiver estável.
 5. Adicionar métricas OpenTelemetry/Prometheus e alertas de SLO.
