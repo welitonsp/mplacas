@@ -4,11 +4,10 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mplacas.billing.db_models import BillStatus, UtilityBillRecord
-from mplacas.intelligence.cycle_service import analyze_persisted_cycle
+from mplacas.billing.read_repository import ConfirmedBillReadRepository
+from mplacas.intelligence.cycle_service import analyze_confirmed_cycle
 from mplacas.intelligence.trends import (
     EnergyCycleComparison,
     EnergyCycleSnapshot,
@@ -129,28 +128,18 @@ async def compare_latest_confirmed_cycles(
     plant_id: uuid.UUID,
     stable_tolerance_percent: Decimal = Decimal("2.0"),
 ) -> PersistedEnergyTrend:
-    bills = list(
-        (
-            await session.execute(
-                select(UtilityBillRecord)
-                .where(
-                    UtilityBillRecord.status == BillStatus.CONFIRMED,
-                    UtilityBillRecord.plant_id == plant_id,
-                )
-                .order_by(desc(UtilityBillRecord.cycle_end), desc(UtilityBillRecord.created_at))
-                .limit(2)
-            )
-        ).scalars()
-    )
+    bills = await ConfirmedBillReadRepository(session).two_latest(plant_id=plant_id)
     if len(bills) < 2:
         raise EnergyHistoryNotFoundError(
             "at least two confirmed bills are required for the requested plant"
         )
-    current_result = await analyze_persisted_cycle(
-        session, bill_id=bills[0].id, plant_id=plant_id
+    current_result = await analyze_confirmed_cycle(
+        session,
+        confirmed_bill=bills[0],
     )
-    previous_result = await analyze_persisted_cycle(
-        session, bill_id=bills[1].id, plant_id=plant_id
+    previous_result = await analyze_confirmed_cycle(
+        session,
+        confirmed_bill=bills[1],
     )
     comparison = compare_energy_cycles(
         current=_snapshot(current_result),

@@ -8,8 +8,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mplacas.billing.db_models import BillStatus, UtilityBillRecord
-from mplacas.billing.models import UtilityBill
+from mplacas.billing.read_repository import ConfirmedBill, ConfirmedBillReadRepository
 from mplacas.db.models import DailyEnergy, DataStatus, Device
 from mplacas.intelligence.energy_engine import EnergyCycleIntelligence, analyze_energy_cycle
 
@@ -35,22 +34,6 @@ class PersistedCycleIntelligence:
     intelligence: EnergyCycleIntelligence
 
 
-def _to_domain_bill(record: UtilityBillRecord) -> UtilityBill:
-    return UtilityBill(
-        distributor=record.distributor,
-        reference_month=record.reference_month,
-        cycle_start=record.cycle_start,
-        cycle_end=record.cycle_end,
-        billed_days=record.billed_days,
-        imported_kwh=record.imported_kwh,
-        injected_kwh=record.injected_kwh,
-        compensated_kwh=record.compensated_kwh,
-        credit_balance_kwh=record.credit_balance_kwh,
-        total_amount_brl=record.total_amount_brl,
-        public_lighting_brl=record.public_lighting_brl,
-    )
-
-
 async def analyze_persisted_cycle(
     session: AsyncSession,
     *,
@@ -58,18 +41,33 @@ async def analyze_persisted_cycle(
     plant_id: uuid.UUID,
     expected_production_kwh: Decimal | None = None,
 ) -> PersistedCycleIntelligence:
-    bill_record = await session.get(UtilityBillRecord, bill_id)
-    if bill_record is None or bill_record.status is not BillStatus.CONFIRMED:
+    confirmed_bill = await ConfirmedBillReadRepository(session).by_id(
+        bill_id,
+        plant_id=plant_id,
+    )
+    if confirmed_bill is None:
         raise EnergyCycleNotFoundError("confirmed bill not found for plant")
-    if bill_record.plant_id != plant_id:
-        raise EnergyCycleNotFoundError("confirmed bill not found for plant")
+    return await analyze_confirmed_cycle(
+        session,
+        confirmed_bill=confirmed_bill,
+        expected_production_kwh=expected_production_kwh,
+    )
+
+
+async def analyze_confirmed_cycle(
+    session: AsyncSession,
+    *,
+    confirmed_bill: ConfirmedBill,
+    expected_production_kwh: Decimal | None = None,
+) -> PersistedCycleIntelligence:
+    bill = confirmed_bill.bill
 
     rows = (
         await session.execute(
             select(DailyEnergy).join(Device).where(
-                Device.plant_id == plant_id,
-                DailyEnergy.production_date >= bill_record.cycle_start,
-                DailyEnergy.production_date <= bill_record.cycle_end,
+                Device.plant_id == confirmed_bill.plant_id,
+                DailyEnergy.production_date >= bill.cycle_start,
+                DailyEnergy.production_date <= bill.cycle_end,
             )
         )
     ).scalars().all()
@@ -79,8 +77,8 @@ async def analyze_persisted_cycle(
         by_date.setdefault(row.production_date, []).append(row)
 
     cycle_days = {
-        bill_record.cycle_start + timedelta(days=offset)
-        for offset in range(bill_record.billed_days)
+        bill.cycle_start + timedelta(days=offset)
+        for offset in range(bill.billed_days)
     }
     missing_days = len(cycle_days.difference(by_date))
     provisional_days = 0
@@ -105,16 +103,16 @@ async def analyze_persisted_cycle(
         unavailable_days=unavailable_days,
     )
     intelligence = analyze_energy_cycle(
-        bill=_to_domain_bill(bill_record),
+        bill=bill,
         cycle_production_kwh=production,
         expected_production_kwh=expected_production_kwh,
         missing_days=missing_days + incomplete_days + unavailable_days,
         provisional_days=provisional_days,
     )
     return PersistedCycleIntelligence(
-        bill_id=bill_record.id,
-        plant_id=plant_id,
-        reference_month=bill_record.reference_month,
+        bill_id=confirmed_bill.id,
+        plant_id=confirmed_bill.plant_id,
+        reference_month=bill.reference_month,
         quality=quality,
         intelligence=intelligence,
     )
