@@ -72,15 +72,20 @@ O projeto possui uma API FastAPI assíncrona com:
 - `GET /reports/monthly/latest.pdf`
 - `GET /reports/monthly/latest.xlsx`
 
-O relatório mensal usa o mesmo resultado determinístico do painel executivo. Cada indicador inclui
-valor, unidade, natureza e fonte. A resposta também registra mês de referência, identificadores da
-usina e da fatura, versão do esquema, versão do cálculo, qualidade dos dados, diagnósticos, ações
-prioritárias e tendência quando existem dois ciclos confirmados.
+O relatório mensal usa o mesmo resultado determinístico do painel executivo. Quando uma fatura é
+confirmada, o sistema persiste na mesma transação um snapshot canônico e imutável do relatório. Para
+faturas confirmadas antes dessa funcionalidade, a primeira leitura materializa o snapshot de forma
+idempotente. Cada indicador inclui valor, unidade, natureza e fonte. A resposta também registra mês
+de referência, identificadores da usina e da fatura, versão do esquema, versão do cálculo, qualidade
+dos dados, diagnósticos, ações prioritárias e tendência quando existem dois ciclos confirmados.
 
 O CSV usa UTF-8 com BOM. O PDF é paginado em A4 e registra as versões no rodapé. O XLSX possui abas
 separadas para resumo, indicadores, qualidade, diagnósticos, tendências e metadados. Nenhum desses
-formatos recalcula indicadores. Os downloads são entregues como anexos e não podem ser armazenados
-em cache pelo cliente.
+formatos recalcula indicadores: todos serializam o mesmo snapshot persistido. As respostas expõem o
+checksum canônico no `ETag` e o identificador em `X-Mplacas-Report-Snapshot`. Os downloads são
+entregues como anexos e não podem ser armazenados em cache pelo cliente. Os parâmetros legados
+`expected_production_kwh` e `stable_tolerance_percent` permanecem aceitos, porém estão descontinuados
+e não alteram snapshots.
 
 ### Clima e pipeline
 
@@ -247,6 +252,8 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 - auditoria persistente ampliada: `docs/ADR-034-expanded-administrative-audit-events.md`;
 - escopo obrigatorio de faturas por usina: `docs/ADR-035-mandatory-utility-bill-plant-scope.md`;
 - fronteira de leitura de faturas confirmadas: `docs/ADR-036-confirmed-billing-read-boundary.md`;
+- acesso de leitura escopado por usina: `docs/ADR-037-plant-scoped-operational-read-access.md`;
+- snapshots imutáveis de relatório: `docs/ADR-038-immutable-monthly-report-snapshots.md`;
 - relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - auditoria técnica profunda: `docs/AUDITORIA_TECNICA_PROFUNDA_2026-07-16.md`;

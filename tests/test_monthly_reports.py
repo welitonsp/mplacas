@@ -4,6 +4,7 @@ import csv
 import io
 import tomllib
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,6 +25,7 @@ from mplacas.reports.service import (
     build_latest_monthly_report,
     monthly_report_to_csv,
 )
+from mplacas.reports.snapshot import MonthlyReportSnapshot
 import mplacas.reports.router as reports_router
 import mplacas.reports.service as reports_service
 
@@ -161,6 +163,15 @@ def _report(plant_id: uuid.UUID) -> MonthlyEnergyReport:
     )
 
 
+def _snapshot(report: MonthlyEnergyReport) -> MonthlyReportSnapshot:
+    return MonthlyReportSnapshot(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000134"),
+        report=report,
+        payload_sha256="a" * 64,
+        created_at=datetime(2026, 7, 19, tzinfo=UTC),
+    )
+
+
 def test_package_version_matches_pyproject() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     assert __version__ == pyproject["project"]["version"] == "0.2.0"
@@ -215,12 +226,13 @@ def test_monthly_report_endpoints_are_protected_and_export_csv(monkeypatch) -> N
     monkeypatch.setenv("MPLACAS_OPERATIONS_READ_PLANT_IDS", str(plant_id))
     get_settings.cache_clear()
     report = _report(plant_id)
+    snapshot = _snapshot(report)
 
     async def fake_report(**kwargs):
         assert kwargs["plant_id"] == plant_id
-        assert kwargs["plant_scope"].allows(plant_id)
-        assert kwargs["plant_scope"].is_restricted
-        return report
+        assert kwargs["principal"].plant_scope.allows(plant_id)
+        assert kwargs["principal"].plant_scope.is_restricted
+        return snapshot
 
     monkeypatch.setattr(reports_router, "_build_report", fake_report)
     monkeypatch.setattr(reports_router, "SessionFactory", lambda: FakeSession())
@@ -239,6 +251,8 @@ def test_monthly_report_endpoints_are_protected_and_export_csv(monkeypatch) -> N
     )
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
+    assert response.headers["etag"] == f'"{snapshot.payload_sha256}"'
+    assert response.headers["x-mplacas-report-snapshot"] == str(snapshot.id)
     payload = response.json()
     assert payload["calculation_version"] == "0.2.0"
     assert payload["metrics"][0]["source"] == "DAILY_ENERGY_AGGREGATE"
@@ -251,6 +265,7 @@ def test_monthly_report_endpoints_are_protected_and_export_csv(monkeypatch) -> N
     assert csv_response.status_code == 200
     assert csv_response.headers["cache-control"] == "no-store"
     assert csv_response.headers["x-content-type-options"] == "nosniff"
+    assert csv_response.headers["etag"] == f'"{snapshot.payload_sha256}"'
     assert "mplacas-monthly-2026-06" in csv_response.headers["content-disposition"]
     assert csv_response.content.startswith(b"\xef\xbb\xbf")
     assert "cycle_production_kwh" in csv_response.text

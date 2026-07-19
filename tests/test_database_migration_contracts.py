@@ -65,3 +65,19 @@ def test_utility_bill_plant_scope_migration_is_present() -> None:
     assert "UPDATE utility_bills SET plant_id = :plant_id WHERE plant_id IS NULL" in migration
     assert '"plant_id"' in migration
     assert "nullable=False" in migration
+
+
+def test_monthly_report_snapshot_migration_is_present() -> None:
+    migration = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "20260719_0011_add_monthly_report_snapshots.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'down_revision = "20260716_0010"' in migration
+    assert '"monthly_report_snapshots"' in migration
+    assert '"payload_json"' in migration
+    assert '"payload_sha256"' in migration
+    assert 'sa.UniqueConstraint("bill_id"' in migration
+    assert '"ix_monthly_report_snapshots_plant_reference"' in migration

@@ -16,6 +16,7 @@ from mplacas.db import models  # noqa: F401
 from mplacas.db.base import Base
 from mplacas.operations import models as operation_models  # noqa: F401
 from mplacas.orchestration import db_models as orchestration_models  # noqa: F401
+from mplacas.reports import db_models as report_models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import uuid
 import zipfile
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -24,6 +25,7 @@ from mplacas.reports.service import (
     ReportMetric,
     ReportTrendMetric,
 )
+from mplacas.reports.snapshot import MonthlyReportSnapshot
 
 
 def _sample_report() -> MonthlyEnergyReport:
@@ -181,11 +183,17 @@ def test_pdf_and_xlsx_endpoints_are_protected_downloads(monkeypatch) -> None:
     monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-key")
     get_settings.cache_clear()
     report = _sample_report()
+    snapshot = MonthlyReportSnapshot(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000135"),
+        report=report,
+        payload_sha256="b" * 64,
+        created_at=datetime(2026, 7, 19, tzinfo=UTC),
+    )
 
     async def fake_report(**kwargs):
         assert kwargs["plant_id"] == report.plant_id
         assert kwargs["expected_production_kwh"] == Decimal("120")
-        return report
+        return snapshot
 
     monkeypatch.setattr(reports_router, "_build_report", fake_report)
     client = TestClient(app)
@@ -211,6 +219,8 @@ def test_pdf_and_xlsx_endpoints_are_protected_downloads(monkeypatch) -> None:
         assert response.headers["cache-control"] == "no-store"
         assert response.headers["pragma"] == "no-cache"
         assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["etag"] == f'"{snapshot.payload_sha256}"'
+        assert response.headers["x-mplacas-report-snapshot"] == str(snapshot.id)
         assert f"mplacas-monthly-2026-06-{report.plant_id}.{suffix}" in response.headers[
             "content-disposition"
         ]

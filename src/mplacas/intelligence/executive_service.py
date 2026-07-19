@@ -17,6 +17,7 @@ from mplacas.intelligence.cycle_service import (
 from mplacas.intelligence.history_service import (
     EnergyHistoryNotFoundError,
     PersistedEnergyTrend,
+    compare_confirmed_cycle_with_previous,
     compare_latest_confirmed_cycles,
 )
 
@@ -102,9 +103,49 @@ async def build_executive_dashboard(
         )
     except EnergyHistoryNotFoundError:
         trend = None
+    return assemble_executive_dashboard(current=current, trend=trend)
+
+
+async def build_executive_dashboard_for_bill(
+    session: AsyncSession,
+    *,
+    bill_id: uuid.UUID,
+    plant_id: uuid.UUID,
+    expected_production_kwh: Decimal | None = None,
+    stable_tolerance_percent: Decimal = Decimal("2.0"),
+    plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE,
+) -> ExecutiveEnergyDashboard:
+    confirmed_bill = await ConfirmedBillReadRepository(
+        session,
+        plant_scope=plant_scope,
+    ).by_id(bill_id, plant_id=plant_id)
+    if confirmed_bill is None:
+        raise EnergyCycleNotFoundError("confirmed bill not found for plant")
+    current = await analyze_confirmed_cycle(
+        session,
+        confirmed_bill=confirmed_bill,
+        expected_production_kwh=expected_production_kwh,
+    )
+    try:
+        trend = await compare_confirmed_cycle_with_previous(
+            session,
+            current_bill=confirmed_bill,
+            stable_tolerance_percent=stable_tolerance_percent,
+            plant_scope=plant_scope,
+        )
+    except EnergyHistoryNotFoundError:
+        trend = None
+    return assemble_executive_dashboard(current=current, trend=trend)
+
+
+def assemble_executive_dashboard(
+    *,
+    current: PersistedCycleIntelligence,
+    trend: PersistedEnergyTrend | None,
+) -> ExecutiveEnergyDashboard:
     status = _status_for_cycle(current)
     return ExecutiveEnergyDashboard(
-        plant_id=plant_id,
+        plant_id=current.plant_id,
         status=status,
         current_cycle=current,
         trend=trend,

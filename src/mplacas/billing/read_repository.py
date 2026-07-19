@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import date
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,6 +76,29 @@ class ConfirmedBillReadRepository:
 
     async def two_latest(self, *, plant_id: uuid.UUID) -> tuple[ConfirmedBill, ...]:
         return await self._latest(plant_id=plant_id, limit=2)
+
+    async def previous_before(
+        self,
+        *,
+        plant_id: uuid.UUID,
+        cycle_end: date,
+    ) -> ConfirmedBill | None:
+        if not self._plant_scope.allows(plant_id):
+            return None
+        record = await self._session.scalar(
+            select(UtilityBillRecord)
+            .where(
+                UtilityBillRecord.plant_id == plant_id,
+                UtilityBillRecord.status == BillStatus.CONFIRMED,
+                UtilityBillRecord.cycle_end < cycle_end,
+            )
+            .order_by(
+                desc(UtilityBillRecord.cycle_end),
+                desc(UtilityBillRecord.created_at),
+            )
+            .limit(1)
+        )
+        return _to_confirmed_bill(record) if record is not None else None
 
     async def _latest(
         self,
