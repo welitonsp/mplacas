@@ -15,15 +15,15 @@ from mplacas.billing.read_repository import ConfirmedBillReadRepository
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError
 from mplacas.reports.db_models import MonthlyReportSnapshotRecord
-from mplacas.reports.service import (
+from mplacas.reports.contract import (
     MonthlyEnergyReport,
     MonthlyReportTrend,
     ReportDiagnostic,
     ReportMetric,
     ReportTrendMetric,
-    build_monthly_report_for_bill,
-    serialize_monthly_report,
 )
+from mplacas.reports.projection import build_monthly_report_for_bill
+from mplacas.reports.serialization import serialize_monthly_report
 
 
 class ReportSnapshotIntegrityError(ValueError):

@@ -15,7 +15,7 @@ from mplacas.reports.exporters import (
     build_monthly_report_pdf,
     build_monthly_report_xlsx,
 )
-from mplacas.reports.service import (
+from mplacas.reports.serialization import (
     monthly_report_to_csv,
     serialize_monthly_report,
 )

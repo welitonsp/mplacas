@@ -27,7 +27,7 @@ from mplacas.reports.service import (
 )
 from mplacas.reports.snapshot import MonthlyReportSnapshot
 import mplacas.reports.router as reports_router
-import mplacas.reports.service as reports_service
+import mplacas.reports.projection as reports_projection
 
 
 class FakeSession:
@@ -187,7 +187,7 @@ async def test_monthly_report_projects_the_existing_deterministic_dashboard(monk
         received.update(kwargs)
         return dashboard
 
-    monkeypatch.setattr(reports_service, "build_executive_dashboard", fake_dashboard)
+    monkeypatch.setattr(reports_projection, "build_executive_dashboard", fake_dashboard)
     report = await build_latest_monthly_report(
         object(),
         plant_id=plant_id,
