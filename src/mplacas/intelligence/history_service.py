@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mplacas.billing.read_repository import ConfirmedBillReadRepository
+from mplacas.billing.read_repository import ConfirmedBill, ConfirmedBillReadRepository
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.intelligence.cycle_service import analyze_confirmed_cycle
 from mplacas.intelligence.trends import (
@@ -138,13 +138,54 @@ async def compare_latest_confirmed_cycles(
         raise EnergyHistoryNotFoundError(
             "at least two confirmed bills are required for the requested plant"
         )
+    return await _compare_confirmed_bills(
+        session,
+        current_bill=bills[0],
+        previous_bill=bills[1],
+        stable_tolerance_percent=stable_tolerance_percent,
+    )
+
+
+async def compare_confirmed_cycle_with_previous(
+    session: AsyncSession,
+    *,
+    current_bill: ConfirmedBill,
+    stable_tolerance_percent: Decimal = Decimal("2.0"),
+    plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE,
+) -> PersistedEnergyTrend:
+    previous_bill = await ConfirmedBillReadRepository(
+        session,
+        plant_scope=plant_scope,
+    ).previous_before(
+        plant_id=current_bill.plant_id,
+        cycle_end=current_bill.bill.cycle_end,
+    )
+    if previous_bill is None:
+        raise EnergyHistoryNotFoundError(
+            "a previous confirmed bill is required for the requested plant"
+        )
+    return await _compare_confirmed_bills(
+        session,
+        current_bill=current_bill,
+        previous_bill=previous_bill,
+        stable_tolerance_percent=stable_tolerance_percent,
+    )
+
+
+async def _compare_confirmed_bills(
+    session: AsyncSession,
+    *,
+    current_bill: ConfirmedBill,
+    previous_bill: ConfirmedBill,
+    stable_tolerance_percent: Decimal,
+) -> PersistedEnergyTrend:
     current_result = await analyze_confirmed_cycle(
         session,
-        confirmed_bill=bills[0],
+        confirmed_bill=current_bill,
     )
     previous_result = await analyze_confirmed_cycle(
         session,
-        confirmed_bill=bills[1],
+        confirmed_bill=previous_bill,
     )
     comparison = compare_energy_cycles(
         current=_snapshot(current_result),
@@ -152,7 +193,7 @@ async def compare_latest_confirmed_cycles(
         stable_tolerance_percent=stable_tolerance_percent,
     )
     return PersistedEnergyTrend(
-        plant_id=plant_id,
+        plant_id=current_bill.plant_id,
         comparison=comparison,
         diagnostics=_diagnostics(comparison),
     )

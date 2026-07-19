@@ -118,3 +118,79 @@ def test_billing_intake_text_records_sanitized_audit_event(monkeypatch) -> None:
         "status": "PENDING_REVIEW",
     }
     get_settings.cache_clear()
+
+
+def test_billing_confirmation_materializes_snapshot_before_commit(monkeypatch) -> None:
+    _configure(monkeypatch)
+    plant_id = uuid.UUID("00000000-0000-0000-0000-000000000032")
+    bill_id = uuid.UUID("00000000-0000-0000-0000-000000000132")
+    snapshot_id = uuid.UUID("00000000-0000-0000-0000-000000000134")
+    record = SimpleNamespace(
+        id=bill_id,
+        plant_id=plant_id,
+        distributor="EQUATORIAL_GO",
+        reference_month="2026-06",
+        cycle_start=date(2026, 5, 18),
+        cycle_end=date(2026, 6, 16),
+        billed_days=30,
+        imported_kwh=Decimal("278.000"),
+        injected_kwh=Decimal("182.000"),
+        compensated_kwh=Decimal("278.000"),
+        credit_balance_kwh=Decimal("63.980"),
+        total_amount_brl=Decimal("80.21"),
+        public_lighting_brl=Decimal("30.21"),
+        status=BillStatus.PENDING_REVIEW,
+        created_at=None,
+        reviewed_at=None,
+    )
+
+    class FakeConfirmRepository:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        async def get(self, record_id, *, plant_id):
+            assert record_id == bill_id
+            assert plant_id == record.plant_id
+            return record
+
+        async def confirm(self, target):
+            target.status = BillStatus.CONFIRMED
+            return target
+
+    async def fake_materialize(session, *, bill_id, plant_id):
+        assert bill_id == record.id
+        assert plant_id == record.plant_id
+        assert record.status is BillStatus.CONFIRMED
+        return SimpleNamespace(
+            id=snapshot_id,
+            payload_sha256="c" * 64,
+            report=SimpleNamespace(schema_version="1.0", calculation_version="0.2.0"),
+        )
+
+    monkeypatch.setattr(billing_router, "SessionFactory", lambda: FakeSession())
+    monkeypatch.setattr(billing_router, "UtilityBillRepository", FakeConfirmRepository)
+    monkeypatch.setattr(
+        billing_router,
+        "materialize_monthly_report_snapshot",
+        fake_materialize,
+    )
+    FakeAuditEventRepository.events = []
+    monkeypatch.setattr(billing_router, "AuditEventRepository", FakeAuditEventRepository)
+
+    response = TestClient(app).post(
+        f"/billing/{bill_id}/confirm",
+        headers={"X-API-Key": "synthetic-key"},
+        params={"plant_id": str(plant_id)},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["report_snapshot"] == {
+        "id": str(snapshot_id),
+        "sha256": "c" * 64,
+        "schema_version": "1.0",
+        "calculation_version": "0.2.0",
+    }
+    details = FakeAuditEventRepository.events[-1]["details"]
+    assert details["report_snapshot_id"] == str(snapshot_id)
+    assert details["report_snapshot_sha256"] == "c" * 64
+    get_settings.cache_clear()

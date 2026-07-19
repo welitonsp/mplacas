@@ -14,6 +14,7 @@ from mplacas.core.config import get_settings
 from mplacas.core.security import require_operations_key
 from mplacas.db.models import Plant
 from mplacas.db.session import SessionFactory
+from mplacas.reports.snapshot import materialize_monthly_report_snapshot
 
 router = APIRouter(
     prefix="/billing",
@@ -138,6 +139,11 @@ async def confirm_bill(
             await repository.confirm(record)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        report_snapshot = await materialize_monthly_report_snapshot(
+            session,
+            bill_id=record.id,
+            plant_id=record.plant_id,
+        )
         await AuditEventRepository(session).record(
             request,
             action="billing.confirm",
@@ -147,11 +153,22 @@ async def confirm_bill(
             details={
                 "plant_id": str(record.plant_id),
                 "reference_month": record.reference_month,
+                "report_snapshot_id": str(report_snapshot.id),
+                "report_snapshot_sha256": report_snapshot.payload_sha256,
             },
         )
         await session.commit()
         await session.refresh(record)
-    return {"status": "confirmed", "bill": _serialize(record)}
+    return {
+        "status": "confirmed",
+        "bill": _serialize(record),
+        "report_snapshot": {
+            "id": str(report_snapshot.id),
+            "sha256": report_snapshot.payload_sha256,
+            "schema_version": report_snapshot.report.schema_version,
+            "calculation_version": report_snapshot.report.calculation_version,
+        },
+    }
 
 
 @router.post("/{bill_id}/reject")
