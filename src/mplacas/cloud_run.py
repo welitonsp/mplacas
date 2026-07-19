@@ -1,23 +1,35 @@
 from __future__ import annotations
 
-import logging
-
 import uvicorn
 
 from mplacas.core.config import get_settings
+from mplacas.observability.tracing import configure_observability
 
 
 def main() -> int:
     settings = get_settings()
-    logging.basicConfig(level=settings.log_level)
-    uvicorn.run(
-        "mplacas.main:app",
-        host="0.0.0.0",
-        port=settings.port,
-        proxy_headers=True,
-        forwarded_allow_ips="*",
-        log_level=settings.log_level.lower(),
+    from mplacas.db.session import engine
+    from mplacas.main import app
+
+    observability = configure_observability(
+        settings=settings,
+        service_name="mplacas-api",
+        app=app,
+        engine=engine,
     )
+    try:
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=settings.port,
+            proxy_headers=True,
+            forwarded_allow_ips="*",
+            log_level=settings.log_level.lower(),
+            log_config=None,
+            access_log=False,
+        )
+    finally:
+        observability.shutdown()
     return 0
 
 

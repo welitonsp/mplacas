@@ -120,6 +120,7 @@ O script:
 - confirma que o billing está habilitado;
 - habilita somente as APIs declaradas;
 - cria a service account de runtime quando ausente;
+- concede à identidade de runtime somente `roles/cloudtrace.agent` para exportar spans;
 - não cria chave de service account.
 
 ## 5. Criar ou rotacionar segredos
@@ -162,6 +163,7 @@ O deploy:
 - não requer Docker local;
 - usa a service account dedicada;
 - injeta os dois segredos pelo Secret Manager;
+- habilita logs JSON e exportação amostrada de spans para o Cloud Trace do projeto;
 - fixa min 0, max 1, CPU 1 e memória 512 MiB;
 - publica o serviço HTTP;
 - valida os limites reais da revisão após a implantação.
@@ -213,6 +215,10 @@ A verificação exige:
 - CPU 1;
 - memória 512 MiB;
 - service account esperada.
+
+As respostas também devem conter `X-Request-ID` e `X-Trace-ID`. No Cloud Logging, filtre por
+`jsonPayload.trace_id` e use o link de trace associado para inspecionar FastAPI, SQLAlchemy, HTTPX e
+as etapas do pipeline.
 
 ## 9. Auditar custos e recursos proibidos
 

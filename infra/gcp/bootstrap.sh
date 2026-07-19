@@ -25,5 +25,6 @@ validate_billing_enabled
 gcloud services enable "${MPLACAS_REQUIRED_APIS[@]}" \
   --project "$GCP_PROJECT_ID"
 ensure_runtime_service_account
+ensure_runtime_trace_access
 
 log "bootstrap completed without creating service-account keys"

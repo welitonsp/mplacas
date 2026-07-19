@@ -16,6 +16,7 @@ from mplacas.climate.collection_service import (
     collect_and_persist_daily_climate,
 )
 from mplacas.climate.provider import ClimateProvider
+from mplacas.observability.operations import observe_operation
 
 logger = logging.getLogger(__name__)
 
@@ -56,25 +57,51 @@ async def run_daily_energy_pipeline(
     if not alert_destination_ref.strip():
         raise ValueError("alert destination reference is required")
 
-    climate = await collect_and_persist_daily_climate(
-        session,
-        plant_id=plant_id,
-        provider=climate_provider,
-        start_date=target_date,
-        end_date=target_date,
-        maximum_days=1,
-    )
-    alerts = await run_operational_alert_pipeline(
-        session,
-        plant_id=plant_id,
-        provider=alert_provider,
-        destination_ref=alert_destination_ref,
-        expected_daily_production_kwh=expected_daily_production_kwh,
-        expected_cycle_production_kwh=expected_cycle_production_kwh,
-        anomaly_days=anomaly_days,
-        minimum_severity=minimum_severity,
-        outbox_max_attempts=outbox_max_attempts,
-    )
+    operation_fields = {
+        "plant_id": str(plant_id),
+        "target_date": target_date.isoformat(),
+    }
+    with observe_operation(
+        logger,
+        "daily_pipeline.climate_collection",
+        **operation_fields,
+    ) as climate_operation:
+        climate = await collect_and_persist_daily_climate(
+            session,
+            plant_id=plant_id,
+            provider=climate_provider,
+            start_date=target_date,
+            end_date=target_date,
+            maximum_days=1,
+        )
+        climate_operation.add_result(
+            received=climate.received,
+            inserted=climate.persistence.inserted,
+            updated=climate.persistence.updated,
+            unchanged=climate.persistence.unchanged,
+        )
+    with observe_operation(
+        logger,
+        "daily_pipeline.alert_dispatch",
+        **operation_fields,
+    ) as alert_operation:
+        alerts = await run_operational_alert_pipeline(
+            session,
+            plant_id=plant_id,
+            provider=alert_provider,
+            destination_ref=alert_destination_ref,
+            expected_daily_production_kwh=expected_daily_production_kwh,
+            expected_cycle_production_kwh=expected_cycle_production_kwh,
+            anomaly_days=anomaly_days,
+            minimum_severity=minimum_severity,
+            outbox_max_attempts=outbox_max_attempts,
+        )
+        alert_operation.add_result(
+            evaluated=alerts.metrics.evaluated,
+            sent=alerts.metrics.sent,
+            skipped=alerts.metrics.skipped,
+            failed=alerts.metrics.failed,
+        )
     logger.info(
         "daily_energy_pipeline_completed",
         extra={

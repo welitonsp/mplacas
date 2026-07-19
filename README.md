@@ -31,6 +31,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - explicações assistidas por IA com grounding e fallback determinístico;
 - alertas Telegram com outbox transacional, retry e deduplicação SQL;
 - orquestração diária com lock por usina/data, retomada após timeout e status consultável;
+- logs JSON correlacionados, trace ID ponta a ponta e spans OpenTelemetry no Cloud Trace;
 - imagem de produção e comandos de jobs prontos para implantação no Google Cloud Run;
 - automação segura de implantação pelo Google Cloud Shell, sem Docker ou `gcloud` no Windows;
 - CI com Ruff, Mypy, Pytest, validação Bash, ShellCheck e smoke test do contêiner.
@@ -205,6 +206,11 @@ eventos pendentes com lock, retry e backoff exponencial; ele deve ser executado 
 garantir recuperação mesmo quando o processo original termina após o commit. O Scheduler futuro
 deve acionar jobs autenticados por IAM, não endpoints administrativos públicos.
 
+Em produção, cada resposta inclui `X-Request-ID` e `X-Trace-ID`. Logs JSON carregam os campos
+especiais do Cloud Logging para navegação direta até o trace. FastAPI, SQLAlchemy, HTTPX e as etapas
+do pipeline são instrumentados quando `MPLACAS_CLOUD_TRACE_ENABLED=true`; a amostragem padrão é 10%.
+Query strings não entram nos spans e o token presente no path do Telegram é mascarado.
+
 Documentação operacional:
 
 - `docs/RUNBOOK_GOOGLE_CLOUD_DEPLOYMENT.md` — implantação completa pelo Cloud Shell;
@@ -260,6 +266,7 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 - snapshots imutáveis de relatório: `docs/ADR-038-immutable-monthly-report-snapshots.md`;
 - módulos focados de relatório: `docs/ADR-039-focused-monthly-report-modules.md`;
 - outbox transacional de alertas: `docs/ADR-040-transactional-alert-outbox.md`;
+- observabilidade estruturada e Cloud Trace: `docs/ADR-041-structured-observability-and-cloud-trace.md`;
 - relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - auditoria técnica profunda: `docs/AUDITORIA_TECNICA_PROFUNDA_2026-07-16.md`;

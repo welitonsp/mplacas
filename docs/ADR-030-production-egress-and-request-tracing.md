@@ -53,3 +53,8 @@ A entrega deve permanecer coberta por:
 - Mypy;
 - Pytest.
 
+## Evolução
+
+A correlação ponta a ponta, os logs JSON e a instrumentação OpenTelemetry foram adicionados pela
+ADR-041. As regras deste ADR para `X-Request-ID`, ausência de query string e não exposição de
+payloads continuam válidas.

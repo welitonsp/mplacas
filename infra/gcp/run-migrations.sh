@@ -30,7 +30,7 @@ gcloud run jobs deploy "$GCP_MIGRATION_JOB_NAME" \
   --max-retries 0 \
   --task-timeout 10m \
   --set-env-vars \
-    "MPLACAS_ENVIRONMENT=production,MPLACAS_TIMEZONE=${MPLACAS_TIMEZONE}" \
+    "MPLACAS_ENVIRONMENT=production,MPLACAS_TIMEZONE=${MPLACAS_TIMEZONE},MPLACAS_GCP_PROJECT_ID=${GCP_PROJECT_ID},MPLACAS_CLOUD_TRACE_ENABLED=true" \
   --set-secrets \
     "MPLACAS_DATABASE_URL=mplacas-database-url:latest,MPLACAS_OPERATIONS_API_KEY=mplacas-operations-api-key:latest" \
   --command python \

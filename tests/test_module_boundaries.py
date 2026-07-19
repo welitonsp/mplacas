@@ -59,3 +59,14 @@ def test_outbox_modules_remain_focused() -> None:
     }
 
     assert oversized == {}
+
+
+def test_observability_modules_remain_focused() -> None:
+    modules = Path("src/mplacas/observability").glob("*.py")
+    oversized = {
+        str(path): len(path.read_text(encoding="utf-8").splitlines())
+        for path in modules
+        if len(path.read_text(encoding="utf-8").splitlines()) > 300
+    }
+
+    assert oversized == {}

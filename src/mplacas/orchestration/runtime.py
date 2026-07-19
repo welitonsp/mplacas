@@ -17,6 +17,7 @@ from mplacas.orchestration.daily_pipeline import (
     run_daily_energy_pipeline,
 )
 from mplacas.orchestration.execution_repository import PipelineExecutionRepository
+from mplacas.observability.operations import observe_operation
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +56,24 @@ async def run_ledger_backed_daily_pipeline(
         raise ValueError("stale lock timeout must be positive")
 
     repository = PipelineExecutionRepository(session)
-    execution = await repository.acquire(
-        plant_id=plant_id,
-        target_date=target_date,
-        stale_after=timedelta(minutes=stale_lock_timeout_minutes),
-    )
+    common_fields = {
+        "plant_id": str(plant_id),
+        "target_date": target_date.isoformat(),
+    }
+    with observe_operation(
+        logger,
+        "daily_pipeline.acquire_execution",
+        **common_fields,
+    ) as acquire_operation:
+        execution = await repository.acquire(
+            plant_id=plant_id,
+            target_date=target_date,
+            stale_after=timedelta(minutes=stale_lock_timeout_minutes),
+        )
+        acquire_operation.add_result(
+            execution_id=str(execution.id),
+            attempt_count=execution.attempt_count,
+        )
     started = monotonic()
     try:
         await repository.mark_stage(execution, "CLIMATE_COLLECTION")
@@ -76,8 +90,14 @@ async def run_ledger_backed_daily_pipeline(
             minimum_severity=minimum_severity,
             outbox_max_attempts=outbox_max_attempts,
         )
-        await repository.mark_stage(execution, "FINALIZING")
-        await repository.succeed(execution)
+        with observe_operation(
+            logger,
+            "daily_pipeline.finalize_execution",
+            execution_id=str(execution.id),
+            **common_fields,
+        ):
+            await repository.mark_stage(execution, "FINALIZING")
+            await repository.succeed(execution)
     except Exception as exc:
         duration_ms = max(0, round((monotonic() - started) * 1000))
         await repository.fail(execution, error_code=_error_code(exc))

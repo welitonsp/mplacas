@@ -113,14 +113,26 @@ def test_cloud_run_uses_port_and_host(monkeypatch) -> None:
     get_settings.cache_clear()
     captured: dict[str, object] = {}
 
+    class FakeObservability:
+        def shutdown(self) -> None:
+            captured["observability_shutdown"] = True
+
+    def fake_observability(**kwargs):
+        captured["observability"] = kwargs
+        return FakeObservability()
+
     def fake_run(*args, **kwargs) -> None:
         captured["args"] = args
         captured.update(kwargs)
 
     monkeypatch.setattr(cloud_run.uvicorn, "run", fake_run)
+    monkeypatch.setattr(cloud_run, "configure_observability", fake_observability)
 
     assert cloud_run.main() == 0
     assert captured["host"] == "0.0.0.0"
     assert captured["port"] == 9090
     assert captured["proxy_headers"] is True
+    assert captured["access_log"] is False
+    assert captured["log_config"] is None
+    assert captured["observability_shutdown"] is True
     get_settings.cache_clear()

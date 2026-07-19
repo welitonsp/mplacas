@@ -10,6 +10,7 @@ readonly MPLACAS_REQUIRED_APIS=(
   "artifactregistry.googleapis.com"
   "secretmanager.googleapis.com"
   "iam.googleapis.com"
+  "cloudtrace.googleapis.com"
 )
 # shellcheck disable=SC2034
 readonly MPLACAS_SECRET_NAMES=(
@@ -194,6 +195,17 @@ ensure_runtime_service_account() {
     --description="Least-privilege runtime identity for Mplacas Cloud Run" \
     --project "$GCP_PROJECT_ID"
   log "runtime service account created"
+}
+
+ensure_runtime_trace_access() {
+  local member
+  member="serviceAccount:$(runtime_service_account_email)"
+  gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
+    --member="$member" \
+    --role="roles/cloudtrace.agent" \
+    --condition=None \
+    --quiet >/dev/null
+  log "runtime service account can write Cloud Trace spans"
 }
 
 api_enabled() {

@@ -16,6 +16,10 @@ from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
 from mplacas.explanations.router import router as explanations_router
 from mplacas.intelligence.router import router as intelligence_router
+from mplacas.observability.context import (
+    bind_correlation_context,
+    resolve_correlation_context,
+)
 from mplacas.operations.router import router as operations_router
 from mplacas.orchestration.router import router as orchestration_router
 from mplacas.reports.router import router as reports_router
@@ -24,6 +28,9 @@ from mplacas.web.router import router as web_router
 
 logger = logging.getLogger(__name__)
 _REQUEST_ID_HEADER = "X-Request-ID"
+_TRACE_ID_HEADER = "X-Trace-ID"
+_CLOUD_TRACE_HEADER = "X-Cloud-Trace-Context"
+_TRACEPARENT_HEADER = "traceparent"
 _MAX_REQUEST_ID_LENGTH = 128
 
 
@@ -49,34 +56,61 @@ app = FastAPI(
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     request_id = _normalize_request_id(request.headers.get(_REQUEST_ID_HEADER))
-    request.state.request_id = request_id
-    started = monotonic()
-    response = await call_next(request)
-    duration_ms = max(0, round((monotonic() - started) * 1000))
-    response.headers[_REQUEST_ID_HEADER] = request_id
-    principal = getattr(request.state, "operations_principal", None)
-    audit_fields: dict[str, object] = {}
-    if principal is not None:
-        audit_fields = {
-            "operations_role": principal.role.value,
-            "operations_credential_id": principal.credential_id,
-            "operations_plant_scope": (
-                "restricted" if principal.plant_scope.is_restricted else "unrestricted"
-            ),
-            "operations_plant_count": len(principal.plant_scope.plant_ids or ()),
-        }
-    logger.info(
-        "http_request_completed",
-        extra={
-            "request_id": request_id,
-            "method": request.method,
-            "path": request.url.path,
-            "status_code": response.status_code,
-            "duration_ms": duration_ms,
-            **audit_fields,
-        },
+    correlation = resolve_correlation_context(
+        cloud_trace_header=request.headers.get(_CLOUD_TRACE_HEADER),
+        traceparent_header=request.headers.get(_TRACEPARENT_HEADER),
+        request_id=request_id,
     )
-    return response
+    request.state.request_id = request_id
+    request.state.trace_id = correlation.trace_id
+    request.state.span_id = correlation.span_id
+    started = monotonic()
+    with bind_correlation_context(correlation):
+        try:
+            response = await call_next(request)
+        except Exception:
+            duration_ms = max(0, round((monotonic() - started) * 1000))
+            logger.exception(
+                "http_request_failed",
+                extra={
+                    "request_id": request_id,
+                    "trace_id": correlation.trace_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    "duration_ms": duration_ms,
+                },
+            )
+            raise
+        duration_ms = max(0, round((monotonic() - started) * 1000))
+        response.headers[_REQUEST_ID_HEADER] = request_id
+        response.headers[_TRACE_ID_HEADER] = correlation.trace_id
+        principal = getattr(request.state, "operations_principal", None)
+        audit_fields: dict[str, object] = {}
+        if principal is not None:
+            audit_fields = {
+                "operations_role": principal.role.value,
+                "operations_credential_id": principal.credential_id,
+                "operations_plant_scope": (
+                    "restricted" if principal.plant_scope.is_restricted else "unrestricted"
+                ),
+                "operations_plant_count": len(principal.plant_scope.plant_ids or ()),
+            }
+        logger.info(
+            "http_request_completed",
+            extra={
+                "request_id": request_id,
+                "trace_id": correlation.trace_id,
+                "span_id": correlation.span_id,
+                "trace_sampled": correlation.trace_sampled,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+                **audit_fields,
+            },
+        )
+        return response
 
 
 app.include_router(operations_router)

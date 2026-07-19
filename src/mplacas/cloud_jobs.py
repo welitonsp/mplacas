@@ -21,6 +21,13 @@ from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.climate.open_meteo import OpenMeteoHistoricalProvider
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
+from mplacas.db.session import engine as database_engine
+from mplacas.observability.context import (
+    bind_correlation_context,
+    new_correlation_context,
+)
+from mplacas.observability.tracing import configure_observability, traced_operation
+from opentelemetry.trace import Status, StatusCode
 from mplacas.orchestration.runtime import run_ledger_backed_daily_pipeline
 
 logger = logging.getLogger(__name__)
@@ -39,14 +46,38 @@ CommandRunner = Callable[[list[str], Mapping[str, str]], CommandResult]
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    try:
-        settings = get_settings()
-        logging.basicConfig(level=settings.log_level)
-        return int(args.handler(args))
-    except Exception as exc:
-        logger.error("cloud_job_failed", extra={"error_code": type(exc).__name__})
-        print(f"error: {_sanitize(str(exc), '')}", file=sys.stderr)
-        return 1
+    observability = None
+    correlation = new_correlation_context(request_id=f"job-{uuid.uuid4().hex}")
+    with bind_correlation_context(correlation):
+        try:
+            settings = get_settings()
+            observability = configure_observability(
+                settings=settings,
+                service_name=f"mplacas-job-{args.command}",
+                engine=database_engine,
+            )
+            with traced_operation("cloud_job", command=args.command) as span:
+                try:
+                    return int(args.handler(args))
+                except Exception as exc:
+                    span.record_exception(exc)
+                    span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
+                    logger.error(
+                        "cloud_job_failed",
+                        extra={
+                            "command": args.command,
+                            "error_code": type(exc).__name__,
+                        },
+                    )
+                    print(f"error: {_sanitize(str(exc), '')}", file=sys.stderr)
+                    return 1
+        except Exception as exc:
+            logger.error("cloud_job_bootstrap_failed", extra={"error_code": type(exc).__name__})
+            print(f"error: {_sanitize(str(exc), '')}", file=sys.stderr)
+            return 1
+        finally:
+            if observability is not None:
+                observability.shutdown()
 
 
 def _build_parser() -> argparse.ArgumentParser:

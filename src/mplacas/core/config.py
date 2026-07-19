@@ -26,6 +26,9 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MPLACAS_ENV", "MPLACAS_ENVIRONMENT"),
     )
     log_level: str = "INFO"
+    gcp_project_id: str | None = None
+    cloud_trace_enabled: bool = False
+    trace_sample_rate: float = 0.1
     timezone: str = "America/Sao_Paulo"
     database_url: str = Field(default="sqlite+aiosqlite:///./mplacas.db", repr=False)
     port: int = Field(default=8080, validation_alias="PORT")
@@ -110,6 +113,21 @@ class Settings(BaseSettings):
             raise ValueError("timeout must be positive")
         return value
 
+    @field_validator("trace_sample_rate")
+    @classmethod
+    def _validate_trace_sample_rate(cls, value: float) -> float:
+        if not 0 <= value <= 1:
+            raise ValueError("trace sample rate must be between 0 and 1")
+        return value
+
+    @field_validator("gcp_project_id")
+    @classmethod
+    def _normalize_gcp_project_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
     @field_validator("cloud_job_anomaly_days")
     @classmethod
     def _validate_anomaly_days(cls, value: int) -> int:
@@ -147,6 +165,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_environment(self) -> Settings:
+        if self.cloud_trace_enabled and self.gcp_project_id is None:
+            raise ValueError("Cloud Trace requires MPLACAS_GCP_PROJECT_ID")
         if self.operations_read_plant_ids is not None and (
             self.operations_read_api_key is None
             or not self.operations_read_api_key.get_secret_value().strip()
@@ -201,6 +221,9 @@ class Settings(BaseSettings):
             "database_backend": _database_backend(self.database_url),
             "port": self.port,
             "timezone": self.timezone,
+            "structured_logging": self.env == "production",
+            "cloud_trace_enabled": self.cloud_trace_enabled,
+            "trace_sample_rate": self.trace_sample_rate,
             "operational_auth_configured": self.operations_api_key is not None,
             "operational_read_auth_configured": self.operations_read_api_key is not None,
             "operational_read_plant_scope": read_scope,

@@ -97,6 +97,18 @@ def test_secret_access_is_scoped_to_each_secret() -> None:
     assert "roles/editor" not in script.lower()
 
 
+def test_runtime_trace_access_is_least_privilege_and_trace_api_is_enabled() -> None:
+    library = read("infra/gcp/lib.sh")
+    bootstrap = read("infra/gcp/bootstrap.sh")
+    deploy = read("infra/gcp/deploy-service.sh")
+
+    assert '"cloudtrace.googleapis.com"' in library
+    assert 'roles/cloudtrace.agent' in library
+    assert "ensure_runtime_trace_access" in bootstrap
+    assert "MPLACAS_GCP_PROJECT_ID=${GCP_PROJECT_ID}" in deploy
+    assert "MPLACAS_CLOUD_TRACE_ENABLED=true" in deploy
+
+
 def test_deploy_uses_cloud_build_source_and_revision_limits() -> None:
     script = read("infra/gcp/deploy-service.sh")
 

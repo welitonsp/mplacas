@@ -65,6 +65,9 @@ Variáveis não sensíveis:
 MPLACAS_ENVIRONMENT=production
 MPLACAS_TIMEZONE=America/Sao_Paulo
 MPLACAS_LOG_LEVEL=INFO
+MPLACAS_GCP_PROJECT_ID=<id-do-projeto>
+MPLACAS_CLOUD_TRACE_ENABLED=true
+MPLACAS_TRACE_SAMPLE_RATE=0.1
 MPLACAS_EXTERNAL_HTTP_ALLOWED_HOSTS=api.nepviewer.net,archive-api.open-meteo.com
 PORT=8080
 MPLACAS_READINESS_TIMEOUT_SECONDS=3
@@ -107,7 +110,7 @@ gcloud run deploy mplacas-api \
   --max-instances 1 \
   --memory 512Mi \
   --cpu 1 \
-  --set-env-vars MPLACAS_ENVIRONMENT=production,MPLACAS_TIMEZONE=America/Sao_Paulo \
+  --set-env-vars MPLACAS_ENVIRONMENT=production,MPLACAS_TIMEZONE=America/Sao_Paulo,MPLACAS_GCP_PROJECT_ID="$PROJECT_ID",MPLACAS_CLOUD_TRACE_ENABLED=true \
   --service-account "$RUNTIME_SERVICE_ACCOUNT"
 ```
 
@@ -177,6 +180,11 @@ migração somente quando a versão exigir.
 Use Cloud Logging. Os logs de aplicação registram códigos técnicos e metadados operacionais
 seguros. Eles não devem conter URL completa de banco, senha, token, PDF, fatura ou payload
 externo.
+
+Os logs de produção são JSON e incluem `request_id`, `trace_id`, `span_id`, duração e contadores
+quando aplicáveis. O Cloud Logging reconhece os campos especiais de trace e permite navegar para a
+árvore correspondente no Cloud Trace. A API devolve `X-Trace-ID`; use esse valor para suporte e
+investigação. Query strings são removidas dos spans HTTP e o token do Telegram é mascarado.
 
 Falhas comuns:
 
