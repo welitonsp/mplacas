@@ -40,12 +40,12 @@ async def run_daily_energy_pipeline(
     expected_cycle_production_kwh: Decimal | None = None,
     anomaly_days: int = 7,
     minimum_severity: AlertSeverity = AlertSeverity.WARNING,
+    outbox_max_attempts: int = 10,
 ) -> DailyEnergyPipelineResult:
     """Collect climate data and dispatch alerts in one auditable execution.
 
-    Persistence remains idempotent in the climate repository and alert ledger.
-    The transaction is committed only by the caller, allowing an operational
-    endpoint or scheduler to decide the final transaction boundary.
+    Alert delivery intents are persisted atomically with climate changes before
+    the outbox dispatcher crosses the process boundary to Telegram.
     """
     if expected_daily_production_kwh <= 0:
         raise ValueError("expected daily production must be positive")
@@ -73,6 +73,7 @@ async def run_daily_energy_pipeline(
         expected_cycle_production_kwh=expected_cycle_production_kwh,
         anomaly_days=anomaly_days,
         minimum_severity=minimum_severity,
+        outbox_max_attempts=outbox_max_attempts,
     )
     logger.info(
         "daily_energy_pipeline_completed",

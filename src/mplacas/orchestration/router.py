@@ -72,6 +72,7 @@ async def run_pipeline(
                 anomaly_days=anomaly_days,
                 minimum_severity=minimum_severity,
                 stale_lock_timeout_minutes=settings.pipeline_stale_lock_timeout_minutes,
+                outbox_max_attempts=settings.outbox_max_attempts,
             )
             await AuditEventRepository(session).record(
                 request,

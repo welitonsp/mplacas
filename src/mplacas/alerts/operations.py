@@ -8,9 +8,12 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.alerts.candidates import build_alert_candidates
-from mplacas.alerts.job import AlertJobSummary, run_alert_dispatch_job
+from mplacas.alerts.job import AlertJobSummary
 from mplacas.alerts.models import AlertSeverity
-from mplacas.alerts.sql_ledger import SqlAlertDeliveryLedger
+from mplacas.alerts.outbox import (
+    dispatch_alert_outbox_batch,
+    enqueue_alert_candidates,
+)
 from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.intelligence.anomaly_service import (
     AnomalyDataNotFoundError,
@@ -51,6 +54,7 @@ async def run_operational_alert_pipeline(
     expected_cycle_production_kwh: Decimal | None = None,
     anomaly_days: int = 7,
     minimum_severity: AlertSeverity = AlertSeverity.WARNING,
+    outbox_max_attempts: int = 10,
 ) -> AlertPipelineResult:
     executive = None
     anomalies = None
@@ -75,16 +79,22 @@ async def run_operational_alert_pipeline(
         logger.info("alert_pipeline_anomaly_unavailable", extra={"plant_id": str(plant_id)})
 
     candidates = build_alert_candidates(executive=executive, anomalies=anomalies)
-    ledger = SqlAlertDeliveryLedger(
+    outbox_batch = await enqueue_alert_candidates(
         session,
+        plant_id=plant_id,
         provider="telegram",
         destination_ref=destination_ref,
-    )
-    job = await run_alert_dispatch_job(
-        candidates,
-        provider=provider,
-        ledger=ledger,
+        alerts=candidates,
         minimum_severity=minimum_severity,
+    )
+    # Commit domain changes and delivery intents atomically before crossing process boundaries.
+    await session.commit()
+    job = await dispatch_alert_outbox_batch(
+        session,
+        batch=outbox_batch,
+        provider=provider,
+        destination_ref=destination_ref,
+        max_attempts=outbox_max_attempts,
     )
     duplicates = sum(item.reason == "duplicate alert" for item in job.results)
     below_minimum = sum(item.reason == "below minimum severity" for item in job.results)
