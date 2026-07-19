@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from pydantic import ValidationError
 
@@ -95,3 +97,40 @@ def test_development_and_test_allow_sqlite() -> None:
     assert development.env == "development"
     assert test.env == "test"
     assert development.safe_summary()["database_backend"] == "sqlite"
+
+
+def test_read_credential_plant_scope_is_normalized_without_exposing_ids() -> None:
+    first = uuid.UUID("00000000-0000-0000-0000-000000000040")
+    second = uuid.UUID("00000000-0000-0000-0000-000000000041")
+    settings = Settings(
+        _env_file=None,
+        operations_read_api_key="synthetic-read-key",
+        operations_read_plant_ids=f" {first}, {second}, {first} ",
+    )
+
+    assert settings.operations_read_plant_id_set == frozenset({first, second})
+    assert settings.safe_summary()["operational_read_plant_scope"] == "restricted"
+    assert settings.safe_summary()["operational_read_plant_count"] == 2
+    assert str(first) not in repr(settings.safe_summary())
+
+
+def test_read_credential_plant_scope_rejects_invalid_or_unbound_configuration() -> None:
+    with pytest.raises(ValidationError, match="at least one UUID"):
+        Settings(
+            _env_file=None,
+            operations_read_api_key="synthetic-read-key",
+            operations_read_plant_ids=" , ",
+        )
+
+    with pytest.raises(ValidationError, match="invalid UUID"):
+        Settings(
+            _env_file=None,
+            operations_read_api_key="synthetic-read-key",
+            operations_read_plant_ids="not-a-uuid",
+        )
+
+    with pytest.raises(ValidationError, match="requires an operational read API key"):
+        Settings(
+            _env_file=None,
+            operations_read_plant_ids="00000000-0000-0000-0000-000000000040",
+        )

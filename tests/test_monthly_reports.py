@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mplacas import __version__
+from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE
 from mplacas.core.config import get_settings
 from mplacas.main import app
 from mplacas.reports.service import (
@@ -187,6 +188,7 @@ async def test_monthly_report_projects_the_existing_deterministic_dashboard(monk
         "plant_id": plant_id,
         "expected_production_kwh": Decimal("120"),
         "stable_tolerance_percent": Decimal("3.0"),
+        "plant_scope": UNRESTRICTED_PLANT_SCOPE,
     }
     assert report.calculation_version == "0.2.0"
     assert report.reference_month == "2026-06"
@@ -207,13 +209,17 @@ async def test_monthly_report_projects_the_existing_deterministic_dashboard(monk
 
 
 def test_monthly_report_endpoints_are_protected_and_export_csv(monkeypatch) -> None:
-    monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-key")
-    get_settings.cache_clear()
     plant_id = uuid.UUID("00000000-0000-0000-0000-000000000033")
+    monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-admin-key")
+    monkeypatch.setenv("MPLACAS_OPERATIONS_READ_API_KEY", "synthetic-read-key")
+    monkeypatch.setenv("MPLACAS_OPERATIONS_READ_PLANT_IDS", str(plant_id))
+    get_settings.cache_clear()
     report = _report(plant_id)
 
     async def fake_report(**kwargs):
         assert kwargs["plant_id"] == plant_id
+        assert kwargs["plant_scope"].allows(plant_id)
+        assert kwargs["plant_scope"].is_restricted
         return report
 
     monkeypatch.setattr(reports_router, "_build_report", fake_report)
@@ -228,7 +234,7 @@ def test_monthly_report_endpoints_are_protected_and_export_csv(monkeypatch) -> N
 
     response = client.get(
         "/reports/monthly/latest",
-        headers={"X-API-Key": "synthetic-key"},
+        headers={"X-API-Key": "synthetic-read-key"},
         params={"plant_id": str(plant_id)},
     )
     assert response.status_code == 200
@@ -239,7 +245,7 @@ def test_monthly_report_endpoints_are_protected_and_export_csv(monkeypatch) -> N
 
     csv_response = client.get(
         "/reports/monthly/latest.csv",
-        headers={"X-API-Key": "synthetic-key"},
+        headers={"X-API-Key": "synthetic-read-key"},
         params={"plant_id": str(plant_id)},
     )
     assert csv_response.status_code == 200

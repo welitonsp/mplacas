@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from fastapi import HTTPException
 
@@ -39,10 +41,12 @@ def test_operations_auth_returns_admin_principal_for_admin_key() -> None:
 
 
 def test_operations_auth_returns_read_principal_for_read_key() -> None:
+    plant_id = uuid.UUID("00000000-0000-0000-0000-000000000040")
     principal = authenticate_operations_key(
         "read-key",
         admin_key="admin-key",
         read_key="read-key",
+        read_plant_ids=frozenset({plant_id}),
     )
 
     assert principal.role is OperationsRole.READ
@@ -50,6 +54,46 @@ def test_operations_auth_returns_read_principal_for_read_key() -> None:
     assert principal.can_read() is True
     assert principal.credential_id.startswith("operations:read:")
     assert "read-key" not in principal.credential_id
+    assert principal.plant_scope.is_restricted is True
+    assert principal.plant_scope.allows(plant_id) is True
+
+
+def test_restricted_principal_hides_out_of_scope_plant_and_denies_global_access() -> None:
+    allowed_plant_id = uuid.UUID("00000000-0000-0000-0000-000000000040")
+    denied_plant_id = uuid.UUID("00000000-0000-0000-0000-000000000041")
+    principal = authenticate_operations_key(
+        "read-key",
+        admin_key="admin-key",
+        read_key="read-key",
+        read_plant_ids=frozenset({allowed_plant_id}),
+    )
+
+    principal.require_plant_access(allowed_plant_id)
+    with pytest.raises(HTTPException) as plant_error:
+        principal.require_plant_access(denied_plant_id)
+    with pytest.raises(HTTPException) as global_error:
+        principal.require_unrestricted_access()
+
+    assert plant_error.value.status_code == 404
+    assert global_error.value.status_code == 403
+
+
+def test_admin_principal_remains_unrestricted_when_read_scope_is_configured() -> None:
+    principal = authenticate_operations_key(
+        "admin-key",
+        admin_key="admin-key",
+        read_key="read-key",
+        read_plant_ids=frozenset(
+            {uuid.UUID("00000000-0000-0000-0000-000000000040")}
+        ),
+    )
+
+    assert principal.role is OperationsRole.ADMIN
+    assert principal.plant_scope.is_restricted is False
+    principal.require_plant_access(
+        uuid.UUID("00000000-0000-0000-0000-000000000041")
+    )
+    principal.require_unrestricted_access()
 
 
 def test_operations_admin_auth_rejects_read_key() -> None:

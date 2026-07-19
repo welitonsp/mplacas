@@ -3,11 +3,12 @@ from __future__ import annotations
 import logging
 import uuid
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from mplacas.core.config import get_settings
-from mplacas.core.security import require_operations_read
+from mplacas.core.security import OperationsPrincipal, require_operations_read
 from mplacas.db.session import SessionFactory
 from mplacas.explanations.executive import executive_explanation_request
 from mplacas.explanations.http_provider import StructuredHttpExplanationProvider
@@ -21,16 +22,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/energy/explanations",
     tags=["explanations"],
-    dependencies=[Depends(require_operations_read)],
 )
 
 
 @router.get("/latest", status_code=status.HTTP_200_OK)
 async def latest_explanation(
+    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
     plant_id: uuid.UUID,
     expected_production_kwh: Decimal | None = Query(default=None, gt=0),
     stable_tolerance_percent: Decimal = Query(default=Decimal("2.0"), ge=0),
 ) -> dict[str, object]:
+    principal.require_plant_access(plant_id)
     settings = get_settings()
     provider: ExplanationProvider | None = None
     if settings.explanation_api_url is not None:
@@ -52,6 +54,7 @@ async def latest_explanation(
                 plant_id=plant_id,
                 expected_production_kwh=expected_production_kwh,
                 stable_tolerance_percent=stable_tolerance_percent,
+                plant_scope=principal.plant_scope,
             )
     except EnergyCycleNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

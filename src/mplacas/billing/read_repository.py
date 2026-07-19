@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.db_models import BillStatus, UtilityBillRecord
 from mplacas.billing.models import UtilityBill
+from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,8 +43,14 @@ def _to_confirmed_bill(record: UtilityBillRecord) -> ConfirmedBill:
 class ConfirmedBillReadRepository:
     """Single read boundary for plant-scoped confirmed utility bills."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE,
+    ) -> None:
         self._session = session
+        self._plant_scope = plant_scope
 
     async def by_id(
         self,
@@ -51,6 +58,8 @@ class ConfirmedBillReadRepository:
         *,
         plant_id: uuid.UUID,
     ) -> ConfirmedBill | None:
+        if not self._plant_scope.allows(plant_id):
+            return None
         record = await self._session.scalar(
             select(UtilityBillRecord).where(
                 UtilityBillRecord.id == bill_id,
@@ -73,6 +82,8 @@ class ConfirmedBillReadRepository:
         plant_id: uuid.UUID,
         limit: int,
     ) -> tuple[ConfirmedBill, ...]:
+        if not self._plant_scope.allows(plant_id):
+            return ()
         records = (
             await self._session.execute(
                 select(UtilityBillRecord)

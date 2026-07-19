@@ -60,6 +60,10 @@ async def request_id_middleware(request: Request, call_next):
         audit_fields = {
             "operations_role": principal.role.value,
             "operations_credential_id": principal.credential_id,
+            "operations_plant_scope": (
+                "restricted" if principal.plant_scope.is_restricted else "unrestricted"
+            ),
+            "operations_plant_count": len(principal.plant_scope.plant_ids or ()),
         }
     logger.info(
         "http_request_completed",

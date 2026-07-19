@@ -102,7 +102,11 @@ em cache pelo cliente.
 Os endpoints operacionais e administrativos exigem `X-API-Key`, exceto `/health`, `/ready` e a
 página estática `/dashboard`. `MPLACAS_OPERATIONS_API_KEY` tem papel administrativo; a chave opcional
 `MPLACAS_OPERATIONS_READ_API_KEY` permite apenas endpoints de leitura, como relatórios, energia,
-explicações e status operacional.
+explicações e status operacional. Para restringi-la a usinas específicas, configure
+`MPLACAS_OPERATIONS_READ_PLANT_IDS` com UUIDs separados por vírgula. Quando a lista é definida,
+recursos de outras usinas retornam `404` e as visões operacionais globais retornam `403`. Quando a
+lista é omitida, o comportamento global anterior é preservado. A chave administrativa permanece
+global nesta fase.
 
 ## Ciclo diário recomendado
 

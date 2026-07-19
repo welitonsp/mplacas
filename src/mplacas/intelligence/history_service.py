@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.read_repository import ConfirmedBillReadRepository
+from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.intelligence.cycle_service import analyze_confirmed_cycle
 from mplacas.intelligence.trends import (
     EnergyCycleComparison,
@@ -127,8 +128,12 @@ async def compare_latest_confirmed_cycles(
     *,
     plant_id: uuid.UUID,
     stable_tolerance_percent: Decimal = Decimal("2.0"),
+    plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE,
 ) -> PersistedEnergyTrend:
-    bills = await ConfirmedBillReadRepository(session).two_latest(plant_id=plant_id)
+    bills = await ConfirmedBillReadRepository(
+        session,
+        plant_scope=plant_scope,
+    ).two_latest(plant_id=plant_id)
     if len(bills) < 2:
         raise EnergyHistoryNotFoundError(
             "at least two confirmed bills are required for the requested plant"

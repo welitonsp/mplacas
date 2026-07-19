@@ -11,6 +11,7 @@ from typing import Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas import __version__
+from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.intelligence.executive_service import build_executive_dashboard
 
 REPORT_SCHEMA_VERSION = "1.0"
@@ -117,12 +118,14 @@ async def build_latest_monthly_report(
     plant_id: uuid.UUID,
     expected_production_kwh: Decimal | None = None,
     stable_tolerance_percent: Decimal = Decimal("2.0"),
+    plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE,
 ) -> MonthlyEnergyReport:
     dashboard = await build_executive_dashboard(
         session,
         plant_id=plant_id,
         expected_production_kwh=expected_production_kwh,
         stable_tolerance_percent=stable_tolerance_percent,
+        plant_scope=plant_scope,
     )
     current = dashboard.current_cycle
     intelligence = current.intelligence

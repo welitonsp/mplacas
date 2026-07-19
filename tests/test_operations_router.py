@@ -58,3 +58,20 @@ def test_operations_read_key_can_access_read_endpoint(monkeypatch, caplog) -> No
     assert matching[-1].operations_credential_id.startswith("operations:read:")
     assert "synthetic-read-key" not in matching[-1].operations_credential_id
     get_settings.cache_clear()
+
+
+def test_scoped_read_key_cannot_access_global_operational_endpoints(monkeypatch) -> None:
+    monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-admin-key")
+    monkeypatch.setenv("MPLACAS_OPERATIONS_READ_API_KEY", "synthetic-read-key")
+    monkeypatch.setenv(
+        "MPLACAS_OPERATIONS_READ_PLANT_IDS",
+        "00000000-0000-0000-0000-000000000040",
+    )
+    get_settings.cache_clear()
+    client = TestClient(app)
+
+    for path in ("/operations/jobs", "/operations/status"):
+        response = client.get(path, headers={"X-API-Key": "synthetic-read-key"})
+        assert response.status_code == 403
+
+    get_settings.cache_clear()

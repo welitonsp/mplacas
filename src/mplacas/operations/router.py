@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Query
 
-from mplacas.core.security import require_operations_read
+from mplacas.core.security import OperationsPrincipal, require_operations_read
 from mplacas.db.session import SessionFactory
 from mplacas.operations.repository import JobRunRepository
 from mplacas.operations.status import build_operational_status
@@ -10,12 +12,15 @@ from mplacas.operations.status import build_operational_status
 router = APIRouter(
     prefix="/operations",
     tags=["operational"],
-    dependencies=[Depends(require_operations_read)],
 )
 
 
 @router.get("/jobs")
-async def recent_jobs(limit: int = Query(default=20, ge=1, le=100)) -> dict[str, object]:
+async def recent_jobs(
+    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
+    limit: int = Query(default=20, ge=1, le=100),
+) -> dict[str, object]:
+    principal.require_unrestricted_access()
     async with SessionFactory() as session:
         runs = await JobRunRepository(session).list_recent(limit)
     return {
@@ -39,7 +44,11 @@ async def recent_jobs(limit: int = Query(default=20, ge=1, le=100)) -> dict[str,
 
 
 @router.get("/status")
-async def operational_status(limit: int = Query(default=100, ge=1, le=100)) -> dict[str, object]:
+async def operational_status(
+    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
+    limit: int = Query(default=100, ge=1, le=100),
+) -> dict[str, object]:
+    principal.require_unrestricted_access()
     async with SessionFactory() as session:
         repository = JobRunRepository(session)
         return await build_operational_status(repository, limit=limit)
