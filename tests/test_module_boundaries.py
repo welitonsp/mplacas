@@ -44,3 +44,18 @@ def test_report_core_modules_remain_focused() -> None:
     }
 
     assert oversized == {}
+
+
+def test_outbox_modules_remain_focused() -> None:
+    modules = (
+        Path("src/mplacas/alerts/outbox.py"),
+        Path("src/mplacas/events/outbox.py"),
+    )
+
+    oversized = {
+        str(path): len(path.read_text(encoding="utf-8").splitlines())
+        for path in modules
+        if len(path.read_text(encoding="utf-8").splitlines()) > 300
+    }
+
+    assert oversized == {}

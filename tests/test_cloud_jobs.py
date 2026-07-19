@@ -86,6 +86,7 @@ def test_daily_pipeline_uses_yesterday_in_configured_timezone(monkeypatch) -> No
     assert captured["plant_id"] == plant_id
     assert captured["target_date"].isoformat() == "2026-07-12"
     assert captured["expected_daily_production_kwh"] == Decimal("12.5")
+    assert captured["outbox_max_attempts"] == 10
     assert session.committed is True
     get_settings.cache_clear()
 
@@ -122,3 +123,45 @@ def test_daily_pipeline_help() -> None:
     with pytest.raises(SystemExit) as exc:
         main(["daily-pipeline", "--help"])
     assert exc.value.code == 0
+
+
+def test_outbox_dispatch_uses_configured_retry_policy(monkeypatch) -> None:
+    monkeypatch.setenv("MPLACAS_TELEGRAM_BOT_TOKEN", "synthetic-token")
+    monkeypatch.setenv("MPLACAS_TELEGRAM_ALERT_CHAT_ID", "synthetic-chat")
+    monkeypatch.setenv("MPLACAS_OUTBOX_DISPATCH_BATCH_SIZE", "25")
+    monkeypatch.setenv("MPLACAS_OUTBOX_MAX_ATTEMPTS", "7")
+    monkeypatch.setenv("MPLACAS_OUTBOX_STALE_LOCK_TIMEOUT_MINUTES", "9")
+    get_settings.cache_clear()
+    captured: dict[str, object] = {}
+
+    async def fake_dispatch(*args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(evaluated=2, sent=2, skipped=0, failed=0)
+
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", lambda: FakeSession())
+    monkeypatch.setattr(cloud_jobs, "dispatch_due_alert_outbox", fake_dispatch)
+
+    summary = cloud_jobs.asyncio.run(cloud_jobs.run_outbox_dispatch())
+
+    assert summary.sent == 2
+    assert captured["limit"] == 25
+    assert captured["max_attempts"] == 7
+    assert captured["stale_after"].total_seconds() == 9 * 60
+    assert captured["destination_ref"].startswith("telegram:")
+    get_settings.cache_clear()
+
+
+def test_outbox_dispatch_job_fails_when_delivery_is_rescheduled(monkeypatch) -> None:
+    monkeypatch.setenv("MPLACAS_TELEGRAM_BOT_TOKEN", "synthetic-token")
+    monkeypatch.setenv("MPLACAS_TELEGRAM_ALERT_CHAT_ID", "synthetic-chat")
+    get_settings.cache_clear()
+
+    async def fake_dispatch(*args, **kwargs):
+        return SimpleNamespace(evaluated=1, sent=0, skipped=0, failed=1)
+
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", lambda: FakeSession())
+    monkeypatch.setattr(cloud_jobs, "dispatch_due_alert_outbox", fake_dispatch)
+
+    with pytest.raises(RuntimeError, match="outbox deliveries failed"):
+        cloud_jobs.asyncio.run(cloud_jobs.run_outbox_dispatch())
+    get_settings.cache_clear()

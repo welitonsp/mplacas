@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.alerts.db_models import AlertDeliveryRecord
@@ -36,14 +39,24 @@ class SqlAlertDeliveryLedger:
     async def mark_sent(self, fingerprint: str) -> None:
         if not fingerprint.strip():
             raise ValueError("fingerprint cannot be blank")
-        self._session.add(
-            AlertDeliveryRecord(
-                fingerprint=fingerprint,
-                provider=self._provider,
-                destination_ref=self._destination_ref,
+        values = {
+            "id": uuid.uuid4(),
+            "fingerprint": fingerprint,
+            "provider": self._provider,
+            "destination_ref": self._destination_ref,
+        }
+        dialect = self._session.bind.dialect.name if self._session.bind is not None else ""
+        if dialect == "postgresql":
+            await self._session.execute(
+                postgresql_insert(AlertDeliveryRecord)
+                .values(**values)
+                .on_conflict_do_nothing(index_elements=["fingerprint"])
             )
-        )
-        try:
-            await self._session.commit()
-        except IntegrityError:
-            await self._session.rollback()
+        elif dialect == "sqlite":
+            await self._session.execute(
+                sqlite_insert(AlertDeliveryRecord)
+                .values(**values)
+                .on_conflict_do_nothing(index_elements=["fingerprint"])
+            )
+        else:
+            raise RuntimeError("alert delivery ledger requires PostgreSQL or SQLite")

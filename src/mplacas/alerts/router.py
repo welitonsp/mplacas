@@ -59,6 +59,7 @@ async def run_alerts(
             expected_cycle_production_kwh=expected_cycle_production_kwh,
             anomaly_days=anomaly_days,
             minimum_severity=minimum_severity,
+            outbox_max_attempts=settings.outbox_max_attempts,
         )
         await AuditEventRepository(session).record(
             request,

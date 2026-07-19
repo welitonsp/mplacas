@@ -81,3 +81,21 @@ def test_monthly_report_snapshot_migration_is_present() -> None:
     assert '"payload_sha256"' in migration
     assert 'sa.UniqueConstraint("bill_id"' in migration
     assert '"ix_monthly_report_snapshots_plant_reference"' in migration
+
+
+def test_transactional_outbox_migration_is_present() -> None:
+    migration = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "20260719_0012_add_transactional_outbox.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'down_revision = "20260719_0011"' in migration
+    assert '"outbox_events"' in migration
+    assert '"deduplication_key"' in migration
+    assert '"payload_sha256"' in migration
+    assert '"attempt_count"' in migration
+    assert '"available_at"' in migration
+    assert '"ix_outbox_events_status_available"' in migration
+    assert '"ix_outbox_events_dispatch"' in migration

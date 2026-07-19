@@ -14,6 +14,7 @@ from mplacas.climate import db_models as climate_models  # noqa: F401
 from mplacas.core.config import get_settings
 from mplacas.db import models  # noqa: F401
 from mplacas.db.base import Base
+from mplacas.events import db_models as event_models  # noqa: F401
 from mplacas.operations import models as operation_models  # noqa: F401
 from mplacas.orchestration import db_models as orchestration_models  # noqa: F401
 from mplacas.reports import db_models as report_models  # noqa: F401

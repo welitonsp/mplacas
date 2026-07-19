@@ -49,6 +49,7 @@ async def run_ledger_backed_daily_pipeline(
     anomaly_days: int = 7,
     minimum_severity: AlertSeverity = AlertSeverity.WARNING,
     stale_lock_timeout_minutes: int = 60,
+    outbox_max_attempts: int = 10,
 ) -> OperationalPipelineResult:
     if stale_lock_timeout_minutes < 1:
         raise ValueError("stale lock timeout must be positive")
@@ -73,6 +74,7 @@ async def run_ledger_backed_daily_pipeline(
             expected_cycle_production_kwh=expected_cycle_production_kwh,
             anomaly_days=anomaly_days,
             minimum_severity=minimum_severity,
+            outbox_max_attempts=outbox_max_attempts,
         )
         await repository.mark_stage(execution, "FINALIZING")
         await repository.succeed(execution)

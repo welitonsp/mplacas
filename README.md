@@ -29,7 +29,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - correlação climática e detecção de anomalias;
 - coleta histórica pelo Open-Meteo;
 - explicações assistidas por IA com grounding e fallback determinístico;
-- alertas Telegram com deduplicação SQL;
+- alertas Telegram com outbox transacional, retry e deduplicação SQL;
 - orquestração diária com lock por usina/data, retomada após timeout e status consultável;
 - imagem de produção e comandos de jobs prontos para implantação no Google Cloud Run;
 - automação segura de implantação pelo Google Cloud Shell, sem Docker ou `gcloud` no Windows;
@@ -196,10 +196,14 @@ Cloud Run Jobs disponíveis:
 ```bash
 python -m mplacas.cloud_jobs migrate
 python -m mplacas.cloud_jobs daily-pipeline
+python -m mplacas.cloud_jobs dispatch-outbox
 ```
 
 A migração é executada explicitamente por Cloud Run Job e nunca no startup do serviço web. O
-Scheduler futuro deve acionar jobs autenticados por IAM, não endpoints administrativos públicos.
+`daily-pipeline` persiste eventos de alerta antes da entrega externa. O `dispatch-outbox` recupera
+eventos pendentes com lock, retry e backoff exponencial; ele deve ser executado periodicamente para
+garantir recuperação mesmo quando o processo original termina após o commit. O Scheduler futuro
+deve acionar jobs autenticados por IAM, não endpoints administrativos públicos.
 
 Documentação operacional:
 
@@ -255,6 +259,7 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 - acesso de leitura escopado por usina: `docs/ADR-037-plant-scoped-operational-read-access.md`;
 - snapshots imutáveis de relatório: `docs/ADR-038-immutable-monthly-report-snapshots.md`;
 - módulos focados de relatório: `docs/ADR-039-focused-monthly-report-modules.md`;
+- outbox transacional de alertas: `docs/ADR-040-transactional-alert-outbox.md`;
 - relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - auditoria técnica profunda: `docs/AUDITORIA_TECNICA_PROFUNDA_2026-07-16.md`;

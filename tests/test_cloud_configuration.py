@@ -134,3 +134,11 @@ def test_read_credential_plant_scope_rejects_invalid_or_unbound_configuration() 
             _env_file=None,
             operations_read_plant_ids="00000000-0000-0000-0000-000000000040",
         )
+
+
+def test_outbox_policy_rejects_invalid_limits() -> None:
+    with pytest.raises(ValidationError, match="outbox dispatch batch size"):
+        Settings(_env_file=None, outbox_dispatch_batch_size=1001)
+
+    with pytest.raises(ValidationError, match="outbox retry and lock values"):
+        Settings(_env_file=None, outbox_max_attempts=0)

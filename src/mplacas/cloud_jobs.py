@@ -14,7 +14,9 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from mplacas.alerts.job import AlertJobSummary
 from mplacas.alerts.models import AlertSeverity
+from mplacas.alerts.outbox import dispatch_due_alert_outbox
 from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.climate.open_meteo import OpenMeteoHistoricalProvider
 from mplacas.core.config import get_settings
@@ -60,6 +62,12 @@ def _build_parser() -> argparse.ArgumentParser:
     daily = subparsers.add_parser("daily-pipeline", help="run the daily operational pipeline")
     daily.add_argument("--target-date", default=None, help="YYYY-MM-DD; defaults to yesterday")
     daily.set_defaults(handler=_handle_daily_pipeline)
+
+    outbox = subparsers.add_parser(
+        "dispatch-outbox",
+        help="deliver due transactional outbox events",
+    )
+    outbox.set_defaults(handler=_handle_outbox_dispatch)
     return parser
 
 
@@ -70,6 +78,11 @@ def _handle_migrate(_args: argparse.Namespace) -> int:
 def _handle_daily_pipeline(args: argparse.Namespace) -> int:
     target_date = args.target_date
     asyncio.run(run_daily_pipeline(target_date=target_date))
+    return 0
+
+
+def _handle_outbox_dispatch(_args: argparse.Namespace) -> int:
+    asyncio.run(run_outbox_dispatch())
     return 0
 
 
@@ -141,6 +154,7 @@ async def run_daily_pipeline(
                 anomaly_days=settings.cloud_job_anomaly_days,
                 minimum_severity=AlertSeverity.WARNING,
                 stale_lock_timeout_minutes=settings.pipeline_stale_lock_timeout_minutes,
+                outbox_max_attempts=settings.outbox_max_attempts,
             )
             await session.commit()
         except Exception:
@@ -150,6 +164,40 @@ async def run_daily_pipeline(
         "cloud_job_daily_pipeline_completed",
         extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
     )
+
+
+async def run_outbox_dispatch() -> AlertJobSummary:
+    settings = get_settings()
+    token = settings.telegram_bot_token
+    chat_id = settings.telegram_alert_chat_id
+    if token is None or not chat_id:
+        raise RuntimeError("Telegram alert delivery must be configured for outbox dispatch")
+    provider = TelegramAlertProvider(
+        bot_token=token.get_secret_value(),
+        chat_id=chat_id,
+        timeout_seconds=settings.request_timeout_seconds,
+    )
+    async with SessionFactory() as session:
+        summary = await dispatch_due_alert_outbox(
+            session,
+            provider=provider,
+            destination_ref=_destination_ref(chat_id),
+            limit=settings.outbox_dispatch_batch_size,
+            max_attempts=settings.outbox_max_attempts,
+            stale_after=timedelta(minutes=settings.outbox_stale_lock_timeout_minutes),
+        )
+    logger.info(
+        "cloud_job_outbox_dispatch_completed",
+        extra={
+            "evaluated": summary.evaluated,
+            "sent": summary.sent,
+            "skipped": summary.skipped,
+            "failed": summary.failed,
+        },
+    )
+    if summary.failed:
+        raise RuntimeError("one or more outbox deliveries failed")
+    return summary
 
 
 def _resolve_target_date(

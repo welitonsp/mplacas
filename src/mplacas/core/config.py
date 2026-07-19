@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     external_http_allowed_hosts: str = "api.nepviewer.net,archive-api.open-meteo.com"
     climate_maximum_backfill_days: int = 366
     pipeline_stale_lock_timeout_minutes: int = 60
+    outbox_stale_lock_timeout_minutes: int = 15
+    outbox_dispatch_batch_size: int = 100
+    outbox_max_attempts: int = 10
     explanation_api_url: HttpUrl | None = None
     explanation_api_key: SecretStr | None = None
     explanation_model: str | None = None
@@ -112,6 +115,20 @@ class Settings(BaseSettings):
     def _validate_anomaly_days(cls, value: int) -> int:
         if not 1 <= value <= 90:
             raise ValueError("cloud job anomaly days must be between 1 and 90")
+        return value
+
+    @field_validator("outbox_stale_lock_timeout_minutes", "outbox_max_attempts")
+    @classmethod
+    def _validate_positive_outbox_value(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("outbox retry and lock values must be positive")
+        return value
+
+    @field_validator("outbox_dispatch_batch_size")
+    @classmethod
+    def _validate_outbox_batch_size(cls, value: int) -> int:
+        if not 1 <= value <= 1000:
+            raise ValueError("outbox dispatch batch size must be between 1 and 1000")
         return value
 
     @field_validator("operations_read_plant_ids")
