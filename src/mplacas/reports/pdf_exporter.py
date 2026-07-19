@@ -20,7 +20,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from mplacas.reports.service import MonthlyEnergyReport, ReportMetric
+from mplacas.reports.contract import MonthlyEnergyReport, ReportMetric
 
 PDF_MEDIA_TYPE: Final = "application/pdf"
 

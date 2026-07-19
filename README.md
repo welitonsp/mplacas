@@ -254,6 +254,7 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 - fronteira de leitura de faturas confirmadas: `docs/ADR-036-confirmed-billing-read-boundary.md`;
 - acesso de leitura escopado por usina: `docs/ADR-037-plant-scoped-operational-read-access.md`;
 - snapshots imutáveis de relatório: `docs/ADR-038-immutable-monthly-report-snapshots.md`;
+- módulos focados de relatório: `docs/ADR-039-focused-monthly-report-modules.md`;
 - relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - auditoria técnica profunda: `docs/AUDITORIA_TECNICA_PROFUNDA_2026-07-16.md`;

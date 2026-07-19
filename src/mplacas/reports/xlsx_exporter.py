@@ -5,7 +5,7 @@ from typing import Any, Final
 
 import xlsxwriter
 
-from mplacas.reports.service import MonthlyEnergyReport, ReportMetric
+from mplacas.reports.contract import MonthlyEnergyReport, ReportMetric
 
 XLSX_MEDIA_TYPE: Final = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
