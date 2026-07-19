@@ -8,6 +8,7 @@ from enum import StrEnum
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.read_repository import ConfirmedBillReadRepository
+from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.intelligence.cycle_service import (
     EnergyCycleNotFoundError,
     PersistedCycleIntelligence,
@@ -78,8 +79,12 @@ async def build_executive_dashboard(
     plant_id: uuid.UUID,
     expected_production_kwh: Decimal | None = None,
     stable_tolerance_percent: Decimal = Decimal("2.0"),
+    plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE,
 ) -> ExecutiveEnergyDashboard:
-    latest_bill = await ConfirmedBillReadRepository(session).latest(plant_id=plant_id)
+    latest_bill = await ConfirmedBillReadRepository(
+        session,
+        plant_scope=plant_scope,
+    ).latest(plant_id=plant_id)
     if latest_bill is None:
         raise EnergyCycleNotFoundError("confirmed bill not found for plant")
     current = await analyze_confirmed_cycle(
@@ -93,6 +98,7 @@ async def build_executive_dashboard(
             session,
             plant_id=plant_id,
             stable_tolerance_percent=stable_tolerance_percent,
+            plant_scope=plant_scope,
         )
     except EnergyHistoryNotFoundError:
         trend = None

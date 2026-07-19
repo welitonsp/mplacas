@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.read_repository import ConfirmedBill, ConfirmedBillReadRepository
+from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.db.models import DailyEnergy, DataStatus, Device
 from mplacas.intelligence.energy_engine import EnergyCycleIntelligence, analyze_energy_cycle
 
@@ -40,8 +41,12 @@ async def analyze_persisted_cycle(
     bill_id: uuid.UUID,
     plant_id: uuid.UUID,
     expected_production_kwh: Decimal | None = None,
+    plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE,
 ) -> PersistedCycleIntelligence:
-    confirmed_bill = await ConfirmedBillReadRepository(session).by_id(
+    confirmed_bill = await ConfirmedBillReadRepository(
+        session,
+        plant_scope=plant_scope,
+    ).by_id(
         bill_id,
         plant_id=plant_id,
     )

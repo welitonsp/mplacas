@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from mplacas.billing.db_models import BillStatus, UtilityBillRecord
 from mplacas.billing.read_repository import ConfirmedBillReadRepository
+from mplacas.core.authorization import PlantScope
 from mplacas.db.base import Base
 from mplacas.db.models import Plant
 
@@ -130,5 +131,40 @@ async def test_reads_confirmed_bill_by_id_with_mandatory_plant_scope() -> None:
         assert result is not None
         assert result.id == confirmed.id
         assert result.bill.reference_month == "2026-06"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_read_repository_fails_closed_for_principal_outside_plant_scope() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as session:
+        allowed_plant = Plant(name="Allowed plant")
+        denied_plant = Plant(name="Denied plant")
+        session.add_all([allowed_plant, denied_plant])
+        await session.flush()
+        confirmed = _bill(
+            plant_id=denied_plant.id,
+            reference_month="2026-06",
+            cycle_end=date(2026, 6, 30),
+            status=BillStatus.CONFIRMED,
+            source_hash="f" * 64,
+            created_at=datetime(2026, 7, 1, tzinfo=UTC),
+        )
+        session.add(confirmed)
+        await session.commit()
+
+        repository = ConfirmedBillReadRepository(
+            session,
+            plant_scope=PlantScope.restricted({allowed_plant.id}),
+        )
+
+        assert await repository.by_id(confirmed.id, plant_id=denied_plant.id) is None
+        assert await repository.latest(plant_id=denied_plant.id) is None
+        assert await repository.two_latest(plant_id=denied_plant.id) == ()
 
     await engine.dispose()

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import uuid
 from dataclasses import dataclass
 from enum import StrEnum
 
 from fastapi import Header, HTTPException, Request, status
 
+from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.core.config import get_settings
 
 
@@ -19,12 +21,27 @@ class OperationsRole(StrEnum):
 class OperationsPrincipal:
     role: OperationsRole
     credential_id: str
+    plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE
 
     def can_read(self) -> bool:
         return self.role in {OperationsRole.ADMIN, OperationsRole.READ}
 
     def can_admin(self) -> bool:
         return self.role is OperationsRole.ADMIN
+
+    def require_plant_access(self, plant_id: uuid.UUID) -> None:
+        if not self.plant_scope.allows(plant_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="plant not found",
+            )
+
+    def require_unrestricted_access(self) -> None:
+        if self.plant_scope.is_restricted:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="operational credential is restricted to plant resources",
+            )
 
 
 def validate_operations_key(provided: str | None, configured: str | None) -> None:
@@ -56,6 +73,7 @@ def authenticate_operations_key(
     *,
     admin_key: str | None,
     read_key: str | None = None,
+    read_plant_ids: frozenset[uuid.UUID] | None = None,
     require_admin: bool = False,
 ) -> OperationsPrincipal:
     if not admin_key:
@@ -77,6 +95,11 @@ def authenticate_operations_key(
         return OperationsPrincipal(
             role=OperationsRole.READ,
             credential_id=_credential_id(role=OperationsRole.READ, secret=read_key),
+            plant_scope=(
+                PlantScope.restricted(read_plant_ids)
+                if read_plant_ids is not None
+                else UNRESTRICTED_PLANT_SCOPE
+            ),
         )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -108,6 +131,7 @@ async def require_operations_read(
         x_api_key,
         admin_key=_secret_value(settings.operations_api_key),
         read_key=_secret_value(settings.operations_read_api_key),
+        read_plant_ids=settings.operations_read_plant_id_set,
     )
     request.state.operations_principal = principal
     return principal
