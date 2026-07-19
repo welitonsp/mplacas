@@ -5,14 +5,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mplacas.billing.db_models import BillStatus, UtilityBillRecord
+from mplacas.billing.read_repository import ConfirmedBillReadRepository
 from mplacas.intelligence.cycle_service import (
     EnergyCycleNotFoundError,
     PersistedCycleIntelligence,
-    analyze_persisted_cycle,
+    analyze_confirmed_cycle,
 )
 from mplacas.intelligence.history_service import (
     EnergyHistoryNotFoundError,
@@ -80,21 +79,12 @@ async def build_executive_dashboard(
     expected_production_kwh: Decimal | None = None,
     stable_tolerance_percent: Decimal = Decimal("2.0"),
 ) -> ExecutiveEnergyDashboard:
-    latest_bill = await session.scalar(
-        select(UtilityBillRecord)
-        .where(
-            UtilityBillRecord.status == BillStatus.CONFIRMED,
-            UtilityBillRecord.plant_id == plant_id,
-        )
-        .order_by(desc(UtilityBillRecord.cycle_end), desc(UtilityBillRecord.created_at))
-        .limit(1)
-    )
+    latest_bill = await ConfirmedBillReadRepository(session).latest(plant_id=plant_id)
     if latest_bill is None:
         raise EnergyCycleNotFoundError("confirmed bill not found for plant")
-    current = await analyze_persisted_cycle(
+    current = await analyze_confirmed_cycle(
         session,
-        bill_id=latest_bill.id,
-        plant_id=plant_id,
+        confirmed_bill=latest_bill,
         expected_production_kwh=expected_production_kwh,
     )
     trend: PersistedEnergyTrend | None

@@ -242,6 +242,7 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 - auditoria persistente de ações sensíveis: `docs/ADR-033-persistent-sensitive-action-audit.md`;
 - auditoria persistente ampliada: `docs/ADR-034-expanded-administrative-audit-events.md`;
 - escopo obrigatorio de faturas por usina: `docs/ADR-035-mandatory-utility-bill-plant-scope.md`;
+- fronteira de leitura de faturas confirmadas: `docs/ADR-036-confirmed-billing-read-boundary.md`;
 - relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - auditoria técnica profunda: `docs/AUDITORIA_TECNICA_PROFUNDA_2026-07-16.md`;
