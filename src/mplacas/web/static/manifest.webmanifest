@@ -1,0 +1,19 @@
+{
+  "name": "Mplacas — Painel Executivo",
+  "short_name": "Mplacas",
+  "description": "Painel executivo de energia solar",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0a1f3d",
+  "theme_color": "#0a1f3d",
+  "orientation": "portrait-primary",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/dashboard-assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

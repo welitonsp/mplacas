@@ -69,7 +69,9 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem clamp(1rem, 4vw, 3rem);
+  padding: max(1rem, env(safe-area-inset-top)) clamp(1rem, 4vw, 3rem) 1rem;
+  padding-left:  max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-left));
+  padding-right: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-right));
   background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 100%);
   border-bottom: 1px solid rgba(255,255,255,.06);
   position: sticky;
@@ -77,7 +79,8 @@ body {
   z-index: 100;
   color: #fff;
 }
-.topbar-brand { display: flex; align-items: center; gap: .75rem }
+.topbar-brand { display: flex; align-items: center; gap: .75rem; min-width: 0 }
+.topbar-actions { display: flex; align-items: center; gap: .5rem; flex-shrink: 0 }
 .topbar-icon {
   display: flex; align-items: center; justify-content: center;
   width: 36px; height: 36px; flex-shrink: 0;
@@ -486,6 +489,41 @@ footer {
   .sk-hero { background: rgba(255,255,255,.025) }
 }
 
+/* ── Danger button (Sair) ────────────────────────────── */
+button.danger {
+  background: transparent;
+  color: rgba(255,255,255,.55);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: none;
+  font-size: .78rem;
+  padding: .5rem .85rem;
+}
+button.danger:hover {
+  background: rgba(220,38,38,.18);
+  border-color: rgba(220,38,38,.35);
+  color: #fca5a5;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ── Mobile touch & accessibility ───────────────────── */
+/* Prevent 300ms tap delay on interactive elements */
+button, input, a, label { touch-action: manipulation }
+/* Remove tap highlight flash */
+* { -webkit-tap-highlight-color: transparent }
+/* Prevent iOS from zooming in on input focus (min 16px) */
+input { font-size: max(16px, .9rem) }
+/* Ensure all interactive elements meet 44px touch target */
+button { min-height: 44px }
+input  { min-height: 44px }
+
+/* Safe area for content at page bottom (home bar on iOS) */
+footer {
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  padding-left:   max(2rem, env(safe-area-inset-left));
+  padding-right:  max(2rem, env(safe-area-inset-right));
+}
+
 /* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 900px) {
   .setup, .content-grid { grid-template-columns: 1fr }
@@ -496,11 +534,15 @@ footer {
 }
 @media (max-width: 580px) {
   main { width: calc(100% - 1rem); margin: .75rem auto }
-  .topbar { align-items: flex-start }
   .setup form, .metric-grid, .sk-grid { grid-template-columns: 1fr }
   .hero { flex-direction: column; align-items: flex-start }
   .panel, .metric-card { border-radius: 14px }
   .detail-list div { align-items: flex-start }
   .detail-list dd { text-align: right }
   .sk-body { grid-template-columns: 1fr }
+  /* Compact topbar text on small screens */
+  .topbar h1 { font-size: 1rem }
+  .eyebrow { display: none }
+  /* Full-width form button on mobile */
+  .setup form button { width: 100% }
 }

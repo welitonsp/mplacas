@@ -2,9 +2,15 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#0a1f3d">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Mplacas">
+  <link rel="manifest" href="/dashboard-assets/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/dashboard-assets/icon.svg">
   <title>Mplacas | Painel Executivo</title>
   <link rel="stylesheet" href="/dashboard-assets/dashboard.css">
 </head>
@@ -19,21 +25,24 @@
       </div>
       <div>
         <p class="eyebrow">MPLACAS</p>
-        <h1>Painel Executivo de Energia</h1>
+        <h1>Painel Executivo</h1>
       </div>
     </div>
-    <button id="refresh" class="secondary" type="button">Atualizar</button>
+    <div class="topbar-actions">
+      <button id="disconnect" class="secondary danger hidden" type="button" aria-label="Sair e limpar credenciais">Sair</button>
+      <button id="refresh" class="secondary hidden" type="button">Atualizar</button>
+    </div>
   </header>
 
   <main>
     <section id="setup" class="panel setup" aria-labelledby="setup-title">
       <div>
         <h2 id="setup-title">Conectar ao painel</h2>
-        <p>Informe o identificador da usina e a chave operacional. A chave permanece somente nesta aba.</p>
+        <p>Informe o identificador da usina e a chave operacional. As credenciais ficam salvas neste dispositivo.</p>
       </div>
       <form id="setup-form">
-        <label>Plant ID<input id="plant-id" name="plant-id" type="text" autocomplete="off" required></label>
-        <label>Chave operacional<input id="api-key" name="api-key" type="password" autocomplete="off" required></label>
+        <label>Plant ID<input id="plant-id" name="plant-id" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" required placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></label>
+        <label>Chave operacional<input id="api-key" name="api-key" type="password" autocomplete="current-password" required placeholder="chave-operacional"></label>
         <button type="submit">Carregar indicadores</button>
       </form>
     </section>
