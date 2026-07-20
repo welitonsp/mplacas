@@ -28,6 +28,10 @@ class OperationalUserRecord(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    password_hash: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
 
 
 class ApiCredentialRecord(Base):

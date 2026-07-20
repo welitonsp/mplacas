@@ -75,6 +75,21 @@ class Settings(BaseSettings):
     retention_climate_observations_days: int = 1825
     report_export_bucket: str | None = None
     report_export_url_ttl_seconds: int = 900
+    jwt_secret: SecretStr | None = None
+    jwt_algorithm: str = "HS256"
+    jwt_access_ttl_seconds: int = 900
+    jwt_refresh_ttl_seconds: int = 1_209_600
+    cors_allowed_origins: str | None = None
+
+    @property
+    def jwt_configured(self) -> bool:
+        return self.jwt_secret is not None
+
+    @property
+    def cors_allowed_origin_list(self) -> list[str]:
+        if not self.cors_allowed_origins:
+            return []
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
 
     @property
     def nep_configured(self) -> bool:

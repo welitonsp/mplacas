@@ -5,11 +5,13 @@ from time import monotonic
 from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from mplacas import __version__
 from mplacas.alerts.router import router as alerts_router
+from mplacas.auth.router import router as auth_router
 from mplacas.billing.router import router as billing_router
 from mplacas.climate.router import router as climate_router
 from mplacas.core.config import get_settings
@@ -53,6 +55,17 @@ app = FastAPI(
     version=__version__,
     description="Inteligência, auditoria e gestão energética residencial.",
 )
+
+_settings_for_startup = get_settings()
+_cors_origins = _settings_for_startup.cors_allowed_origin_list
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.middleware("http")
@@ -115,6 +128,7 @@ async def request_id_middleware(request: Request, call_next):
         return response
 
 
+app.include_router(auth_router)
 app.include_router(operations_router)
 app.include_router(credentials_router)
 app.include_router(users_router)

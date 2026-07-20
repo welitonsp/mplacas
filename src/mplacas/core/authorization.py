@@ -23,12 +23,19 @@ class PlantScope:
             raise ValueError("a restricted plant scope must contain at least one plant")
         return cls(plant_ids=normalized)
 
+    @classmethod
+    def empty(cls) -> Self:
+        """Deny-all scope for orgs that have no plants yet."""
+        return cls(plant_ids=frozenset())
+
     @property
     def is_restricted(self) -> bool:
         return self.plant_ids is not None
 
     def allows(self, plant_id: uuid.UUID) -> bool:
-        return self.plant_ids is None or plant_id in self.plant_ids
+        if self.plant_ids is None:
+            return True
+        return plant_id in self.plant_ids
 
 
 UNRESTRICTED_PLANT_SCOPE = PlantScope.unrestricted()
