@@ -24,6 +24,7 @@ from mplacas.collection.job import run_solar_collection
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
 from mplacas.db.session import engine as database_engine
+from mplacas.retention.service import RetentionService, RetentionWindows
 from mplacas.observability.context import (
     bind_correlation_context,
     new_correlation_context,
@@ -114,6 +115,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="reprocess deferred solar collection tasks",
     )
     drain.set_defaults(handler=_handle_drain_collection)
+
+    retention = subparsers.add_parser(
+        "retention",
+        help="purge terminal operational records past their retention window",
+    )
+    retention.set_defaults(handler=_handle_retention)
     return parser
 
 
@@ -139,6 +146,11 @@ def _handle_collect(args: argparse.Namespace) -> int:
 
 def _handle_drain_collection(_args: argparse.Namespace) -> int:
     asyncio.run(run_collection_drain())
+    return 0
+
+
+def _handle_retention(_args: argparse.Namespace) -> int:
+    asyncio.run(run_retention())
     return 0
 
 
@@ -169,6 +181,28 @@ async def run_collection(
     logger.info(
         "cloud_job_collection_completed",
         extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
+    )
+
+
+async def run_retention() -> None:
+    settings = get_settings()
+    windows = RetentionWindows(
+        job_runs_days=settings.retention_job_runs_days,
+        pipeline_executions_days=settings.retention_pipeline_executions_days,
+        outbox_events_days=settings.retention_outbox_events_days,
+        collection_tasks_days=settings.retention_collection_tasks_days,
+        alert_delivery_records_days=settings.retention_alert_delivery_records_days,
+    )
+    logger.info("cloud_job_retention_started")
+    async with SessionFactory() as session:
+        report = await RetentionService(session).purge(windows=windows)
+        await session.commit()
+    logger.info(
+        "cloud_job_retention_completed",
+        extra={
+            "total_deleted": report.total_deleted,
+            "by_table": {o.table: o.deleted for o in report.outcomes},
+        },
     )
 
 

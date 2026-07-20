@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     cloud_job_expected_daily_production_kwh: Decimal | None = None
     cloud_job_expected_cycle_production_kwh: Decimal | None = None
     cloud_job_anomaly_days: int = 7
+    retention_job_runs_days: int = 90
+    retention_pipeline_executions_days: int = 90
+    retention_outbox_events_days: int = 30
+    retention_collection_tasks_days: int = 30
+    retention_alert_delivery_records_days: int = 365
 
     @property
     def nep_configured(self) -> bool:

@@ -194,6 +194,22 @@ reagendado com backoff (ou marcado como falha após o máximo de tentativas) sem
 Agende no Cloud Scheduler com frequência maior que a coleta (por exemplo, de hora em hora), usando as
 mesmas credenciais `MPLACAS_NEP_ACCOUNT`/`MPLACAS_NEP_PASSWORD` e `MPLACAS_CLOUD_JOB_PLANT_NAME`.
 
+### Retenção de registros operacionais
+
+Um job de retenção remove registros terminais e antigos das tabelas operacionais, preservando dados
+de produção e registros ainda em andamento:
+
+```bash
+python -m mplacas.cloud_jobs retention
+```
+
+Janelas padrão (configuráveis): `job_runs` e `pipeline_executions` 90 dias; `outbox_events` e
+`collection_tasks` 30 dias; `alert_delivery_records` 365 dias (janela longa para não permitir
+reenvio de alerta antigo). Agende no Cloud Scheduler com baixa frequência (diária ou semanal).
+Variáveis: `MPLACAS_RETENTION_JOB_RUNS_DAYS`, `MPLACAS_RETENTION_PIPELINE_EXECUTIONS_DAYS`,
+`MPLACAS_RETENTION_OUTBOX_EVENTS_DAYS`, `MPLACAS_RETENTION_COLLECTION_TASKS_DAYS`,
+`MPLACAS_RETENTION_ALERT_DELIVERY_RECORDS_DAYS`.
+
 ## Cloud Scheduler
 
 Configure o Scheduler para acionar o Cloud Run Job com IAM, usando service account dedicada
