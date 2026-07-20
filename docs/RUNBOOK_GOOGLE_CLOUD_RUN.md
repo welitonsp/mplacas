@@ -181,6 +181,19 @@ Se a API estiver indisponível ou incompleta mesmo após o retry, o dia é enfil
 `collection_tasks` para nova tentativa, sem falhar em definitivo. Sem `--target-date`, o job usa o
 dia anterior em `MPLACAS_TIMEZONE`.
 
+### Drenagem dos dias deferidos
+
+Um segundo job reprocessa os dias que ficaram na fila após indisponibilidade persistente:
+
+```bash
+python -m mplacas.cloud_jobs drain-collection
+```
+
+Cada dia deferido é reprocessado isoladamente na sua própria transação: um que falhe de novo é
+reagendado com backoff (ou marcado como falha após o máximo de tentativas) sem afetar os demais.
+Agende no Cloud Scheduler com frequência maior que a coleta (por exemplo, de hora em hora), usando as
+mesmas credenciais `MPLACAS_NEP_ACCOUNT`/`MPLACAS_NEP_PASSWORD` e `MPLACAS_CLOUD_JOB_PLANT_NAME`.
+
 ## Cloud Scheduler
 
 Configure o Scheduler para acionar o Cloud Run Job com IAM, usando service account dedicada

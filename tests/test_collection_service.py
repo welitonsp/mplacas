@@ -33,7 +33,12 @@ class FakeProvider(SolarProvider):
         )
 
     async def get_daily_energy(
-        self, serial_number: str, start: date, end: date
+        self,
+        serial_number: str,
+        start: date,
+        end: date,
+        *,
+        expect_complete: bool = False,
     ) -> list[ProviderDailyEnergy]:
         assert serial_number == "SN-001"
         return [

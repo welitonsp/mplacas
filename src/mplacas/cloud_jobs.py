@@ -19,6 +19,7 @@ from mplacas.alerts.models import AlertSeverity
 from mplacas.alerts.outbox import dispatch_due_alert_outbox
 from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.climate.open_meteo import OpenMeteoHistoricalProvider
+from mplacas.collection.drain import drain_collection_queue
 from mplacas.collection.job import run_solar_collection
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
@@ -107,6 +108,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     collect.add_argument("--target-date", default=None, help="YYYY-MM-DD; defaults to yesterday")
     collect.set_defaults(handler=_handle_collect)
+
+    drain = subparsers.add_parser(
+        "drain-collection",
+        help="reprocess deferred solar collection tasks",
+    )
+    drain.set_defaults(handler=_handle_drain_collection)
     return parser
 
 
@@ -127,6 +134,11 @@ def _handle_outbox_dispatch(_args: argparse.Namespace) -> int:
 
 def _handle_collect(args: argparse.Namespace) -> int:
     asyncio.run(run_collection(target_date=args.target_date))
+    return 0
+
+
+def _handle_drain_collection(_args: argparse.Namespace) -> int:
+    asyncio.run(run_collection_drain())
     return 0
 
 
@@ -157,6 +169,24 @@ async def run_collection(
     logger.info(
         "cloud_job_collection_completed",
         extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
+    )
+
+
+async def run_collection_drain() -> None:
+    settings = get_settings()
+    plant_name = settings.cloud_job_plant_name
+    if plant_name is None or not plant_name.strip():
+        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
+    logger.info("cloud_job_collection_drain_started")
+    result = await drain_collection_queue(plant_name=plant_name)
+    logger.info(
+        "cloud_job_collection_drain_completed",
+        extra={
+            "claimed": result.claimed,
+            "completed": result.completed,
+            "rescheduled": result.rescheduled,
+            "failed": result.failed,
+        },
     )
 
 
