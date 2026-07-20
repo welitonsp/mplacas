@@ -37,6 +37,7 @@ def _to_confirmed_bill(record: UtilityBillRecord) -> ConfirmedBill:
             credit_balance_kwh=record.credit_balance_kwh,
             total_amount_brl=record.total_amount_brl,
             public_lighting_brl=record.public_lighting_brl,
+            generation_cycle_kwh=record.generation_cycle_kwh,
         ),
     )
 

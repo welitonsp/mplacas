@@ -66,7 +66,7 @@ async def run_alerts(
             action="alerts.run",
             resource_type="plant",
             resource_id=str(result.plant_id),
-            outcome="SUCCEEDED",
+            outcome="success",
             details={
                 "executive_available": result.executive_available,
                 "anomaly_available": result.anomaly_available,

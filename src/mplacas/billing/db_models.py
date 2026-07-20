@@ -66,6 +66,7 @@ class UtilityBillRecord(Base):
     public_lighting_brl: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), default=Decimal("0")
     )
+    generation_cycle_kwh: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), nullable=True)
     status: Mapped[BillStatus] = mapped_column(
         Enum(BillStatus), default=BillStatus.PENDING_REVIEW, index=True
     )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,11 +34,8 @@ class ClimateObservationRepository:
         if await self._session.get(Plant, plant_id) is None:
             raise ValueError("plant not found")
 
-        inserted = 0
-        updated = 0
-        unchanged = 0
-        seen: set[tuple[object, str]] = set()
-
+        seen: set[tuple[date, str]] = set()
+        validated: list[tuple[DailyClimateObservation, str]] = []
         for observation in observations:
             observation.validate()
             source = observation.source.strip()
@@ -49,50 +47,64 @@ class ClimateObservationRepository:
             if key in seen:
                 raise ValueError("duplicate climate observation in collection batch")
             seen.add(key)
+            validated.append((observation, source))
 
-            existing = await self._session.scalar(
+        if not validated:
+            return ClimateUpsertSummary(inserted=0, updated=0, unchanged=0)
+
+        # Single query loads all existing records for the batch dates/sources.
+        dates = [obs.observation_date for obs, _ in validated]
+        sources = list({src for _, src in validated})
+        existing_records = (
+            await self._session.scalars(
                 select(DailyClimateObservationRecord).where(
                     DailyClimateObservationRecord.plant_id == plant_id,
-                    DailyClimateObservationRecord.observation_date
-                    == observation.observation_date,
-                    DailyClimateObservationRecord.source == source,
+                    DailyClimateObservationRecord.observation_date.in_(dates),
+                    DailyClimateObservationRecord.source.in_(sources),
                 )
             )
-            values = (
+        ).all()
+        existing_map: dict[tuple[date, str], DailyClimateObservationRecord] = {
+            (r.observation_date, r.source): r for r in existing_records
+        }
+
+        inserted = 0
+        updated = 0
+        unchanged = 0
+
+        for observation, source in validated:
+            new_values = (
                 observation.irradiation_kwh_m2,
                 observation.cloud_cover_percent,
                 observation.precipitation_mm,
             )
+            existing = existing_map.get((observation.observation_date, source))
             if existing is None:
                 self._session.add(
                     DailyClimateObservationRecord(
                         plant_id=plant_id,
                         observation_date=observation.observation_date,
-                        irradiation_kwh_m2=values[0],
-                        cloud_cover_percent=values[1],
-                        precipitation_mm=values[2],
+                        irradiation_kwh_m2=new_values[0],
+                        cloud_cover_percent=new_values[1],
+                        precipitation_mm=new_values[2],
                         source=source,
                     )
                 )
                 inserted += 1
                 continue
 
-            current = (
+            current_values = (
                 existing.irradiation_kwh_m2,
                 existing.cloud_cover_percent,
                 existing.precipitation_mm,
             )
-            if current == values:
+            if current_values == new_values:
                 unchanged += 1
                 continue
-            existing.irradiation_kwh_m2 = values[0]
-            existing.cloud_cover_percent = values[1]
-            existing.precipitation_mm = values[2]
+            existing.irradiation_kwh_m2 = new_values[0]
+            existing.cloud_cover_percent = new_values[1]
+            existing.precipitation_mm = new_values[2]
             updated += 1
 
         await self._session.flush()
-        return ClimateUpsertSummary(
-            inserted=inserted,
-            updated=updated,
-            unchanged=unchanged,
-        )
+        return ClimateUpsertSummary(inserted=inserted, updated=updated, unchanged=unchanged)

@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import uuid
+from urllib.parse import urlsplit, urlunsplit
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -386,15 +387,16 @@ def _run_command(args: list[str], env: Mapping[str, str]) -> CommandResult:
 
 
 def _sanitize(message: str, database_url: str) -> str:
-    sanitized = message
-    if database_url:
-        sanitized = sanitized.replace(database_url, "<database-url>")
-    lowered = database_url.lower()
-    if "@" in database_url and ":" in database_url.split("@", maxsplit=1)[0]:
-        credentials = database_url.split("//", maxsplit=1)[-1].split("@", maxsplit=1)[0]
-        sanitized = sanitized.replace(credentials, "<credentials>")
-    if "password" in lowered:
-        sanitized = sanitized.replace("password", "<redacted>")
+    if not database_url:
+        return message
+    sanitized = message.replace(database_url, "<database-url>")
+    try:
+        parsed = urlsplit(database_url)
+        if parsed.netloc:
+            redacted = urlunsplit(parsed._replace(netloc="<redacted>"))
+            sanitized = sanitized.replace(database_url, redacted)
+    except Exception:
+        pass
     return sanitized
 
 

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import hmac as _hmac
 import secrets
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE, PlantScope
@@ -19,7 +20,13 @@ class CredentialError(ValueError):
     """Erro de domínio nas operações de credenciais."""
 
 
-def hash_secret(secret: str) -> str:
+def hash_secret(secret: str, *, pepper: str = "") -> str:
+    if pepper:
+        return _hmac.new(pepper.encode("utf-8"), secret.encode("utf-8"), "sha256").hexdigest()
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
+
+
+def _legacy_hash(secret: str) -> str:
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()
 
 
@@ -72,8 +79,9 @@ class UserService:
 
 
 class CredentialService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, *, pepper: str = "") -> None:
         self._session = session
+        self._pepper = pepper
 
     async def create(
         self,
@@ -112,7 +120,7 @@ class CredentialService:
         record = ApiCredentialRecord(
             name=normalized_name,
             role=role.value,
-            key_hash=hash_secret(secret),
+            key_hash=hash_secret(secret, pepper=self._pepper),
             plant_ids=(
                 sorted(str(plant_id) for plant_id in plant_ids)
                 if plant_ids is not None
@@ -146,13 +154,24 @@ class CredentialService:
         """Resolve um segredo apresentado em um principal, ou ``None``.
 
         Somente credenciais ativas autenticam. O segredo nunca é registrado;
-        a busca ocorre exclusivamente pelo hash.
+        a busca ocorre exclusivamente pelo hash. Quando MPLACAS_CREDENTIAL_PEPPER
+        está configurado, novos hashes usam HMAC; credenciais legadas (SHA-256 puro)
+        continuam resolvendo via OR na query até serem rotacionadas.
         """
         if not secret:
             return None
+        peppered = hash_secret(secret, pepper=self._pepper)
+        where_hash = (
+            or_(
+                ApiCredentialRecord.key_hash == peppered,
+                ApiCredentialRecord.key_hash == _legacy_hash(secret),
+            )
+            if self._pepper
+            else ApiCredentialRecord.key_hash == peppered
+        )
         record = await self._session.scalar(
             select(ApiCredentialRecord).where(
-                ApiCredentialRecord.key_hash == hash_secret(secret),
+                where_hash,
                 ApiCredentialRecord.active.is_(True),
             )
         )

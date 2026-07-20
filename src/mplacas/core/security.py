@@ -116,8 +116,10 @@ async def _resolve_persisted_credential(
     from mplacas.credentials.service import CredentialService
     from mplacas.db.session import SessionFactory
 
+    settings = get_settings()
+    pepper = settings.credential_pepper.get_secret_value() if settings.credential_pepper else ""
     async with SessionFactory() as session:
-        principal = await CredentialService(session).resolve(provided)
+        principal = await CredentialService(session, pepper=pepper).resolve(provided)
     if principal is None:
         return None
     if require_admin and not principal.can_admin():

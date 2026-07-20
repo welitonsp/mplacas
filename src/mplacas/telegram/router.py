@@ -77,7 +77,11 @@ async def telegram_webhook(
     except TelegramUpdateError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
-    assert settings.telegram_bot_token is not None
+    if settings.telegram_bot_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telegram bot token is not configured",
+        )
     client = TelegramClient(
         bot_token=settings.telegram_bot_token.get_secret_value(),
         timeout_seconds=settings.request_timeout_seconds,
@@ -91,7 +95,8 @@ async def telegram_webhook(
         }
 
     if message.kind == "text":
-        assert message.text is not None
+        if message.text is None:
+            raise HTTPException(status_code=422, detail="text message has no content")
         if len(message.text.encode("utf-8")) > settings.bill_text_max_bytes:
             raise HTTPException(
                 status_code=413,
@@ -115,7 +120,8 @@ async def telegram_webhook(
             raise HTTPException(status_code=502, detail="Telegram acknowledgement failed") from exc
         return {"accepted": True, "kind": "text", "status": "pending_review"}
 
-    assert message.document is not None
+    if message.document is None:
+        raise HTTPException(status_code=422, detail="document message has no file attached")
     try:
         downloaded = await client.download_file(
             message.document.file_id,

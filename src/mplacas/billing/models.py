@@ -18,6 +18,7 @@ class UtilityBill:
     credit_balance_kwh: Decimal
     total_amount_brl: Decimal
     public_lighting_brl: Decimal = Decimal("0")
+    generation_cycle_kwh: Decimal | None = None
 
     def validate(self) -> None:
         if self.cycle_end < self.cycle_start:
@@ -35,6 +36,8 @@ class UtilityBill:
         )
         if any(value < 0 for value in numeric_values):
             raise ValueError("bill values cannot be negative")
+        if self.generation_cycle_kwh is not None and self.generation_cycle_kwh < 0:
+            raise ValueError("bill values cannot be negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +49,11 @@ class BillingReconciliation:
     estimated_total_consumption_kwh: Decimal
     self_consumption_rate_percent: Decimal
     self_sufficiency_rate_percent: Decimal
+    # Three-way reconciliation fields — present only when the bill includes
+    # generation_cycle_kwh (the concessionária's generation meter reading).
+    generation_cycle_kwh: Decimal | None = None
+    meter_vs_injection_delta_kwh: Decimal | None = None
+    origin_vs_meter_delta_kwh: Decimal | None = None
 
 
 def reconcile_bill(*, bill: UtilityBill, cycle_production_kwh: Decimal) -> BillingReconciliation:
@@ -64,6 +72,15 @@ def reconcile_bill(*, bill: UtilityBill, cycle_production_kwh: Decimal) -> Billi
         if total_consumption
         else Decimal("0")
     )
+
+    generation_cycle_kwh = bill.generation_cycle_kwh
+    if generation_cycle_kwh is not None:
+        meter_vs_injection = (generation_cycle_kwh - bill.injected_kwh).quantize(Decimal("0.001"))
+        origin_vs_meter = (cycle_production_kwh - generation_cycle_kwh).quantize(Decimal("0.001"))
+    else:
+        meter_vs_injection = None
+        origin_vs_meter = None
+
     return BillingReconciliation(
         cycle_production_kwh=cycle_production_kwh.quantize(Decimal("0.001")),
         imported_kwh=bill.imported_kwh,
@@ -72,4 +89,7 @@ def reconcile_bill(*, bill: UtilityBill, cycle_production_kwh: Decimal) -> Billi
         estimated_total_consumption_kwh=total_consumption.quantize(Decimal("0.001")),
         self_consumption_rate_percent=self_consumption_rate.quantize(Decimal("0.1")),
         self_sufficiency_rate_percent=self_sufficiency_rate.quantize(Decimal("0.1")),
+        generation_cycle_kwh=generation_cycle_kwh,
+        meter_vs_injection_delta_kwh=meter_vs_injection,
+        origin_vs_meter_delta_kwh=origin_vs_meter,
     )

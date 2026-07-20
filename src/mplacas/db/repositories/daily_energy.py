@@ -3,6 +3,7 @@ from decimal import Decimal
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.db.models import DailyEnergy, DailyEnergyVersion, DataStatus
@@ -21,25 +22,42 @@ class DailyEnergyRepository:
         status: DataStatus,
         source: str = "NEPVIEWER_V2",
     ) -> tuple[DailyEnergy, bool]:
-        result = await self._session.execute(
-            select(DailyEnergy).where(
+        # SELECT FOR UPDATE serialises concurrent updates to the same row.
+        # SQLite silently ignores FOR UPDATE, which is acceptable for tests.
+        current = await self._session.scalar(
+            select(DailyEnergy)
+            .where(
                 DailyEnergy.device_id == device_id,
                 DailyEnergy.production_date == production_date,
             )
+            .with_for_update()
         )
-        current = result.scalar_one_or_none()
 
         if current is None:
-            current = DailyEnergy(
-                device_id=device_id,
-                production_date=production_date,
-                energy_kwh=energy_kwh,
-                status=status,
-                source=source,
-            )
-            self._session.add(current)
-            await self._session.flush()
-            return current, True
+            try:
+                async with self._session.begin_nested():
+                    current = DailyEnergy(
+                        device_id=device_id,
+                        production_date=production_date,
+                        energy_kwh=energy_kwh,
+                        status=status,
+                        source=source,
+                    )
+                    self._session.add(current)
+                    await self._session.flush()
+                return current, True
+            except IntegrityError:
+                # Another transaction won the INSERT race; re-read with lock.
+                current = await self._session.scalar(
+                    select(DailyEnergy)
+                    .where(
+                        DailyEnergy.device_id == device_id,
+                        DailyEnergy.production_date == production_date,
+                    )
+                    .with_for_update()
+                )
+                if current is None:
+                    raise RuntimeError("upsert conflict did not resolve to an existing row")
 
         changed = current.energy_kwh != energy_kwh or current.status != status
         if not changed:

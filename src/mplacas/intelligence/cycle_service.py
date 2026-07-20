@@ -83,7 +83,7 @@ async def analyze_confirmed_cycle(
 
     cycle_days = {
         bill.cycle_start + timedelta(days=offset)
-        for offset in range(bill.billed_days)
+        for offset in range((bill.cycle_end - bill.cycle_start).days + 1)
     }
     missing_days = len(cycle_days.difference(by_date))
     provisional_days = 0

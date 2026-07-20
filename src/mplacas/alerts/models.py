@@ -11,6 +11,13 @@ class AlertSeverity(StrEnum):
     CRITICAL = "CRITICAL"
 
 
+SEVERITY_ORDER: dict[AlertSeverity, int] = {
+    AlertSeverity.INFO: 0,
+    AlertSeverity.WARNING: 1,
+    AlertSeverity.CRITICAL: 2,
+}
+
+
 class AlertDeliveryStatus(StrEnum):
     SKIPPED = "SKIPPED"
     SENT = "SENT"
