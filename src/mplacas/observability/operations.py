@@ -7,6 +7,11 @@ from typing import Iterator
 
 from opentelemetry.trace import Span
 
+from mplacas.observability.metrics import (
+    OUTCOME_FAILURE,
+    OUTCOME_SUCCESS,
+    record_operation,
+)
 from mplacas.observability.tracing import traced_operation
 
 
@@ -44,6 +49,11 @@ def observe_operation(
             duration_ms = max(0, round((monotonic() - started) * 1000))
             span.set_attribute("operation.duration_ms", duration_ms)
             span.set_attribute("error.code", type(exc).__name__)
+            record_operation(
+                operation=operation,
+                outcome=OUTCOME_FAILURE,
+                duration_ms=duration_ms,
+            )
             logger.exception(
                 "operation_failed",
                 extra={
@@ -56,6 +66,11 @@ def observe_operation(
             raise
         duration_ms = max(0, round((monotonic() - started) * 1000))
         span.set_attribute("operation.duration_ms", duration_ms)
+        record_operation(
+            operation=operation,
+            outcome=OUTCOME_SUCCESS,
+            duration_ms=duration_ms,
+        )
         logger.info(
             "operation_completed",
             extra={

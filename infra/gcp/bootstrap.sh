@@ -26,5 +26,6 @@ gcloud services enable "${MPLACAS_REQUIRED_APIS[@]}" \
   --project "$GCP_PROJECT_ID"
 ensure_runtime_service_account
 ensure_runtime_trace_access
+ensure_runtime_metrics_access
 
 log "bootstrap completed without creating service-account keys"

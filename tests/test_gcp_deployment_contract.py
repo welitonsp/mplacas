@@ -109,6 +109,17 @@ def test_runtime_trace_access_is_least_privilege_and_trace_api_is_enabled() -> N
     assert "MPLACAS_CLOUD_TRACE_ENABLED=true" in deploy
 
 
+def test_runtime_metrics_access_is_least_privilege_and_monitoring_api_is_enabled() -> None:
+    library = read("infra/gcp/lib.sh")
+    bootstrap = read("infra/gcp/bootstrap.sh")
+    deploy = read("infra/gcp/deploy-service.sh")
+
+    assert '"monitoring.googleapis.com"' in library
+    assert "roles/monitoring.metricWriter" in library
+    assert "ensure_runtime_metrics_access" in bootstrap
+    assert "MPLACAS_CLOUD_METRICS_ENABLED=true" in deploy
+
+
 def test_deploy_uses_cloud_build_source_and_revision_limits() -> None:
     script = read("infra/gcp/deploy-service.sh")
 

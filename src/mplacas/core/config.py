@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     gcp_project_id: str | None = None
     cloud_trace_enabled: bool = False
     trace_sample_rate: float = 0.1
+    cloud_metrics_enabled: bool = False
+    metrics_export_interval_seconds: int = 60
     timezone: str = "America/Sao_Paulo"
     database_url: str = Field(default="sqlite+aiosqlite:///./mplacas.db", repr=False)
     port: int = Field(default=8080, validation_alias="PORT")
@@ -120,6 +122,13 @@ class Settings(BaseSettings):
             raise ValueError("trace sample rate must be between 0 and 1")
         return value
 
+    @field_validator("metrics_export_interval_seconds")
+    @classmethod
+    def _validate_metrics_export_interval(cls, value: int) -> int:
+        if not 10 <= value <= 3600:
+            raise ValueError("metrics export interval must be between 10 and 3600 seconds")
+        return value
+
     @field_validator("gcp_project_id")
     @classmethod
     def _normalize_gcp_project_id(cls, value: str | None) -> str | None:
@@ -167,6 +176,8 @@ class Settings(BaseSettings):
     def _validate_environment(self) -> Settings:
         if self.cloud_trace_enabled and self.gcp_project_id is None:
             raise ValueError("Cloud Trace requires MPLACAS_GCP_PROJECT_ID")
+        if self.cloud_metrics_enabled and self.gcp_project_id is None:
+            raise ValueError("Cloud Monitoring requires MPLACAS_GCP_PROJECT_ID")
         if self.operations_read_plant_ids is not None and (
             self.operations_read_api_key is None
             or not self.operations_read_api_key.get_secret_value().strip()
@@ -224,6 +235,8 @@ class Settings(BaseSettings):
             "structured_logging": self.env == "production",
             "cloud_trace_enabled": self.cloud_trace_enabled,
             "trace_sample_rate": self.trace_sample_rate,
+            "cloud_metrics_enabled": self.cloud_metrics_enabled,
+            "metrics_export_interval_seconds": self.metrics_export_interval_seconds,
             "operational_auth_configured": self.operations_api_key is not None,
             "operational_read_auth_configured": self.operations_read_api_key is not None,
             "operational_read_plant_scope": read_scope,

@@ -30,6 +30,8 @@ O projeto possui uma API FastAPI assíncrona com:
 - coleta histórica pelo Open-Meteo;
 - explicações assistidas por IA com grounding e fallback determinístico;
 - alertas Telegram com outbox transacional, retry e deduplicação SQL;
+- métricas OpenTelemetry de duração e resultado por operação, exportadas ao Cloud Monitoring;
+- alertas de SLO documentados por runbook para falhas de pipeline, despacho e latência;
 - orquestração diária com lock por usina/data, retomada após timeout e status consultável;
 - logs JSON correlacionados, trace ID ponta a ponta e spans OpenTelemetry no Cloud Trace;
 - imagem de produção e comandos de jobs prontos para implantação no Google Cloud Run;

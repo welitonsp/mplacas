@@ -160,4 +160,22 @@ def test_cloud_trace_configuration_requires_project_and_valid_sample_rate() -> N
 
     assert settings.safe_summary()["cloud_trace_enabled"] is True
     assert settings.safe_summary()["trace_sample_rate"] == 0.25
+
+
+def test_cloud_metrics_configuration_requires_project_and_valid_interval() -> None:
+    with pytest.raises(ValidationError, match="Cloud Monitoring requires"):
+        Settings(_env_file=None, cloud_metrics_enabled=True)
+    with pytest.raises(ValidationError, match="metrics export interval"):
+        Settings(_env_file=None, metrics_export_interval_seconds=5)
+    with pytest.raises(ValidationError, match="metrics export interval"):
+        Settings(_env_file=None, metrics_export_interval_seconds=4000)
+
+    settings = Settings(
+        _env_file=None,
+        gcp_project_id="mplacas-prod",
+        cloud_metrics_enabled=True,
+        metrics_export_interval_seconds=120,
+    )
+    assert settings.safe_summary()["cloud_metrics_enabled"] is True
+    assert settings.safe_summary()["metrics_export_interval_seconds"] == 120
     assert "synthetic-project" not in repr(settings.safe_summary())

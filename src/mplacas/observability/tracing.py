@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from mplacas import __version__
 from mplacas.core.config import Settings
 from mplacas.observability.logging import configure_logging
+from mplacas.observability.metrics import MetricsRuntime, configure_metrics
 from mplacas.observability.propagation import CloudTraceContextPropagator
 
 _TELEGRAM_TOKEN = re.compile(r"/bot[^/]+")
@@ -35,11 +36,14 @@ _runtime: ObservabilityRuntime | None = None
 @dataclass(slots=True)
 class ObservabilityRuntime:
     provider: TracerProvider | None = None
+    metrics: MetricsRuntime | None = None
 
     def shutdown(self) -> None:
         if self.provider is not None:
             self.provider.force_flush(timeout_millis=5000)
             self.provider.shutdown()
+        if self.metrics is not None:
+            self.metrics.shutdown()
 
 
 def configure_observability(
@@ -56,8 +60,9 @@ def configure_observability(
         project_id=settings.gcp_project_id,
         structured=settings.env == "production",
     )
+    metrics_runtime = configure_metrics(settings=settings, service_name=service_name)
     if not settings.cloud_trace_enabled:
-        return ObservabilityRuntime()
+        return ObservabilityRuntime(metrics=metrics_runtime)
     if _runtime is not None:
         return _runtime
 
@@ -102,7 +107,7 @@ def configure_observability(
         request_hook=_sanitize_http_span,
         async_request_hook=_sanitize_async_http_span,
     )
-    _runtime = ObservabilityRuntime(provider=provider)
+    _runtime = ObservabilityRuntime(provider=provider, metrics=metrics_runtime)
     return _runtime
 
 

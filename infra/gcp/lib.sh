@@ -11,6 +11,7 @@ readonly MPLACAS_REQUIRED_APIS=(
   "secretmanager.googleapis.com"
   "iam.googleapis.com"
   "cloudtrace.googleapis.com"
+  "monitoring.googleapis.com"
 )
 # shellcheck disable=SC2034
 readonly MPLACAS_SECRET_NAMES=(
@@ -206,6 +207,17 @@ ensure_runtime_trace_access() {
     --condition=None \
     --quiet >/dev/null
   log "runtime service account can write Cloud Trace spans"
+}
+
+ensure_runtime_metrics_access() {
+  local member
+  member="serviceAccount:$(runtime_service_account_email)"
+  gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
+    --member="$member" \
+    --role="roles/monitoring.metricWriter" \
+    --condition=None \
+    --quiet >/dev/null
+  log "runtime service account can write Cloud Monitoring metrics"
 }
 
 api_enabled() {
