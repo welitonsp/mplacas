@@ -32,6 +32,13 @@ confirm_exact \
   "DEPLOY-MPLACAS-${GCP_PROJECT_ID}" \
   "Type DEPLOY-MPLACAS-${GCP_PROJECT_ID} to deploy the service:"
 
+# CORS: MPLACAS_CORS_ALLOWED_ORIGINS must be set in infra/gcp/config.env to the
+# exact Cloudflare Pages URL (e.g. https://mplacas-frontend.pages.dev).
+# Never use wildcard (*) — credentials require an exact origin.
+#
+# NOTE: --set-env-vars replaces the complete env-var map in a single API call.
+# All variables — including MPLACAS_CORS_ALLOWED_ORIGINS — must appear together
+# in this list. Adding or removing any variable here affects the live service.
 gcloud run deploy "$GCP_SERVICE_NAME" \
   --source "$(repo_root)" \
   --region "$GCP_REGION" \
@@ -44,9 +51,9 @@ gcloud run deploy "$GCP_SERVICE_NAME" \
   --concurrency "$GCP_CONCURRENCY" \
   --timeout "$GCP_REQUEST_TIMEOUT" \
   --set-env-vars \
-    "MPLACAS_ENVIRONMENT=production,MPLACAS_TIMEZONE=${MPLACAS_TIMEZONE},MPLACAS_GCP_PROJECT_ID=${GCP_PROJECT_ID},MPLACAS_CLOUD_TRACE_ENABLED=true,MPLACAS_CLOUD_METRICS_ENABLED=true" \
+    "MPLACAS_ENVIRONMENT=production,MPLACAS_TIMEZONE=${MPLACAS_TIMEZONE},MPLACAS_GCP_PROJECT_ID=${GCP_PROJECT_ID},MPLACAS_CLOUD_TRACE_ENABLED=true,MPLACAS_CLOUD_METRICS_ENABLED=true,MPLACAS_CORS_ALLOWED_ORIGINS=${MPLACAS_CORS_ALLOWED_ORIGINS}" \
   --set-secrets \
-    "MPLACAS_DATABASE_URL=mplacas-database-url:latest,MPLACAS_OPERATIONS_API_KEY=mplacas-operations-api-key:latest" \
+    "MPLACAS_DATABASE_URL=mplacas-database-url:latest,MPLACAS_OPERATIONS_API_KEY=mplacas-operations-api-key:latest,MPLACAS_JWT_SECRET=mplacas-jwt-secret:latest" \
   --allow-unauthenticated \
   --quiet
 

@@ -17,6 +17,7 @@ readonly MPLACAS_REQUIRED_APIS=(
 readonly MPLACAS_SECRET_NAMES=(
   "mplacas-database-url"
   "mplacas-operations-api-key"
+  "mplacas-jwt-secret"
 )
 
 : "${GCP_PROJECT_ID:=}"
@@ -31,6 +32,7 @@ readonly MPLACAS_SECRET_NAMES=(
 : "${GCP_CONCURRENCY:=}"
 : "${GCP_REQUEST_TIMEOUT:=}"
 : "${MPLACAS_TIMEZONE:=}"
+: "${MPLACAS_CORS_ALLOWED_ORIGINS:=}"
 
 log() {
   printf '[mplacas:gcp] %s\n' "$*"
