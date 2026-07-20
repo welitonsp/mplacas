@@ -20,6 +20,15 @@ class ProviderUnavailableError(ProviderError):
     """Serviço externo temporariamente indisponível."""
 
 
+class ProviderIncompleteDataError(ProviderError):
+    """O provedor respondeu, mas sem os dados esperados para o intervalo.
+
+    Distingue-se de produção legitimamente zero: aqui o dado esperado não veio,
+    o que num sistema de reconciliação não pode ser confundido com ausência de
+    geração. Tratado como transitório para fins de reagendamento.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class SolarDevice:
     serial_number: str
@@ -52,5 +61,10 @@ class SolarProvider(ABC):
 
     @abstractmethod
     async def get_daily_energy(
-        self, serial_number: str, start: date, end: date
+        self,
+        serial_number: str,
+        start: date,
+        end: date,
+        *,
+        expect_complete: bool = False,
     ) -> list[DailyEnergy]: ...

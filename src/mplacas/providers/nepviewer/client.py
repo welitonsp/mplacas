@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -10,6 +10,7 @@ from mplacas.providers.base import (
     DailyEnergy,
     DeviceOverview,
     ProviderAuthError,
+    ProviderIncompleteDataError,
     ProviderSchemaError,
     ProviderUnavailableError,
     SolarDevice,
@@ -155,7 +156,12 @@ class NepViewerClient(SolarProvider):
         )
 
     async def get_daily_energy(
-        self, serial_number: str, start: date, end: date
+        self,
+        serial_number: str,
+        start: date,
+        end: date,
+        *,
+        expect_complete: bool = False,
     ) -> list[DailyEnergy]:
         if end < start:
             raise ValueError("A data final não pode ser anterior à inicial")
@@ -163,8 +169,6 @@ class NepViewerClient(SolarProvider):
         query_start, query_end = start, end
         # A API comunitariamente observada falha em intervalos de um único dia.
         if start == end:
-            from datetime import timedelta
-
             query_start = start - timedelta(days=1)
 
         data = await self._post(
@@ -184,11 +188,15 @@ class NepViewerClient(SolarProvider):
             raise ProviderSchemaError("Datas e valores possuem tamanhos incompatíveis")
 
         result: list[DailyEnergy] = []
+        covered: set[date] = set()
         for raw_date, raw_value in zip(dates, values, strict=True):
-            if raw_value is None or not isinstance(raw_date, str):
+            if not isinstance(raw_date, str):
                 continue
             parsed = self._datetime(raw_date)
             if parsed is None or not start <= parsed.date() <= end:
+                continue
+            covered.add(parsed.date())
+            if raw_value is None:
                 continue
             result.append(
                 DailyEnergy(
@@ -196,4 +204,16 @@ class NepViewerClient(SolarProvider):
                     energy_kwh=self._decimal(raw_value, "series.data"),
                 )
             )
+
+        if expect_complete:
+            expected: set[date] = set()
+            cursor = start
+            while cursor <= end:
+                expected.add(cursor)
+                cursor += timedelta(days=1)
+            missing = expected - covered
+            if missing:
+                raise ProviderIncompleteDataError(
+                    "NEPViewer não cobriu todos os dias solicitados"
+                )
         return result
