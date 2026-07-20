@@ -1,34 +1,34 @@
 # Runbook de Produção — Mplacas
 
-Guia de implantação completo: backend no Google Cloud Run e frontend no Cloudflare Pages.
+Fonte oficial para implantação do backend no Google Cloud Run, banco Neon e frontend no Cloudflare Pages.
 
----
+> Nunca use `set -x` durante operações com segredos. Não cole connection strings, tokens ou senhas em mensagens, arquivos versionados ou argumentos de linha de comando.
 
-## 1. Pré-requisitos
+## 1. Atualizar o repositório e preparar o Cloud Shell
 
-### Ferramentas
+```bash
+cd ~
+if [ ! -d "mplacas-repo/.git" ]; then
+  git clone https://github.com/welitonsp/mplacas.git mplacas-repo
+fi
+cd ~/mplacas-repo
+git switch main
+git pull --ff-only origin main
 
-| Ferramenta | Versão mínima | Onde obter |
-|---|---|---|
-| `gcloud` CLI | qualquer recente | Google Cloud Shell (já incluso) |
-| `openssl` | qualquer | presente no Google Cloud Shell |
-| Python 3.12 | 3.12+ | presente no Google Cloud Shell |
-| Node.js | 22 | não necessário localmente — usado pelo GitHub Actions |
+python3 --version
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
 
-### Permissões GCP
+test -f infra/gcp/config.env || cp infra/gcp/config.example.env infra/gcp/config.env
+nano infra/gcp/config.env
+```
 
-O operador precisa, no projeto GCP alvo:
-- `roles/run.admin`
-- `roles/secretmanager.admin`
-- `roles/iam.serviceAccountAdmin`
-- `roles/billing.viewer`
-
-### Variáveis de shell necessárias
-
-Defina em `infra/gcp/config.env` (nunca no Git):
+O Python deve ser 3.12 ou superior. Preencha apenas valores não sensíveis:
 
 ```text
-GCP_PROJECT_ID=<id-do-projeto>
+GCP_PROJECT_ID=mplacas
 GCP_REGION=us-central1
 GCP_SERVICE_NAME=mplacas-api
 GCP_MIGRATION_JOB_NAME=mplacas-migrate
@@ -40,193 +40,281 @@ GCP_MEMORY=512Mi
 GCP_CONCURRENCY=20
 GCP_REQUEST_TIMEOUT=60
 MPLACAS_TIMEZONE=America/Sao_Paulo
-MPLACAS_CORS_ALLOWED_ORIGINS=<url-exata-do-pages>
+MPLACAS_CORS_ALLOWED_ORIGINS=
 ```
 
-Jamais use valores reais de segredos em `config.env`.
+Não coloque URLs do Neon ou outras credenciais em `config.env`.
 
----
-
-## 2. Neon e migrações
-
-Use o endpoint **não-pooled** do Neon para migrações (DDL requer conexão direta):
+## 2. Carregar a configuração e preparar o projeto GCP
 
 ```bash
-export MPLACAS_DATABASE_URL="$NON_POOLED_DSN"
-alembic upgrade head
+source .venv/bin/activate
+source infra/gcp/config.env
+gcloud config set project "$GCP_PROJECT_ID"
+bash infra/gcp/bootstrap.sh "$GCP_PROJECT_ID"
 ```
 
-Após o deploy do Cloud Run, execute a migração via job gerenciado:
+Digite o ID do projeto quando o script solicitar confirmação.
+
+## 3. Rotacionar a senha do Neon exposta anteriormente
+
+No painel do Neon:
+
+1. Abra o projeto Mplacas.
+2. Selecione o role `neondb_owner`.
+3. Execute **Reset password**.
+4. Copie novamente as duas connection strings:
+   - pooled: hostname contém `-pooler`;
+   - direta: hostname não contém `-pooler`.
+
+Nunca reutilize a senha ou as URLs antigas.
+
+## 4. Cadastrar separadamente os segredos GCP
+
+Execute cada comando e cole o valor somente no prompt sem eco:
+
+```bash
+bash infra/gcp/set-secrets.sh database-runtime
+bash infra/gcp/set-secrets.sh database-migration
+bash infra/gcp/set-secrets.sh operations-key
+bash infra/gcp/set-secrets.sh jwt
+```
+
+| Secret Manager | Uso |
+|---|---|
+| `mplacas-database-url` | endpoint Neon pooled do serviço web |
+| `mplacas-migration-database-url` | endpoint Neon direto do job de migração |
+| `mplacas-operations-api-key` | autenticação operacional do backend |
+| `mplacas-jwt-secret` | assinatura dos tokens de login |
+
+O script rejeita endpoint direto no subcomando `database-runtime` e endpoint pooled no subcomando `database-migration`.
+
+Não execute `jwt --rotate-jwt` durante a implantação normal. Essa opção invalida tokens ativos e exige confirmação explícita.
+
+## 5. Criar o projeto Direct Upload no Cloudflare Pages
+
+O frontend usa GitHub Actions com Wrangler. Não configure **Connect to Git** no painel Cloudflare.
+
+```bash
+cd ~/mplacas-repo/frontend
+npm ci
+npx wrangler login
+npx wrangler whoami
+npx wrangler pages project create mplacas-frontend --production-branch main
+cd ~/mplacas-repo
+```
+
+Confirme no painel Cloudflare o domínio atribuído. O esperado é:
+
+```text
+https://mplacas-frontend.pages.dev
+```
+
+Se outro nome for necessário, pare a implantação e atualize de forma revisada o workflow e o `wrangler.toml`.
+
+## 6. Configurar a origem CORS real
+
+```bash
+nano infra/gcp/config.env
+```
+
+Defina a origem exata, sem barra final:
+
+```text
+MPLACAS_CORS_ALLOWED_ORIGINS=https://mplacas-frontend.pages.dev
+```
+
+Depois carregue novamente:
+
+```bash
+source infra/gcp/config.env
+```
+
+A validação rejeita HTTP, wildcard, credenciais, caminhos, query strings, fragmentos, espaços e entradas vazias.
+
+## 7. Fazer o primeiro deploy do backend
+
+```bash
+bash infra/gcp/deploy-service.sh
+```
+
+Digite a confirmação exata solicitada. O serviço usa:
+
+- `mplacas-database-url` como `MPLACAS_DATABASE_URL`;
+- `mplacas-operations-api-key` como `MPLACAS_OPERATIONS_API_KEY`;
+- `mplacas-jwt-secret` como `MPLACAS_JWT_SECRET`.
+
+## 8. Executar as migrações
 
 ```bash
 bash infra/gcp/run-migrations.sh
 ```
 
-O job usa uma conexão direta ao banco; confirme que `MPLACAS_DATABASE_URL` no Secret Manager aponta para o endpoint não-pooled do Neon.
+O Cloud Run Job usa exclusivamente `mplacas-migration-database-url`, com conexão direta e SSL obrigatório no Neon.
 
----
-
-## 3. JWT secret
-
-Execute em terminal interativo no Google Cloud Shell:
+## 9. Confirmar o usuário administrador
 
 ```bash
-bash infra/gcp/set-secrets.sh
+source .venv/bin/activate
+read -rp "Nome exato do usuário administrador: " ADMIN_USER
+
+MPLACAS_DATABASE_URL="$(
+  gcloud secrets versions access latest \
+    --secret=mplacas-migration-database-url \
+    --project="$GCP_PROJECT_ID"
+)" python3 scripts/set-admin-password.py \
+  --username "$ADMIN_USER" \
+  --check-user
 ```
 
-O script:
-- Gera 32 bytes aleatórios com `openssl rand -base64 32`.
-- Armazena o valor diretamente no Secret Manager como `mplacas-jwt-secret` via pipe — o valor nunca é impresso nem salvo em variável de shell.
-- Concede acesso exclusivo à service account de runtime.
-- Desabilita versões anteriores do segredo.
+O comando apenas confirma que o usuário existe, é único e está ativo. Caso ele não exista, interrompa a implantação e crie o usuário pelo fluxo administrativo aprovado antes de continuar.
 
-O script também rotaciona `mplacas-database-url` e `mplacas-operations-api-key` na mesma execução.
-
----
-
-## 4. Usuário administrador e senha
-
-Após o banco estar migrado e acessível:
+## 10. Definir a senha do administrador
 
 ```bash
-export MPLACAS_DATABASE_URL="postgresql+psycopg2://$NON_POOLED_DSN_NO_SCHEME"
-python scripts/set-admin-password.py --username $NOME_DO_USUARIO
+MPLACAS_DATABASE_URL="$(
+  gcloud secrets versions access latest \
+    --secret=mplacas-migration-database-url \
+    --project="$GCP_PROJECT_ID"
+)" python3 scripts/set-admin-password.py --username "$ADMIN_USER"
 ```
 
-O script lê a senha de forma interativa (sem eco) ou do Secret Manager quando `MPLACAS_ADMIN_PASSWORD_SECRET` está definido. A senha nunca aparece em argumentos de linha de comando, logs ou output.
+A senha é lida duas vezes sem eco, deve possuir no mínimo 12 caracteres e não aparece no histórico. A URL existe apenas no ambiente do processo e não fica exportada na sessão.
 
-Pré-requisitos:
-- O usuário com `name == $NOME_DO_USUARIO` e `active == true` deve já existir no banco (criado via API de credenciais).
-- `MPLACAS_DATABASE_URL` deve apontar para endpoint sincronizado com `psycopg2`.
-
----
-
-## 5. Deploy do backend
-
-Configure `infra/gcp/config.env` (ver seção 1) e execute:
+## 11. Obter a URL pública do backend
 
 ```bash
-bash infra/gcp/bootstrap.sh "$GCP_PROJECT_ID"
-bash infra/gcp/set-secrets.sh
-bash infra/gcp/deploy-service.sh
+BACKEND_URL="$(
+  gcloud run services describe "$GCP_SERVICE_NAME" \
+    --region "$GCP_REGION" \
+    --project "$GCP_PROJECT_ID" \
+    --format='value(status.url)'
+)"
+printf 'Backend: %s\n' "$BACKEND_URL"
 ```
 
-Variáveis obrigatórias injetadas no Cloud Run (nunca use valores reais aqui — apenas nomes):
+A URL, sem barra final, será o valor de `VITE_API_URL`.
 
-| Variável de ambiente | Fonte | Descrição |
-|---|---|---|
-| `MPLACAS_ENVIRONMENT` | `--set-env-vars` | Deve ser `production` |
-| `MPLACAS_TIMEZONE` | `--set-env-vars` | Fuso-horário (`America/Sao_Paulo`) |
-| `MPLACAS_GCP_PROJECT_ID` | `--set-env-vars` | ID do projeto GCP |
-| `MPLACAS_CLOUD_TRACE_ENABLED` | `--set-env-vars` | `true` em produção |
-| `MPLACAS_CLOUD_METRICS_ENABLED` | `--set-env-vars` | `true` em produção |
-| `MPLACAS_CORS_ALLOWED_ORIGINS` | `--set-env-vars` | URL exata do Pages (sem wildcard) |
-| `MPLACAS_DATABASE_URL` | Secret Manager | DSN do Neon (pooled para runtime) |
-| `MPLACAS_OPERATIONS_API_KEY` | Secret Manager | Chave de operações |
-| `MPLACAS_JWT_SECRET` | Secret Manager | Segredo para assinatura de JWT |
+## 12. Obter o UUID da planta
 
----
+No **SQL Editor** do Neon, execute:
 
-## 6. Criação do projeto Cloudflare Pages
-
-### Via Dashboard
-
-1. Acesse <https://dash.cloudflare.com> > **Pages**.
-2. Clique em **Create a project** > **Connect to Git**.
-3. Selecione o repositório `mplacas`.
-4. Nome do projeto: `mplacas-frontend` (exatamente este nome).
-5. Branch de produção: `main`.
-6. Framework preset: **None** (o build é feito pelo GitHub Actions, não pelo Pages).
-
-### Via Wrangler (alternativo)
-
-```bash
-npx wrangler pages project create mplacas-frontend
+```sql
+SELECT id, name
+FROM plants
+ORDER BY created_at;
 ```
 
----
+Copie o UUID da planta que será exibida pelo dashboard. Não invente um UUID se a consulta não retornar registros; cadastre a planta primeiro.
 
-## 7. GitHub Secrets e Variables
+## 13. Cadastrar GitHub Secret e Variables
 
-Configure no repositório GitHub em **Settings > Secrets and variables > Actions**:
+No repositório `welitonsp/mplacas`:
 
-| Nome | Tipo | Onde cadastrar | Descrição |
-|---|---|---|---|
-| `CLOUDFLARE_API_TOKEN` | Secret | GitHub Secrets | Token da API Cloudflare com permissão `Pages:Edit` |
-| `VITE_API_URL` | Variable | GitHub Variables | URL pública do Cloud Run (ex.: `https://mplacas-api-xxx.run.app`) |
-| `VITE_PLANT_ID` | Variable | GitHub Variables | UUID da planta padrão exibida no dashboard |
-| `CLOUDFLARE_ACCOUNT_ID` | Variable | GitHub Variables | Account ID da conta Cloudflare |
-
-**Importante:** `VITE_API_URL` e `VITE_PLANT_ID` são incluídos no bundle JavaScript e ficam visíveis no navegador — não use valores secretos nessas variáveis.
-
----
-
-## 8. CORS
-
-Após o deploy do backend, atualize `MPLACAS_CORS_ALLOWED_ORIGINS` no Cloud Run com o domínio exato do Pages:
-
-```bash
-# Obtenha a URL atribuída pelo Cloudflare Pages após o primeiro deploy.
-# Exemplo: https://mplacas-frontend.pages.dev
-# NUNCA use wildcard (*) quando há autenticação com credenciais (Authorization / cookies).
-gcloud run services update "$GCP_SERVICE_NAME" \
-  --update-env-vars "MPLACAS_CORS_ALLOWED_ORIGINS=https://mplacas-frontend.pages.dev" \
-  --region "$GCP_REGION" \
-  --project "$GCP_PROJECT_ID"
+```text
+Settings → Secrets and variables → Actions
 ```
 
-Se o domínio personalizado for configurado posteriormente, repita este passo com o novo domínio.
+Secret:
 
----
+| Nome | Valor |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | token Cloudflare limitado a Pages:Edit |
 
-## 9. Deploy do frontend
+Variables:
 
-O deploy é realizado automaticamente ao fazer push para `main` quando arquivos em `frontend/**` são alterados.
+| Nome | Valor |
+|---|---|
+| `CLOUDFLARE_ACCOUNT_ID` | Account ID mostrado pelo Wrangler/Cloudflare |
+| `VITE_API_URL` | valor de `BACKEND_URL` |
+| `VITE_PLANT_ID` | UUID real da planta |
 
-Para disparar manualmente:
+As variáveis `VITE_*` ficam visíveis no bundle do navegador e nunca podem conter segredos.
 
-1. Acesse o repositório no GitHub.
-2. Vá em **Actions** > **Deploy Frontend**.
-3. Clique em **Run workflow** > selecione `main` > **Run workflow**.
+## 14. Executar o deploy do frontend
 
-O workflow valida que todas as variáveis e segredos estão presentes antes de iniciar o build. Se algum estiver ausente, ele falha imediatamente com mensagem clara.
+No GitHub:
 
----
+```text
+Actions → Deploy Frontend → Run workflow → main → Run workflow
+```
 
-## 10. Smoke test
+O workflow deve concluir:
 
-Execute em sequência após o deploy completo de backend e frontend:
+```text
+Validate required configuration
+Install dependencies
+Type check
+Build
+Deploy to Cloudflare Pages
+```
+
+## 15. Executar smoke tests sem expor a senha
 
 ```bash
-# 1. Verificar saúde do backend
 curl -fsS "$BACKEND_URL/health"
-# Esperado: {"status":"ok"}
-
-# 2. Verificar prontidão do backend
 curl -fsS "$BACKEND_URL/ready"
-# Esperado: {"status":"ready"}
 
-# 3. Autenticar
-TOKEN=$(curl -fsS -X POST "$BACKEND_URL/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{"username":"'"$NOME_DO_USUARIO"'","password":"<SENHA>"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+read -rsp "Senha do admin: " _ADMIN_PASS
+echo
 
-# 4. Buscar dashboard executivo
+_LOGIN_BODY="$(
+  printf '%s\0%s' "$ADMIN_USER" "$_ADMIN_PASS" |
+    python3 -c 'import json,sys; raw=sys.stdin.buffer.read(); user,password=raw.split(b"\0",1); print(json.dumps({"username":user.decode(),"password":password.decode()}))'
+)"
+unset _ADMIN_PASS
+
+TOKEN="$(
+  printf '%s' "$_LOGIN_BODY" |
+    curl -fsS -X POST "$BACKEND_URL/auth/login" \
+      -H "Content-Type: application/json" \
+      --data-binary @- |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
+)"
+unset _LOGIN_BODY
+
 curl -fsS "$BACKEND_URL/energy/executive/latest" \
   -H "Authorization: Bearer $TOKEN"
-# Esperado: payload JSON com dados do dashboard
+
+unset TOKEN
 ```
 
-Verifique também o frontend em `https://mplacas-frontend.pages.dev` — o login deve funcionar e carregar dados do dashboard.
+Depois abra:
 
----
+```text
+https://mplacas-frontend.pages.dev
+```
 
-## Referências
+Confirme login, carregamento do dashboard e ausência de erros de CORS.
 
-- `infra/gcp/deploy-service.sh` — deploy do Cloud Run
-- `infra/gcp/set-secrets.sh` — gerenciamento de segredos (inclui JWT)
-- `infra/gcp/run-migrations.sh` — execução de migrações via Cloud Run Job
-- `scripts/set-admin-password.py` — definição de senha do administrador
-- `.github/workflows/deploy-frontend.yml` — pipeline de deploy do frontend
-- `docs/RUNBOOK_GOOGLE_CLOUD_DEPLOYMENT.md` — runbook detalhado do backend GCP
+## 16. Verificar implantação e custos
+
+```bash
+bash infra/gcp/verify-deployment.sh
+bash infra/gcp/audit-costs.sh
+```
+
+Confirme:
+
+- `/health` e `/ready` aprovados;
+- migração concluída;
+- uma versão `ENABLED` para cada secret gerenciado;
+- Cloud Run com mínimo 0 e máximo 1 instância;
+- nenhum segredo em logs, commits ou capturas;
+- orçamento e alertas de custo ativos.
+
+## Atualizações futuras
+
+```bash
+cd ~/mplacas-repo
+git switch main
+git pull --ff-only origin main
+source .venv/bin/activate
+source infra/gcp/config.env
+bash infra/gcp/deploy-service.sh
+bash infra/gcp/run-migrations.sh
+bash infra/gcp/verify-deployment.sh
+bash infra/gcp/audit-costs.sh
+```
+
+Execute migrações somente depois de revisar as alterações de schema da versão.

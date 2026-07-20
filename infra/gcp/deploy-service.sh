@@ -8,7 +8,6 @@ source "${SCRIPT_DIR}/lib.sh"
 require_single_enabled_secret() {
   local secret_name="$1"
   local enabled_count
-
   enabled_count="$(count_enabled_secret_versions "$secret_name")"
   [[ "$enabled_count" == "1" ]] || die \
     "${secret_name} must have exactly one ENABLED version before deployment"
@@ -22,23 +21,21 @@ configure_gcloud_project
 validate_billing_enabled
 ensure_runtime_service_account
 
-for secret_name in "${MPLACAS_SECRET_NAMES[@]}"; do
-  gcloud secrets describe "$secret_name" \
-    --project "$GCP_PROJECT_ID" >/dev/null
+for secret_name in \
+  "$SECRET_DATABASE_URL" \
+  "$SECRET_MIGRATION_DATABASE_URL" \
+  "$SECRET_OPERATIONS_KEY" \
+  "$SECRET_JWT"; do
+  gcloud secrets describe "$secret_name" --project "$GCP_PROJECT_ID" >/dev/null
   require_single_enabled_secret "$secret_name"
 done
+
+validate_cors_origins "${MPLACAS_CORS_ALLOWED_ORIGINS:-}"
 
 confirm_exact \
   "DEPLOY-MPLACAS-${GCP_PROJECT_ID}" \
   "Type DEPLOY-MPLACAS-${GCP_PROJECT_ID} to deploy the service:"
 
-# CORS: MPLACAS_CORS_ALLOWED_ORIGINS must be set in infra/gcp/config.env to the
-# exact Cloudflare Pages URL (e.g. https://mplacas-frontend.pages.dev).
-# Never use wildcard (*) — credentials require an exact origin.
-#
-# NOTE: --set-env-vars replaces the complete env-var map in a single API call.
-# All variables — including MPLACAS_CORS_ALLOWED_ORIGINS — must appear together
-# in this list. Adding or removing any variable here affects the live service.
 gcloud run deploy "$GCP_SERVICE_NAME" \
   --source "$(repo_root)" \
   --region "$GCP_REGION" \
@@ -53,7 +50,7 @@ gcloud run deploy "$GCP_SERVICE_NAME" \
   --set-env-vars \
     "MPLACAS_ENVIRONMENT=production,MPLACAS_TIMEZONE=${MPLACAS_TIMEZONE},MPLACAS_GCP_PROJECT_ID=${GCP_PROJECT_ID},MPLACAS_CLOUD_TRACE_ENABLED=true,MPLACAS_CLOUD_METRICS_ENABLED=true,MPLACAS_CORS_ALLOWED_ORIGINS=${MPLACAS_CORS_ALLOWED_ORIGINS}" \
   --set-secrets \
-    "MPLACAS_DATABASE_URL=mplacas-database-url:latest,MPLACAS_OPERATIONS_API_KEY=mplacas-operations-api-key:latest,MPLACAS_JWT_SECRET=mplacas-jwt-secret:latest" \
+    "MPLACAS_DATABASE_URL=${SECRET_DATABASE_URL}:latest,MPLACAS_OPERATIONS_API_KEY=${SECRET_OPERATIONS_KEY}:latest,MPLACAS_JWT_SECRET=${SECRET_JWT}:latest" \
   --allow-unauthenticated \
   --quiet
 
