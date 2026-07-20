@@ -19,6 +19,7 @@ from mplacas.alerts.models import AlertSeverity
 from mplacas.alerts.outbox import dispatch_due_alert_outbox
 from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.climate.open_meteo import OpenMeteoHistoricalProvider
+from mplacas.collection.job import run_solar_collection
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
 from mplacas.db.session import engine as database_engine
@@ -99,6 +100,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="deliver due transactional outbox events",
     )
     outbox.set_defaults(handler=_handle_outbox_dispatch)
+
+    collect = subparsers.add_parser(
+        "collect",
+        help="collect daily solar production from NEPViewer",
+    )
+    collect.add_argument("--target-date", default=None, help="YYYY-MM-DD; defaults to yesterday")
+    collect.set_defaults(handler=_handle_collect)
     return parser
 
 
@@ -115,6 +123,41 @@ def _handle_daily_pipeline(args: argparse.Namespace) -> int:
 def _handle_outbox_dispatch(_args: argparse.Namespace) -> int:
     asyncio.run(run_outbox_dispatch())
     return 0
+
+
+def _handle_collect(args: argparse.Namespace) -> int:
+    asyncio.run(run_collection(target_date=args.target_date))
+    return 0
+
+
+async def run_collection(
+    *,
+    target_date: str | None,
+    now: datetime | None = None,
+) -> None:
+    settings = get_settings()
+    plant_id = _required_uuid(settings.cloud_job_plant_id, "MPLACAS_CLOUD_JOB_PLANT_ID")
+    plant_name = settings.cloud_job_plant_name
+    if plant_name is None or not plant_name.strip():
+        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
+    resolved_date = _resolve_target_date(
+        target_date=target_date,
+        timezone_name=settings.timezone,
+        now=now,
+    )
+    logger.info(
+        "cloud_job_collection_started",
+        extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
+    )
+    await run_solar_collection(
+        target_date=resolved_date,
+        plant_id=plant_id,
+        plant_name=plant_name,
+    )
+    logger.info(
+        "cloud_job_collection_completed",
+        extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
+    )
 
 
 def run_migrations(
