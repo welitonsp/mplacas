@@ -443,6 +443,15 @@ def _sanitize(message: str, database_url: str) -> str:
         if parsed.netloc:
             redacted = urlunsplit(parsed._replace(netloc="<redacted>"))
             sanitized = sanitized.replace(database_url, redacted)
+            # Also replace un-normalized URL prefixes that normalize to this URL
+            # (postgres:// / postgresql:// → postgresql+asyncpg://).
+            for alt_prefix in ("postgres://", "postgresql://"):
+                if database_url.startswith("postgresql+asyncpg://"):
+                    alt = alt_prefix + database_url[len("postgresql+asyncpg://"):]
+                    sanitized = sanitized.replace(alt, "<database-url>")
+            # Redact the password directly as a final safety net.
+            if parsed.password:
+                sanitized = sanitized.replace(parsed.password, "<redacted>")
     except Exception:
         pass
     return sanitized

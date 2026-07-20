@@ -170,6 +170,30 @@ class Settings(BaseSettings):
             raise ValueError("outbox dispatch batch size must be between 1 and 1000")
         return value
 
+    @field_validator("database_url")
+    @classmethod
+    def _normalize_database_url(cls, value: str) -> str:
+        # asyncpg requires the postgresql+asyncpg:// scheme.
+        # Neon and many PaaS providers emit postgres:// or postgresql:// — normalize both.
+        if value.startswith("postgres://"):
+            value = "postgresql+asyncpg://" + value[len("postgres://"):]
+        elif value.startswith("postgresql://"):
+            value = "postgresql+asyncpg://" + value[len("postgresql://"):]
+        # asyncpg does not accept sslmode/channel_binding as URL params — SSL is
+        # handled via connect_args in session.py. Strip these psycopg2-style params.
+        pg_asyncpg = "postgresql+asyncpg://" in value
+        has_unsupported_params = "sslmode=" in value or "channel_binding=" in value
+        if pg_asyncpg and has_unsupported_params:
+            from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
+            parts = urlsplit(value)
+            params = {
+                k: v for k, v in parse_qs(parts.query, keep_blank_values=True).items()
+                if k not in ("sslmode", "channel_binding")
+            }
+            query = urlencode({k: v[0] for k, v in params.items()})
+            value = urlunsplit(parts._replace(query=query))
+        return value
+
     @field_validator("operations_read_plant_ids")
     @classmethod
     def _validate_operations_read_plant_ids(cls, value: str | None) -> str | None:

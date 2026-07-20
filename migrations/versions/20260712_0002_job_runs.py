@@ -7,21 +7,25 @@ Create Date: 2026-07-12
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 
 revision = "20260712_0002"
 down_revision = "20260712_0001"
 branch_labels = None
 depends_on = None
 
+_job_status = PgEnum("RUNNING", "SUCCEEDED", "FAILED", name="jobstatus", create_type=False)
+
 
 def upgrade() -> None:
-    job_status = sa.Enum("RUNNING", "SUCCEEDED", "FAILED", name="jobstatus")
-    job_status.create(op.get_bind(), checkfirst=True)
+    op.execute(sa.text(
+        "CREATE TYPE jobstatus AS ENUM ('RUNNING', 'SUCCEEDED', 'FAILED')"
+    ))
     op.create_table(
         "job_runs",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("job_name", sa.String(length=120), nullable=False),
-        sa.Column("status", job_status, nullable=False),
+        sa.Column("status", _job_status, nullable=False),
         sa.Column(
             "started_at",
             sa.DateTime(timezone=True),
@@ -47,4 +51,4 @@ def downgrade() -> None:
     op.drop_index("ix_job_runs_started_at", table_name="job_runs")
     op.drop_index("ix_job_runs_job_name", table_name="job_runs")
     op.drop_table("job_runs")
-    sa.Enum(name="jobstatus").drop(op.get_bind(), checkfirst=True)
+    op.execute(sa.text("DROP TYPE IF EXISTS jobstatus"))
