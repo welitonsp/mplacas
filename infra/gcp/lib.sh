@@ -1,22 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# The readonly arrays below are the public API consumed by scripts that source this library.
 readonly MPLACAS_ALLOWED_REGION="us-central1"
-
-# Secret names — single source of truth for all infra scripts.
-# mplacas-database-url         : pooled endpoint (Neon -pooler), used by Cloud Run runtime.
-# mplacas-migration-database-url: direct/non-pooled endpoint, used by migration jobs (DDL).
-# shellcheck disable=SC2034
 readonly SECRET_DATABASE_URL="mplacas-database-url"
-# shellcheck disable=SC2034
 readonly SECRET_MIGRATION_DATABASE_URL="mplacas-migration-database-url"
-# shellcheck disable=SC2034
-readonly SECRET_OPERATIONS_KEY="mplacas-operations-key"
-# shellcheck disable=SC2034
+readonly SECRET_OPERATIONS_KEY="mplacas-operations-api-key"
 readonly SECRET_JWT="mplacas-jwt-secret"
 
-# shellcheck disable=SC2034
 readonly MPLACAS_REQUIRED_APIS=(
   "run.googleapis.com"
   "cloudbuild.googleapis.com"
@@ -26,12 +16,11 @@ readonly MPLACAS_REQUIRED_APIS=(
   "cloudtrace.googleapis.com"
   "monitoring.googleapis.com"
 )
-# shellcheck disable=SC2034
 readonly MPLACAS_SECRET_NAMES=(
-  "mplacas-database-url"
-  "mplacas-migration-database-url"
-  "mplacas-operations-key"
-  "mplacas-jwt-secret"
+  "$SECRET_DATABASE_URL"
+  "$SECRET_MIGRATION_DATABASE_URL"
+  "$SECRET_OPERATIONS_KEY"
+  "$SECRET_JWT"
 )
 
 : "${GCP_PROJECT_ID:=}"
@@ -357,25 +346,64 @@ PY
 
 validate_cors_origins() {
   local origins="$1"
-  if [[ -z "$origins" ]]; then
-    echo "ERRO: MPLACAS_CORS_ALLOWED_ORIGINS é obrigatório para deploy de produção." >&2
-    return 1
-  fi
-  IFS=',' read -ra _origins <<< "$origins"
-  for origin in "${_origins[@]}"; do
-    origin="${origin// /}"  # trim spaces
-    if [[ "$origin" == "*" ]]; then
-      echo "ERRO: CORS wildcard (*) não é permitido em produção." >&2
-      return 1
-    fi
-    if [[ "$origin" != https://* ]]; then
-      echo "ERRO: Origem CORS deve começar com https://: $origin" >&2
-      return 1
-    fi
-    if [[ "$origin" == */ ]]; then
-      echo "ERRO: Origem CORS não deve ter barra final: $origin" >&2
-      return 1
-    fi
-  done
-  echo "CORS origins validadas: ${#_origins[@]} origem(ns)."
+  python3 - "$origins" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+value = sys.argv[1]
+if not value:
+    raise SystemExit("MPLACAS_CORS_ALLOWED_ORIGINS é obrigatório")
+
+items = value.split(",")
+if any(not item for item in items):
+    raise SystemExit("lista CORS contém entrada vazia")
+
+for origin in items:
+    if origin != origin.strip() or any(char.isspace() for char in origin):
+        raise SystemExit("origem CORS contém espaços")
+    if "*" in origin:
+        raise SystemExit("wildcard CORS não é permitido")
+    parsed = urlsplit(origin)
+    if parsed.scheme != "https":
+        raise SystemExit("origem CORS deve usar https")
+    if not parsed.hostname:
+        raise SystemExit("origem CORS deve conter hostname")
+    if parsed.username or parsed.password:
+        raise SystemExit("origem CORS não pode conter credenciais")
+    try:
+        parsed.port
+    except ValueError as exc:
+        raise SystemExit("porta CORS inválida") from exc
+    if parsed.path or parsed.query or parsed.fragment:
+        raise SystemExit("origem CORS não pode conter caminho, query ou fragmento")
+
+print(f"CORS origins validadas: {len(items)} origem(ns).")
+PY
+}
+
+validate_database_endpoint_file() {
+  local file="$1"
+  local expected="$2"
+  python3 - "$file" "$expected" <<'PY'
+import pathlib
+import sys
+from urllib.parse import urlsplit
+
+path = pathlib.Path(sys.argv[1])
+expected = sys.argv[2]
+value = path.read_text(encoding="utf-8").strip()
+parsed = urlsplit(value)
+if parsed.scheme not in {"postgres", "postgresql", "postgresql+asyncpg"}:
+    raise SystemExit("a connection string deve ser PostgreSQL")
+if not parsed.hostname:
+    raise SystemExit("a connection string não contém hostname")
+host = parsed.hostname.lower()
+if not (host == "neon.tech" or host.endswith(".neon.tech")):
+    raise SystemExit("o endpoint deve pertencer ao Neon")
+is_pooler = "-pooler." in host
+if expected == "runtime" and not is_pooler:
+    raise SystemExit("database-runtime exige endpoint pooled (-pooler)")
+if expected == "migration" and is_pooler:
+    raise SystemExit("database-migration exige endpoint direto, sem -pooler")
+PY
 }
