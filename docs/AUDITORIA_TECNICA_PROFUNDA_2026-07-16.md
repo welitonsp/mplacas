@@ -1,5 +1,10 @@
 # Auditoria técnica profunda - Mplacas
 
+> **Status de remediação (2026-07-20):** o acompanhamento item a item do roadmap desta auditoria
+> está em `CHECKLIST_REMEDIACAO_AUDITORIA.md`. Todos os P0 e P1 de curto prazo foram concluídos;
+> RBAC (single-tenant) e fila/workers também. Pendentes: particionamento/retention, refatoração de
+> relatórios, cache de dashboard, exportação em lote e `plant_id` obrigatório em faturas.
+
 Data: 2026-07-16  
 Base auditada: `main` alinhada a `origin/main` em `8a7e8fc`  
 Validação local: `pytest` 136 passed, `ruff check .` passed, `mypy` passed
