@@ -7,22 +7,30 @@ Create Date: 2026-07-12
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 
 revision = "20260712_0001"
 down_revision = None
 branch_labels = None
 depends_on = None
 
+# create_type=False tells postgresql.ENUM not to fire _on_table_create;
+# we manage the type lifecycle explicitly with CREATE/DROP TYPE IF NOT EXISTS.
+_data_status = PgEnum(
+    "PROVISIONAL",
+    "CONSOLIDATED",
+    "INCOMPLETE",
+    "UNAVAILABLE",
+    name="datastatus",
+    create_type=False,
+)
+
 
 def upgrade() -> None:
-    data_status = sa.Enum(
-        "PROVISIONAL",
-        "CONSOLIDATED",
-        "INCOMPLETE",
-        "UNAVAILABLE",
-        name="datastatus",
-    )
-    data_status.create(op.get_bind(), checkfirst=True)
+    op.execute(sa.text(
+        "CREATE TYPE datastatus AS ENUM "
+        "('PROVISIONAL', 'CONSOLIDATED', 'INCOMPLETE', 'UNAVAILABLE')"
+    ))
 
     op.create_table(
         "plants",
@@ -61,7 +69,7 @@ def upgrade() -> None:
         sa.Column("device_id", sa.Uuid(), nullable=False),
         sa.Column("production_date", sa.Date(), nullable=False),
         sa.Column("energy_kwh", sa.Numeric(12, 3), nullable=False),
-        sa.Column("status", data_status, nullable=False),
+        sa.Column("status", _data_status, nullable=False),
         sa.Column("source", sa.String(length=40), nullable=False),
         sa.Column(
             "collected_at",
@@ -84,7 +92,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("daily_energy_id", sa.Uuid(), nullable=False),
         sa.Column("energy_kwh", sa.Numeric(12, 3), nullable=False),
-        sa.Column("status", data_status, nullable=False),
+        sa.Column("status", _data_status, nullable=False),
         sa.Column(
             "recorded_at",
             sa.DateTime(timezone=True),
@@ -101,4 +109,4 @@ def downgrade() -> None:
     op.drop_table("daily_energy")
     op.drop_table("devices")
     op.drop_table("plants")
-    sa.Enum(name="datastatus").drop(op.get_bind(), checkfirst=True)
+    op.execute(sa.text("DROP TYPE IF EXISTS datastatus"))

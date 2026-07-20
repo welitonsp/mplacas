@@ -6,16 +6,22 @@ Revises: 20260712_0002
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 
 revision = "20260712_0003"
 down_revision = "20260712_0002"
 branch_labels = None
 depends_on = None
 
+_bill_status = PgEnum(
+    "PENDING_REVIEW", "CONFIRMED", "REJECTED", name="billstatus", create_type=False
+)
+
 
 def upgrade() -> None:
-    bill_status = sa.Enum("PENDING_REVIEW", "CONFIRMED", "REJECTED", name="billstatus")
-    bill_status.create(op.get_bind(), checkfirst=True)
+    op.execute(sa.text(
+        "CREATE TYPE billstatus AS ENUM ('PENDING_REVIEW', 'CONFIRMED', 'REJECTED')"
+    ))
     op.create_table(
         "utility_bills",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -30,7 +36,7 @@ def upgrade() -> None:
         sa.Column("credit_balance_kwh", sa.Numeric(12, 3), nullable=False),
         sa.Column("total_amount_brl", sa.Numeric(12, 2), nullable=False),
         sa.Column("public_lighting_brl", sa.Numeric(12, 2), nullable=False),
-        sa.Column("status", bill_status, nullable=False),
+        sa.Column("status", _bill_status, nullable=False),
         sa.Column("source_hash", sa.String(length=64), nullable=False),
         sa.Column(
             "created_at",
@@ -45,7 +51,7 @@ def upgrade() -> None:
             "reference_month",
             "cycle_start",
             "cycle_end",
-            name="uq_utility_bills_distributor_reference_month_cycle_start_cycle_end",
+            name="uq_utility_bills_cycle",
         ),
         sa.UniqueConstraint("source_hash"),
     )
@@ -59,4 +65,4 @@ def downgrade() -> None:
     op.drop_index("ix_utility_bills_reference_month", table_name="utility_bills")
     op.drop_index("ix_utility_bills_distributor", table_name="utility_bills")
     op.drop_table("utility_bills")
-    sa.Enum(name="billstatus").drop(op.get_bind(), checkfirst=True)
+    op.execute(sa.text("DROP TYPE IF EXISTS billstatus"))

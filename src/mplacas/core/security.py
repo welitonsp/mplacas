@@ -10,6 +10,7 @@ from fastapi import Header, HTTPException, Request, status
 
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.core.config import get_settings
+from mplacas.core.jwt import JwtError, decode_token
 
 
 class OperationsRole(StrEnum):
@@ -127,6 +128,51 @@ async def _resolve_persisted_credential(
     return principal
 
 
+async def _plant_scope_for_org(org_id: uuid.UUID) -> PlantScope:
+    from mplacas.db.session import SessionFactory
+    from sqlalchemy import select, text as sa_text
+    from mplacas.db.models import Plant
+
+    async with SessionFactory() as session:
+        result = await session.execute(
+            select(Plant.id).where(Plant.organization_id == org_id)
+        )
+        plant_ids = frozenset(row[0] for row in result)
+
+    if not plant_ids:
+        return PlantScope.empty()
+    return PlantScope.restricted(plant_ids)
+
+
+async def _authenticate_bearer(
+    token: str,
+    *,
+    require_admin: bool,
+) -> OperationsPrincipal | None:
+    settings = get_settings()
+    if not settings.jwt_configured:
+        return None
+    try:
+        claims = decode_token(token, expected_type="access")
+    except JwtError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or expired bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if require_admin and claims.role != OperationsRole.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="admin role required",
+        )
+    scope = await _plant_scope_for_org(claims.org_id)
+    return OperationsPrincipal(
+        role=OperationsRole(claims.role),
+        credential_id=f"user:{claims.sub}",
+        plant_scope=scope,
+    )
+
+
 async def _authenticate_with_fallback(
     provided: str | None,
     *,
@@ -155,8 +201,16 @@ async def _authenticate_with_fallback(
 
 async def require_operations_key(
     request: Request,
+    authorization: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None),
 ) -> OperationsPrincipal:
+    if authorization and authorization.startswith("Bearer "):
+        principal = await _authenticate_bearer(
+            authorization[len("Bearer "):], require_admin=True
+        )
+        if principal is not None:
+            request.state.operations_principal = principal
+            return principal
     principal = await _authenticate_with_fallback(x_api_key, require_admin=True)
     request.state.operations_principal = principal
     return principal
@@ -164,8 +218,16 @@ async def require_operations_key(
 
 async def require_operations_read(
     request: Request,
+    authorization: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None),
 ) -> OperationsPrincipal:
+    if authorization and authorization.startswith("Bearer "):
+        principal = await _authenticate_bearer(
+            authorization[len("Bearer "):], require_admin=False
+        )
+        if principal is not None:
+            request.state.operations_principal = principal
+            return principal
     principal = await _authenticate_with_fallback(x_api_key, require_admin=False)
     request.state.operations_principal = principal
     return principal

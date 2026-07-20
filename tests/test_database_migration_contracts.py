@@ -9,7 +9,7 @@ def test_utility_bill_initial_unique_constraint_is_named_for_batch_migrations() 
         ROOT / "migrations" / "versions" / "20260712_0003_utility_bills.py"
     ).read_text(encoding="utf-8")
 
-    assert "uq_utility_bills_distributor_reference_month_cycle_start_cycle_end" in migration
+    assert "uq_utility_bills_cycle" in migration
 
 
 def test_utility_bill_plant_scope_migration_reflects_sqlite_constraint_names() -> None:

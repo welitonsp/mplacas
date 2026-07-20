@@ -35,7 +35,7 @@ def upgrade() -> None:
         )
         batch_op.create_index("ix_utility_bills_plant_id", ["plant_id"], unique=False)
         batch_op.drop_constraint(
-            "uq_utility_bills_distributor_reference_month_cycle_start_cycle_end",
+            "uq_utility_bills_cycle",
             type_="unique",
         )
         batch_op.create_unique_constraint(
@@ -48,7 +48,7 @@ def downgrade() -> None:
     with op.batch_alter_table("utility_bills") as batch_op:
         batch_op.drop_constraint("uq_utility_bills_plant_cycle", type_="unique")
         batch_op.create_unique_constraint(
-            "uq_utility_bills_distributor_reference_month_cycle_start_cycle_end",
+            "uq_utility_bills_cycle",
             ["distributor", "reference_month", "cycle_start", "cycle_end"],
         )
         batch_op.drop_index("ix_utility_bills_plant_id")

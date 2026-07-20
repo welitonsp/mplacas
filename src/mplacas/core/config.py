@@ -75,6 +75,21 @@ class Settings(BaseSettings):
     retention_climate_observations_days: int = 1825
     report_export_bucket: str | None = None
     report_export_url_ttl_seconds: int = 900
+    jwt_secret: SecretStr | None = None
+    jwt_algorithm: str = "HS256"
+    jwt_access_ttl_seconds: int = 900
+    jwt_refresh_ttl_seconds: int = 1_209_600
+    cors_allowed_origins: str | None = None
+
+    @property
+    def jwt_configured(self) -> bool:
+        return self.jwt_secret is not None
+
+    @property
+    def cors_allowed_origin_list(self) -> list[str]:
+        if not self.cors_allowed_origins:
+            return []
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
 
     @property
     def nep_configured(self) -> bool:
@@ -168,6 +183,30 @@ class Settings(BaseSettings):
     def _validate_outbox_batch_size(cls, value: int) -> int:
         if not 1 <= value <= 1000:
             raise ValueError("outbox dispatch batch size must be between 1 and 1000")
+        return value
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalize_database_url(cls, value: str) -> str:
+        # asyncpg requires the postgresql+asyncpg:// scheme.
+        # Neon and many PaaS providers emit postgres:// or postgresql:// — normalize both.
+        if value.startswith("postgres://"):
+            value = "postgresql+asyncpg://" + value[len("postgres://"):]
+        elif value.startswith("postgresql://"):
+            value = "postgresql+asyncpg://" + value[len("postgresql://"):]
+        # asyncpg does not accept sslmode/channel_binding as URL params — SSL is
+        # handled via connect_args in session.py. Strip these psycopg2-style params.
+        pg_asyncpg = "postgresql+asyncpg://" in value
+        has_unsupported_params = "sslmode=" in value or "channel_binding=" in value
+        if pg_asyncpg and has_unsupported_params:
+            from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
+            parts = urlsplit(value)
+            params = {
+                k: v for k, v in parse_qs(parts.query, keep_blank_values=True).items()
+                if k not in ("sslmode", "channel_binding")
+            }
+            query = urlencode({k: v[0] for k, v in params.items()})
+            value = urlunsplit(parts._replace(query=query))
         return value
 
     @field_validator("operations_read_plant_ids")

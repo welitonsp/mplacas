@@ -1,6 +1,7 @@
 # Register all ORM models with Base.metadata so that FK resolution works in any test
 # that uses Base.metadata.create_all with an in-memory SQLite engine.
 import mplacas.alerts.db_models  # noqa: F401
+import mplacas.organizations.db_models  # noqa: F401
 import mplacas.audit.db_models  # noqa: F401
 import mplacas.billing.db_models  # noqa: F401
 import mplacas.climate.db_models  # noqa: F401
