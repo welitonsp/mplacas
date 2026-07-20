@@ -4,9 +4,7 @@ Fonte oficial para implantação do backend no Google Cloud Run, banco Neon e fr
 
 > Nunca use `set -x` durante operações com segredos. Não cole connection strings, tokens ou senhas em mensagens, arquivos versionados ou argumentos de linha de comando.
 
-## 1. Atualizar o repositório e criar a configuração local
-
-No Google Cloud Shell:
+## 1. Atualizar o repositório e preparar o Cloud Shell
 
 ```bash
 cd ~
@@ -17,11 +15,17 @@ cd ~/mplacas-repo
 git switch main
 git pull --ff-only origin main
 
+python3 --version
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+
 test -f infra/gcp/config.env || cp infra/gcp/config.example.env infra/gcp/config.env
 nano infra/gcp/config.env
 ```
 
-Preencha apenas valores não sensíveis:
+O Python deve ser 3.12 ou superior. Preencha apenas valores não sensíveis:
 
 ```text
 GCP_PROJECT_ID=mplacas
@@ -44,6 +48,7 @@ Não coloque URLs do Neon ou outras credenciais em `config.env`.
 ## 2. Carregar a configuração e preparar o projeto GCP
 
 ```bash
+source .venv/bin/activate
 source infra/gcp/config.env
 gcloud config set project "$GCP_PROJECT_ID"
 bash infra/gcp/bootstrap.sh "$GCP_PROJECT_ID"
@@ -75,8 +80,6 @@ bash infra/gcp/set-secrets.sh operations-key
 bash infra/gcp/set-secrets.sh jwt
 ```
 
-Mapeamento:
-
 | Secret Manager | Uso |
 |---|---|
 | `mplacas-database-url` | endpoint Neon pooled do serviço web |
@@ -107,11 +110,9 @@ Confirme no painel Cloudflare o domínio atribuído. O esperado é:
 https://mplacas-frontend.pages.dev
 ```
 
-Se outro nome for necessário, pare a implantação e atualize de forma revisada o workflow e o `wrangler.toml`; não prossiga com nomes divergentes.
+Se outro nome for necessário, pare a implantação e atualize de forma revisada o workflow e o `wrangler.toml`.
 
 ## 6. Configurar a origem CORS real
-
-Edite:
 
 ```bash
 nano infra/gcp/config.env
@@ -154,6 +155,7 @@ O Cloud Run Job usa exclusivamente `mplacas-migration-database-url`, com conexã
 ## 9. Confirmar o usuário administrador
 
 ```bash
+source .venv/bin/activate
 read -rp "Nome exato do usuário administrador: " ADMIN_USER
 
 MPLACAS_DATABASE_URL="$(
@@ -277,7 +279,7 @@ curl -fsS "$BACKEND_URL/energy/executive/latest" \
 unset TOKEN
 ```
 
-Depois abra no navegador:
+Depois abra:
 
 ```text
 https://mplacas-frontend.pages.dev
@@ -307,6 +309,7 @@ Confirme:
 cd ~/mplacas-repo
 git switch main
 git pull --ff-only origin main
+source .venv/bin/activate
 source infra/gcp/config.env
 bash infra/gcp/deploy-service.sh
 bash infra/gcp/run-migrations.sh
