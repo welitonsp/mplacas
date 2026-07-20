@@ -99,3 +99,19 @@ def test_transactional_outbox_migration_is_present() -> None:
     assert '"available_at"' in migration
     assert '"ix_outbox_events_status_available"' in migration
     assert '"ix_outbox_events_dispatch"' in migration
+
+
+def test_api_credentials_migration_is_present() -> None:
+    source = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "20260719_0013_add_api_credentials.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision = "20260719_0013"' in source
+    assert 'down_revision = "20260719_0012"' in source
+    assert '"api_credentials"' in source
+    assert '"key_hash"' in source
+    assert "uq_api_credentials_key_hash" in source
+    assert "sa.UniqueConstraint" in source
