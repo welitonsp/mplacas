@@ -1,0 +1,16 @@
+# Cloudflare Pages configuration
+# Deploy: npx wrangler pages deploy dist --project-name=mplacas-frontend
+#
+# Required GitHub Variables (non-sensitive, visible in bundle):
+#   CLOUDFLARE_ACCOUNT_ID — Cloudflare account ID
+#   VITE_API_URL          — Backend API URL (e.g. https://api.example.com)
+#   VITE_PLANT_ID         — Plant UUID for dashboard queries
+#
+# Required GitHub Secrets (sensitive):
+#   CLOUDFLARE_API_TOKEN  — Cloudflare API token with Pages:Edit permission
+#
+# The operator must configure CORS on the backend side:
+#   MPLACAS_CORS_ALLOWED_ORIGINS must include the deployed Pages domain (no wildcard).
+
+name = "mplacas-frontend"
+pages_build_output_dir = "dist"
