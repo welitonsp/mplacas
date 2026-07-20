@@ -13,6 +13,7 @@ from mplacas.intelligence.anomaly_service import (
     analyze_recent_persisted_anomalies,
 )
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError, analyze_persisted_cycle
+from mplacas.intelligence.dashboard_readmodel import ExecutiveDashboardReadModel
 from mplacas.intelligence.executive_service import build_executive_dashboard
 from mplacas.intelligence.history_service import (
     EnergyHistoryNotFoundError,
@@ -23,6 +24,8 @@ router = APIRouter(
     prefix="/energy",
     tags=["energy"],
 )
+
+_executive_dashboard_read_model = ExecutiveDashboardReadModel()
 
 
 def _serialize(result) -> dict[str, object]:
@@ -204,7 +207,7 @@ async def latest_executive_dashboard(
     principal.require_plant_access(plant_id)
     async with SessionFactory() as session:
         try:
-            result = await build_executive_dashboard(
+            result = await _executive_dashboard_read_model.get(
                 session,
                 plant_id=plant_id,
                 expected_production_kwh=expected_production_kwh,

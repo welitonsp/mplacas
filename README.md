@@ -38,6 +38,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - job de coleta (`collect`) que compõe a resiliência e defere para a fila quando a API persiste indisponível;
 - job de drenagem (`drain-collection`) que reprocessa os dias deferidos, isolando cada tarefa em sua transação;
 - job de retenção (`retention`) que remove registros operacionais terminais e antigos, preservando produção e dados em andamento;
+- read-model do dashboard executivo com cache invalidado por impressão digital dos dados (nunca serve resultado obsoleto);
 - alertas de SLO documentados por runbook para falhas de pipeline, despacho e latência;
 - orquestração diária com lock por usina/data, retomada após timeout e status consultável;
 - logs JSON correlacionados, trace ID ponta a ponta e spans OpenTelemetry no Cloud Trace;

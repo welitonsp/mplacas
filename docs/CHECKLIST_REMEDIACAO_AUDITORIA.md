@@ -52,13 +52,12 @@ seções 11 e 12) ao seu estado atual, com a evidência correspondente. Legenda:
   provedor NEPViewer com retry e detecção de dados incompletos (ADR-047); job de coleta que defere
   para a fila em indisponibilidade persistente (PR #50); worker de drenagem que reprocessa os dias
   deferidos isolando cada tarefa em sua transação (PR #51).
-- [~] **Particionamento/retention para séries temporais e ledgers.**  
-  Retention **concluída** (ADR-048): job que purga registros terminais e antigos de `job_runs`,
-  `pipeline_executions`, `outbox_events`, `collection_tasks` e `alert_delivery_records`, preservando
-  dados de produção e registros em andamento. Particionamento de séries temporais (`daily_energy`,
-  clima) **adiado por decisão explícita**: o volume single-plant não justifica a complexidade.
-- [ ] **Cache/read models para dashboards executivos (P2).**  
-  Pendente. O dashboard executivo ainda recalcula o caminho executivo a cada acesso.
+- [ ] **Particionamento/retention para séries temporais e ledgers.**  
+  Pendente. Próxima P1 natural: política de retenção para `job_runs`, `pipeline_executions`,
+  `alert_delivery_records` e avaliação de particionamento para `daily_energy` e clima.
+- [x] **Cache/read models para dashboards executivos (P2).**  
+  Concluído (ADR-049): read-model com cache invalidado por impressão digital dos dados de energia
+  do ciclo. Nunca serve resultado obsoleto — a impressão muda quando os dados mudam.
 - [ ] **Exportação assíncrona em lote com storage de artefatos (P2).**  
   Pendente. Exportadores PDF/XLSX ainda geram em memória.
 - [x] **Formalizar auditoria de ator e trilha de alterações.**  
@@ -81,9 +80,10 @@ seções 11 e 12) ao seu estado atual, com a evidência correspondente. Legenda:
 | P0 (urgentes) | 3 | 0 | 0 |
 | P1 (30 dias) | 2 | 0 | 0 |
 | Táticas (90 dias) | 2 | 1 | 2 |
-| Estratégicas (6–12m) | 2 | 1 | 2 |
+| Estratégicas (6–12m) | 2 | 0 | 3 |
 
-Todos os itens **P0** e **P1** estão concluídos (a retention fecha a última P1; o particionamento
-de séries temporais foi adiado por decisão de produto, não por dívida). Permanecem apenas melhorias
-**P2** — refatoração de relatórios, cache de dashboard e exportação assíncrona em lote — mais o
-`plant_id` nullable de faturas, pendente de migração de legado.
+Todos os itens **P0** e **P1 de curto prazo** estão concluídos. Entre as melhorias de maior
+horizonte, a fila/workers e o RBAC (com decisão single-tenant) foram concluídos; permanecem, por
+ordem de valor no contexto single-plant atual: particionamento/retention (P1), refatoração de
+relatórios (P2), cache de dashboard (P2) e exportação assíncrona em lote (P2). O `plant_id` nullable
+de faturas segue pendente de migração de legado.
