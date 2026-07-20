@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE, PlantScope
 from mplacas.core.security import OperationsPrincipal, OperationsRole
-from mplacas.credentials.db_models import ApiCredentialRecord
+from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
 
 _SECRET_BYTES = 32
 
@@ -27,6 +27,50 @@ def generate_secret() -> str:
     return secrets.token_urlsafe(_SECRET_BYTES)
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+class UserService:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(self, *, name: str) -> OperationalUserRecord:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise CredentialError("user name is required")
+        existing = await self._session.scalar(
+            select(OperationalUserRecord).where(
+                OperationalUserRecord.name == normalized_name
+            )
+        )
+        if existing is not None:
+            raise CredentialError("user name is already in use")
+        record = OperationalUserRecord(name=normalized_name, active=True)
+        self._session.add(record)
+        await self._session.flush()
+        return record
+
+    async def deactivate(self, user_id: uuid.UUID) -> OperationalUserRecord:
+        """Desativa o usuário; todas as suas credenciais param de autenticar."""
+        record = await self._session.get(OperationalUserRecord, user_id)
+        if record is None:
+            raise CredentialError("operational user not found")
+        if record.active:
+            record.active = False
+            record.deactivated_at = datetime.now(timezone.utc)
+            await self._session.flush()
+        return record
+
+    async def list_users(self) -> list[OperationalUserRecord]:
+        result = await self._session.scalars(
+            select(OperationalUserRecord).order_by(OperationalUserRecord.created_at)
+        )
+        return list(result)
+
+
 class CredentialService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -37,6 +81,8 @@ class CredentialService:
         name: str,
         role: OperationsRole,
         plant_ids: frozenset[uuid.UUID] | None = None,
+        user_id: uuid.UUID | None = None,
+        expires_at: datetime | None = None,
     ) -> tuple[ApiCredentialRecord, str]:
         """Cria uma credencial e devolve o segredo em texto claro uma única vez."""
         normalized_name = name.strip()
@@ -46,6 +92,16 @@ class CredentialService:
             raise CredentialError("a restricted credential must contain at least one plant")
         if plant_ids is not None and role is OperationsRole.ADMIN:
             raise CredentialError("admin credentials cannot be plant-restricted")
+        if expires_at is not None:
+            expires_at = _as_utc(expires_at)
+            if expires_at <= datetime.now(timezone.utc):
+                raise CredentialError("credential expiration must be in the future")
+        if user_id is not None:
+            user = await self._session.get(OperationalUserRecord, user_id)
+            if user is None:
+                raise CredentialError("operational user not found")
+            if not user.active:
+                raise CredentialError("operational user is deactivated")
         existing = await self._session.scalar(
             select(ApiCredentialRecord).where(ApiCredentialRecord.name == normalized_name)
         )
@@ -63,6 +119,8 @@ class CredentialService:
                 else None
             ),
             active=True,
+            user_id=user_id,
+            expires_at=expires_at,
         )
         self._session.add(record)
         await self._session.flush()
@@ -99,6 +157,12 @@ class CredentialService:
             )
         )
         if record is None:
+            return None
+        if record.expires_at is not None and _as_utc(record.expires_at) <= datetime.now(
+            timezone.utc
+        ):
+            return None
+        if record.user is not None and not record.user.active:
             return None
         scope = (
             PlantScope.restricted(uuid.UUID(item) for item in record.plant_ids)

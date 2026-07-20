@@ -115,3 +115,20 @@ def test_api_credentials_migration_is_present() -> None:
     assert '"key_hash"' in source
     assert "uq_api_credentials_key_hash" in source
     assert "sa.UniqueConstraint" in source
+
+
+def test_operational_users_migration_is_present() -> None:
+    source = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "20260719_0014_add_operational_users.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision = "20260719_0014"' in source
+    assert 'down_revision = "20260719_0013"' in source
+    assert '"operational_users"' in source
+    assert "uq_operational_users_name" in source
+    assert "fk_api_credentials_user_id" in source
+    assert '"expires_at"' in source
+    assert "batch_alter_table" in source
