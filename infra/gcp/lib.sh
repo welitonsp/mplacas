@@ -7,6 +7,8 @@ readonly SECRET_MIGRATION_DATABASE_URL="mplacas-migration-database-url"
 readonly SECRET_OPERATIONS_KEY="mplacas-operations-api-key"
 readonly SECRET_JWT="mplacas-jwt-secret"
 
+# Public arrays consumed by scripts that source this library.
+# shellcheck disable=SC2034
 readonly MPLACAS_REQUIRED_APIS=(
   "run.googleapis.com"
   "cloudbuild.googleapis.com"
@@ -16,6 +18,7 @@ readonly MPLACAS_REQUIRED_APIS=(
   "cloudtrace.googleapis.com"
   "monitoring.googleapis.com"
 )
+# shellcheck disable=SC2034
 readonly MPLACAS_SECRET_NAMES=(
   "$SECRET_DATABASE_URL"
   "$SECRET_MIGRATION_DATABASE_URL"
