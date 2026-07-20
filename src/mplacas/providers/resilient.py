@@ -112,5 +112,6 @@ class ResilientSolarProvider(SolarProvider):
                     },
                 )
                 await self._sleep(delay)
-        assert last_error is not None
+        if last_error is None:
+            raise RuntimeError("retry loop exhausted without capturing an error")
         raise last_error

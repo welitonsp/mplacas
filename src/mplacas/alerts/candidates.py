@@ -61,6 +61,8 @@ def anomaly_alert_candidate(
         summary.daily,
         key=lambda item: severity_order[item.assessment.level],
     )
+    if not representative.assessment.diagnostics:
+        raise ValueError("anomaly assessment has no diagnostics to build an alert from")
     diagnostic = representative.assessment.diagnostics[0]
     message = diagnostic.message
     if summary.current_streak_days:

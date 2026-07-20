@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     explanation_timeout_seconds: float = 15.0
     operations_api_key: SecretStr | None = None
     operations_read_api_key: SecretStr | None = None
+    credential_pepper: SecretStr | None = None
     operations_read_plant_ids: str | None = None
     telegram_bot_token: SecretStr | None = None
     telegram_webhook_secret: SecretStr | None = None

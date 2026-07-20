@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from mplacas.audit.repository import AuditEventRepository
+from mplacas.core.config import get_settings
 from mplacas.core.security import (
     OperationsPrincipal,
     OperationsRole,
@@ -67,7 +68,9 @@ async def create_credential(
 ) -> dict[str, object]:
     principal.require_unrestricted_access()
     async with SessionFactory() as session:
-        service = CredentialService(session)
+        _cfg = get_settings()
+        pepper = _cfg.credential_pepper.get_secret_value() if _cfg.credential_pepper else ""
+        service = CredentialService(session, pepper=pepper)
         try:
             record, secret = await service.create(
                 name=payload.name,
@@ -123,7 +126,9 @@ async def revoke_credential(
 ) -> dict[str, object]:
     principal.require_unrestricted_access()
     async with SessionFactory() as session:
-        service = CredentialService(session)
+        _cfg = get_settings()
+        pepper = _cfg.credential_pepper.get_secret_value() if _cfg.credential_pepper else ""
+        service = CredentialService(session, pepper=pepper)
         try:
             record = await service.revoke(credential_id)
         except CredentialError as exc:

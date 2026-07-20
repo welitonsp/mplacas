@@ -47,6 +47,7 @@ class UtilityBillRepository:
             credit_balance_kwh=bill.credit_balance_kwh,
             total_amount_brl=bill.total_amount_brl,
             public_lighting_brl=bill.public_lighting_brl,
+            generation_cycle_kwh=bill.generation_cycle_kwh,
             status=BillStatus.PENDING_REVIEW,
             source_hash=source_hash,
         )

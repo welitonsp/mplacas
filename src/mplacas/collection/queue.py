@@ -101,7 +101,7 @@ class CollectionQueueRepository:
             "status": CollectionTaskStatus.PENDING,
             "attempt_count": 0,
         }
-        dialect = self._session.bind.dialect.name if self._session.bind is not None else ""
+        dialect = self._session.sync_session.get_bind().dialect.name
         if dialect == "postgresql":
             statement = (
                 postgresql_insert(CollectionTaskRecord)

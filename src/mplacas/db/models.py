@@ -5,7 +5,9 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Numeric, String, UniqueConstraint, func
+from sqlalchemy import (
+    Date, DateTime, Enum, ForeignKey, Index, Numeric, String, UniqueConstraint, func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from mplacas.db.base import Base
@@ -56,7 +58,10 @@ class Device(Base):
 
 class DailyEnergy(Base):
     __tablename__ = "daily_energy"
-    __table_args__ = (UniqueConstraint("device_id", "production_date"),)
+    __table_args__ = (
+        UniqueConstraint("device_id", "production_date"),
+        Index("ix_daily_energy_date_device", "production_date", "device_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))

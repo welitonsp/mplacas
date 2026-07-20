@@ -3,18 +3,13 @@ from __future__ import annotations
 from collections.abc import MutableSet
 
 from mplacas.alerts.models import (
+    SEVERITY_ORDER as _SEVERITY_ORDER,
     AlertCandidate,
     AlertDeliveryStatus,
     AlertDispatchResult,
     AlertSeverity,
 )
 from mplacas.alerts.provider import AlertProvider
-
-_SEVERITY_ORDER = {
-    AlertSeverity.INFO: 0,
-    AlertSeverity.WARNING: 1,
-    AlertSeverity.CRITICAL: 2,
-}
 
 
 async def dispatch_alert(

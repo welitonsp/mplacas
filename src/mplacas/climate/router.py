@@ -52,7 +52,7 @@ async def collect_climate(
                 action="climate.collect",
                 resource_type="plant",
                 resource_id=str(result.plant_id),
-                outcome="SUCCEEDED",
+                outcome="success",
                 details={
                     "start_date": result.start_date.isoformat(),
                     "end_date": result.end_date.isoformat(),
