@@ -12,6 +12,12 @@ configure_gcloud_project
 validate_billing_enabled
 ensure_runtime_service_account
 
+for secret_name in "$SECRET_MIGRATION_DATABASE_URL" "$SECRET_OPERATIONS_KEY"; do
+  gcloud secrets describe "$secret_name" --project "$GCP_PROJECT_ID" >/dev/null
+  [[ "$(count_enabled_secret_versions "$secret_name")" == "1" ]] || die \
+    "${secret_name} must have exactly one ENABLED version before migrations"
+done
+
 IMAGE="$(cloud_run_service_image)"
 [[ -n "$IMAGE" ]] || die "deployed service image was not found"
 
@@ -32,7 +38,7 @@ gcloud run jobs deploy "$GCP_MIGRATION_JOB_NAME" \
   --set-env-vars \
     "MPLACAS_ENVIRONMENT=production,MPLACAS_TIMEZONE=${MPLACAS_TIMEZONE},MPLACAS_GCP_PROJECT_ID=${GCP_PROJECT_ID},MPLACAS_CLOUD_TRACE_ENABLED=true" \
   --set-secrets \
-    "MPLACAS_DATABASE_URL=mplacas-migration-database-url:latest,MPLACAS_OPERATIONS_API_KEY=mplacas-operations-key:latest" \
+    "MPLACAS_DATABASE_URL=${SECRET_MIGRATION_DATABASE_URL}:latest,MPLACAS_OPERATIONS_API_KEY=${SECRET_OPERATIONS_KEY}:latest" \
   --command python \
   --args=-m,mplacas.cloud_jobs,migrate \
   --quiet
