@@ -34,7 +34,37 @@ class SolarCollectionService:
         start: date,
         end: date,
         consolidate_through: date | None = None,
+        expect_complete: bool = False,
     ) -> CollectionResult:
+        """Coleta gerenciando a própria transação (commit/rollback)."""
+        try:
+            result = await self.collect_in_session(
+                plant_name=plant_name,
+                start=start,
+                end=end,
+                consolidate_through=consolidate_through,
+                expect_complete=expect_complete,
+            )
+            await self._session.commit()
+        except Exception:
+            await self._session.rollback()
+            raise
+        return result
+
+    async def collect_in_session(
+        self,
+        *,
+        plant_name: str,
+        start: date,
+        end: date,
+        consolidate_through: date | None = None,
+        expect_complete: bool = False,
+    ) -> CollectionResult:
+        """Coleta sem gerenciar a transação: commit/rollback ficam com o chamador.
+
+        Usado pelo worker de drenagem, cuja disciplina transacional (uma
+        transação por tarefa) precisa governar a persistência.
+        """
         if end < start:
             raise ValueError("A data final não pode ser anterior à inicial")
 
@@ -43,33 +73,30 @@ class SolarCollectionService:
         received = 0
         changed = 0
 
-        try:
-            for remote in devices:
-                device = await self._get_or_create_device(
-                    plant=plant,
-                    serial_number=remote.serial_number,
-                    model_name=remote.model_name,
+        for remote in devices:
+            device = await self._get_or_create_device(
+                plant=plant,
+                serial_number=remote.serial_number,
+                model_name=remote.model_name,
+            )
+            rows = await self._provider.get_daily_energy(
+                remote.serial_number, start, end, expect_complete=expect_complete
+            )
+            received += len(rows)
+            for row in rows:
+                status = (
+                    DataStatus.CONSOLIDATED
+                    if consolidate_through is not None
+                    and row.production_date <= consolidate_through
+                    else DataStatus.PROVISIONAL
                 )
-                rows = await self._provider.get_daily_energy(remote.serial_number, start, end)
-                received += len(rows)
-                for row in rows:
-                    status = (
-                        DataStatus.CONSOLIDATED
-                        if consolidate_through is not None
-                        and row.production_date <= consolidate_through
-                        else DataStatus.PROVISIONAL
-                    )
-                    _, was_changed = await self._energy.upsert(
-                        device_id=device.id,
-                        production_date=row.production_date,
-                        energy_kwh=Decimal(row.energy_kwh),
-                        status=status,
-                    )
-                    changed += int(was_changed)
-            await self._session.commit()
-        except Exception:
-            await self._session.rollback()
-            raise
+                _, was_changed = await self._energy.upsert(
+                    device_id=device.id,
+                    production_date=row.production_date,
+                    energy_kwh=Decimal(row.energy_kwh),
+                    status=status,
+                )
+                changed += int(was_changed)
 
         return CollectionResult(
             devices_seen=len(devices),
