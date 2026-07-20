@@ -79,7 +79,7 @@ async def run_pipeline(
                 action="pipeline.run",
                 resource_type="pipeline_execution",
                 resource_id=str(result.execution_id),
-                outcome="success",
+                outcome="SUCCEEDED",
                 details={
                     "plant_id": str(result.plant_id),
                     "target_date": result.target_date.isoformat(),

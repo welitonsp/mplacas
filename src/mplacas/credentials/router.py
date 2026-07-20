@@ -91,7 +91,7 @@ async def create_credential(
             action="credentials.create",
             resource_type="api_credential",
             resource_id=str(record.id),
-            outcome="success",
+            outcome="SUCCEEDED",
             details={
                 "name": record.name,
                 "role": record.role,
@@ -141,7 +141,7 @@ async def revoke_credential(
             action="credentials.revoke",
             resource_type="api_credential",
             resource_id=str(record.id),
-            outcome="success",
+            outcome="SUCCEEDED",
             details={"name": record.name},
         )
         await session.commit()
@@ -174,7 +174,7 @@ async def create_user(
             action="users.create",
             resource_type="operational_user",
             resource_id=str(record.id),
-            outcome="success",
+            outcome="SUCCEEDED",
             details={"name": record.name},
         )
         await session.commit()
@@ -214,7 +214,7 @@ async def deactivate_user(
             action="users.deactivate",
             resource_type="operational_user",
             resource_id=str(record.id),
-            outcome="success",
+            outcome="SUCCEEDED",
             details={"name": record.name},
         )
         await session.commit()

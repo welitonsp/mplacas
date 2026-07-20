@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import uuid
 from decimal import Decimal
 from functools import lru_cache
@@ -281,4 +282,7 @@ def _validate_production_external_url(
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    # Skip .env file when running under pytest so monkeypatch.delenv works correctly.
+    # In production and development, .env is loaded normally.
+    env_file: str | None = None if "pytest" in sys.modules else ".env"
+    return Settings(_env_file=env_file)  # type: ignore[call-arg]

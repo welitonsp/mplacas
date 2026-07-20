@@ -15,7 +15,9 @@ from mplacas.reports.exporters import (
 from mplacas.reports.export.theme import severity_token
 
 
-def _make_report(*, with_diagnostics: bool = False, with_trend: bool = False) -> MonthlyEnergyReport:
+def _make_report(
+    *, with_diagnostics: bool = False, with_trend: bool = False
+) -> MonthlyEnergyReport:
     metrics = (
         ReportMetric(
             key="production_kwh",

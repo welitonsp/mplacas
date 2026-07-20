@@ -97,7 +97,7 @@ async def intake_bill_text(request: Request, payload: BillTextIntake) -> dict[st
             action="billing.intake_text",
             resource_type="utility_bill",
             resource_id=str(record.id),
-            outcome="success",
+            outcome="SUCCEEDED",
             details={
                 "plant_id": str(record.plant_id),
                 "reference_month": record.reference_month,
@@ -149,7 +149,7 @@ async def confirm_bill(
             action="billing.confirm",
             resource_type="utility_bill",
             resource_id=str(record.id),
-            outcome="success",
+            outcome="SUCCEEDED",
             details={
                 "plant_id": str(record.plant_id),
                 "reference_month": record.reference_month,
@@ -192,7 +192,7 @@ async def reject_bill(
             action="billing.reject",
             resource_type="utility_bill",
             resource_id=str(record.id),
-            outcome="success",
+            outcome="SUCCEEDED",
             details={
                 "plant_id": str(record.plant_id),
                 "reference_month": record.reference_month,
