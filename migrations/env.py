@@ -8,25 +8,27 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from mplacas.alerts import db_models as alert_models  # noqa: F401
-from mplacas.organizations import db_models as organization_models  # noqa: F401
 from mplacas.audit import db_models as audit_models  # noqa: F401
 from mplacas.billing import db_models as billing_models  # noqa: F401
 from mplacas.climate import db_models as climate_models  # noqa: F401
-from mplacas.credentials import db_models as credential_models  # noqa: F401
 from mplacas.collection import db_models as collection_models  # noqa: F401
 from mplacas.core.config import get_settings
+from mplacas.credentials import db_models as credential_models  # noqa: F401
 from mplacas.db import models  # noqa: F401
 from mplacas.db.base import Base
+from mplacas.db.connection import database_connect_args
 from mplacas.events import db_models as event_models  # noqa: F401
 from mplacas.operations import models as operation_models  # noqa: F401
 from mplacas.orchestration import db_models as orchestration_models  # noqa: F401
+from mplacas.organizations import db_models as organization_models  # noqa: F401
 from mplacas.reports import db_models as report_models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+_database_url = get_settings().database_url
+config.set_main_option("sqlalchemy.url", _database_url)
 target_metadata = Base.metadata
 
 
@@ -52,6 +54,7 @@ async def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=database_connect_args(_database_url),
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
