@@ -38,9 +38,9 @@ seções 11 e 12) ao seu estado atual, com a evidência correspondente. Legenda:
   Migration `20260716_0010_require_utility_bill_plant.py`: faz backfill quando existe exatamente
   uma planta, falha com mensagem operacional clara quando ambíguo, altera para `NOT NULL`.
   Modelo SQLAlchemy já reflete `nullable=False`. Item estava pendente apenas no checklist.
-- [~] **Materializar snapshot mensal para dashboard/relatórios.**  
-  Snapshot imutável de relatório mensal já materializado em sessão anterior (PR #41). O
-  cache/read-model do dashboard executivo permanece pendente (ver P2 estratégico).
+- [x] **Materializar snapshot mensal para dashboard/relatórios.**  
+  Snapshot imutável de relatório mensal materializado em sessão anterior (PR #41).
+  Cache/read-model do dashboard executivo concluído (ADR-049, sessão 2).
 - [x] **Refatorar relatórios em contrato, projeção, renderizadores e estilos (P2).**  
   Paleta centralizada em `reports/export/theme.py`; renderizadores em
   `reports/export/pdf_renderer.py` e `reports/export/xlsx_renderer.py`. Fachadas
@@ -92,7 +92,7 @@ seções 11 e 12) ao seu estado atual, com a evidência correspondente. Legenda:
 |---|---:|---:|---:|
 | P0 (urgentes) | 3 | 0 | 0 |
 | P1 (30 dias) | 2 | 0 | 0 |
-| Táticas (90 dias) | 4 | 1 | 0 |
+| Táticas (90 dias) | 5 | 0 | 0 |
 | Estratégicas (6–12m) | 5 | 0 | 0 |
 
 Todos os itens **P0** e **P1 de curto prazo** estão concluídos. Entre as melhorias de maior
