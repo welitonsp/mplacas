@@ -55,8 +55,9 @@ seções 11 e 12) ao seu estado atual, com a evidência correspondente. Legenda:
 - [ ] **Particionamento/retention para séries temporais e ledgers.**  
   Pendente. Próxima P1 natural: política de retenção para `job_runs`, `pipeline_executions`,
   `alert_delivery_records` e avaliação de particionamento para `daily_energy` e clima.
-- [ ] **Cache/read models para dashboards executivos (P2).**  
-  Pendente. O dashboard executivo ainda recalcula o caminho executivo a cada acesso.
+- [x] **Cache/read models para dashboards executivos (P2).**  
+  Concluído (ADR-049): read-model com cache invalidado por impressão digital dos dados de energia
+  do ciclo. Nunca serve resultado obsoleto — a impressão muda quando os dados mudam.
 - [ ] **Exportação assíncrona em lote com storage de artefatos (P2).**  
   Pendente. Exportadores PDF/XLSX ainda geram em memória.
 - [x] **Formalizar auditoria de ator e trilha de alterações.**  
