@@ -11,6 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from mplacas.db.base import Base
+from mplacas.organizations.db_models import OrganizationRecord as OrganizationRecord  # noqa: F401
 
 
 class DataStatus(str, enum.Enum):
@@ -24,6 +25,9 @@ class Plant(Base):
     __tablename__ = "plants"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(120))
     timezone: Mapped[str] = mapped_column(String(64), default="America/Sao_Paulo")
     installed_power_kwp: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)

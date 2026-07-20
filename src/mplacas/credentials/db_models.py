@@ -15,6 +15,9 @@ class OperationalUserRecord(Base):
     __tablename__ = "operational_users"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(80), unique=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -38,6 +41,9 @@ class ApiCredentialRecord(Base):
     __tablename__ = "api_credentials"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(80), unique=True)
     role: Mapped[str] = mapped_column(String(16))
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
