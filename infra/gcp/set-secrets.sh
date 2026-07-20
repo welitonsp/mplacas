@@ -124,4 +124,36 @@ ensure_secret_exists "mplacas-operations-api-key"
 grant_runtime_secret_access "mplacas-operations-api-key"
 add_secret_version "mplacas-operations-api-key" "MPLACAS_OPERATIONS_API_KEY"
 
+# --- JWT secret ---
+# 32 cryptographically random bytes (base64-encoded ~43 chars).
+# Generated entirely inside this script; the value is never printed.
+# The runtime Cloud Run service reads it as MPLACAS_JWT_SECRET via Secret Manager.
+provision_jwt_secret() {
+  local secret_name="mplacas-jwt-secret"
+  local new_version
+
+  ensure_secret_exists "$secret_name"
+  grant_runtime_secret_access "$secret_name"
+
+  # Generate and pipe directly to Secret Manager — value never stored in a variable
+  # that could appear in `set -x` output or shell history.
+  new_version="$(
+    printf '%s' "$(openssl rand -base64 32)" |
+      gcloud secrets versions add "$secret_name" \
+        --data-file=- \
+        --project "$GCP_PROJECT_ID" \
+        --format='value(name.basename())'
+  )"
+
+  [[ "$new_version" =~ ^[0-9]+$ ]] || die \
+    "new secret version number was not returned for ${secret_name}"
+
+  confirm_secret_version_enabled "$secret_name" "$new_version"
+  disable_old_enabled_versions "$secret_name" "$new_version"
+  assert_single_enabled_secret_version "$secret_name"
+  log "new JWT secret version enabled: ${secret_name} (value was never printed)"
+}
+
+provision_jwt_secret
+
 log "secret metadata updated; secret values were never printed"
