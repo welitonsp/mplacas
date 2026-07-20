@@ -12,6 +12,7 @@ from mplacas.audit import db_models as audit_models  # noqa: F401
 from mplacas.billing import db_models as billing_models  # noqa: F401
 from mplacas.climate import db_models as climate_models  # noqa: F401
 from mplacas.credentials import db_models as credential_models  # noqa: F401
+from mplacas.collection import db_models as collection_models  # noqa: F401
 from mplacas.core.config import get_settings
 from mplacas.db import models  # noqa: F401
 from mplacas.db.base import Base

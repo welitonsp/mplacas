@@ -132,3 +132,20 @@ def test_operational_users_migration_is_present() -> None:
     assert "fk_api_credentials_user_id" in source
     assert '"expires_at"' in source
     assert "batch_alter_table" in source
+
+
+def test_collection_task_queue_migration_is_present() -> None:
+    source = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "20260719_0015_add_collection_task_queue.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision = "20260719_0015"' in source
+    assert 'down_revision = "20260719_0014"' in source
+    assert '"collection_tasks"' in source
+    assert "uq_collection_tasks_deduplication_key" in source
+    assert "fk_collection_tasks_plant_id" in source
+    assert "ix_collection_tasks_claimable" in source
+    assert "collectiontaskstatus" in source
