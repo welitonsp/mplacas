@@ -108,16 +108,54 @@ def authenticate_operations_key(
     )
 
 
+async def _resolve_persisted_credential(
+    provided: str,
+    *,
+    require_admin: bool,
+) -> OperationsPrincipal | None:
+    from mplacas.credentials.service import CredentialService
+    from mplacas.db.session import SessionFactory
+
+    async with SessionFactory() as session:
+        principal = await CredentialService(session).resolve(provided)
+    if principal is None:
+        return None
+    if require_admin and not principal.can_admin():
+        return None
+    return principal
+
+
+async def _authenticate_with_fallback(
+    provided: str | None,
+    *,
+    require_admin: bool,
+) -> OperationsPrincipal:
+    settings = get_settings()
+    try:
+        return authenticate_operations_key(
+            provided,
+            admin_key=_secret_value(settings.operations_api_key),
+            read_key=None if require_admin else _secret_value(settings.operations_read_api_key),
+            read_plant_ids=None if require_admin else settings.operations_read_plant_id_set,
+            require_admin=require_admin,
+        )
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_401_UNAUTHORIZED or provided is None:
+            raise
+        persisted = await _resolve_persisted_credential(
+            provided,
+            require_admin=require_admin,
+        )
+        if persisted is None:
+            raise
+        return persisted
+
+
 async def require_operations_key(
     request: Request,
     x_api_key: str | None = Header(default=None),
 ) -> OperationsPrincipal:
-    settings = get_settings()
-    principal = authenticate_operations_key(
-        x_api_key,
-        admin_key=_secret_value(settings.operations_api_key),
-        require_admin=True,
-    )
+    principal = await _authenticate_with_fallback(x_api_key, require_admin=True)
     request.state.operations_principal = principal
     return principal
 
@@ -126,12 +164,6 @@ async def require_operations_read(
     request: Request,
     x_api_key: str | None = Header(default=None),
 ) -> OperationsPrincipal:
-    settings = get_settings()
-    principal = authenticate_operations_key(
-        x_api_key,
-        admin_key=_secret_value(settings.operations_api_key),
-        read_key=_secret_value(settings.operations_read_api_key),
-        read_plant_ids=settings.operations_read_plant_id_set,
-    )
+    principal = await _authenticate_with_fallback(x_api_key, require_admin=False)
     request.state.operations_principal = principal
     return principal

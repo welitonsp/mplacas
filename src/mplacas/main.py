@@ -13,6 +13,7 @@ from mplacas.alerts.router import router as alerts_router
 from mplacas.billing.router import router as billing_router
 from mplacas.climate.router import router as climate_router
 from mplacas.core.config import get_settings
+from mplacas.credentials.router import router as credentials_router
 from mplacas.db.session import SessionFactory
 from mplacas.explanations.router import router as explanations_router
 from mplacas.intelligence.router import router as intelligence_router
@@ -114,6 +115,7 @@ async def request_id_middleware(request: Request, call_next):
 
 
 app.include_router(operations_router)
+app.include_router(credentials_router)
 app.include_router(billing_router)
 app.include_router(telegram_router)
 app.include_router(intelligence_router)
