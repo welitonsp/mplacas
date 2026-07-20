@@ -34,8 +34,10 @@ seções 11 e 12) ao seu estado atual, com a evidência correspondente. Legenda:
   papéis e escopo por usina (ADR-043), usuários nomeados com expiração e desativação em cascata
   (ADR-044). A dimensão de *tenant* foi conscientemente descartada por decisão de produto
   single-tenant (ADR-045); o modelo de autorização é considerado completo para o escopo atual.
-- [ ] **Remover `plant_id` nullable de faturas após migração de legado.**  
-  Pendente. Requer migração dos dados legados antes de tornar a coluna obrigatória.
+- [x] **Remover `plant_id` nullable de faturas após migração de legado.**  
+  Migration `20260716_0010_require_utility_bill_plant.py`: faz backfill quando existe exatamente
+  uma planta, falha com mensagem operacional clara quando ambíguo, altera para `NOT NULL`.
+  Modelo SQLAlchemy já reflete `nullable=False`. Item estava pendente apenas no checklist.
 - [~] **Materializar snapshot mensal para dashboard/relatórios.**  
   Snapshot imutável de relatório mensal já materializado em sessão anterior (PR #41). O
   cache/read-model do dashboard executivo permanece pendente (ver P2 estratégico).
@@ -79,11 +81,10 @@ seções 11 e 12) ao seu estado atual, com a evidência correspondente. Legenda:
 |---|---:|---:|---:|
 | P0 (urgentes) | 3 | 0 | 0 |
 | P1 (30 dias) | 2 | 0 | 0 |
-| Táticas (90 dias) | 2 | 1 | 2 |
+| Táticas (90 dias) | 3 | 1 | 1 |
 | Estratégicas (6–12m) | 2 | 0 | 3 |
 
 Todos os itens **P0** e **P1 de curto prazo** estão concluídos. Entre as melhorias de maior
-horizonte, a fila/workers e o RBAC (com decisão single-tenant) foram concluídos; permanecem, por
-ordem de valor no contexto single-plant atual: particionamento/retention (P1), refatoração de
-relatórios (P2), cache de dashboard (P2) e exportação assíncrona em lote (P2). O `plant_id` nullable
-de faturas segue pendente de migração de legado.
+horizonte, a fila/workers, o RBAC (com decisão single-tenant) e o `plant_id NOT NULL` foram
+concluídos; permanecem, por ordem de valor no contexto single-plant atual: particionamento/retention
+(P1), refatoração de relatórios (P2) e exportação assíncrona em lote (P2).
