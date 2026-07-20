@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     retention_outbox_events_days: int = 30
     retention_collection_tasks_days: int = 30
     retention_alert_delivery_records_days: int = 365
+    retention_daily_energy_days: int = 1825
+    retention_climate_observations_days: int = 1825
+    report_export_bucket: str | None = None
+    report_export_url_ttl_seconds: int = 900
 
     @property
     def nep_configured(self) -> bool:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
@@ -9,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from mplacas.core.security import OperationsPrincipal, require_operations_read
 from mplacas.db.session import SessionFactory
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError
+from mplacas.reports.export_service import InvalidExportFormat, ReportExportService
 from mplacas.reports.exporters import (
     PDF_MEDIA_TYPE,
     XLSX_MEDIA_TYPE,
@@ -168,4 +170,96 @@ async def latest_monthly_report_xlsx(
         content=build_monthly_report_xlsx(report),
         media_type=XLSX_MEDIA_TYPE,
         headers=_download_headers(filename, snapshot=snapshot),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Async export endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/monthly/exports", status_code=202)
+async def enqueue_monthly_export(
+    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
+    plant_id: uuid.UUID = Query(...),
+    format: str = Query(default="pdf", pattern="^(pdf|xlsx)$"),
+) -> dict[str, object]:
+    """Enqueue an async export task. Poll GET /monthly/exports/{task_id} for status."""
+    principal.require_plant_access(plant_id)
+    async with SessionFactory() as session:
+        try:
+            task = await ReportExportService(session).enqueue(
+                plant_id=plant_id,
+                reference_month="latest",
+                format=format,
+            )
+        except InvalidExportFormat as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await session.commit()
+        return {
+            "task_id": str(task.id),
+            "plant_id": str(task.plant_id),
+            "format": task.format,
+            "status": task.status,
+            "created_at": task.created_at.isoformat(),
+        }
+
+
+@router.get("/monthly/exports/{task_id}")
+async def get_export_task(
+    task_id: uuid.UUID,
+    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
+) -> dict[str, object]:
+    """Poll the status of an async export task."""
+    async with SessionFactory() as session:
+        task = await ReportExportService(session).get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="export task not found")
+    principal.require_plant_access(task.plant_id)
+
+    result: dict[str, object] = {
+        "task_id": str(task.id),
+        "plant_id": str(task.plant_id),
+        "format": task.format,
+        "status": task.status,
+        "created_at": task.created_at.isoformat(),
+    }
+    if task.completed_at is not None:
+        result["completed_at"] = task.completed_at.isoformat()
+    if task.status == "completed":
+        if task.artifact_url is not None:
+            result["download_url"] = task.artifact_url
+        else:
+            result["download_url"] = f"/reports/monthly/exports/{task_id}/download"
+    if task.status == "failed" and task.error_message:
+        result["error"] = task.error_message
+    return result
+
+
+@router.get("/monthly/exports/{task_id}/download")
+async def download_export_artifact(
+    task_id: uuid.UUID,
+    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
+) -> Response:
+    """Stream the artifact bytes for a completed export task."""
+    async with SessionFactory() as session:
+        task = await ReportExportService(session).get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="export task not found")
+    principal.require_plant_access(task.plant_id)
+    if task.status != "completed":
+        raise HTTPException(status_code=409, detail=f"export task status is {task.status!r}")
+    if task.artifact_bytes is None:
+        raise HTTPException(status_code=404, detail="artifact bytes not available locally")
+
+    ext = task.format
+    filename = f"mplacas-export-{task.plant_id}-{task_id}.{ext}"
+    return Response(
+        content=task.artifact_bytes,
+        media_type=task.artifact_content_type or "application/octet-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+        },
     )

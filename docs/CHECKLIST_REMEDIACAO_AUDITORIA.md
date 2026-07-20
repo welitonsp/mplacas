@@ -1,6 +1,6 @@
 # Checklist de remediação — Auditoria técnica profunda (2026-07-16)
 
-Última atualização: 2026-07-20  
+Última atualização: 2026-07-20 (sessão 2)  
 Base: `origin/main` em `c754f76`  
 Validação local no fechamento: Ruff limpo, Mypy (135 arquivos) limpo, Pytest 233 passando.
 
@@ -41,8 +41,11 @@ seções 11 e 12) ao seu estado atual, com a evidência correspondente. Legenda:
 - [~] **Materializar snapshot mensal para dashboard/relatórios.**  
   Snapshot imutável de relatório mensal já materializado em sessão anterior (PR #41). O
   cache/read-model do dashboard executivo permanece pendente (ver P2 estratégico).
-- [ ] **Refatorar relatórios em contrato, projeção, renderizadores e estilos (P2).**  
-  Pendente. `xlsx_exporter.py`, `reports/service.py` e `pdf_exporter.py` seguem grandes.
+- [x] **Refatorar relatórios em contrato, projeção, renderizadores e estilos (P2).**  
+  Paleta centralizada em `reports/export/theme.py`; renderizadores em
+  `reports/export/pdf_renderer.py` e `reports/export/xlsx_renderer.py`. Fachadas
+  `pdf_exporter.py` e `xlsx_exporter.py` mantêm assinatura pública inalterada.
+  Validado com golden tests em `test_report_exporter_golden.py`.
 - [x] **Métricas OpenTelemetry/Prometheus e alertas de SLO.**  
   Métricas de duração e resultado por operação exportadas ao Cloud Monitoring, com runbook de
   alertas de SLO (ADR-042).
@@ -54,14 +57,22 @@ seções 11 e 12) ao seu estado atual, com a evidência correspondente. Legenda:
   provedor NEPViewer com retry e detecção de dados incompletos (ADR-047); job de coleta que defere
   para a fila em indisponibilidade persistente (PR #50); worker de drenagem que reprocessa os dias
   deferidos isolando cada tarefa em sua transação (PR #51).
-- [ ] **Particionamento/retention para séries temporais e ledgers.**  
-  Pendente. Próxima P1 natural: política de retenção para `job_runs`, `pipeline_executions`,
-  `alert_delivery_records` e avaliação de particionamento para `daily_energy` e clima.
+- [x] **Particionamento/retention para séries temporais e ledgers.**  
+  `TimeSeriesRetentionService` + `TimeSeriesRetentionWindows` em
+  `retention/timeseries_service.py` purga `daily_energy` (por `production_date`) e
+  `daily_climate_observations` (por `observation_date`) com janela padrão de 1825 dias
+  (5 anos, exigência fiscal BR). `daily_energy_versions` excluído por CASCADE.
+  Integrado em `run_retention()` na mesma transação. Coberto por `test_timeseries_retention.py`.
 - [x] **Cache/read models para dashboards executivos (P2).**  
   Concluído (ADR-049): read-model com cache invalidado por impressão digital dos dados de energia
   do ciclo. Nunca serve resultado obsoleto — a impressão muda quando os dados mudam.
-- [ ] **Exportação assíncrona em lote com storage de artefatos (P2).**  
-  Pendente. Exportadores PDF/XLSX ainda geram em memória.
+- [x] **Exportação assíncrona em lote com storage de artefatos (P2).**  
+  Tabela `report_export_tasks` (migration 0018); `ArtifactStorage` Protocol +
+  `InMemoryArtifactStorage`; `ReportExportService.enqueue/claim/complete/fail`;
+  worker `drain_report_exports`; CLI `drain-report-exports`; endpoints
+  `POST/GET /reports/monthly/exports` e `GET /reports/monthly/exports/{id}/download`.
+  GCS configurável via `MPLACAS_REPORT_EXPORT_BUCKET` e `MPLACAS_REPORT_EXPORT_URL_TTL_SECONDS`.
+  Coberto por `test_report_export_tasks.py`.
 - [x] **Formalizar auditoria de ator e trilha de alterações.**  
   Trilha de auditoria persistente de ações sensíveis e administrativas (ADR-032, ADR-033, ADR-034),
   com o ator identificado por credencial. A dimensão de *tenants* não se aplica (ADR-045).
@@ -81,8 +92,8 @@ seções 11 e 12) ao seu estado atual, com a evidência correspondente. Legenda:
 |---|---:|---:|---:|
 | P0 (urgentes) | 3 | 0 | 0 |
 | P1 (30 dias) | 2 | 0 | 0 |
-| Táticas (90 dias) | 3 | 1 | 1 |
-| Estratégicas (6–12m) | 2 | 0 | 3 |
+| Táticas (90 dias) | 4 | 1 | 0 |
+| Estratégicas (6–12m) | 5 | 0 | 0 |
 
 Todos os itens **P0** e **P1 de curto prazo** estão concluídos. Entre as melhorias de maior
 horizonte, a fila/workers, o RBAC (com decisão single-tenant) e o `plant_id NOT NULL` foram

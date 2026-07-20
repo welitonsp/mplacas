@@ -21,11 +21,16 @@ from mplacas.alerts.outbox import dispatch_due_alert_outbox
 from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.climate.open_meteo import OpenMeteoHistoricalProvider
 from mplacas.collection.drain import drain_collection_queue
+from mplacas.reports.drain import drain_report_exports
 from mplacas.collection.job import run_solar_collection
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
 from mplacas.db.session import engine as database_engine
 from mplacas.retention.service import RetentionService, RetentionWindows
+from mplacas.retention.timeseries_service import (
+    TimeSeriesRetentionService,
+    TimeSeriesRetentionWindows,
+)
 from mplacas.observability.context import (
     bind_correlation_context,
     new_correlation_context,
@@ -117,6 +122,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     drain.set_defaults(handler=_handle_drain_collection)
 
+    drain_exports = subparsers.add_parser(
+        "drain-report-exports",
+        help="process pending async report export tasks",
+    )
+    drain_exports.add_argument(
+        "--batch-size",
+        type=int,
+        default=10,
+        help="number of tasks to process per run (default: 10)",
+    )
+    drain_exports.set_defaults(handler=_handle_drain_report_exports)
+
     retention = subparsers.add_parser(
         "retention",
         help="purge terminal operational records past their retention window",
@@ -147,6 +164,11 @@ def _handle_collect(args: argparse.Namespace) -> int:
 
 def _handle_drain_collection(_args: argparse.Namespace) -> int:
     asyncio.run(run_collection_drain())
+    return 0
+
+
+def _handle_drain_report_exports(args: argparse.Namespace) -> int:
+    asyncio.run(run_report_export_drain(batch_size=args.batch_size))
     return 0
 
 
@@ -194,17 +216,43 @@ async def run_retention() -> None:
         collection_tasks_days=settings.retention_collection_tasks_days,
         alert_delivery_records_days=settings.retention_alert_delivery_records_days,
     )
+    ts_windows = TimeSeriesRetentionWindows(
+        daily_energy_days=settings.retention_daily_energy_days,
+        climate_observations_days=settings.retention_climate_observations_days,
+    )
     logger.info("cloud_job_retention_started")
     async with SessionFactory() as session:
         report = await RetentionService(session).purge(windows=windows)
+        energy_deleted, climate_deleted = await TimeSeriesRetentionService(session).purge(
+            windows=ts_windows
+        )
         await session.commit()
     logger.info(
         "cloud_job_retention_completed",
         extra={
-            "total_deleted": report.total_deleted,
-            "by_table": {o.table: o.deleted for o in report.outcomes},
+            "total_deleted": report.total_deleted + energy_deleted + climate_deleted,
+            "by_table": {
+                **{o.table: o.deleted for o in report.outcomes},
+                "daily_energy": energy_deleted,
+                "daily_climate_observations": climate_deleted,
+            },
         },
     )
+
+
+async def run_report_export_drain(*, batch_size: int = 10) -> None:
+    logger.info("cloud_job_report_export_drain_started")
+    result = await drain_report_exports(batch_size=batch_size)
+    logger.info(
+        "cloud_job_report_export_drain_completed",
+        extra={
+            "claimed": result.claimed,
+            "completed": result.completed,
+            "failed": result.failed,
+        },
+    )
+    if result.failed:
+        raise RuntimeError(f"{result.failed} report export task(s) failed")
 
 
 async def run_collection_drain() -> None:
