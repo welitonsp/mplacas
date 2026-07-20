@@ -159,6 +159,28 @@ controlado:
 python -m mplacas.cloud_jobs daily-pipeline --target-date 2026-07-13
 ```
 
+### Coleta de produção solar (NEPViewer)
+
+O job de coleta extrai a produção diária das placas com resiliência (retry, detecção de dados
+incompletos e reagendamento via fila):
+
+```bash
+python -m mplacas.cloud_jobs collect
+```
+
+Configuração adicional esperada (as credenciais ficam apenas no ambiente, nunca no código):
+
+```text
+MPLACAS_NEP_ACCOUNT=<conta-nepviewer>
+MPLACAS_NEP_PASSWORD=<senha-nepviewer>
+MPLACAS_CLOUD_JOB_PLANT_ID=<uuid-da-usina>
+MPLACAS_CLOUD_JOB_PLANT_NAME=<nome-da-usina>
+```
+
+Se a API estiver indisponível ou incompleta mesmo após o retry, o dia é enfileirado em
+`collection_tasks` para nova tentativa, sem falhar em definitivo. Sem `--target-date`, o job usa o
+dia anterior em `MPLACAS_TIMEZONE`.
+
 ## Cloud Scheduler
 
 Configure o Scheduler para acionar o Cloud Run Job com IAM, usando service account dedicada

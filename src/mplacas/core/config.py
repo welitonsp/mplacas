@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     bill_text_max_bytes: int = 250_000
     request_timeout_seconds: float = 20.0
     cloud_job_plant_id: str | None = None
+    cloud_job_plant_name: str | None = None
     cloud_job_expected_daily_production_kwh: Decimal | None = None
     cloud_job_expected_cycle_production_kwh: Decimal | None = None
     cloud_job_anomaly_days: int = 7
