@@ -32,6 +32,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - alertas Telegram com outbox transacional, retry e deduplicação SQL;
 - métricas OpenTelemetry de duração e resultado por operação, exportadas ao Cloud Monitoring;
 - credenciais operacionais persistidas com papéis, escopo por usina, revogação e auditoria;
+- usuários operacionais nomeados com credenciais associadas, expiração e desativação em cascata;
 - alertas de SLO documentados por runbook para falhas de pipeline, despacho e latência;
 - orquestração diária com lock por usina/data, retomada após timeout e status consultável;
 - logs JSON correlacionados, trace ID ponta a ponta e spans OpenTelemetry no Cloud Trace;
