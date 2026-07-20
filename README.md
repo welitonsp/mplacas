@@ -34,6 +34,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - credenciais operacionais persistidas com papéis, escopo por usina, revogação e auditoria;
 - usuários operacionais nomeados com credenciais associadas, expiração e desativação em cascata;
 - fila de coleta no Postgres com claim atômico, backoff e isolamento de falha por usina;
+- camada de resiliência da coleta NEPViewer: retry com backoff, detecção de dados incompletos e reagendamento;
 - alertas de SLO documentados por runbook para falhas de pipeline, despacho e latência;
 - orquestração diária com lock por usina/data, retomada após timeout e status consultável;
 - logs JSON correlacionados, trace ID ponta a ponta e spans OpenTelemetry no Cloud Trace;
