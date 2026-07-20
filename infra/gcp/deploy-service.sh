@@ -28,6 +28,9 @@ for secret_name in "${MPLACAS_SECRET_NAMES[@]}"; do
   require_single_enabled_secret "$secret_name"
 done
 
+# Validate CORS origins before deploy — rejects wildcard and non-https origins.
+validate_cors_origins "${MPLACAS_CORS_ALLOWED_ORIGINS:-}"
+
 confirm_exact \
   "DEPLOY-MPLACAS-${GCP_PROJECT_ID}" \
   "Type DEPLOY-MPLACAS-${GCP_PROJECT_ID} to deploy the service:"
@@ -53,7 +56,7 @@ gcloud run deploy "$GCP_SERVICE_NAME" \
   --set-env-vars \
     "MPLACAS_ENVIRONMENT=production,MPLACAS_TIMEZONE=${MPLACAS_TIMEZONE},MPLACAS_GCP_PROJECT_ID=${GCP_PROJECT_ID},MPLACAS_CLOUD_TRACE_ENABLED=true,MPLACAS_CLOUD_METRICS_ENABLED=true,MPLACAS_CORS_ALLOWED_ORIGINS=${MPLACAS_CORS_ALLOWED_ORIGINS}" \
   --set-secrets \
-    "MPLACAS_DATABASE_URL=mplacas-database-url:latest,MPLACAS_OPERATIONS_API_KEY=mplacas-operations-api-key:latest,MPLACAS_JWT_SECRET=mplacas-jwt-secret:latest" \
+    "MPLACAS_DATABASE_URL=mplacas-database-url:latest,MPLACAS_OPERATIONS_API_KEY=mplacas-operations-key:latest,MPLACAS_JWT_SECRET=mplacas-jwt-secret:latest" \
   --allow-unauthenticated \
   --quiet
 

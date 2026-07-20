@@ -3,6 +3,19 @@ set -Eeuo pipefail
 
 # The readonly arrays below are the public API consumed by scripts that source this library.
 readonly MPLACAS_ALLOWED_REGION="us-central1"
+
+# Secret names — single source of truth for all infra scripts.
+# mplacas-database-url         : pooled endpoint (Neon -pooler), used by Cloud Run runtime.
+# mplacas-migration-database-url: direct/non-pooled endpoint, used by migration jobs (DDL).
+# shellcheck disable=SC2034
+readonly SECRET_DATABASE_URL="mplacas-database-url"
+# shellcheck disable=SC2034
+readonly SECRET_MIGRATION_DATABASE_URL="mplacas-migration-database-url"
+# shellcheck disable=SC2034
+readonly SECRET_OPERATIONS_KEY="mplacas-operations-key"
+# shellcheck disable=SC2034
+readonly SECRET_JWT="mplacas-jwt-secret"
+
 # shellcheck disable=SC2034
 readonly MPLACAS_REQUIRED_APIS=(
   "run.googleapis.com"
@@ -16,7 +29,8 @@ readonly MPLACAS_REQUIRED_APIS=(
 # shellcheck disable=SC2034
 readonly MPLACAS_SECRET_NAMES=(
   "mplacas-database-url"
-  "mplacas-operations-api-key"
+  "mplacas-migration-database-url"
+  "mplacas-operations-key"
   "mplacas-jwt-secret"
 )
 
@@ -339,4 +353,29 @@ if actual != expected:
 PY
 
   rm -f "$description_file"
+}
+
+validate_cors_origins() {
+  local origins="$1"
+  if [[ -z "$origins" ]]; then
+    echo "ERRO: MPLACAS_CORS_ALLOWED_ORIGINS é obrigatório para deploy de produção." >&2
+    return 1
+  fi
+  IFS=',' read -ra _origins <<< "$origins"
+  for origin in "${_origins[@]}"; do
+    origin="${origin// /}"  # trim spaces
+    if [[ "$origin" == "*" ]]; then
+      echo "ERRO: CORS wildcard (*) não é permitido em produção." >&2
+      return 1
+    fi
+    if [[ "$origin" != https://* ]]; then
+      echo "ERRO: Origem CORS deve começar com https://: $origin" >&2
+      return 1
+    fi
+    if [[ "$origin" == */ ]]; then
+      echo "ERRO: Origem CORS não deve ter barra final: $origin" >&2
+      return 1
+    fi
+  done
+  echo "CORS origins validadas: ${#_origins[@]} origem(ns)."
 }
