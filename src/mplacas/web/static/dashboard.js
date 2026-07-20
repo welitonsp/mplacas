@@ -24,7 +24,8 @@ function render(data){
   const quality=current.quality;
   setText("reference",`Ciclo ${current.reference_month}`);
   setText("headline",data.headline);
-  const status=$("status");status.className=`status-pill status-${data.status}`;status.textContent=data.status;
+  const STATUS_LABEL={HEALTHY:"Saudável",ATTENTION:"Atenção",CRITICAL:"Crítico"};
+  const status=$("status");status.className=`status-pill status-${data.status}`;status.textContent=STATUS_LABEL[data.status]||data.status;
   setText("production",fmt(indicators.cycle_production_kwh));
   setText("consumption",fmt(indicators.estimated_total_consumption_kwh));
   setText("self-sufficiency",`${fmt(indicators.self_sufficiency_rate_percent)}%`);

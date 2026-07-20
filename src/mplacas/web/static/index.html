@@ -4,14 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0a1f3d">
   <title>Mplacas | Painel Executivo</title>
   <link rel="stylesheet" href="/dashboard-assets/dashboard.css">
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <p class="eyebrow">MPLACAS</p>
-      <h1>Painel Executivo de Energia</h1>
+    <div class="topbar-brand">
+      <div class="topbar-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+      </div>
+      <div>
+        <p class="eyebrow">MPLACAS</p>
+        <h1>Painel Executivo de Energia</h1>
+      </div>
     </div>
     <button id="refresh" class="secondary" type="button">Atualizar</button>
   </header>
@@ -29,7 +38,36 @@
       </form>
     </section>
 
-    <section id="loading" class="panel state hidden" aria-live="polite">Carregando dados consolidados…</section>
+    <!-- skeleton loading -->
+    <section id="loading" class="hidden" aria-live="polite" aria-label="Carregando painel">
+      <div class="sk-hero">
+        <div style="display:grid;gap:.5rem">
+          <div class="sk sk-xs"></div>
+          <div class="sk sk-xl"></div>
+        </div>
+        <div class="sk sk-pill"></div>
+      </div>
+      <div class="sk-grid">
+        <div class="sk-card"><div class="sk sk-xs"></div><div class="sk sk-lg"></div><div class="sk sk-xs"></div></div>
+        <div class="sk-card"><div class="sk sk-xs"></div><div class="sk sk-lg"></div><div class="sk sk-xs"></div></div>
+        <div class="sk-card"><div class="sk sk-xs"></div><div class="sk sk-lg"></div><div class="sk sk-xs"></div></div>
+        <div class="sk-card"><div class="sk sk-xs"></div><div class="sk sk-lg"></div><div class="sk sk-xs"></div></div>
+      </div>
+      <div class="sk-body">
+        <div class="sk-panel">
+          <div class="sk sk-sm"></div>
+          <div class="sk sk-md"></div><div class="sk sk-sm"></div>
+          <div class="sk sk-md"></div><div class="sk sk-sm"></div>
+          <div class="sk sk-md"></div>
+        </div>
+        <div class="sk-panel">
+          <div class="sk sk-sm"></div>
+          <div class="sk sk-md"></div><div class="sk sk-sm"></div>
+          <div class="sk sk-md"></div>
+        </div>
+      </div>
+    </section>
+
     <section id="error" class="panel state error hidden" role="alert"></section>
 
     <div id="dashboard" class="hidden">
