@@ -93,6 +93,20 @@ def _public_view(record: ApiCredentialRecord) -> dict[str, object]:
     }
 
 
+def _pepper() -> str:
+    cfg = get_settings()
+    if cfg.credential_pepper is None:
+        return ""
+    return cfg.credential_pepper.get_secret_value()
+
+
+def _organization_details(record) -> dict[str, str]:
+    return {
+        "name": record.name,
+        "organization_id": str(record.organization_id),
+    }
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_credential(
     request: Request,
@@ -102,9 +116,7 @@ async def create_credential(
     principal.require_unrestricted_access()
     async with SessionFactory() as session:
         organization_id = await _resolve_organization_id(session, principal)
-        _cfg = get_settings()
-        pepper = _cfg.credential_pepper.get_secret_value() if _cfg.credential_pepper else ""
-        service = CredentialService(session, pepper=pepper)
+        service = CredentialService(session, pepper=_pepper())
         try:
             record, secret = await service.create(
                 name=payload.name,
@@ -128,9 +140,8 @@ async def create_credential(
             resource_id=str(record.id),
             outcome="SUCCEEDED",
             details={
-                "name": record.name,
+                **_organization_details(record),
                 "role": record.role,
-                "organization_id": str(record.organization_id),
                 "plant_count": len(record.plant_ids or []),
             },
         )
@@ -164,9 +175,7 @@ async def revoke_credential(
 ) -> dict[str, object]:
     principal.require_unrestricted_access()
     async with SessionFactory() as session:
-        _cfg = get_settings()
-        pepper = _cfg.credential_pepper.get_secret_value() if _cfg.credential_pepper else ""
-        service = CredentialService(session, pepper=pepper)
+        service = CredentialService(session, pepper=_pepper())
         try:
             record = await service.revoke(credential_id)
         except CredentialError as exc:
@@ -188,7 +197,7 @@ async def revoke_credential(
             resource_type="api_credential",
             resource_id=str(record.id),
             outcome="SUCCEEDED",
-            details={"name": record.name, "organization_id": str(record.organization_id)},
+            details=_organization_details(record),
         )
         await session.commit()
     return _public_view(record)
@@ -225,7 +234,7 @@ async def create_user(
             resource_type="operational_user",
             resource_id=str(record.id),
             outcome="SUCCEEDED",
-            details={"name": record.name, "organization_id": str(record.organization_id)},
+            details=_organization_details(record),
         )
         await session.commit()
     return _user_view(record)
@@ -275,7 +284,7 @@ async def deactivate_user(
             resource_type="operational_user",
             resource_id=str(record.id),
             outcome="SUCCEEDED",
-            details={"name": record.name, "organization_id": str(record.organization_id)},
+            details=_organization_details(record),
         )
         await session.commit()
     return _user_view(record)
