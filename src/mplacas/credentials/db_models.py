@@ -15,8 +15,8 @@ class OperationalUserRecord(Base):
     __tablename__ = "operational_users"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    organization_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=True, index=True
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(80), unique=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
@@ -45,8 +45,8 @@ class ApiCredentialRecord(Base):
     __tablename__ = "api_credentials"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    organization_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(80), unique=True)
     role: Mapped[str] = mapped_column(String(16))
@@ -68,6 +68,5 @@ class ApiCredentialRecord(Base):
     )
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
-        nullable=True,
     )
     user: Mapped[OperationalUserRecord | None] = relationship(lazy="joined")
