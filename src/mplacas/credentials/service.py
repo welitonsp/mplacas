@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE, PlantScope
 from mplacas.core.security import OperationsPrincipal, OperationsRole
 from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
-from mplacas.organizations.db_models import OrganizationRecord
+from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
 
 _SECRET_BYTES = 32
 _DEFAULT_ORG_NAME = "Default"
@@ -48,6 +48,10 @@ def _as_utc(value: datetime) -> datetime:
 
 
 async def _resolve_default_organization_id(session: AsyncSession) -> uuid.UUID:
+    default = await session.get(OrganizationRecord, DEFAULT_ORGANIZATION_ID)
+    if default is not None:
+        return default.id
+
     result = await session.scalars(
         select(OrganizationRecord)
         .where(OrganizationRecord.active.is_(True))
@@ -59,6 +63,7 @@ async def _resolve_default_organization_id(session: AsyncSession) -> uuid.UUID:
         return existing.id
 
     record = OrganizationRecord(
+        id=DEFAULT_ORGANIZATION_ID,
         name=_DEFAULT_ORG_NAME,
         slug=_DEFAULT_ORG_SLUG,
         active=True,
