@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -82,6 +83,28 @@ async def test_create_stores_hash_only_and_resolves_principal() -> None:
     assert principal.credential_id == f"credential:{record.id}"
     assert principal.plant_scope.allows(PLANT_A)
     assert not principal.plant_scope.allows(PLANT_B)
+
+
+@pytest.mark.asyncio
+async def test_org_bound_unscoped_credential_denies_blind_plant_access() -> None:
+    factory = await _factory()
+    async with factory() as session:
+        await _ensure_plants(session, PLANT_A)
+        _, secret = await CredentialService(session).create(
+            name="leitor-org",
+            role=OperationsRole.READ,
+        )
+        await session.commit()
+
+    async with factory() as session:
+        principal = await CredentialService(session).resolve(secret)
+
+    assert principal is not None
+    assert principal.plant_scope.is_restricted is False
+    principal.require_unrestricted_access()
+    with pytest.raises(HTTPException) as exc_info:
+        principal.require_plant_access(PLANT_A)
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -262,7 +285,7 @@ def test_credential_endpoints_require_admin_and_return_secret_once(
         "/operations/jobs",
         headers={"X-API-Key": db_secret},
     )
-    assert jobs_with_db_credential.status_code == 403
+    assert jobs_with_db_credential.status_code == 200
 
     admin_denied_for_db_read = client.post(
         "/operations/credentials",
