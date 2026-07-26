@@ -174,8 +174,14 @@ async def revoke_credential(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(exc),
             ) from exc
-        if principal.organization_id is not None and record.organization_id != principal.organization_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="credential not found")
+        if (
+            principal.organization_id is not None
+            and record.organization_id != principal.organization_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="credential not found",
+            )
         await AuditEventRepository(session).record(
             request,
             action="credentials.revoke",
@@ -231,7 +237,9 @@ async def list_users(
 ) -> dict[str, object]:
     principal.require_unrestricted_access()
     async with SessionFactory() as session:
-        records = await UserService(session).list_users(organization_id=principal.organization_id)
+        records = await UserService(session).list_users(
+            organization_id=principal.organization_id
+        )
     return {
         "count": len(records),
         "items": [_user_view(record) for record in records],
@@ -253,8 +261,14 @@ async def deactivate_user(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(exc),
             ) from exc
-        if principal.organization_id is not None and record.organization_id != principal.organization_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="operational user not found")
+        if (
+            principal.organization_id is not None
+            and record.organization_id != principal.organization_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="operational user not found",
+            )
         await AuditEventRepository(session).record(
             request,
             action="users.deactivate",
