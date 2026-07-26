@@ -9,9 +9,10 @@ from datetime import datetime, timezone
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE, PlantScope
+from mplacas.core.authorization import PlantScope
 from mplacas.core.security import OperationsPrincipal, OperationsRole
 from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
+from mplacas.db.models import Plant
 from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
 
 _SECRET_BYTES = 32
@@ -48,19 +49,19 @@ def _as_utc(value: datetime) -> datetime:
 
 
 async def _resolve_default_organization_id(session: AsyncSession) -> uuid.UUID:
-    default = await session.get(OrganizationRecord, DEFAULT_ORGANIZATION_ID)
-    if default is not None:
-        return default.id
-
     result = await session.scalars(
         select(OrganizationRecord)
         .where(OrganizationRecord.active.is_(True))
         .order_by(OrganizationRecord.created_at)
-        .limit(1)
+        .limit(2)
     )
-    existing = result.first()
-    if existing is not None:
-        return existing.id
+    active_organizations = list(result)
+    if len(active_organizations) > 1:
+        raise CredentialError(
+            "organization_id is required when multiple active organizations exist"
+        )
+    if active_organizations:
+        return active_organizations[0].id
 
     record = OrganizationRecord(
         id=DEFAULT_ORGANIZATION_ID,
@@ -92,11 +93,10 @@ class UserService:
         existing = await self._session.scalar(
             select(OperationalUserRecord).where(
                 OperationalUserRecord.name == normalized_name,
-                OperationalUserRecord.organization_id == organization_id,
             )
         )
         if existing is not None:
-            raise CredentialError("user name is already in use for this organization")
+            raise CredentialError("user name is already in use")
         record = OperationalUserRecord(
             name=normalized_name,
             active=True,
@@ -138,6 +138,34 @@ class CredentialService:
         self._session = session
         self._pepper = pepper
 
+    async def _validate_plant_scope(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        plant_ids: frozenset[uuid.UUID] | None,
+    ) -> None:
+        if plant_ids is None:
+            return
+        result = await self._session.scalars(
+            select(Plant.id).where(
+                Plant.id.in_(list(plant_ids)),
+                Plant.organization_id == organization_id,
+            )
+        )
+        found = frozenset(result)
+        if found != plant_ids:
+            raise CredentialError(
+                "credential plant scope contains plants outside this organization"
+            )
+
+    async def _scope_for_credential(self, record: ApiCredentialRecord) -> PlantScope:
+        if record.plant_ids is not None:
+            return PlantScope.restricted(uuid.UUID(item) for item in record.plant_ids)
+        result = await self._session.scalars(
+            select(Plant.id).where(Plant.organization_id == record.organization_id)
+        )
+        return PlantScope.restricted(frozenset(result))
+
     async def create(
         self,
         *,
@@ -171,14 +199,15 @@ class CredentialService:
                 raise CredentialError("operational user belongs to another organization")
             if not user.active:
                 raise CredentialError("operational user is deactivated")
+        await self._validate_plant_scope(
+            organization_id=organization_id,
+            plant_ids=plant_ids,
+        )
         existing = await self._session.scalar(
-            select(ApiCredentialRecord).where(
-                ApiCredentialRecord.name == normalized_name,
-                ApiCredentialRecord.organization_id == organization_id,
-            )
+            select(ApiCredentialRecord).where(ApiCredentialRecord.name == normalized_name)
         )
         if existing is not None:
-            raise CredentialError("credential name is already in use for this organization")
+            raise CredentialError("credential name is already in use")
 
         secret = generate_secret()
         record = ApiCredentialRecord(
@@ -257,14 +286,9 @@ class CredentialService:
             return None
         if record.user is not None and not record.user.active:
             return None
-        scope = (
-            PlantScope.restricted(uuid.UUID(item) for item in record.plant_ids)
-            if record.plant_ids is not None
-            else UNRESTRICTED_PLANT_SCOPE
-        )
         return OperationsPrincipal(
             role=OperationsRole(record.role),
             credential_id=f"credential:{record.id}",
-            plant_scope=scope,
+            plant_scope=await self._scope_for_credential(record),
             organization_id=record.organization_id,
         )
