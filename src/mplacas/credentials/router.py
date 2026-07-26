@@ -43,27 +43,24 @@ async def _resolve_organization_id(
     session: AsyncSession,
     principal: OperationsPrincipal,
 ) -> uuid.UUID:
-    """Derive the organization from the principal, falling back to a bootstrap default.
-
-    Static environment API keys are intentionally not tenant-bound. They can bootstrap the
-    initial single-tenant organization without accepting organization IDs from request bodies.
-    """
+    """Derive organization without accepting organization IDs from request bodies."""
     if principal.organization_id is not None:
         return principal.organization_id
-
-    default = await session.get(OrganizationRecord, DEFAULT_ORGANIZATION_ID)
-    if default is not None:
-        return default.id
 
     result = await session.scalars(
         select(OrganizationRecord)
         .where(OrganizationRecord.active.is_(True))
         .order_by(OrganizationRecord.created_at)
-        .limit(1)
+        .limit(2)
     )
-    existing = result.first()
-    if existing is not None:
-        return existing.id
+    active_organizations = list(result)
+    if len(active_organizations) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="organization is ambiguous for static operational key",
+        )
+    if active_organizations:
+        return active_organizations[0].id
 
     record = OrganizationRecord(
         id=DEFAULT_ORGANIZATION_ID,
@@ -167,8 +164,9 @@ async def list_credentials(
 ) -> dict[str, object]:
     principal.require_unrestricted_access()
     async with SessionFactory() as session:
+        organization_id = await _resolve_organization_id(session, principal)
         records = await CredentialService(session).list_credentials(
-            organization_id=principal.organization_id
+            organization_id=organization_id
         )
     return {
         "count": len(records),
@@ -184,6 +182,7 @@ async def revoke_credential(
 ) -> dict[str, object]:
     principal.require_unrestricted_access()
     async with SessionFactory() as session:
+        organization_id = await _resolve_organization_id(session, principal)
         service = CredentialService(session, pepper=_pepper())
         try:
             record = await service.revoke(credential_id)
@@ -192,10 +191,7 @@ async def revoke_credential(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(exc),
             ) from exc
-        if (
-            principal.organization_id is not None
-            and record.organization_id != principal.organization_id
-        ):
+        if record.organization_id != organization_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="credential not found",
@@ -255,9 +251,8 @@ async def list_users(
 ) -> dict[str, object]:
     principal.require_unrestricted_access()
     async with SessionFactory() as session:
-        records = await UserService(session).list_users(
-            organization_id=principal.organization_id
-        )
+        organization_id = await _resolve_organization_id(session, principal)
+        records = await UserService(session).list_users(organization_id=organization_id)
     return {
         "count": len(records),
         "items": [_user_view(record) for record in records],
@@ -272,6 +267,7 @@ async def deactivate_user(
 ) -> dict[str, object]:
     principal.require_unrestricted_access()
     async with SessionFactory() as session:
+        organization_id = await _resolve_organization_id(session, principal)
         try:
             record = await UserService(session).deactivate(user_id)
         except CredentialError as exc:
@@ -279,10 +275,7 @@ async def deactivate_user(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(exc),
             ) from exc
-        if (
-            principal.organization_id is not None
-            and record.organization_id != principal.organization_id
-        ):
+        if record.organization_id != organization_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="operational user not found",
