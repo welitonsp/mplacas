@@ -34,6 +34,15 @@ class OperationsPrincipal:
         return self.role is OperationsRole.ADMIN
 
     def require_plant_access(self, plant_id: uuid.UUID) -> None:
+        # Static operational keys remain truly unrestricted because they are not
+        # organization-bound. Persisted credentials always carry organization_id;
+        # if they do not also carry an explicit plant scope, fail closed until the
+        # route can verify the requested plant belongs to that organization.
+        if self.organization_id is not None and self.plant_scope.plant_ids is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="plant not found",
+            )
         if not self.plant_scope.allows(plant_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
