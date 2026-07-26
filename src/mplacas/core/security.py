@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from fastapi import Header, HTTPException, Request, status
+from sqlalchemy import select
 
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import JwtError, decode_token
+from mplacas.db.models import Plant
 
 
 class OperationsRole(StrEnum):
@@ -23,6 +25,7 @@ class OperationsPrincipal:
     role: OperationsRole
     credential_id: str
     plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE
+    organization_id: uuid.UUID | None = None
 
     def can_read(self) -> bool:
         return self.role in {OperationsRole.ADMIN, OperationsRole.READ}
@@ -130,13 +133,9 @@ async def _resolve_persisted_credential(
 
 async def _plant_scope_for_org(org_id: uuid.UUID) -> PlantScope:
     from mplacas.db.session import SessionFactory
-    from sqlalchemy import select, text as sa_text
-    from mplacas.db.models import Plant
 
     async with SessionFactory() as session:
-        result = await session.execute(
-            select(Plant.id).where(Plant.organization_id == org_id)
-        )
+        result = await session.execute(select(Plant.id).where(Plant.organization_id == org_id))
         plant_ids = frozenset(row[0] for row in result)
 
     if not plant_ids:
@@ -170,6 +169,7 @@ async def _authenticate_bearer(
         role=OperationsRole(claims.role),
         credential_id=f"user:{claims.sub}",
         plant_scope=scope,
+        organization_id=claims.org_id,
     )
 
 
@@ -206,7 +206,7 @@ async def require_operations_key(
 ) -> OperationsPrincipal:
     if authorization and authorization.startswith("Bearer "):
         principal = await _authenticate_bearer(
-            authorization[len("Bearer "):], require_admin=True
+            authorization[len("Bearer ") :], require_admin=True
         )
         if principal is not None:
             request.state.operations_principal = principal
@@ -223,7 +223,7 @@ async def require_operations_read(
 ) -> OperationsPrincipal:
     if authorization and authorization.startswith("Bearer "):
         principal = await _authenticate_bearer(
-            authorization[len("Bearer "):], require_admin=False
+            authorization[len("Bearer ") :], require_admin=False
         )
         if principal is not None:
             request.state.operations_principal = principal
