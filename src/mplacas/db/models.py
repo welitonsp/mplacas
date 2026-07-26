@@ -19,7 +19,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from mplacas.db.base import Base
+from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID
 from mplacas.organizations.db_models import OrganizationRecord as OrganizationRecord
+
+
+def _default_organization_id() -> uuid.UUID:
+    return DEFAULT_ORGANIZATION_ID
 
 
 class DataStatus(str, enum.Enum):
@@ -34,7 +39,10 @@ class Plant(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        default=_default_organization_id,
     )
     name: Mapped[str] = mapped_column(String(120))
     timezone: Mapped[str] = mapped_column(String(64), default="America/Sao_Paulo")
