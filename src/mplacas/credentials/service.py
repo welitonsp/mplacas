@@ -164,7 +164,10 @@ class CredentialService:
         result = await self._session.scalars(
             select(Plant.id).where(Plant.organization_id == record.organization_id)
         )
-        return PlantScope.restricted(frozenset(result))
+        plant_ids = frozenset(result)
+        if not plant_ids:
+            return PlantScope.empty()
+        return PlantScope.restricted(plant_ids)
 
     async def create(
         self,
