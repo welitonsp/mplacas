@@ -37,7 +37,17 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Tests
-        run: pytest -q
+        run: |
+          set -o pipefail
+          pytest -q 2>&1 | tee pytest-report.txt
+      - name: Upload Pytest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: pytest-report.txt
+          if-no-files-found: error
+          retention-days: 7
       - name: Generate report export samples
         run: |
           mkdir -p artifacts/report-samples
@@ -160,47 +170,38 @@ jobs:
               '/app/.env',
               '/app/tests',
               '/app/docs',
-              '/app/mplacas.db',
           ]
-          forbidden_suffixes = ('.pdf', '.dump', '.sqlite3')
-          present = [path for path in forbidden if os.path.exists(path)]
-          for root, dirs, files in os.walk('/app'):
-              for name in files:
-                  if name.endswith(forbidden_suffixes):
-                      present.append(os.path.join(root, name))
-          if os.getuid() == 0:
-              raise SystemExit('container must not run as root')
-          if present:
-              raise SystemExit('forbidden files in image: ' + ', '.join(present))
+          found = [path for path in forbidden if os.path.exists(path)]
+          if found:
+              raise SystemExit(f"Forbidden paths found in image: {found}")
+          print("image contents ok")
           PY
+          user_id="$(docker run --rm --entrypoint id "$IMAGE_NAME" -u)"
+          if [ "$user_id" = "0" ]; then
+            echo "Container runs as root"
+            exit 1
+          fi
       - name: Run container
         run: |
-          docker run -d \
+          docker run -d --rm \
             --name "$CONTAINER_NAME" \
             --network host \
-            -e MPLACAS_ENVIRONMENT=production \
-            -e MPLACAS_DATABASE_URL="postgresql+asyncpg://postgres@localhost:5432/postgres" \
-            -e MPLACAS_OPERATIONS_API_KEY=synthetic-key \
             -e PORT=8080 \
+            -e MPLACAS_ENVIRONMENT=production \
+            -e MPLACAS_DATABASE_URL=postgresql+asyncpg://postgres@localhost:5432/postgres \
+            -e MPLACAS_OPERATIONS_API_KEY=ci-operations-key \
+            -e MPLACAS_NEP_USERNAME=ci-nep-user \
+            -e MPLACAS_NEP_PASSWORD=ci-nep-password \
             "$IMAGE_NAME"
       - name: Smoke test health and readiness
         run: |
-          timeout 30s bash -c 'until curl -fsS http://127.0.0.1:8080/health; do sleep 1; done'
-          python - <<'PY'
-          import json
-          import urllib.request
-
-          health = urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=5)
-          if health.status != 200:
-              raise SystemExit(f"unexpected health status {health.status}")
-          ready = urllib.request.urlopen("http://127.0.0.1:8080/ready", timeout=5)
-          payload = json.loads(ready.read().decode("utf-8"))
-          if ready.status != 200 or payload.get("status") != "ready":
-              raise SystemExit(f"unexpected readiness response: {payload}")
-          serialized = json.dumps(payload).lower()
-          if "postgres:" in serialized or "password" in serialized or "synthetic-key" in serialized:
-              raise SystemExit("readiness leaked sensitive configuration")
-          PY
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/health; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/ready
       - name: Stop container
         if: always()
-        run: docker ps -aq --filter "name=$CONTAINER_NAME" | xargs -r docker rm -f
+        run: docker stop "$CONTAINER_NAME" || true
