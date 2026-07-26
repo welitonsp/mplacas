@@ -22,7 +22,11 @@ class CredentialError(ValueError):
 
 def hash_secret(secret: str, *, pepper: str = "") -> str:
     if pepper:
-        return _hmac.new(pepper.encode("utf-8"), secret.encode("utf-8"), "sha256").hexdigest()
+        return _hmac.new(
+            pepper.encode("utf-8"),
+            secret.encode("utf-8"),
+            "sha256",
+        ).hexdigest()
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()
 
 
@@ -44,7 +48,12 @@ class UserService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create(self, *, name: str, organization_id: uuid.UUID) -> OperationalUserRecord:
+    async def create(
+        self,
+        *,
+        name: str,
+        organization_id: uuid.UUID,
+    ) -> OperationalUserRecord:
         normalized_name = name.strip()
         if not normalized_name:
             raise CredentialError("user name is required")
@@ -83,8 +92,12 @@ class UserService:
     ) -> list[OperationalUserRecord]:
         statement = select(OperationalUserRecord)
         if organization_id is not None:
-            statement = statement.where(OperationalUserRecord.organization_id == organization_id)
-        result = await self._session.scalars(statement.order_by(OperationalUserRecord.created_at))
+            statement = statement.where(
+                OperationalUserRecord.organization_id == organization_id
+            )
+        result = await self._session.scalars(
+            statement.order_by(OperationalUserRecord.created_at)
+        )
         return list(result)
 
 
@@ -168,8 +181,12 @@ class CredentialService:
     ) -> list[ApiCredentialRecord]:
         statement = select(ApiCredentialRecord)
         if organization_id is not None:
-            statement = statement.where(ApiCredentialRecord.organization_id == organization_id)
-        result = await self._session.scalars(statement.order_by(ApiCredentialRecord.created_at))
+            statement = statement.where(
+                ApiCredentialRecord.organization_id == organization_id
+            )
+        result = await self._session.scalars(
+            statement.order_by(ApiCredentialRecord.created_at)
+        )
         return list(result)
 
     async def resolve(self, secret: str) -> OperationsPrincipal | None:
