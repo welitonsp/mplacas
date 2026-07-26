@@ -4,14 +4,20 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.auth.password import verify_password
 from mplacas.core.config import get_settings
-from mplacas.core.jwt import JwtError, decode_token, encode_access_token, encode_refresh_token
+from mplacas.core.jwt import (
+    JwtError,
+    decode_token,
+    encode_access_token,
+    encode_refresh_token,
+)
 from mplacas.credentials.db_models import OperationalUserRecord
 from mplacas.db.session import SessionFactory
+from mplacas.organizations.db_models import OrganizationRecord
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -41,6 +47,40 @@ async def _get_session():
         yield session
 
 
+def _invalid_credentials() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="invalid credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def _load_active_user(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID | None = None,
+    username: str | None = None,
+    organization_id: uuid.UUID | None = None,
+) -> OperationalUserRecord | None:
+    statement = select(OperationalUserRecord).outerjoin(
+        OrganizationRecord,
+        OperationalUserRecord.organization_id == OrganizationRecord.id,
+    )
+    if user_id is not None:
+        statement = statement.where(OperationalUserRecord.id == user_id)
+    if username is not None:
+        statement = statement.where(OperationalUserRecord.name == username)
+    if organization_id is not None:
+        statement = statement.where(
+            OperationalUserRecord.organization_id == organization_id
+        )
+    statement = statement.where(
+        OperationalUserRecord.active.is_(True),
+        or_(OrganizationRecord.id.is_(None), OrganizationRecord.active.is_(True)),
+    )
+    return await session.scalar(statement)
+
+
 @router.post("/login", response_model=TokenResponse, status_code=status.HTTP_200_OK)
 async def login(
     body: LoginRequest,
@@ -53,30 +93,13 @@ async def login(
             detail="JWT authentication is not configured",
         )
 
-    result = await session.execute(
-        select(OperationalUserRecord).where(
-            OperationalUserRecord.name == body.username,
-            OperationalUserRecord.active.is_(True),
-        )
-    )
-    user: OperationalUserRecord | None = result.scalar_one_or_none()
+    user = await _load_active_user(session, username=body.username)
 
-    _INVALID = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="invalid credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    # Constant-time rejection — same code path whether user exists or not.
+    # Invalid responses intentionally use the same public message.
     if user is None or user.password_hash is None:
-        raise _INVALID
+        raise _invalid_credentials()
     if not verify_password(body.password, user.password_hash):
-        raise _INVALID
-
-    if user.organization_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="user has no associated organization",
-        )
+        raise _invalid_credentials()
 
     org_id: uuid.UUID = user.organization_id
     return TokenResponse(
@@ -86,7 +109,10 @@ async def login(
 
 
 @router.post("/refresh", response_model=AccessTokenResponse, status_code=status.HTTP_200_OK)
-async def refresh(body: RefreshRequest) -> AccessTokenResponse:
+async def refresh(
+    body: RefreshRequest,
+    session: AsyncSession = Depends(_get_session),
+) -> AccessTokenResponse:
     settings = get_settings()
     if not settings.jwt_configured:
         raise HTTPException(
@@ -102,6 +128,18 @@ async def refresh(body: RefreshRequest) -> AccessTokenResponse:
             detail="invalid or expired refresh token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+    user = await _load_active_user(
+        session,
+        user_id=claims.sub,
+        organization_id=claims.org_id,
+    )
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     return AccessTokenResponse(
         access_token=encode_access_token(claims.sub, claims.org_id, "ADMIN"),

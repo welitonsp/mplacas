@@ -12,8 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE, PlantScope
 from mplacas.core.security import OperationsPrincipal, OperationsRole
 from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
+from mplacas.db.models import Plant
+from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
 
 _SECRET_BYTES = 32
+_DEFAULT_ORG_NAME = "Default"
+_DEFAULT_ORG_SLUG = "default"
 
 
 class CredentialError(ValueError):
@@ -22,7 +26,11 @@ class CredentialError(ValueError):
 
 def hash_secret(secret: str, *, pepper: str = "") -> str:
     if pepper:
-        return _hmac.new(pepper.encode("utf-8"), secret.encode("utf-8"), "sha256").hexdigest()
+        return _hmac.new(
+            pepper.encode("utf-8"),
+            secret.encode("utf-8"),
+            "sha256",
+        ).hexdigest()
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()
 
 
@@ -40,22 +48,60 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+async def _resolve_default_organization_id(session: AsyncSession) -> uuid.UUID:
+    result = await session.scalars(
+        select(OrganizationRecord)
+        .where(OrganizationRecord.active.is_(True))
+        .order_by(OrganizationRecord.created_at)
+        .limit(2)
+    )
+    active_organizations = list(result)
+    if len(active_organizations) > 1:
+        raise CredentialError(
+            "organization_id is required when multiple active organizations exist"
+        )
+    if active_organizations:
+        return active_organizations[0].id
+
+    record = OrganizationRecord(
+        id=DEFAULT_ORGANIZATION_ID,
+        name=_DEFAULT_ORG_NAME,
+        slug=_DEFAULT_ORG_SLUG,
+        active=True,
+    )
+    session.add(record)
+    await session.flush()
+    return record.id
+
+
 class UserService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create(self, *, name: str) -> OperationalUserRecord:
+    async def create(
+        self,
+        *,
+        name: str,
+        organization_id: uuid.UUID | None = None,
+    ) -> OperationalUserRecord:
+        organization_id = organization_id or await _resolve_default_organization_id(
+            self._session
+        )
         normalized_name = name.strip()
         if not normalized_name:
             raise CredentialError("user name is required")
         existing = await self._session.scalar(
             select(OperationalUserRecord).where(
-                OperationalUserRecord.name == normalized_name
+                OperationalUserRecord.name == normalized_name,
             )
         )
         if existing is not None:
             raise CredentialError("user name is already in use")
-        record = OperationalUserRecord(name=normalized_name, active=True)
+        record = OperationalUserRecord(
+            name=normalized_name,
+            active=True,
+            organization_id=organization_id,
+        )
         self._session.add(record)
         await self._session.flush()
         return record
@@ -71,9 +117,18 @@ class UserService:
             await self._session.flush()
         return record
 
-    async def list_users(self) -> list[OperationalUserRecord]:
+    async def list_users(
+        self,
+        *,
+        organization_id: uuid.UUID | None = None,
+    ) -> list[OperationalUserRecord]:
+        statement = select(OperationalUserRecord)
+        if organization_id is not None:
+            statement = statement.where(
+                OperationalUserRecord.organization_id == organization_id
+            )
         result = await self._session.scalars(
-            select(OperationalUserRecord).order_by(OperationalUserRecord.created_at)
+            statement.order_by(OperationalUserRecord.created_at)
         )
         return list(result)
 
@@ -83,16 +138,45 @@ class CredentialService:
         self._session = session
         self._pepper = pepper
 
+    async def _validate_plant_scope(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        plant_ids: frozenset[uuid.UUID] | None,
+    ) -> None:
+        if plant_ids is None:
+            return
+        result = await self._session.scalars(
+            select(Plant.id).where(
+                Plant.id.in_(list(plant_ids)),
+                Plant.organization_id == organization_id,
+            )
+        )
+        found = frozenset(result)
+        if found != plant_ids:
+            raise CredentialError(
+                "credential plant scope contains plants outside this organization"
+            )
+
+    async def _scope_for_credential(self, record: ApiCredentialRecord) -> PlantScope:
+        if record.plant_ids is not None:
+            return PlantScope.restricted(uuid.UUID(item) for item in record.plant_ids)
+        return UNRESTRICTED_PLANT_SCOPE
+
     async def create(
         self,
         *,
         name: str,
         role: OperationsRole,
+        organization_id: uuid.UUID | None = None,
         plant_ids: frozenset[uuid.UUID] | None = None,
         user_id: uuid.UUID | None = None,
         expires_at: datetime | None = None,
     ) -> tuple[ApiCredentialRecord, str]:
         """Cria uma credencial e devolve o segredo em texto claro uma única vez."""
+        organization_id = organization_id or await _resolve_default_organization_id(
+            self._session
+        )
         normalized_name = name.strip()
         if not normalized_name:
             raise CredentialError("credential name is required")
@@ -108,8 +192,14 @@ class CredentialService:
             user = await self._session.get(OperationalUserRecord, user_id)
             if user is None:
                 raise CredentialError("operational user not found")
+            if user.organization_id != organization_id:
+                raise CredentialError("operational user belongs to another organization")
             if not user.active:
                 raise CredentialError("operational user is deactivated")
+        await self._validate_plant_scope(
+            organization_id=organization_id,
+            plant_ids=plant_ids,
+        )
         existing = await self._session.scalar(
             select(ApiCredentialRecord).where(ApiCredentialRecord.name == normalized_name)
         )
@@ -128,6 +218,7 @@ class CredentialService:
             ),
             active=True,
             user_id=user_id,
+            organization_id=organization_id,
             expires_at=expires_at,
         )
         self._session.add(record)
@@ -144,9 +235,18 @@ class CredentialService:
             await self._session.flush()
         return record
 
-    async def list_credentials(self) -> list[ApiCredentialRecord]:
+    async def list_credentials(
+        self,
+        *,
+        organization_id: uuid.UUID | None = None,
+    ) -> list[ApiCredentialRecord]:
+        statement = select(ApiCredentialRecord)
+        if organization_id is not None:
+            statement = statement.where(
+                ApiCredentialRecord.organization_id == organization_id
+            )
         result = await self._session.scalars(
-            select(ApiCredentialRecord).order_by(ApiCredentialRecord.created_at)
+            statement.order_by(ApiCredentialRecord.created_at)
         )
         return list(result)
 
@@ -183,13 +283,9 @@ class CredentialService:
             return None
         if record.user is not None and not record.user.active:
             return None
-        scope = (
-            PlantScope.restricted(uuid.UUID(item) for item in record.plant_ids)
-            if record.plant_ids is not None
-            else UNRESTRICTED_PLANT_SCOPE
-        )
         return OperationsPrincipal(
             role=OperationsRole(record.role),
             credential_id=f"credential:{record.id}",
-            plant_scope=scope,
+            plant_scope=await self._scope_for_credential(record),
+            organization_id=record.organization_id,
         )

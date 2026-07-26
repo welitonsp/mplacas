@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from fastapi import Header, HTTPException, Request, status
+from sqlalchemy import select
 
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import JwtError, decode_token
+from mplacas.db.models import Plant
 
 
 class OperationsRole(StrEnum):
@@ -23,6 +25,7 @@ class OperationsPrincipal:
     role: OperationsRole
     credential_id: str
     plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE
+    organization_id: uuid.UUID | None = None
 
     def can_read(self) -> bool:
         return self.role in {OperationsRole.ADMIN, OperationsRole.READ}
@@ -31,6 +34,15 @@ class OperationsPrincipal:
         return self.role is OperationsRole.ADMIN
 
     def require_plant_access(self, plant_id: uuid.UUID) -> None:
+        # Static operational keys remain truly unrestricted because they are not
+        # organization-bound. Persisted credentials always carry organization_id;
+        # if they do not also carry an explicit plant scope, fail closed until the
+        # route can verify the requested plant belongs to that organization.
+        if self.organization_id is not None and self.plant_scope.plant_ids is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="plant not found",
+            )
         if not self.plant_scope.allows(plant_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -118,7 +130,11 @@ async def _resolve_persisted_credential(
     from mplacas.db.session import SessionFactory
 
     settings = get_settings()
-    pepper = settings.credential_pepper.get_secret_value() if settings.credential_pepper else ""
+    pepper = (
+        settings.credential_pepper.get_secret_value()
+        if settings.credential_pepper
+        else ""
+    )
     async with SessionFactory() as session:
         principal = await CredentialService(session, pepper=pepper).resolve(provided)
     if principal is None:
@@ -130,8 +146,6 @@ async def _resolve_persisted_credential(
 
 async def _plant_scope_for_org(org_id: uuid.UUID) -> PlantScope:
     from mplacas.db.session import SessionFactory
-    from sqlalchemy import select, text as sa_text
-    from mplacas.db.models import Plant
 
     async with SessionFactory() as session:
         result = await session.execute(
@@ -170,6 +184,7 @@ async def _authenticate_bearer(
         role=OperationsRole(claims.role),
         credential_id=f"user:{claims.sub}",
         plant_scope=scope,
+        organization_id=claims.org_id,
     )
 
 
@@ -183,8 +198,14 @@ async def _authenticate_with_fallback(
         return authenticate_operations_key(
             provided,
             admin_key=_secret_value(settings.operations_api_key),
-            read_key=None if require_admin else _secret_value(settings.operations_read_api_key),
-            read_plant_ids=None if require_admin else settings.operations_read_plant_id_set,
+            read_key=(
+                None
+                if require_admin
+                else _secret_value(settings.operations_read_api_key)
+            ),
+            read_plant_ids=(
+                None if require_admin else settings.operations_read_plant_id_set
+            ),
             require_admin=require_admin,
         )
     except HTTPException as exc:
@@ -206,7 +227,7 @@ async def require_operations_key(
 ) -> OperationsPrincipal:
     if authorization and authorization.startswith("Bearer "):
         principal = await _authenticate_bearer(
-            authorization[len("Bearer "):], require_admin=True
+            authorization[len("Bearer ") :], require_admin=True
         )
         if principal is not None:
             request.state.operations_principal = principal
@@ -223,7 +244,7 @@ async def require_operations_read(
 ) -> OperationsPrincipal:
     if authorization and authorization.startswith("Bearer "):
         principal = await _authenticate_bearer(
-            authorization[len("Bearer "):], require_admin=False
+            authorization[len("Bearer ") :], require_admin=False
         )
         if principal is not None:
             request.state.operations_principal = principal

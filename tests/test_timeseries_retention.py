@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from mplacas.climate.db_models import DailyClimateObservationRecord
 from mplacas.db.base import Base
 from mplacas.db.models import DataStatus, Device, DailyEnergy, DailyEnergyVersion, Plant
+from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
 from mplacas.retention.timeseries_service import (
     TimeSeriesRetentionService,
     TimeSeriesRetentionWindows,
@@ -34,8 +35,23 @@ async def session():
     await engine.dispose()
 
 
+async def _ensure_default_organization(session: AsyncSession) -> uuid.UUID:
+    record = await session.get(OrganizationRecord, DEFAULT_ORGANIZATION_ID)
+    if record is None:
+        record = OrganizationRecord(
+            id=DEFAULT_ORGANIZATION_ID,
+            name="Default",
+            slug="default",
+            active=True,
+        )
+        session.add(record)
+        await session.flush()
+    return record.id
+
+
 async def _make_plant(session: AsyncSession) -> uuid.UUID:
-    plant = Plant(name="Test Plant")
+    organization_id = await _ensure_default_organization(session)
+    plant = Plant(name="Test Plant", organization_id=organization_id)
     session.add(plant)
     await session.flush()
     return plant.id

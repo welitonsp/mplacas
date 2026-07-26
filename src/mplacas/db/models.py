@@ -6,12 +6,25 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    Date, DateTime, Enum, ForeignKey, Index, Numeric, String, UniqueConstraint, func,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from mplacas.db.base import Base
-from mplacas.organizations.db_models import OrganizationRecord as OrganizationRecord  # noqa: F401
+from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID
+from mplacas.organizations.db_models import OrganizationRecord as OrganizationRecord
+
+
+def _default_organization_id() -> uuid.UUID:
+    return DEFAULT_ORGANIZATION_ID
 
 
 class DataStatus(str, enum.Enum):
@@ -25,15 +38,22 @@ class Plant(Base):
     __tablename__ = "plants"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    organization_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        default=_default_organization_id,
     )
     name: Mapped[str] = mapped_column(String(120))
     timezone: Mapped[str] = mapped_column(String(64), default="America/Sao_Paulo")
-    installed_power_kwp: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    installed_power_kwp: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 3), nullable=True
+    )
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     devices: Mapped[list[Device]] = relationship(
         back_populates="plant", cascade="all, delete-orphan"
@@ -52,7 +72,9 @@ class Device(Base):
     provider: Mapped[str] = mapped_column(String(40), default="NEPVIEWER")
     serial_number: Mapped[str] = mapped_column(String(120))
     model_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     plant: Mapped[Plant] = relationship(back_populates="devices")
     daily_energy: Mapped[list[DailyEnergy]] = relationship(
@@ -68,10 +90,14 @@ class DailyEnergy(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE")
+    )
     production_date: Mapped[date] = mapped_column(Date)
     energy_kwh: Mapped[Decimal] = mapped_column(Numeric(12, 3))
-    status: Mapped[DataStatus] = mapped_column(Enum(DataStatus), default=DataStatus.PROVISIONAL)
+    status: Mapped[DataStatus] = mapped_column(
+        Enum(DataStatus), default=DataStatus.PROVISIONAL
+    )
     source: Mapped[str] = mapped_column(String(40), default="NEPVIEWER_V2")
     collected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
