@@ -250,19 +250,19 @@ def test_credential_endpoints_require_admin_and_return_secret_once(
     )
     assert read_denied.status_code == 401
 
-    unrestricted = client.post(
+    org_scoped = client.post(
         "/operations/credentials",
         json={"name": "leitor-geral", "role": "READ"},
         headers={"X-API-Key": "synthetic-admin-key"},
     )
-    assert unrestricted.status_code == 201
-    db_secret = unrestricted.json()["secret"]
+    assert org_scoped.status_code == 201
+    db_secret = org_scoped.json()["secret"]
 
     jobs_with_db_credential = client.get(
         "/operations/jobs",
         headers={"X-API-Key": db_secret},
     )
-    assert jobs_with_db_credential.status_code == 200
+    assert jobs_with_db_credential.status_code == 403
 
     admin_denied_for_db_read = client.post(
         "/operations/credentials",
@@ -272,7 +272,7 @@ def test_credential_endpoints_require_admin_and_return_secret_once(
     assert admin_denied_for_db_read.status_code == 401
 
     revoke_db_credential = client.post(
-        f"/operations/credentials/{unrestricted.json()['id']}/revoke",
+        f"/operations/credentials/{org_scoped.json()['id']}/revoke",
         headers={"X-API-Key": "synthetic-admin-key"},
     )
     assert revoke_db_credential.status_code == 200
