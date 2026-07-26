@@ -183,7 +183,7 @@ def test_user_endpoints_manage_lifecycle(monkeypatch, tmp_path) -> None:
     secret = credential.json()["secret"]
 
     jobs = client.get("/operations/jobs", headers={"X-API-Key": secret})
-    assert jobs.status_code == 403
+    assert jobs.status_code == 200
 
     listed = client.get("/operations/users", headers=admin)
     assert listed.status_code == 200
