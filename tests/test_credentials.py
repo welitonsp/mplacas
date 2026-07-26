@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from mplacas.core.config import get_settings
 from mplacas.core.security import OperationsRole
@@ -15,6 +15,8 @@ from mplacas.credentials.service import (
     hash_secret,
 )
 from mplacas.db.base import Base
+from mplacas.db.models import Plant
+from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
 
 PLANT_A = uuid.UUID("00000000-0000-0000-0000-00000000000a")
 PLANT_B = uuid.UUID("00000000-0000-0000-0000-00000000000b")
@@ -27,10 +29,41 @@ async def _factory():
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
+async def _ensure_default_organization(session: AsyncSession) -> uuid.UUID:
+    record = await session.get(OrganizationRecord, DEFAULT_ORGANIZATION_ID)
+    if record is None:
+        record = OrganizationRecord(
+            id=DEFAULT_ORGANIZATION_ID,
+            name="Default",
+            slug="default",
+            active=True,
+        )
+        session.add(record)
+        await session.flush()
+    return record.id
+
+
+async def _ensure_plants(session: AsyncSession, *plant_ids: uuid.UUID) -> uuid.UUID:
+    organization_id = await _ensure_default_organization(session)
+    for plant_id in plant_ids:
+        existing = await session.get(Plant, plant_id)
+        if existing is None:
+            session.add(
+                Plant(
+                    id=plant_id,
+                    organization_id=organization_id,
+                    name=f"Plant {plant_id}",
+                )
+            )
+    await session.flush()
+    return organization_id
+
+
 @pytest.mark.asyncio
 async def test_create_stores_hash_only_and_resolves_principal() -> None:
     factory = await _factory()
     async with factory() as session:
+        await _ensure_plants(session, PLANT_A)
         record, secret = await CredentialService(session).create(
             name="leitor-usina-a",
             role=OperationsRole.READ,
@@ -49,6 +82,38 @@ async def test_create_stores_hash_only_and_resolves_principal() -> None:
     assert principal.credential_id == f"credential:{record.id}"
     assert principal.plant_scope.allows(PLANT_A)
     assert not principal.plant_scope.allows(PLANT_B)
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_plant_scope_outside_organization() -> None:
+    factory = await _factory()
+    other_org_id = uuid.UUID("00000000-0000-0000-0000-0000000000c0")
+    async with factory() as session:
+        organization_id = await _ensure_plants(session, PLANT_A)
+        session.add(
+            OrganizationRecord(
+                id=other_org_id,
+                name="Other",
+                slug="other",
+                active=True,
+            )
+        )
+        session.add(
+            Plant(
+                id=PLANT_B,
+                organization_id=other_org_id,
+                name="Other plant",
+            )
+        )
+        await session.flush()
+
+        with pytest.raises(CredentialError, match="outside this organization"):
+            await CredentialService(session).create(
+                name="escopo-invalido",
+                role=OperationsRole.READ,
+                organization_id=organization_id,
+                plant_ids=frozenset({PLANT_B}),
+            )
 
 
 @pytest.mark.asyncio
@@ -78,6 +143,7 @@ async def test_resolve_rejects_wrong_secret_and_revoked_credential() -> None:
 async def test_create_enforces_domain_rules() -> None:
     factory = await _factory()
     async with factory() as session:
+        await _ensure_plants(session, PLANT_A)
         service = CredentialService(session)
         with pytest.raises(CredentialError, match="name is required"):
             await service.create(name="   ", role=OperationsRole.READ)
@@ -126,6 +192,9 @@ def test_credential_endpoints_require_admin_and_return_secret_once(
     async def _prepare() -> None:
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+        async with factory() as session:
+            await _ensure_plants(session, PLANT_A)
+            await session.commit()
 
     import asyncio
 
