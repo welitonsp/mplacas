@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mplacas.core.authorization import PlantScope
+from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE, PlantScope
 from mplacas.core.security import OperationsPrincipal, OperationsRole
 from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
 from mplacas.db.models import Plant
@@ -161,13 +161,7 @@ class CredentialService:
     async def _scope_for_credential(self, record: ApiCredentialRecord) -> PlantScope:
         if record.plant_ids is not None:
             return PlantScope.restricted(uuid.UUID(item) for item in record.plant_ids)
-        result = await self._session.scalars(
-            select(Plant.id).where(Plant.organization_id == record.organization_id)
-        )
-        plant_ids = frozenset(result)
-        if not plant_ids:
-            return PlantScope.empty()
-        return PlantScope.restricted(plant_ids)
+        return UNRESTRICTED_PLANT_SCOPE
 
     async def create(
         self,
