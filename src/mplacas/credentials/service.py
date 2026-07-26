@@ -12,8 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE, PlantScope
 from mplacas.core.security import OperationsPrincipal, OperationsRole
 from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
+from mplacas.organizations.db_models import OrganizationRecord
 
 _SECRET_BYTES = 32
+_DEFAULT_ORG_NAME = "Default"
+_DEFAULT_ORG_SLUG = "default"
 
 
 class CredentialError(ValueError):
@@ -44,6 +47,27 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+async def _resolve_default_organization_id(session: AsyncSession) -> uuid.UUID:
+    result = await session.scalars(
+        select(OrganizationRecord)
+        .where(OrganizationRecord.active.is_(True))
+        .order_by(OrganizationRecord.created_at)
+        .limit(1)
+    )
+    existing = result.first()
+    if existing is not None:
+        return existing.id
+
+    record = OrganizationRecord(
+        name=_DEFAULT_ORG_NAME,
+        slug=_DEFAULT_ORG_SLUG,
+        active=True,
+    )
+    session.add(record)
+    await session.flush()
+    return record.id
+
+
 class UserService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -52,8 +76,11 @@ class UserService:
         self,
         *,
         name: str,
-        organization_id: uuid.UUID,
+        organization_id: uuid.UUID | None = None,
     ) -> OperationalUserRecord:
+        organization_id = organization_id or await _resolve_default_organization_id(
+            self._session
+        )
         normalized_name = name.strip()
         if not normalized_name:
             raise CredentialError("user name is required")
@@ -111,12 +138,15 @@ class CredentialService:
         *,
         name: str,
         role: OperationsRole,
-        organization_id: uuid.UUID,
+        organization_id: uuid.UUID | None = None,
         plant_ids: frozenset[uuid.UUID] | None = None,
         user_id: uuid.UUID | None = None,
         expires_at: datetime | None = None,
     ) -> tuple[ApiCredentialRecord, str]:
         """Cria uma credencial e devolve o segredo em texto claro uma única vez."""
+        organization_id = organization_id or await _resolve_default_organization_id(
+            self._session
+        )
         normalized_name = name.strip()
         if not normalized_name:
             raise CredentialError("credential name is required")
