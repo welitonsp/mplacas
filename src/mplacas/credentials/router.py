@@ -19,7 +19,7 @@ from mplacas.core.security import (
 from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
 from mplacas.credentials.service import CredentialError, CredentialService, UserService
 from mplacas.db.session import SessionFactory
-from mplacas.organizations.db_models import OrganizationRecord
+from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
 
 router = APIRouter(
     prefix="/operations/credentials",
@@ -51,6 +51,10 @@ async def _resolve_organization_id(
     if principal.organization_id is not None:
         return principal.organization_id
 
+    default = await session.get(OrganizationRecord, DEFAULT_ORGANIZATION_ID)
+    if default is not None:
+        return default.id
+
     result = await session.scalars(
         select(OrganizationRecord)
         .where(OrganizationRecord.active.is_(True))
@@ -61,7 +65,12 @@ async def _resolve_organization_id(
     if existing is not None:
         return existing.id
 
-    record = OrganizationRecord(name="Default", slug="default", active=True)
+    record = OrganizationRecord(
+        id=DEFAULT_ORGANIZATION_ID,
+        name="Default",
+        slug="default",
+        active=True,
+    )
     session.add(record)
     await session.flush()
     return record.id
