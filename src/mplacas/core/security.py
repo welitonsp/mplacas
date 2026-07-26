@@ -121,7 +121,11 @@ async def _resolve_persisted_credential(
     from mplacas.db.session import SessionFactory
 
     settings = get_settings()
-    pepper = settings.credential_pepper.get_secret_value() if settings.credential_pepper else ""
+    pepper = (
+        settings.credential_pepper.get_secret_value()
+        if settings.credential_pepper
+        else ""
+    )
     async with SessionFactory() as session:
         principal = await CredentialService(session, pepper=pepper).resolve(provided)
     if principal is None:
@@ -135,7 +139,9 @@ async def _plant_scope_for_org(org_id: uuid.UUID) -> PlantScope:
     from mplacas.db.session import SessionFactory
 
     async with SessionFactory() as session:
-        result = await session.execute(select(Plant.id).where(Plant.organization_id == org_id))
+        result = await session.execute(
+            select(Plant.id).where(Plant.organization_id == org_id)
+        )
         plant_ids = frozenset(row[0] for row in result)
 
     if not plant_ids:
@@ -183,8 +189,14 @@ async def _authenticate_with_fallback(
         return authenticate_operations_key(
             provided,
             admin_key=_secret_value(settings.operations_api_key),
-            read_key=None if require_admin else _secret_value(settings.operations_read_api_key),
-            read_plant_ids=None if require_admin else settings.operations_read_plant_id_set,
+            read_key=(
+                None
+                if require_admin
+                else _secret_value(settings.operations_read_api_key)
+            ),
+            read_plant_ids=(
+                None if require_admin else settings.operations_read_plant_id_set
+            ),
             require_admin=require_admin,
         )
     except HTTPException as exc:
