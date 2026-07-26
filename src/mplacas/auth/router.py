@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.auth.password import verify_password
@@ -62,7 +62,7 @@ async def _load_active_user(
     username: str | None = None,
     organization_id: uuid.UUID | None = None,
 ) -> OperationalUserRecord | None:
-    statement = select(OperationalUserRecord).join(
+    statement = select(OperationalUserRecord).outerjoin(
         OrganizationRecord,
         OperationalUserRecord.organization_id == OrganizationRecord.id,
     )
@@ -76,7 +76,7 @@ async def _load_active_user(
         )
     statement = statement.where(
         OperationalUserRecord.active.is_(True),
-        OrganizationRecord.active.is_(True),
+        or_(OrganizationRecord.id.is_(None), OrganizationRecord.active.is_(True)),
     )
     return await session.scalar(statement)
 
