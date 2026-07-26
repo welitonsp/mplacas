@@ -149,3 +149,12 @@ def test_collection_task_queue_migration_is_present() -> None:
     assert "fk_collection_tasks_plant_id" in source
     assert "ix_collection_tasks_claimable" in source
     assert "collectiontaskstatus" in source
+
+
+def test_organization_id_orm_nullability_matches_production_migrations() -> None:
+    from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
+    from mplacas.db.models import Plant
+
+    assert Plant.__table__.c.organization_id.nullable is False
+    assert OperationalUserRecord.__table__.c.organization_id.nullable is False
+    assert ApiCredentialRecord.__table__.c.organization_id.nullable is False
