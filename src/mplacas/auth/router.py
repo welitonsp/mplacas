@@ -9,7 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.auth.password import verify_password
 from mplacas.core.config import get_settings
-from mplacas.core.jwt import JwtError, decode_token, encode_access_token, encode_refresh_token
+from mplacas.core.jwt import (
+    JwtError,
+    decode_token,
+    encode_access_token,
+    encode_refresh_token,
+)
 from mplacas.credentials.db_models import OperationalUserRecord
 from mplacas.db.session import SessionFactory
 from mplacas.organizations.db_models import OrganizationRecord
@@ -66,7 +71,9 @@ async def _load_active_user(
     if username is not None:
         statement = statement.where(OperationalUserRecord.name == username)
     if organization_id is not None:
-        statement = statement.where(OperationalUserRecord.organization_id == organization_id)
+        statement = statement.where(
+            OperationalUserRecord.organization_id == organization_id
+        )
     statement = statement.where(
         OperationalUserRecord.active.is_(True),
         OrganizationRecord.active.is_(True),
