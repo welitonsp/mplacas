@@ -1,7 +1,7 @@
-const ACCESS_TOKEN_KEY = 'mplacas_access_token'
+let accessToken: string | null = null
 
 export const TokenStore = {
-  get: (): string | null => localStorage.getItem(ACCESS_TOKEN_KEY),
-  set: (token: string): void => { localStorage.setItem(ACCESS_TOKEN_KEY, token) },
-  clear: (): void => { localStorage.removeItem(ACCESS_TOKEN_KEY) },
+  get: (): string | null => accessToken,
+  set: (token: string): void => { accessToken = token },
+  clear: (): void => { accessToken = null },
 }
