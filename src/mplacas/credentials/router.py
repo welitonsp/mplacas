@@ -187,17 +187,15 @@ async def revoke_credential(
         organization_id = await _resolve_organization_id(session, principal)
         service = CredentialService(session, pepper=_pepper())
         try:
-            record = await service.revoke(credential_id)
+            record = await service.revoke(
+                credential_id,
+                organization_id=organization_id,
+            )
         except CredentialError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(exc),
             ) from exc
-        if record.organization_id != organization_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="credential not found",
-            )
         await AuditEventRepository(session).record(
             request,
             action="credentials.revoke",
@@ -272,17 +270,15 @@ async def deactivate_user(
     async with SessionFactory() as session:
         organization_id = await _resolve_organization_id(session, principal)
         try:
-            record = await UserService(session).deactivate(user_id)
+            record = await UserService(session).deactivate(
+                user_id,
+                organization_id=organization_id,
+            )
         except CredentialError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(exc),
             ) from exc
-        if record.organization_id != organization_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="operational user not found",
-            )
         await AuditEventRepository(session).record(
             request,
             action="users.deactivate",
