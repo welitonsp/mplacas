@@ -37,7 +37,11 @@ def _settings(*, env: str, jwt_configured: bool) -> SimpleNamespace:
 
 @pytest.mark.asyncio
 async def test_ready_degrades_production_without_jwt(monkeypatch) -> None:
-    monkeypatch.setattr(main, "get_settings", lambda: _settings(env="production", jwt_configured=False))
+    monkeypatch.setattr(
+        main,
+        "get_settings",
+        lambda: _settings(env="production", jwt_configured=False),
+    )
     monkeypatch.setattr(main, "SessionFactory", lambda: _ReadySession())
 
     response = Response()
@@ -52,7 +56,11 @@ async def test_ready_degrades_production_without_jwt(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_ready_allows_development_without_jwt(monkeypatch) -> None:
-    monkeypatch.setattr(main, "get_settings", lambda: _settings(env="development", jwt_configured=False))
+    monkeypatch.setattr(
+        main,
+        "get_settings",
+        lambda: _settings(env="development", jwt_configured=False),
+    )
     monkeypatch.setattr(main, "SessionFactory", lambda: _ReadySession())
 
     response = Response()
@@ -66,7 +74,11 @@ async def test_ready_allows_development_without_jwt(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_ready_allows_production_with_jwt(monkeypatch) -> None:
-    monkeypatch.setattr(main, "get_settings", lambda: _settings(env="production", jwt_configured=True))
+    monkeypatch.setattr(
+        main,
+        "get_settings",
+        lambda: _settings(env="production", jwt_configured=True),
+    )
     monkeypatch.setattr(main, "SessionFactory", lambda: _ReadySession())
 
     response = Response()
