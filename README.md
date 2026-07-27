@@ -44,6 +44,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - logs JSON correlacionados, trace ID ponta a ponta e spans OpenTelemetry no Cloud Trace;
 - imagem de produção e comandos de jobs prontos para implantação no Google Cloud Run;
 - automação segura de implantação pelo Google Cloud Shell, sem Docker ou `gcloud` no Windows;
+- runbook de backup e restauração com teste de ensaio obrigatório em banco descartável;
 - CI com Ruff, Mypy, Pytest, validação Bash, ShellCheck e smoke test do contêiner.
 
 > A API NEPViewer usada é uma interface web não oficial e pode mudar. O adaptador permanece isolado para impedir acoplamento do restante do sistema.
@@ -244,6 +245,13 @@ alembic upgrade head
 ```
 
 antes de iniciar uma nova versão da aplicação.
+
+## Backup e restauração
+
+O contrato operacional de backup e restauração está documentado em
+[`docs/backup-restore-runbook.md`](docs/backup-restore-runbook.md). O backup só deve ser considerado
+válido após restauração de ensaio em banco descartável, validação de tabelas críticas e sucesso do
+`/ready` contra o banco restaurado.
 
 ## Configuração sensível
 
