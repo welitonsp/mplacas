@@ -22,9 +22,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const getRefreshToken = useCallback(() => refreshTokenRef.current, [])
+  const setRefreshToken = useCallback((token: string) => {
+    refreshTokenRef.current = token
+  }, [])
 
-  // Configura o api.ts com as funções do contexto
-  configureApi(getRefreshToken, logout)
+  // Configura o api.ts com as funções do contexto.
+  configureApi(getRefreshToken, setRefreshToken, logout)
 
   const login = useCallback(async (username: string, password: string) => {
     const response = await fetch(`${API_URL}/auth/login`, {
@@ -36,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!response.ok) {
       const status = response.status
       if (status === 401) throw new Error('Credenciais inválidas.')
+      if (status === 429) throw new Error('Muitas tentativas. Aguarde e tente novamente.')
       if (status === 503) throw new Error('Serviço de autenticação não configurado.')
       throw new Error('Erro ao autenticar. Tente novamente.')
     }
