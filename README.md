@@ -44,6 +44,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - logs JSON correlacionados, trace ID ponta a ponta e spans OpenTelemetry no Cloud Trace;
 - imagem de produção e comandos de jobs prontos para implantação no Google Cloud Run;
 - automação segura de implantação pelo Google Cloud Shell, sem Docker ou `gcloud` no Windows;
+- runbook de backup e restauração com teste de ensaio obrigatório em banco descartável;
 - CI com Ruff, Mypy, Pytest, validação Bash, ShellCheck e smoke test do contêiner.
 
 > A API NEPViewer usada é uma interface web não oficial e pode mudar. O adaptador permanece isolado para impedir acoplamento do restante do sistema.
@@ -216,73 +217,12 @@ eventos pendentes com lock, retry e backoff exponencial; ele deve ser executado 
 garantir recuperação mesmo quando o processo original termina após o commit. O Scheduler futuro
 deve acionar jobs autenticados por IAM, não endpoints administrativos públicos.
 
+## Backup e restauração
+
+O contrato operacional de backup e restauração está documentado em
+[`docs/backup-restore-runbook.md`](docs/backup-restore-runbook.md). O backup só deve ser considerado
+válido após restauração de ensaio em banco descartável, validação de tabelas críticas e sucesso do
+`/ready` contra o banco restaurado.
+
 Em produção, cada resposta inclui `X-Request-ID` e `X-Trace-ID`. Logs JSON carregam os campos
-especiais do Cloud Logging para navegação direta até o trace. FastAPI, SQLAlchemy, HTTPX e as etapas
-do pipeline são instrumentados quando `MPLACAS_CLOUD_TRACE_ENABLED=true`; a amostragem padrão é 10%.
-Query strings não entram nos spans e o token presente no path do Telegram é mascarado.
-
-Documentação operacional:
-
-- `docs/RUNBOOK_GOOGLE_CLOUD_DEPLOYMENT.md` — implantação completa pelo Cloud Shell;
-- `docs/ADR-026-google-cloud-deployment-automation.md` — decisão e controles da automação;
-- `docs/RUNBOOK_GOOGLE_CLOUD_RUN.md` — arquitetura e operação da plataforma;
-- `docs/COST_GUARDRAILS_GOOGLE_CLOUD.md` — controles de custo;
-- `docs/ADR-025-google-cloud-run-platform.md` — decisão da plataforma.
-
-## Banco
-
-O padrão de desenvolvimento é SQLite. Para PostgreSQL:
-
-```text
-MPLACAS_DATABASE_URL=postgresql+asyncpg://usuario@host:5432/mplacas
-```
-
-Execute sempre:
-
-```bash
-alembic upgrade head
-```
-
-antes de iniciar uma nova versão da aplicação.
-
-## Configuração sensível
-
-Nunca registre no GitHub:
-
-- senha da NEPViewer;
-- chave operacional;
-- token do Telegram;
-- chave do gateway de IA;
-- faturas de energia;
-- CPF, endereço ou unidade consumidora;
-- dumps de respostas externas;
-- `infra/gcp/config.env`;
-- valores usados no Secret Manager.
-
-Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` para os nomes suportados.
-
-## Auditoria e decisões
-
-- ADRs: diretório `docs/`;
-- PDF e XLSX: `docs/ADR-028-pdf-and-xlsx-report-exports.md`;
-- segurança de egress e request ID: `docs/ADR-030-production-egress-and-request-tracing.md`;
-- papel operacional somente leitura: `docs/ADR-031-operational-read-role-api-key.md`;
-- trilha auditável de credencial operacional: `docs/ADR-032-operational-credential-audit-trail.md`;
-- auditoria persistente de ações sensíveis: `docs/ADR-033-persistent-sensitive-action-audit.md`;
-- auditoria persistente ampliada: `docs/ADR-034-expanded-administrative-audit-events.md`;
-- escopo obrigatorio de faturas por usina: `docs/ADR-035-mandatory-utility-bill-plant-scope.md`;
-- fronteira de leitura de faturas confirmadas: `docs/ADR-036-confirmed-billing-read-boundary.md`;
-- acesso de leitura escopado por usina: `docs/ADR-037-plant-scoped-operational-read-access.md`;
-- snapshots imutáveis de relatório: `docs/ADR-038-immutable-monthly-report-snapshots.md`;
-- módulos focados de relatório: `docs/ADR-039-focused-monthly-report-modules.md`;
-- outbox transacional de alertas: `docs/ADR-040-transactional-alert-outbox.md`;
-- observabilidade estruturada e Cloud Trace: `docs/ADR-041-structured-observability-and-cloud-trace.md`;
-- relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
-- auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
-- auditoria técnica profunda: `docs/AUDITORIA_TECNICA_PROFUNDA_2026-07-16.md`;
-- checkpoint histórico: `docs/CHECKPOINT_PROJETO_2026-07-12.md`;
-- checkpoint atual: `docs/CHECKPOINT_PROJETO_2026-07-16.md`.
-
-## Regra de entrega
-
-Uma PR somente é considerada concluída quando todo o seu escopo está implementado, testado, documentado, validado pelo CI e mergeado. Não são iniciadas novas funcionalidades enquanto houver pendência conhecida da etapa atual.
+especiais do Cloud Logging para navegação direta até o trace.
