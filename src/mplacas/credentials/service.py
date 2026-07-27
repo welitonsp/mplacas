@@ -108,9 +108,19 @@ class UserService:
         await self._session.flush()
         return record
 
-    async def deactivate(self, user_id: uuid.UUID) -> OperationalUserRecord:
+    async def deactivate(
+        self,
+        user_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID | None = None,
+    ) -> OperationalUserRecord:
         """Desativa o usuário; todas as suas credenciais param de autenticar."""
-        record = await self._session.get(OperationalUserRecord, user_id)
+        statement = select(OperationalUserRecord).where(OperationalUserRecord.id == user_id)
+        if organization_id is not None:
+            statement = statement.where(
+                OperationalUserRecord.organization_id == organization_id
+            )
+        record = await self._session.scalar(statement)
         if record is None:
             raise CredentialError("operational user not found")
         if record.active:
@@ -227,8 +237,16 @@ class CredentialService:
         await self._session.flush()
         return record, secret
 
-    async def revoke(self, credential_id: uuid.UUID) -> ApiCredentialRecord:
-        record = await self._session.get(ApiCredentialRecord, credential_id)
+    async def revoke(
+        self,
+        credential_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID | None = None,
+    ) -> ApiCredentialRecord:
+        statement = select(ApiCredentialRecord).where(ApiCredentialRecord.id == credential_id)
+        if organization_id is not None:
+            statement = statement.where(ApiCredentialRecord.organization_id == organization_id)
+        record = await self._session.scalar(statement)
         if record is None:
             raise CredentialError("credential not found")
         if record.active:
@@ -272,9 +290,15 @@ class CredentialService:
             else ApiCredentialRecord.key_hash == peppered
         )
         record = await self._session.scalar(
-            select(ApiCredentialRecord).where(
+            select(ApiCredentialRecord)
+            .join(
+                OrganizationRecord,
+                ApiCredentialRecord.organization_id == OrganizationRecord.id,
+            )
+            .where(
                 where_hash,
                 ApiCredentialRecord.active.is_(True),
+                OrganizationRecord.active.is_(True),
             )
         )
         if record is None:
