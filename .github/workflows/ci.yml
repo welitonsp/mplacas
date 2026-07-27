@@ -190,6 +190,7 @@ jobs:
             -e MPLACAS_ENVIRONMENT=production \
             -e MPLACAS_DATABASE_URL=postgresql+asyncpg://postgres@localhost:5432/postgres \
             -e MPLACAS_OPERATIONS_API_KEY=ci-operations-key \
+            -e MPLACAS_JWT_SECRET=ci-jwt-secret \
             -e MPLACAS_NEP_USERNAME=ci-nep-user \
             -e MPLACAS_NEP_PASSWORD=ci-nep-password \
             "$IMAGE_NAME"

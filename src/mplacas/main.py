@@ -50,6 +50,13 @@ def _normalize_request_id(value: str | None) -> str:
     return cleaned
 
 
+def _production_auth_ready(settings: object) -> bool:
+    env = getattr(settings, "env", "development")
+    if env != "production":
+        return True
+    return bool(getattr(settings, "jwt_configured", False))
+
+
 app = FastAPI(
     title="Mplacas API",
     version=__version__,
@@ -178,10 +185,13 @@ async def ready(response: Response) -> dict[str, object]:
     except Exception:
         database_ready = False
 
-    if not database_ready:
+    jwt_auth_configured = bool(getattr(settings, "jwt_configured", False))
+    production_auth_ready = _production_auth_ready(settings)
+    ready_status = "ready" if database_ready and production_auth_ready else "degraded"
+
+    if ready_status != "ready":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
-    ready_status = "ready" if database_ready else "degraded"
     return {
         "status": ready_status,
         "configuration_valid": True,
@@ -194,6 +204,7 @@ async def ready(response: Response) -> dict[str, object]:
         "pipeline_runtime_configured": settings.pipeline_stale_lock_timeout_minutes > 0,
         "explanation_provider_configured": settings.explanation_provider_configured,
         "operational_auth_configured": settings.operations_api_key is not None,
-        "jwt_auth_configured": getattr(settings, "jwt_configured", False),
+        "jwt_auth_configured": jwt_auth_configured,
+        "production_auth_ready": production_auth_ready,
         "timezone": settings.timezone,
     }
