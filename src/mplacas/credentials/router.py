@@ -37,6 +37,7 @@ class CredentialCreateRequest(BaseModel):
 
 class UserCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+    role: OperationsRole = OperationsRole.ADMIN
 
 
 async def _resolve_organization_id(
@@ -78,6 +79,7 @@ def _user_view(record: OperationalUserRecord) -> dict[str, object]:
         "id": str(record.id),
         "organization_id": str(record.organization_id),
         "name": record.name,
+        "role": record.role,
         "active": record.active,
         "created_at": record.created_at,
         "deactivated_at": record.deactivated_at,
@@ -227,6 +229,7 @@ async def create_user(
             record = await UserService(session).create(
                 name=payload.name,
                 organization_id=organization_id,
+                role=payload.role,
             )
         except CredentialError as exc:
             raise HTTPException(
@@ -239,7 +242,7 @@ async def create_user(
             resource_type="operational_user",
             resource_id=str(record.id),
             outcome="SUCCEEDED",
-            details=_organization_details(record),
+            details={**_organization_details(record), "role": record.role},
         )
         await session.commit()
     return _user_view(record)
