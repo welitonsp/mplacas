@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_ttl_seconds: int = 900
     jwt_refresh_ttl_seconds: int = 1_209_600
+    auth_login_max_attempts: int = 5
+    auth_login_window_seconds: int = 900
+    auth_login_lockout_seconds: int = 900
     cors_allowed_origins: str | None = None
 
     @property
@@ -140,6 +143,19 @@ class Settings(BaseSettings):
     def _validate_positive_timeout(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("timeout must be positive")
+        return value
+
+    @field_validator(
+        "jwt_access_ttl_seconds",
+        "jwt_refresh_ttl_seconds",
+        "auth_login_max_attempts",
+        "auth_login_window_seconds",
+        "auth_login_lockout_seconds",
+    )
+    @classmethod
+    def _validate_positive_auth_value(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("authentication timing and limit values must be positive")
         return value
 
     @field_validator("trace_sample_rate")
@@ -292,6 +308,8 @@ class Settings(BaseSettings):
             "operational_read_auth_configured": self.operations_read_api_key is not None,
             "operational_read_plant_scope": read_scope,
             "operational_read_plant_count": len(self.operations_read_plant_id_set or ()),
+            "jwt_auth_configured": self.jwt_configured,
+            "auth_login_max_attempts": self.auth_login_max_attempts,
             "external_http_allowed_host_count": len(self.external_http_allowed_host_set),
         }
 

@@ -27,6 +27,7 @@ class OperationalUserRecord(Base):
         default=_default_organization_id,
     )
     name: Mapped[str] = mapped_column(String(80), unique=True)
+    role: Mapped[str] = mapped_column(String(16), default="ADMIN")
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

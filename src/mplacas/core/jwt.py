@@ -21,6 +21,7 @@ class JwtClaims:
     org_id: uuid.UUID
     role: str
     type: str
+    jti: uuid.UUID | None = None
 
 
 def _settings():
@@ -54,7 +55,12 @@ def encode_access_token(
     return jwt.encode(payload, _secret(), algorithm=settings.jwt_algorithm)
 
 
-def encode_refresh_token(user_id: uuid.UUID, org_id: uuid.UUID) -> str:
+def encode_refresh_token(
+    user_id: uuid.UUID,
+    org_id: uuid.UUID,
+    *,
+    jti: uuid.UUID | None = None,
+) -> str:
     settings = _settings()
     now = int(datetime.now(timezone.utc).timestamp())
     payload = {
@@ -65,6 +71,8 @@ def encode_refresh_token(user_id: uuid.UUID, org_id: uuid.UUID) -> str:
         "iss": _ISSUER,
         "type": "refresh",
     }
+    if jti is not None:
+        payload["jti"] = str(jti)
     return jwt.encode(payload, _secret(), algorithm=settings.jwt_algorithm)
 
 
@@ -89,11 +97,13 @@ def decode_token(token: str, *, expected_type: str) -> JwtClaims:
         raise JwtError(f"expected token type '{expected_type}'")
 
     try:
+        raw_jti = payload.get("jti")
         return JwtClaims(
             sub=uuid.UUID(payload["sub"]),
             org_id=uuid.UUID(payload["org_id"]),
             role=payload.get("role", "READ"),
             type=payload["type"],
+            jti=uuid.UUID(raw_jti) if raw_jti is not None else None,
         )
     except (ValueError, KeyError) as exc:
         raise JwtError(f"malformed claims: {exc}") from exc

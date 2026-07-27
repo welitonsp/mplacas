@@ -2,24 +2,25 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mplacas.auth.password import verify_password
+from mplacas.auth.password import hash_password, verify_password
+from mplacas.auth.session_service import AuthSessionService, LoginRateLimitService
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import (
     JwtError,
     decode_token,
     encode_access_token,
-    encode_refresh_token,
 )
 from mplacas.credentials.db_models import OperationalUserRecord
 from mplacas.db.session import SessionFactory
 from mplacas.organizations.db_models import OrganizationRecord
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+_DUMMY_PASSWORD_HASH = hash_password("mplacas-invalid-user-dummy-password")
 
 
 class LoginRequest(BaseModel):
@@ -39,6 +40,7 @@ class RefreshRequest(BaseModel):
 
 class AccessTokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
 
 
@@ -52,6 +54,13 @@ def _invalid_credentials() -> HTTPException:
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="invalid credentials",
         headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _rate_limited() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="too many failed login attempts; try again later",
     )
 
 
@@ -81,8 +90,20 @@ async def _load_active_user(
     return await session.scalar(statement)
 
 
+def _verify_candidate_password(
+    *,
+    supplied_password: str,
+    user: OperationalUserRecord | None,
+) -> bool:
+    if user is None or user.password_hash is None:
+        verify_password(supplied_password, _DUMMY_PASSWORD_HASH)
+        return False
+    return verify_password(supplied_password, user.password_hash)
+
+
 @router.post("/login", response_model=TokenResponse, status_code=status.HTTP_200_OK)
 async def login(
+    request: Request,
     body: LoginRequest,
     session: AsyncSession = Depends(_get_session),
 ) -> TokenResponse:
@@ -93,18 +114,38 @@ async def login(
             detail="JWT authentication is not configured",
         )
 
+    rate_limit = LoginRateLimitService(session)
+    client_host = request.client.host if request.client else None
+    rate_key = LoginRateLimitService.key_for(
+        username=body.username,
+        client_host=client_host,
+    )
+    if await rate_limit.is_locked(rate_key):
+        raise _rate_limited()
+
     user = await _load_active_user(session, username=body.username)
-
-    # Invalid responses intentionally use the same public message.
-    if user is None or user.password_hash is None:
+    if not _verify_candidate_password(supplied_password=body.password, user=user):
+        await rate_limit.record_failure(
+            rate_key,
+            max_attempts=settings.auth_login_max_attempts,
+            window_seconds=settings.auth_login_window_seconds,
+            lockout_seconds=settings.auth_login_lockout_seconds,
+        )
+        await session.commit()
         raise _invalid_credentials()
-    if not verify_password(body.password, user.password_hash):
-        raise _invalid_credentials()
 
-    org_id: uuid.UUID = user.organization_id
+    assert user is not None
+    await rate_limit.clear(rate_key)
+    refresh_token = await AuthSessionService(session).create(
+        user_id=user.id,
+        organization_id=user.organization_id,
+        ttl_seconds=settings.jwt_refresh_ttl_seconds,
+    )
+    await session.commit()
+
     return TokenResponse(
-        access_token=encode_access_token(user.id, org_id, "ADMIN"),
-        refresh_token=encode_refresh_token(user.id, org_id),
+        access_token=encode_access_token(user.id, user.organization_id, user.role),
+        refresh_token=refresh_token,
     )
 
 
@@ -141,6 +182,20 @@ async def refresh(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    new_refresh_token = await AuthSessionService(session).rotate(
+        token=body.refresh_token,
+        claims=claims,
+        ttl_seconds=settings.jwt_refresh_ttl_seconds,
+    )
+    if new_refresh_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    await session.commit()
+
     return AccessTokenResponse(
-        access_token=encode_access_token(claims.sub, claims.org_id, "ADMIN"),
+        access_token=encode_access_token(claims.sub, claims.org_id, user.role),
+        refresh_token=new_refresh_token,
     )
