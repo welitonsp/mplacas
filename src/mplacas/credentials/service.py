@@ -83,6 +83,7 @@ class UserService:
         *,
         name: str,
         organization_id: uuid.UUID | None = None,
+        role: OperationsRole = OperationsRole.ADMIN,
     ) -> OperationalUserRecord:
         organization_id = organization_id or await _resolve_default_organization_id(
             self._session
@@ -99,6 +100,7 @@ class UserService:
             raise CredentialError("user name is already in use")
         record = OperationalUserRecord(
             name=normalized_name,
+            role=role.value,
             active=True,
             organization_id=organization_id,
         )
