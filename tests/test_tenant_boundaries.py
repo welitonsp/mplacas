@@ -91,14 +91,19 @@ async def test_deactivate_is_scoped_before_mutating_user() -> None:
 async def test_resolve_rejects_credential_when_organization_is_inactive() -> None:
     factory = await _factory()
     async with factory() as session:
-        organization_id = await CredentialService(session)._resolve_default_organization_id()  # type: ignore[attr-defined]
+        org = OrganizationRecord(
+            id=DEFAULT_ORGANIZATION_ID,
+            name="Default",
+            slug="default",
+            active=True,
+        )
+        session.add(org)
+        await session.flush()
         record, secret = await CredentialService(session).create(
             name="cred-org-inativa",
             role=OperationsRole.READ,
-            organization_id=organization_id,
+            organization_id=org.id,
         )
-        org = await session.get(OrganizationRecord, organization_id)
-        assert org is not None
         org.active = False
         await session.commit()
 
