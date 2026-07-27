@@ -234,35 +234,112 @@ class Settings(BaseSettings):
         if not raw_values:
             raise ValueError("read credential plant scope must contain at least one UUID")
         try:
-            for item in raw_values:
-                uuid.UUID(item)
+            normalized = tuple(dict.fromkeys(str(uuid.UUID(item)) for item in raw_values))
         except ValueError as exc:
-            raise ValueError("read credential plant scope must contain only UUIDs") from exc
-        return ",".join(raw_values)
+            raise ValueError("read credential plant scope contains an invalid UUID") from exc
+        return ",".join(normalized)
 
     @model_validator(mode="after")
-    def _enforce_production_configuration(self):
+    def _validate_environment(self) -> Settings:
+        if self.cloud_trace_enabled and self.gcp_project_id is None:
+            raise ValueError("Cloud Trace requires MPLACAS_GCP_PROJECT_ID")
+        if self.cloud_metrics_enabled and self.gcp_project_id is None:
+            raise ValueError("Cloud Monitoring requires MPLACAS_GCP_PROJECT_ID")
+        if self.operations_read_plant_ids is not None and (
+            self.operations_read_api_key is None
+            or not self.operations_read_api_key.get_secret_value().strip()
+        ):
+            raise ValueError("read credential plant scope requires an operational read API key")
         if self.env != "production":
             return self
-        if self.database_url.startswith("sqlite"):
-            raise ValueError("production requires PostgreSQL database_url")
-        if not self.operations_api_key:
-            raise ValueError("production requires MPLACAS_OPERATIONS_API_KEY")
+        database_url = self.database_url.strip().lower()
+        if not database_url:
+            raise ValueError("database URL is required in production")
+        if database_url.startswith("sqlite") or ":memory:" in database_url:
+            raise ValueError("SQLite is not allowed in production")
+        if not (
+            database_url.startswith("postgresql")
+            or database_url.startswith("postgres")
+        ):
+            raise ValueError("PostgreSQL database URL is required in production")
+        if (
+            self.operations_api_key is None
+            or not self.operations_api_key.get_secret_value().strip()
+        ):
+            raise ValueError("operational API key is required in production")
+        allowed_hosts = self.external_http_allowed_host_set
+        if not allowed_hosts:
+            raise ValueError("at least one external HTTP host must be allowed in production")
+        _validate_production_external_url(
+            name="MPLACAS_NEP_BASE_URL",
+            url=str(self.nep_base_url),
+            allowed_hosts=allowed_hosts,
+        )
+        _validate_production_external_url(
+            name="MPLACAS_CLIMATE_ARCHIVE_BASE_URL",
+            url=str(self.climate_archive_base_url),
+            allowed_hosts=allowed_hosts,
+        )
+        if self.explanation_api_url is not None:
+            _validate_production_external_url(
+                name="MPLACAS_EXPLANATION_API_URL",
+                url=str(self.explanation_api_url),
+                allowed_hosts=allowed_hosts,
+            )
         return self
 
+    def safe_summary(self) -> dict[str, object]:
+        read_scope = "not_configured"
+        if self.operations_read_api_key is not None:
+            read_scope = (
+                "restricted" if self.operations_read_plant_ids is not None else "unrestricted"
+            )
+        return {
+            "environment": self.env,
+            "database_backend": _database_backend(self.database_url),
+            "port": self.port,
+            "timezone": self.timezone,
+            "structured_logging": self.env == "production",
+            "cloud_trace_enabled": self.cloud_trace_enabled,
+            "trace_sample_rate": self.trace_sample_rate,
+            "cloud_metrics_enabled": self.cloud_metrics_enabled,
+            "metrics_export_interval_seconds": self.metrics_export_interval_seconds,
+            "operational_auth_configured": self.operations_api_key is not None,
+            "operational_read_auth_configured": self.operations_read_api_key is not None,
+            "operational_read_plant_scope": read_scope,
+            "operational_read_plant_count": len(self.operations_read_plant_id_set or ()),
+            "jwt_auth_configured": self.jwt_configured,
+            "auth_login_max_attempts": self.auth_login_max_attempts,
+            "external_http_allowed_host_count": len(self.external_http_allowed_host_set),
+        }
 
-@lru_cache(maxsize=1)
+
+def _database_backend(database_url: str) -> str:
+    lowered = database_url.strip().lower()
+    if lowered.startswith("sqlite"):
+        return "sqlite"
+    if lowered.startswith("postgresql") or lowered.startswith("postgres"):
+        return "postgresql"
+    return "unknown"
+
+
+def _validate_production_external_url(
+    *,
+    name: str,
+    url: str,
+    allowed_hosts: frozenset[str],
+) -> None:
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https":
+        raise ValueError(f"{name} must use HTTPS in production")
+    if not host or host not in allowed_hosts:
+        raise ValueError(f"{name} host is not in MPLACAS_EXTERNAL_HTTP_ALLOWED_HOSTS")
+
+
+@lru_cache
 def get_settings() -> Settings:
-    if "pytest" in sys.modules:
-        return Settings(env="test")
-    return Settings()
-
-
-def validate_outbound_url(url: str) -> None:
-    """Allow only configured external hosts for SSRF-safe outbound calls."""
-    host = urlsplit(url).hostname
-    if host is None:
-        raise ValueError("outbound URL must include a hostname")
-    allowed = get_settings().external_http_allowed_host_set
-    if host.lower() not in allowed:
-        raise ValueError("outbound host is not allowed")
+    # Skip .env file when running under pytest so monkeypatch.delenv works correctly.
+    # In production and development, .env is loaded normally.
+    env_file: str | None = None if "pytest" in sys.modules else ".env"
+    return Settings(_env_file=env_file)  # type: ignore[call-arg]
