@@ -194,6 +194,6 @@ async def ready(response: Response) -> dict[str, object]:
         "pipeline_runtime_configured": settings.pipeline_stale_lock_timeout_minutes > 0,
         "explanation_provider_configured": settings.explanation_provider_configured,
         "operational_auth_configured": settings.operations_api_key is not None,
-        "jwt_auth_configured": settings.jwt_configured,
+        "jwt_auth_configured": getattr(settings, "jwt_configured", False),
         "timezone": settings.timezone,
     }
