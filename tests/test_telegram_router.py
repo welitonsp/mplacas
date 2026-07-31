@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from mplacas.telegram.router import (
+    _resolve_telegram_allowed_user_id,
     _resolve_telegram_organization,
     _resolve_telegram_plant_scope,
 )
@@ -64,6 +65,30 @@ async def test_resolve_telegram_organization_rejects_unknown_chat() -> None:
 
     assert exc.value.status_code == 403
     assert "not linked to any organization" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_resolve_telegram_allowed_user_id_returns_configured_value() -> None:
+    organization_id = uuid.uuid4()
+
+    resolved = await _resolve_telegram_allowed_user_id(
+        FakeSession([777]),  # type: ignore[arg-type]
+        organization_id,
+    )
+
+    assert resolved == 777
+
+
+@pytest.mark.asyncio
+async def test_resolve_telegram_allowed_user_id_returns_none_when_unconfigured() -> None:
+    organization_id = uuid.uuid4()
+
+    resolved = await _resolve_telegram_allowed_user_id(
+        FakeSession([]),  # type: ignore[arg-type]
+        organization_id,
+    )
+
+    assert resolved is None
 
 
 @pytest.mark.asyncio

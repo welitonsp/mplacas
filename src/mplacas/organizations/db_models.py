@@ -32,3 +32,6 @@ class OrganizationRecord(Base):
     telegram_chat_id: Mapped[int | None] = mapped_column(
         BigInteger, unique=True, nullable=True, index=True
     )
+    telegram_allowed_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )

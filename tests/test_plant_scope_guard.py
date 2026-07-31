@@ -124,19 +124,23 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
         "payload.plant_id) using an injected AdminPrincipal"
     ),
     # telegram: webhook has no OperationsPrincipal at all (authenticated via a
-    # shared webhook secret header plus a single global
+    # shared webhook secret header plus a per-organization
     # telegram_allowed_user_id, not an operational credential/bearer token),
     # so ReadPlant/AdminPlant/ScopedPlant (which all resolve their plant_id
     # against an OperationsPrincipal's PlantScope) do not apply structurally.
-    # As of PR-6, tenant isolation *is* enforced here, just via a different
+    # As of PR-6, tenant isolation is enforced here via a different
     # mechanism: the incoming chat_id is resolved to an OrganizationRecord
     # (via OrganizationRecord.telegram_chat_id) and the plant is then
     # inferred for that organization alone (core.tenancy.
     # _infer_single_plant_for_organization, 409 if it doesn't own exactly one
     # plant) — see telegram.router._resolve_telegram_organization /
     # _resolve_telegram_plant_scope. A chat_id with no linked organization is
-    # rejected outright (403), so there is no more global cross-tenant
-    # fallback. This stays allowlisted because the guard only recognizes the
+    # rejected outright (403). Since the telegram_allowed_user_id column was
+    # added, the sender is also authorized against that same organization's
+    # own telegram_allowed_user_id (fail closed if unset — no fallback to the
+    # process-wide MPLACAS_TELEGRAM_ALLOWED_USER_ID setting), so there is no
+    # more global cross-tenant fallback for either routing or authorization.
+    # This stays allowlisted because the guard only recognizes the
     # ScopedPlant dependency pattern, not this organization-via-chat-id one.
     # organizations: gestão de organização em si (nome/slug/ativação), não de
     # usina — escopado por AdminPrincipal/PlatformPrincipal (core.tenancy), que

@@ -1,6 +1,23 @@
 import pytest
 
-from mplacas.telegram.service import TelegramUpdateError, parse_authorized_update
+from mplacas.telegram.service import (
+    TelegramUpdateError,
+    extract_chat_id,
+    parse_authorized_update,
+)
+
+
+def test_extract_chat_id_reads_the_raw_chat_id() -> None:
+    payload = {
+        "update_id": 1,
+        "message": {"from": {"id": 123}, "chat": {"id": 456, "type": "private"}},
+    }
+    assert extract_chat_id(payload) == 456
+
+
+def test_extract_chat_id_rejects_malformed_payload() -> None:
+    with pytest.raises(TelegramUpdateError, match="invalid Telegram update structure"):
+        extract_chat_id({"update_id": 1, "message": {}})
 
 
 def make_payload(*, user_id: int = 123, chat_type: str = "private") -> dict[str, object]:

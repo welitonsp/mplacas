@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 import uuid
 from typing import Any
@@ -20,7 +21,13 @@ from mplacas.telegram.document_processing import (
     process_pdf_bill,
 )
 from mplacas.telegram.pdf import PdfTextExtractionError, extract_pdf_text
-from mplacas.telegram.service import TelegramUpdateError, parse_authorized_update
+from mplacas.telegram.service import (
+    TelegramUpdateError,
+    extract_chat_id,
+    parse_authorized_update,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
@@ -57,6 +64,26 @@ async def _resolve_telegram_organization(
     return organization_id
 
 
+async def _resolve_telegram_allowed_user_id(
+    session: AsyncSession, organization_id: uuid.UUID
+) -> int | None:
+    """Fetch the organization's own ``telegram_allowed_user_id``.
+
+    Returns ``None`` if the organization hasn't configured one yet — the
+    caller must fail closed in that case (see ``telegram_webhook``'s
+    docstring/comment on why the process-wide
+    ``MPLACAS_TELEGRAM_ALLOWED_USER_ID`` setting is never used as a runtime
+    fallback here).
+    """
+    return (
+        await session.execute(
+            select(OrganizationRecord.telegram_allowed_user_id).where(
+                OrganizationRecord.id == organization_id
+            )
+        )
+    ).scalar_one_or_none()
+
+
 async def _resolve_telegram_plant_scope(
     session: AsyncSession, organization_id: uuid.UUID
 ) -> uuid.UUID:
@@ -79,25 +106,60 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ) -> dict[str, object]:
     settings = get_settings()
-    if not settings.telegram_configured or settings.telegram_webhook_secret is None:
+    if settings.telegram_bot_token is None or settings.telegram_webhook_secret is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Telegram is not configured",
         )
 
     expected = settings.telegram_webhook_secret.get_secret_value()
-    allowed_user_id = settings.telegram_allowed_user_id
-    if allowed_user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Telegram is not configured",
-        )
     if not x_telegram_bot_api_secret_token or not secrets.compare_digest(
         x_telegram_bot_api_secret_token, expected
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid webhook secret",
+        )
+
+    # Authorization is organization-scoped since the telegram_allowed_user_id
+    # column was added: which user is allowed to talk to this bot depends on
+    # which organization the incoming chat belongs to (resolved from
+    # `telegram_chat_id`), not on a single process-wide setting. So we must
+    # resolve the organization *before* validating the sender.
+    try:
+        chat_id = extract_chat_id(payload)
+    except TelegramUpdateError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+    async with SessionFactory() as session:
+        organization_id = await _resolve_telegram_organization(session, chat_id)
+        allowed_user_id = await _resolve_telegram_allowed_user_id(session, organization_id)
+
+    if allowed_user_id is None:
+        # Fail closed: an organization without its own configured
+        # telegram_allowed_user_id is rejected outright. We deliberately do
+        # NOT fall back to the process-wide MPLACAS_TELEGRAM_ALLOWED_USER_ID
+        # setting here — doing so would silently re-authorize that single
+        # global user for every organization missing its own value, which is
+        # exactly the cross-tenant bypass this column exists to close. The
+        # global setting is only ever used as a one-time deploy-time backfill
+        # (see migration 20260731_0027), never as a runtime fallback.
+        if settings.telegram_allowed_user_id is not None:
+            logger.warning(
+                "telegram_organization_missing_allowed_user_id",
+                extra={
+                    "organization_id": str(organization_id),
+                    "hint": (
+                        "MPLACAS_TELEGRAM_ALLOWED_USER_ID is set but is not "
+                        "used as a fallback for this organization; configure "
+                        "telegram_allowed_user_id directly on the "
+                        "organization row"
+                    ),
+                },
+            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Telegram is not configured for this organization",
         )
 
     try:
@@ -109,11 +171,6 @@ async def telegram_webhook(
     except TelegramUpdateError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
-    if settings.telegram_bot_token is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Telegram bot token is not configured",
-        )
     client = TelegramClient(
         bot_token=settings.telegram_bot_token.get_secret_value(),
         timeout_seconds=settings.request_timeout_seconds,
@@ -137,9 +194,6 @@ async def telegram_webhook(
         try:
             bill = parse_equatorial_bill_text(message.text)
             async with SessionFactory() as session:
-                organization_id = await _resolve_telegram_organization(
-                    session, message.chat_id
-                )
                 plant_id = await _resolve_telegram_plant_scope(session, organization_id)
                 record = await UtilityBillRepository(session).create_pending(
                     bill,
@@ -169,9 +223,6 @@ async def telegram_webhook(
             max_text_bytes=settings.bill_text_max_bytes,
         )
         async with SessionFactory() as session:
-            organization_id = await _resolve_telegram_organization(
-                session, message.chat_id
-            )
             plant_id = await _resolve_telegram_plant_scope(session, organization_id)
             record = await UtilityBillRepository(session).create_pending(
                 processed.bill,

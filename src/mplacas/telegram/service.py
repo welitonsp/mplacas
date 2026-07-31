@@ -27,6 +27,25 @@ class TelegramMessage:
     document: TelegramDocument | None = None
 
 
+def extract_chat_id(payload: dict[str, Any]) -> int:
+    """Extract the ``chat_id`` from a raw Telegram update, without yet
+    validating the sender.
+
+    Resolving the organization that owns a chat (``organizations
+    .telegram_chat_id``) — and, from there, that organization's own
+    ``telegram_allowed_user_id`` — must happen *before* the sender can be
+    authorized, since authorization is organization-scoped. This performs
+    only the minimal structural parsing needed to get there safely; full
+    validation (sender, chat type, content) still happens in
+    ``parse_authorized_update`` once the applicable ``allowed_user_id`` is
+    known.
+    """
+    try:
+        return int(payload["message"]["chat"]["id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise TelegramUpdateError("invalid Telegram update structure") from exc
+
+
 def parse_authorized_update(
     payload: dict[str, Any],
     *,
