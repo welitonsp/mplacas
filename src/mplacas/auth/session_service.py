@@ -4,6 +4,8 @@ import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.auth.db_models import AuthSessionRecord, LoginRateLimitRecord
@@ -102,6 +104,24 @@ class AuthSessionService:
             record.revoked_at = _utc_now()
             await self._session.flush()
         return True
+
+    async def revoke_all_for_organization(self, *, organization_id: uuid.UUID) -> int:
+        """Revoke every currently-active session belonging to ``organization_id``.
+
+        Used when an organization is deactivated: existing refresh tokens must
+        stop working immediately, in addition to future login/refresh attempts
+        already being blocked by the organization's ``active`` flag.
+        """
+        result = await self._session.execute(
+            update(AuthSessionRecord)
+            .where(
+                AuthSessionRecord.organization_id == organization_id,
+                AuthSessionRecord.active.is_(True),
+            )
+            .values(active=False, revoked_at=_utc_now())
+        )
+        await self._session.flush()
+        return result.rowcount if isinstance(result, CursorResult) else 0
 
 
 class LoginRateLimitService:

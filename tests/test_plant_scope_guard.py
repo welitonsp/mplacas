@@ -55,6 +55,7 @@ _DATA_PREFIXES = (
     "/pipeline",
     "/operations",
     "/telegram",
+    "/organizations",
 )
 
 # (method, path) -> justification for not using ReadPlant/AdminPlant/ScopedPlant.
@@ -137,6 +138,25 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
     # rejected outright (403), so there is no more global cross-tenant
     # fallback. This stays allowlisted because the guard only recognizes the
     # ScopedPlant dependency pattern, not this organization-via-chat-id one.
+    # organizations: gestão de organização em si (nome/slug/ativação), não de
+    # usina — escopado por AdminPrincipal/PlatformPrincipal (core.tenancy), que
+    # discriminam plataforma vs. organização, mas nunca resolvem um plant_id.
+    ("POST", "/organizations"): (
+        "organization management (PlatformPrincipal), not plant-scoped — "
+        "see core.tenancy.AdminPrincipal/PlatformPrincipal"
+    ),
+    ("GET", "/organizations"): (
+        "organization management (AdminPrincipal), not plant-scoped — "
+        "see core.tenancy.AdminPrincipal/PlatformPrincipal"
+    ),
+    ("GET", "/organizations/{organization_id}"): (
+        "organization management (AdminPrincipal), not plant-scoped — "
+        "see core.tenancy.AdminPrincipal/PlatformPrincipal"
+    ),
+    ("POST", "/organizations/{organization_id}/deactivate"): (
+        "organization management (PlatformPrincipal), not plant-scoped — "
+        "see core.tenancy.AdminPrincipal/PlatformPrincipal"
+    ),
     ("POST", "/telegram/webhook"): (
         "webhook has no OperationsPrincipal — authenticated via Telegram's "
         "shared secret header + a single global telegram_allowed_user_id, "
