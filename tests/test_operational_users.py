@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from mplacas.core.config import get_settings
+from mplacas.core.jwt import encode_access_token
 from mplacas.core.security import OperationsRole
 from mplacas.credentials.service import (
     CredentialError,
@@ -16,6 +17,7 @@ from mplacas.credentials.service import (
     UserService,
 )
 from mplacas.db.base import Base
+from mplacas.organizations.db_models import OrganizationRecord
 
 
 async def _factory():
@@ -208,3 +210,115 @@ def test_user_endpoints_manage_lifecycle(monkeypatch, tmp_path) -> None:
     assert missing.status_code == 404
 
     get_settings.cache_clear()
+
+
+def _prepare_user_admin_client(monkeypatch, tmp_path):
+    """Build a TestClient with both the static operations key and JWT bearer
+    auth configured (PR-6: org-admin bearer JWTs must now reach
+    ``/operations/users``, which previously only accepted the static
+    platform key)."""
+    monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-admin-key")
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret")
+    monkeypatch.setenv(
+        "MPLACAS_DATABASE_URL",
+        f"sqlite+aiosqlite:///{tmp_path}/users-org-admin.db",
+    )
+    get_settings.cache_clear()
+
+    import mplacas.credentials.router as credentials_router
+    import mplacas.db.session as db_session
+    import mplacas.operations.router as operations_router
+    from mplacas.main import app
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/users-org-admin.db")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _prepare() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+    asyncio.run(_prepare())
+    monkeypatch.setattr(credentials_router, "SessionFactory", factory)
+    monkeypatch.setattr(db_session, "SessionFactory", factory)
+    monkeypatch.setattr(operations_router, "SessionFactory", factory)
+
+    return TestClient(app), factory
+
+
+def _seed_org(factory, *, name: str, slug: str) -> uuid.UUID:
+    async def _seed() -> uuid.UUID:
+        async with factory() as session:
+            org = OrganizationRecord(name=name, slug=slug, active=True)
+            session.add(org)
+            await session.flush()
+            await session.commit()
+            return org.id
+
+    return asyncio.run(_seed())
+
+
+def test_user_endpoints_allow_org_admin_bearer_jwt(monkeypatch, tmp_path) -> None:
+    """A JWT-authenticated organization ADMIN can now create/list/deactivate
+    operational users for its own organization -- previously this returned
+    403 because the handler called ``principal.require_unrestricted_access()``,
+    which rejects every organization-scoped principal by design."""
+    client, factory = _prepare_user_admin_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory, name="Tenant", slug="tenant")
+    admin_token = encode_access_token(uuid.uuid4(), org_id, OperationsRole.ADMIN.value)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    created = client.post(
+        "/operations/users", json={"name": "cb-tenant"}, headers=admin_headers
+    )
+    assert created.status_code == 201
+    user_id = created.json()["id"]
+    assert created.json()["organization_id"] == str(org_id)
+
+    listed = client.get("/operations/users", headers=admin_headers)
+    assert listed.status_code == 200
+    assert listed.json()["count"] == 1
+    assert listed.json()["items"][0]["id"] == user_id
+
+    deactivated = client.post(
+        f"/operations/users/{user_id}/deactivate", headers=admin_headers
+    )
+    assert deactivated.status_code == 200
+    assert deactivated.json()["active"] is False
+
+    read_token = encode_access_token(uuid.uuid4(), org_id, OperationsRole.READ.value)
+    read_denied = client.post(
+        "/operations/users",
+        json={"name": "outro"},
+        headers={"Authorization": f"Bearer {read_token}"},
+    )
+    assert read_denied.status_code == 403
+
+
+def test_user_endpoints_isolate_organizations_for_org_admin(
+    monkeypatch, tmp_path
+) -> None:
+    """An org-admin JWT must never see or deactivate another organization's
+    operational users, even though it now passes the admin authorization
+    gate."""
+    client, factory = _prepare_user_admin_client(monkeypatch, tmp_path)
+    org_a_id = _seed_org(factory, name="Org A", slug="org-a")
+    org_b_id = _seed_org(factory, name="Org B", slug="org-b")
+    admin_a_token = encode_access_token(uuid.uuid4(), org_a_id, OperationsRole.ADMIN.value)
+    admin_b_token = encode_access_token(uuid.uuid4(), org_b_id, OperationsRole.ADMIN.value)
+    headers_a = {"Authorization": f"Bearer {admin_a_token}"}
+    headers_b = {"Authorization": f"Bearer {admin_b_token}"}
+
+    created_b = client.post(
+        "/operations/users", json={"name": "cb-org-b"}, headers=headers_b
+    )
+    assert created_b.status_code == 201
+    user_b_id = created_b.json()["id"]
+
+    listed_a = client.get("/operations/users", headers=headers_a)
+    assert listed_a.status_code == 200
+    assert listed_a.json()["count"] == 0
+
+    deactivate_from_a = client.post(
+        f"/operations/users/{user_b_id}/deactivate", headers=headers_a
+    )
+    assert deactivate_from_a.status_code == 404

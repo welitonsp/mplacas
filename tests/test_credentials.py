@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from mplacas.core.config import get_settings
+from mplacas.core.jwt import encode_access_token
 from mplacas.core.security import OperationsRole
 from mplacas.credentials.db_models import ApiCredentialRecord
 from mplacas.credentials.service import (
@@ -353,3 +354,138 @@ def test_credential_endpoints_require_admin_and_return_secret_once(
     asyncio.run(_hash_still_only_storage())
 
     get_settings.cache_clear()
+
+
+def _prepare_credential_admin_client(monkeypatch, tmp_path):
+    """Build a TestClient wired to a fresh sqlite db, with both the static
+    operations key and JWT bearer auth configured (PR-6: org-admin bearer
+    JWTs must now reach ``/operations/credentials``/``/operations/users``,
+    which previously only accepted the static platform key)."""
+    monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-admin-key")
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret")
+    monkeypatch.setenv(
+        "MPLACAS_DATABASE_URL",
+        f"sqlite+aiosqlite:///{tmp_path}/credentials-org-admin.db",
+    )
+    get_settings.cache_clear()
+
+    import asyncio
+
+    import mplacas.credentials.router as credentials_router
+    import mplacas.db.session as db_session
+    import mplacas.operations.router as operations_router
+    from mplacas.main import app
+
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path}/credentials-org-admin.db"
+    )
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _prepare() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+    asyncio.run(_prepare())
+    monkeypatch.setattr(credentials_router, "SessionFactory", factory)
+    monkeypatch.setattr(db_session, "SessionFactory", factory)
+    monkeypatch.setattr(operations_router, "SessionFactory", factory)
+
+    return TestClient(app), factory
+
+
+def _seed_org_with_plant(factory, *, name: str, slug: str, plant_id: uuid.UUID) -> uuid.UUID:
+    import asyncio
+
+    async def _seed() -> uuid.UUID:
+        async with factory() as session:
+            org = OrganizationRecord(name=name, slug=slug, active=True)
+            session.add(org)
+            await session.flush()
+            session.add(Plant(id=plant_id, organization_id=org.id, name=f"Plant {plant_id}"))
+            await session.flush()
+            await session.commit()
+            return org.id
+
+    return asyncio.run(_seed())
+
+
+def test_credential_endpoints_allow_org_admin_bearer_jwt(monkeypatch, tmp_path) -> None:
+    """A JWT-authenticated organization ADMIN can now create/list/revoke
+    credentials for its own organization -- previously this returned 403
+    because the handler called ``principal.require_unrestricted_access()``,
+    which rejects every organization-scoped principal by design."""
+    client, factory = _prepare_credential_admin_client(monkeypatch, tmp_path)
+    org_id = _seed_org_with_plant(
+        factory, name="Tenant", slug="tenant", plant_id=PLANT_A
+    )
+    admin_token = encode_access_token(uuid.uuid4(), org_id, OperationsRole.ADMIN.value)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    created = client.post(
+        "/operations/credentials",
+        json={"name": "leitor-tenant", "role": "READ", "plant_ids": [str(PLANT_A)]},
+        headers=admin_headers,
+    )
+    assert created.status_code == 201
+    credential_id = created.json()["id"]
+    assert created.json()["organization_id"] == str(org_id)
+
+    listed = client.get("/operations/credentials", headers=admin_headers)
+    assert listed.status_code == 200
+    assert listed.json()["count"] == 1
+    assert listed.json()["items"][0]["id"] == credential_id
+
+    revoked = client.post(
+        f"/operations/credentials/{credential_id}/revoke", headers=admin_headers
+    )
+    assert revoked.status_code == 200
+    assert revoked.json()["active"] is False
+
+    read_token = encode_access_token(uuid.uuid4(), org_id, OperationsRole.READ.value)
+    read_denied = client.post(
+        "/operations/credentials",
+        json={"name": "outra", "role": "READ"},
+        headers={"Authorization": f"Bearer {read_token}"},
+    )
+    assert read_denied.status_code == 403
+
+
+def test_credential_endpoints_isolate_organizations_for_org_admin(
+    monkeypatch, tmp_path
+) -> None:
+    """An org-admin JWT must never see or revoke another organization's
+    credentials, even though it now passes the admin authorization gate."""
+    client, factory = _prepare_credential_admin_client(monkeypatch, tmp_path)
+    org_a_id = _seed_org_with_plant(
+        factory, name="Org A", slug="org-a", plant_id=PLANT_A
+    )
+    org_b_id = _seed_org_with_plant(
+        factory, name="Org B", slug="org-b", plant_id=PLANT_B
+    )
+    admin_a_token = encode_access_token(uuid.uuid4(), org_a_id, OperationsRole.ADMIN.value)
+    admin_b_token = encode_access_token(uuid.uuid4(), org_b_id, OperationsRole.ADMIN.value)
+    headers_a = {"Authorization": f"Bearer {admin_a_token}"}
+    headers_b = {"Authorization": f"Bearer {admin_b_token}"}
+
+    created_b = client.post(
+        "/operations/credentials",
+        json={"name": "leitor-b", "role": "READ", "plant_ids": [str(PLANT_B)]},
+        headers=headers_b,
+    )
+    assert created_b.status_code == 201
+    credential_b_id = created_b.json()["id"]
+
+    listed_a = client.get("/operations/credentials", headers=headers_a)
+    assert listed_a.status_code == 200
+    assert listed_a.json()["count"] == 0
+
+    revoke_from_a = client.post(
+        f"/operations/credentials/{credential_b_id}/revoke", headers=headers_a
+    )
+    assert revoke_from_a.status_code == 404
+
+    # The static platform key must keep behaving exactly as before: it can
+    # still see and manage credentials across the (single, in this fixture)
+    # ambiguous-organization scenario is avoided by using each org's own
+    # admin token above; the static key path itself is covered by
+    # ``test_credential_endpoints_require_admin_and_return_secret_once``.

@@ -2,20 +2,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.audit.repository import AuditEventRepository
 from mplacas.core.config import get_settings
-from mplacas.core.security import (
-    OperationsPrincipal,
-    OperationsRole,
-    require_operations_key,
-)
+from mplacas.core.security import OperationsPrincipal, OperationsRole
+from mplacas.core.tenancy import AdminPrincipal
 from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
 from mplacas.credentials.service import CredentialError, CredentialService, UserService
 from mplacas.db.session import SessionFactory
@@ -38,6 +34,34 @@ class CredentialCreateRequest(BaseModel):
 class UserCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     role: OperationsRole = OperationsRole.ADMIN
+
+
+# ---------------------------------------------------------------------------
+# Authorization (PR-6 of the onboarding plan)
+# ---------------------------------------------------------------------------
+#
+# Every handler below accepts ``AdminPrincipal`` (``core.tenancy``), not
+# ``OrgAdminPrincipal``: these endpoints must keep working for the static
+# platform operations key (``organization_id is None``) *and* now also work
+# for an organization's own ADMIN (bearer JWT or a persisted ADMIN
+# credential, both with ``organization_id`` set). ``OrgAdminPrincipal``
+# would reject the platform key with 409, which is exactly the behavior we
+# must not introduce here — see ``organizations.router.list_organizations`` /
+# ``get_organization`` for the same "accept either" pattern.
+#
+# Before this PR, every handler additionally called
+# ``principal.require_unrestricted_access()``, which rejected *any*
+# organization-scoped ADMIN (its ``PlantScope`` is always derived from the
+# organization's plants — see ``CredentialService._scope_for_credential`` —
+# and therefore always "restricted", even though the principal is a
+# legitimate ADMIN of its own organization). That call has been removed:
+# ``AdminPrincipal`` already guarantees ``role is ADMIN`` (enforced inside
+# ``require_operations_key``), and ``_resolve_organization_id`` below already
+# derives the organization exclusively from ``principal.organization_id``
+# when set (never from request input), so an organization-scoped ADMIN can
+# only ever act on its own organization's credentials/users. No new
+# dependency was introduced: ``AdminPrincipal`` + this existing derivation is
+# sufficient and avoids duplicating the "platform-or-org" logic a third time.
 
 
 async def _resolve_organization_id(
@@ -119,9 +143,8 @@ def _organization_details(record) -> dict[str, str]:
 async def create_credential(
     request: Request,
     payload: CredentialCreateRequest,
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_key)],
+    principal: AdminPrincipal,
 ) -> dict[str, object]:
-    principal.require_unrestricted_access()
     async with SessionFactory() as session:
         organization_id = await _resolve_organization_id(session, principal)
         service = CredentialService(session, pepper=_pepper())
@@ -162,9 +185,8 @@ async def create_credential(
 
 @router.get("")
 async def list_credentials(
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_key)],
+    principal: AdminPrincipal,
 ) -> dict[str, object]:
-    principal.require_unrestricted_access()
     async with SessionFactory() as session:
         organization_id = await _resolve_organization_id(session, principal)
         records = await CredentialService(session).list_credentials(
@@ -180,9 +202,8 @@ async def list_credentials(
 async def revoke_credential(
     request: Request,
     credential_id: uuid.UUID,
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_key)],
+    principal: AdminPrincipal,
 ) -> dict[str, object]:
-    principal.require_unrestricted_access()
     async with SessionFactory() as session:
         organization_id = await _resolve_organization_id(session, principal)
         service = CredentialService(session, pepper=_pepper())
@@ -218,9 +239,8 @@ users_router = APIRouter(
 async def create_user(
     request: Request,
     payload: UserCreateRequest,
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_key)],
+    principal: AdminPrincipal,
 ) -> dict[str, object]:
-    principal.require_unrestricted_access()
     async with SessionFactory() as session:
         organization_id = await _resolve_organization_id(session, principal)
         try:
@@ -248,9 +268,8 @@ async def create_user(
 
 @users_router.get("")
 async def list_users(
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_key)],
+    principal: AdminPrincipal,
 ) -> dict[str, object]:
-    principal.require_unrestricted_access()
     async with SessionFactory() as session:
         organization_id = await _resolve_organization_id(session, principal)
         records = await UserService(session).list_users(organization_id=organization_id)
@@ -264,9 +283,8 @@ async def list_users(
 async def deactivate_user(
     request: Request,
     user_id: uuid.UUID,
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_key)],
+    principal: AdminPrincipal,
 ) -> dict[str, object]:
-    principal.require_unrestricted_access()
     async with SessionFactory() as session:
         organization_id = await _resolve_organization_id(session, principal)
         try:
