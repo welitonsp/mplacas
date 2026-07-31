@@ -7,9 +7,12 @@ with ``ScopedPlant``) instead of a manually-checked ``plant_id`` query param —
 unless the route is explicitly allowlisted below with a reason.
 
 This test starts with a large allowlist. Each subsequent PR in the plan
-(billing, alerts, climate, orchestration) removes the corresponding entries as
-those routers are migrated to the same structural pattern already applied here
-to reports/intelligence/explanations.
+(billing, alerts, orchestration, climate) removed the corresponding entries as
+those routers were migrated to the same structural pattern already applied
+here to reports/intelligence/explanations. As of PR-5 (climate), only the
+permanent, structurally-justified entries remain: the two export-by-task_id
+routes, the operations org-wide/management endpoints, billing's
+body-carried ``plant_id``, and the telegram webhook.
 """
 
 from __future__ import annotations
@@ -119,8 +122,6 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
         "param — resolved via core.tenancy.resolve_admin_plant_scope(principal, "
         "payload.plant_id) using an injected AdminPrincipal"
     ),
-    # climate: later PR in the plan (PR-5).
-    ("POST", "/climate/collect"): "PR-4/5 pending — climate not yet migrated",
     # telegram: webhook has no OperationsPrincipal at all (authenticated via a
     # shared webhook secret header, not an operational credential/bearer
     # token) and infers the single configured plant globally — out of scope

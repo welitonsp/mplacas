@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from mplacas.audit.repository import AuditEventRepository
 from mplacas.climate.collection_service import (
@@ -13,7 +12,7 @@ from mplacas.climate.collection_service import (
 )
 from mplacas.climate.open_meteo import OpenMeteoHistoricalProvider, OpenMeteoProviderError
 from mplacas.core.config import get_settings
-from mplacas.core.security import require_operations_key
+from mplacas.core.tenancy import AdminPlant
 from mplacas.db.session import SessionFactory
 
 logger = logging.getLogger(__name__)
@@ -21,17 +20,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/climate",
     tags=["climate"],
-    dependencies=[Depends(require_operations_key)],
 )
 
 
 @router.post("/collect", status_code=status.HTTP_200_OK)
 async def collect_climate(
     request: Request,
-    plant_id: uuid.UUID,
+    scoped: AdminPlant,
     start_date: date,
     end_date: date,
 ) -> dict[str, object]:
+    plant_id = scoped.plant_id
     settings = get_settings()
     provider = OpenMeteoHistoricalProvider(
         base_url=str(settings.climate_archive_base_url),
