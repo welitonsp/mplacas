@@ -86,20 +86,16 @@ ADR-053 ou do ADR-054 para não se perderem.
   checagem de revogação no caminho quente (custo de latência e de um store de revogação). P2 porque
   o impacto é limitado a uma janela curta e o gatilho (desativar organização) é raro e deliberado.
   (ADR-054, Negativas; achado do PR-3 do P1.)
-- [ ] **P2 — TOCTOU em `UserService.create`.** Numa corrida de `username` duplicado, o
-  `IntegrityError` do banco não é capturado e vaza como 500 em vez de um 4xx claro. Pré-existente,
-  mas o PR-5 do P1 passou a expô-lo por um caminho **anônimo** (`/auth/invitations/accept`), o que
-  muda o perfil de quem consegue provocá-lo. Não há vazamento de dado nem usuário duplicado — a
-  constraint única do banco continua valendo e a transação é descartada. Correção: capturar
-  `IntegrityError` em `UserService.create` e traduzir para o mesmo 400 uniforme do aceite de convite
-  (sem revelar que o `username` já existe). Tarefa de worker, escopo pequeno. P2 e não P3 por ser
-  alcançável sem autenticação. (ADR-054, Negativas.)
-- [ ] **P3 — comentário desatualizado em `InvitationConsumeError`.** A docstring afirma que a razão
-  específica da falha é logada internamente pelo chamador; esse logging não existe. O comportamento
-  de segurança está correto — só o comentário engana quem lê, sugerindo uma observabilidade que não
-  há. Resolver de um dos dois jeitos: apagar a frase, ou implementar o log interno que ela promete
-  (o que teria valor próprio para diagnosticar convites recusados). Item trivial de limpeza.
-  (ADR-054, Negativas.)
+- [x] **P2 — TOCTOU em `UserService.create` (`aac86cb`).** Corrigido: `flush()` do INSERT envolvido
+  em `try/except IntegrityError`, rollback da sessão, relançado como o mesmo `CredentialError("user
+  name is already in use")` já usado pela pré-checagem. Testado forçando a corrida (monkeypatch da
+  pré-checagem) e com dois convites de mesmo `username` em organizações diferentes colidindo de
+  forma limpa, sem usuário órfão (confirmado relendo o banco). Ressalva não bloqueante do reviewer:
+  o rollback é de sessão inteira, não savepoint — seguro nos callers atuais, atenção se
+  `UserService.create` for chamado no meio de transação com outras escritas pendentes no futuro.
+- [x] **P3 — comentário desatualizado em `InvitationConsumeError` (`aac86cb`).** Removida a frase
+  sobre logging interno da razão específica, que não estava implementada — o comportamento de
+  segurança já estava correto, só o comentário prometia uma observabilidade inexistente.
 - [ ] **P3 — ordem de rotas significativa em `organizations/router.py`.** `/invitations*` precisa
   continuar declarado antes de `/{organization_id}`; inverter não quebra import nem tipo, apenas faz
   o FastAPI casar `invitations` como se fosse um UUID. Coberto por teste e documentado no ADR-054,
@@ -164,15 +160,15 @@ endereço real) estão nas "Negativas" do ADR-054.
   O `ADR-052` ainda lista esse item como pendente em "Próximos passos" — **precisa ser corrigido**
   para não induzir a próxima sessão a redescobrir/reimplementar algo que já existe.
 
-## Dívida de documentação (não é código, mas engana quem lê)
+## Dívida de documentação — CONCLUÍDO (2026-07-31)
 
-- [ ] Atualizar `ADR-052-saas-multitenancy-evolution.md`: mover "revogação de refresh token" de
-  "Próximos passos" para "Decisão" (Phase 2), já que está implementado.
-- [ ] Revisar a issue #2 do GitHub ("Roadmap técnico do Mplacas — P1 a P4"): todos os checkboxes
-  estão desmarcados apesar de a maioria dos itens (Postgres/migrations, backup/restore, backfill,
-  parser Equatorial, reconciliação, anomalias, dashboard, exportação PDF/CSV/Excel, multi-usina)
-  já estar implementada no código. Fechar ou reescrever para refletir o estado real — do contrário
-  é uma fonte de verdade enganosa para quem só olhar o GitHub.
+- [x] `ADR-052-saas-multitenancy-evolution.md` corrigido (`430e091`): "revogação de refresh token"
+  movida de "Próximos passos" para referência ao ADR-053/054; isolamento nos routers referenciado
+  como concluído em vez de listado como limite atual.
+- [x] Issue #2 do GitHub ("Roadmap técnico do Mplacas — P1 a P4") atualizada: 21 de 23 itens
+  marcados como concluídos (verificados no código, não estimados), com comentário explicando os
+  2 deixados em aberto de propósito (relatório diário/anual não existe; conformidade LGPD
+  específica não auditada, só retenção/auditoria/administração).
 
 
 ## Resumo
@@ -181,17 +177,20 @@ endereço real) estão nas "Negativas" do ADR-054.
 |---|---:|---:|---:|
 | P0 (isolamento de dados) | 10 | 0 | 0 |
 | P1 (onboarding/organizações) | 7 | 0 | 0 |
-| Backlog de tenancy | 0 | 0 | 6 |
-| Dívida de documentação | 0 | 0 | 2 |
+| Backlog de tenancy | 2 | 0 | 4 |
+| Dívida de documentação | 2 | 0 | 0 |
 
-**P0 e P1 fechados.** O P0 (9 PRs, ADR-053) garantiu que todo router de dado valida a organização do
-chamador, com a regra sustentada por um teste estrutural (`tests/test_plant_scope_guard.py`) que
-quebra o CI se uma rota nova sob prefixo de dado esquecer o `ScopedPlant`. O P1 (7 PRs, ADR-054)
-tornou o onboarding uma operação de API: criar organização, convidar o ADMIN inicial e aceitar o
-convite deixaram de exigir acesso direto ao banco, e o ADMIN de organização passou a administrar a
-própria organização por JWT — o 403 estrutural que bloqueava o self-service foi eliminado.
+**P0, P1 e a dívida de documentação fechados.** O P0 (9 PRs, ADR-053) garantiu que todo router de
+dado valida a organização do chamador, com a regra sustentada por um teste estrutural
+(`tests/test_plant_scope_guard.py`) que quebra o CI se uma rota nova sob prefixo de dado esquecer o
+`ScopedPlant`. O P1 (7 PRs, ADR-054) tornou o onboarding uma operação de API: criar organização,
+convidar o ADMIN inicial e aceitar o convite deixaram de exigir acesso direto ao banco, e o ADMIN de
+organização passou a administrar a própria organização por JWT — o 403 estrutural que bloqueava o
+self-service foi eliminado.
 
-O que resta em tenancy é o backlog acima: um item P1 (autenticação por organização no Telegram),
-três P2 (desligamento das chaves estáticas, janela de acesso residual pós-desativação, TOCTOU em
-`UserService.create`) e dois P3 (comentário desatualizado, ordem de rotas). Nenhum é vazamento ativo
-de dado entre organizações.
+O que resta em tenancy é o backlog: um item P1 (autenticação por organização no Telegram), dois P2
+(desligamento das chaves estáticas — agora mais viável, o PR-6 removeu o principal motivo legítimo
+de usá-las; janela de acesso residual pós-desativação, decisão arquitetural com custo) e dois P3
+(comentário desatualizado — cosmético, sem correção pendente; ordem de rotas — já documentado e
+coberto por teste, sem ação de código pendente). Nenhum é vazamento ativo de dado entre
+organizações; nenhum exige ação imediata.
