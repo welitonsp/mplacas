@@ -320,7 +320,9 @@ try:
     annotations = template["metadata"]["annotations"]
     container = template["spec"]["containers"][0]
     values = {
-        "min_instances": annotations["autoscaling.knative.dev/minScale"],
+        # Cloud Run omits the minScale annotation entirely when the value is
+        # the default (0) — it is only written for a non-zero min-instances.
+        "min_instances": annotations.get("autoscaling.knative.dev/minScale", "0"),
         "max_instances": annotations["autoscaling.knative.dev/maxScale"],
         "service_account": template["spec"]["serviceAccountName"],
         "cpu": container["resources"]["limits"]["cpu"],
