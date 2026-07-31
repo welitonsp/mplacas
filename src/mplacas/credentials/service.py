@@ -85,6 +85,7 @@ class UserService:
         name: str,
         organization_id: uuid.UUID | None = None,
         role: OperationsRole = OperationsRole.ADMIN,
+        password_hash: str | None = None,
     ) -> OperationalUserRecord:
         organization_id = organization_id or await _resolve_default_organization_id(
             self._session
@@ -104,6 +105,7 @@ class UserService:
             role=role.value,
             active=True,
             organization_id=organization_id,
+            password_hash=password_hash,
         )
         self._session.add(record)
         await self._session.flush()
