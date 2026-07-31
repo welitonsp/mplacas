@@ -6,11 +6,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import encode_access_token
 from mplacas.core.security import OperationsRole
+from mplacas.credentials.db_models import OperationalUserRecord
 from mplacas.credentials.service import (
     CredentialError,
     CredentialService,
@@ -131,6 +133,47 @@ async def test_user_domain_rules() -> None:
             )
 
 
+@pytest.mark.asyncio
+async def test_user_create_translates_concurrent_duplicate_integrity_error(
+    monkeypatch,
+) -> None:
+    """Simulates the TOCTOU window between the uniqueness ``SELECT`` and the
+    ``INSERT``: two concurrent requests for the same ``name`` can both pass
+    the pre-check before either commits. The second one must still fail with
+    the same clean ``CredentialError`` its own pre-check would have raised,
+    never with a raw, unhandled ``IntegrityError`` from the database.
+    """
+    factory = await _factory()
+
+    async with factory() as winner_session:
+        await UserService(winner_session).create(name="corrida-toctou")
+        await winner_session.commit()
+
+    async with factory() as racer_session:
+        service = UserService(racer_session)
+
+        async def _miss_the_uniqueness_check(*args, **kwargs):
+            # Pretends the pre-check ``SELECT`` ran before ``winner_session``
+            # committed above, i.e. before the row existed yet.
+            return None
+
+        monkeypatch.setattr(racer_session, "scalar", _miss_the_uniqueness_check)
+
+        with pytest.raises(CredentialError, match="already in use"):
+            await service.create(name="corrida-toctou")
+
+        # The session must remain usable after the translated error (the
+        # failed flush was rolled back), not left in a broken transaction.
+        monkeypatch.undo()
+        assert await racer_session.scalar(
+            select(OperationalUserRecord).where(
+                OperationalUserRecord.name == "outro-nome-toctou"
+            )
+        ) is None
+        await UserService(racer_session).create(name="outro-nome-toctou")
+        await racer_session.commit()
+
+
 def test_user_endpoints_manage_lifecycle(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-admin-key")
     monkeypatch.setenv(
@@ -208,6 +251,12 @@ def test_user_endpoints_manage_lifecycle(monkeypatch, tmp_path) -> None:
         f"/operations/users/{uuid.uuid4()}/deactivate", headers=admin
     )
     assert missing.status_code == 404
+
+    duplicate = client.post(
+        "/operations/users", json={"name": "cb-weliton"}, headers=admin
+    )
+    assert duplicate.status_code == 422
+    assert "already in use" in duplicate.json()["detail"]
 
     get_settings.cache_clear()
 

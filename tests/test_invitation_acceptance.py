@@ -358,3 +358,53 @@ def test_accept_invitation_simulated_race_leaves_no_orphaned_user(
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "invalid or expired invitation"
+
+
+def test_accept_invitation_same_username_across_organizations_collides_cleanly(
+    monkeypatch, tmp_path
+) -> None:
+    """``operational_users.name`` is unique globally, not per organization,
+    while ``UserInvitationRecord.username`` has no such constraint. Two
+    invitations for the same email in two different organizations are both
+    valid to create and to accept individually, but the second acceptance
+    must collide on that global uniqueness and fail with the same uniform
+    400 as any other invalid invitation -- never a raw 500.
+    """
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_one = _seed_org(factory)
+
+    async def _seed_second_org() -> uuid.UUID:
+        async with factory() as session:
+            org = OrganizationRecord(
+                name="Tenant Two", slug=f"tenant-two-{uuid.uuid4().hex[:12]}", active=True
+            )
+            session.add(org)
+            await session.flush()
+            await session.commit()
+            return org.id
+
+    org_two = asyncio.run(_seed_second_org())
+
+    shared_username = "shared@collide.example"
+    _first_id, first_token = _seed_invitation(
+        factory, org_one, username=shared_username
+    )
+    _second_id, second_token = _seed_invitation(
+        factory, org_two, username=shared_username
+    )
+
+    first = client.post(
+        "/auth/invitations/accept",
+        json={"token": first_token, "password": _VALID_PASSWORD},
+    )
+    assert first.status_code == 200
+    assert _count_users(factory) == 1
+
+    second = client.post(
+        "/auth/invitations/accept",
+        json={"token": second_token, "password": "another-long-password"},
+    )
+    assert second.status_code == 400
+    assert second.json()["detail"] == "invalid or expired invitation"
+    # No orphaned/duplicate user is left behind for the losing invitation.
+    assert _count_users(factory) == 1

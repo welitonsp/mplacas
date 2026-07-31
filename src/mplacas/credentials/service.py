@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE, PlantScope
@@ -108,7 +109,11 @@ class UserService:
             password_hash=password_hash,
         )
         self._session.add(record)
-        await self._session.flush()
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise CredentialError("user name is already in use") from exc
         return record
 
     async def deactivate(

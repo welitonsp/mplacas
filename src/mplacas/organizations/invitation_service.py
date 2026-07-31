@@ -27,8 +27,7 @@ class InvitationConsumeError(ValueError):
 
     Deliberadamente não diferencia "expirado" de "revogado" de "já aceito" de
     "não encontrado" na mensagem pública, para não vazar informação sobre o
-    estado do convite a quem apenas possui (ou adivinhou) um token. A razão
-    específica é logada internamente pelo chamador quando necessário.
+    estado do convite a quem apenas possui (ou adivinhou) um token.
     """
 
 
