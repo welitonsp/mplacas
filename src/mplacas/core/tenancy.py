@@ -116,6 +116,34 @@ async def resolve_read_plant(
     return ScopedPlant(plant_id=plant_id, principal=principal)
 
 
+async def _infer_single_plant_for_organization_in_session(
+    session: AsyncSession, organization_id: uuid.UUID | None
+) -> uuid.UUID:
+    """Infer "the" plant for ``organization_id``, using the given ``session``.
+
+    Shared by :func:`_infer_single_plant_for_organization` (which opens a
+    fresh session for callers that do not already hold one) and callers that
+    already have an open session in scope (e.g. ``telegram.router``, which
+    resolves the organization and the plant within the same session/request).
+    """
+    query = select(Plant.id)
+    if organization_id is not None:
+        query = query.where(Plant.organization_id == organization_id)
+    plant_ids = list((await session.execute(query.limit(2))).scalars())
+
+    if len(plant_ids) == 1:
+        return plant_ids[0]
+    if len(plant_ids) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="plant_id is required when more than one plant exists",
+        )
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="plant_id is required when no plant can be inferred",
+    )
+
+
 async def _infer_single_plant_for_organization(
     organization_id: uuid.UUID | None,
 ) -> uuid.UUID:
@@ -130,22 +158,9 @@ async def _infer_single_plant_for_organization(
     from mplacas.db.session import SessionFactory
 
     async with SessionFactory() as session:
-        query = select(Plant.id)
-        if organization_id is not None:
-            query = query.where(Plant.organization_id == organization_id)
-        plant_ids = list((await session.execute(query.limit(2))).scalars())
-
-    if len(plant_ids) == 1:
-        return plant_ids[0]
-    if len(plant_ids) > 1:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="plant_id is required when more than one plant exists",
+        return await _infer_single_plant_for_organization_in_session(
+            session, organization_id
         )
-    raise HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail="plant_id is required when no plant can be inferred",
-    )
 
 
 async def resolve_admin_plant_scope(

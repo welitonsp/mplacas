@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from mplacas.db.base import Base
@@ -28,4 +28,7 @@ class OrganizationRecord(Base):
     )
     deactivated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    telegram_chat_id: Mapped[int | None] = mapped_column(
+        BigInteger, unique=True, nullable=True, index=True
     )

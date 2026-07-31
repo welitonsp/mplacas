@@ -123,14 +123,27 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
         "payload.plant_id) using an injected AdminPrincipal"
     ),
     # telegram: webhook has no OperationsPrincipal at all (authenticated via a
-    # shared webhook secret header, not an operational credential/bearer
-    # token) and infers the single configured plant globally — out of scope
-    # for the ReadPlant/AdminPlant pattern, addressed separately per the
-    # architect's plan.
+    # shared webhook secret header plus a single global
+    # telegram_allowed_user_id, not an operational credential/bearer token),
+    # so ReadPlant/AdminPlant/ScopedPlant (which all resolve their plant_id
+    # against an OperationsPrincipal's PlantScope) do not apply structurally.
+    # As of PR-6, tenant isolation *is* enforced here, just via a different
+    # mechanism: the incoming chat_id is resolved to an OrganizationRecord
+    # (via OrganizationRecord.telegram_chat_id) and the plant is then
+    # inferred for that organization alone (core.tenancy.
+    # _infer_single_plant_for_organization, 409 if it doesn't own exactly one
+    # plant) — see telegram.router._resolve_telegram_organization /
+    # _resolve_telegram_plant_scope. A chat_id with no linked organization is
+    # rejected outright (403), so there is no more global cross-tenant
+    # fallback. This stays allowlisted because the guard only recognizes the
+    # ScopedPlant dependency pattern, not this organization-via-chat-id one.
     ("POST", "/telegram/webhook"): (
         "webhook has no OperationsPrincipal — authenticated via Telegram's "
-        "shared secret header, plant inferred globally; addressed by a "
-        "dedicated PR in the multi-tenancy plan, not this structural change"
+        "shared secret header + a single global telegram_allowed_user_id, "
+        "not a bearer token/credential. Tenant isolation is enforced since "
+        "PR-6 via OrganizationRecord.telegram_chat_id -> organization-scoped "
+        "plant inference (core.tenancy._infer_single_plant_for_organization), "
+        "not via the ScopedPlant dependency this guard checks for"
     ),
 }
 

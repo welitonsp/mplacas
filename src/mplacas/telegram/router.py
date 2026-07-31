@@ -11,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mplacas.billing.parser import BillParseError, parse_equatorial_bill_text
 from mplacas.billing.repository import UtilityBillRepository
 from mplacas.core.config import get_settings
-from mplacas.db.models import Plant
+from mplacas.core.tenancy import _infer_single_plant_for_organization_in_session
 from mplacas.db.session import SessionFactory
+from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.telegram.client import TelegramClient, TelegramClientError
 from mplacas.telegram.document_processing import (
     TelegramDocumentProcessingError,
@@ -31,13 +32,44 @@ def _pending_message(reference_month: str) -> str:
     )
 
 
-async def _resolve_telegram_plant_scope(session: AsyncSession) -> uuid.UUID:
-    plant_ids = list((await session.execute(select(Plant.id).limit(2))).scalars())
-    if len(plant_ids) == 1:
-        return plant_ids[0]
-    raise HTTPException(
-        status_code=409,
-        detail="Telegram bill intake requires exactly one configured plant",
+async def _resolve_telegram_organization(
+    session: AsyncSession, chat_id: int
+) -> uuid.UUID:
+    """Resolve the organization that owns a given Telegram ``chat_id``.
+
+    Each organization links exactly one Telegram chat via
+    ``OrganizationRecord.telegram_chat_id`` (see ADR/PR-6 of the
+    multi-tenancy plan). Messages from an unrecognized chat are rejected
+    outright — there is no global fallback plant/organization anymore.
+    """
+    organization_id = (
+        await session.execute(
+            select(OrganizationRecord.id).where(
+                OrganizationRecord.telegram_chat_id == chat_id
+            )
+        )
+    ).scalar_one_or_none()
+    if organization_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Telegram chat is not linked to any organization",
+        )
+    return organization_id
+
+
+async def _resolve_telegram_plant_scope(
+    session: AsyncSession, organization_id: uuid.UUID
+) -> uuid.UUID:
+    """Infer the single plant belonging to ``organization_id``.
+
+    Reuses ``core.tenancy``'s organization-scoped plant inference (same 409
+    semantics as ``resolve_admin_plant`` when the organization has zero or
+    more than one plant), against the same ``session`` already opened for
+    organization resolution — avoids a second connection/session per
+    webhook request.
+    """
+    return await _infer_single_plant_for_organization_in_session(
+        session, organization_id
     )
 
 
@@ -105,7 +137,10 @@ async def telegram_webhook(
         try:
             bill = parse_equatorial_bill_text(message.text)
             async with SessionFactory() as session:
-                plant_id = await _resolve_telegram_plant_scope(session)
+                organization_id = await _resolve_telegram_organization(
+                    session, message.chat_id
+                )
+                plant_id = await _resolve_telegram_plant_scope(session, organization_id)
                 record = await UtilityBillRepository(session).create_pending(
                     bill,
                     plant_id=plant_id,
@@ -134,7 +169,10 @@ async def telegram_webhook(
             max_text_bytes=settings.bill_text_max_bytes,
         )
         async with SessionFactory() as session:
-            plant_id = await _resolve_telegram_plant_scope(session)
+            organization_id = await _resolve_telegram_organization(
+                session, message.chat_id
+            )
+            plant_id = await _resolve_telegram_plant_scope(session, organization_id)
             record = await UtilityBillRepository(session).create_pending(
                 processed.bill,
                 plant_id=plant_id,
