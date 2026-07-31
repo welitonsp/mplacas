@@ -59,13 +59,23 @@ Gaps conhecidos deixados deliberadamente em aberto ao fim dos planos de P0 e P1.
 vazamento ativo de dado entre organizações via router**; todos estão registrados nas "Negativas" do
 ADR-053 ou do ADR-054 para não se perderem.
 
-- [ ] **P1 — `telegram_allowed_user_id` é um único valor global do processo.** O PR-6 do P0 garante o
-  *roteamento* correto por `telegram_chat_id`, mas não há *autenticação por organização* no
-  Telegram: um usuário autorizado no processo segue autorizado para qualquer chat vinculado. Gap de
-  produto herdado (não introduzido pelo PR-6). Fechar exige um modelo de credencial de Telegram por
-  organização (ex.: `telegram_allowed_user_id` por linha de `organizations`, ou tabela de
-  associação usuário-Telegram ↔ organização). P1 porque vira problema real assim que existir uma
-  segunda organização usando o canal Telegram. (ADR-053, Negativas.)
+- [x] **P1 — `telegram_allowed_user_id` por organização (`313616a`).** Coluna
+  `telegram_allowed_user_id` (nullable, migration `0027`) em `organizations`, mesmo padrão de
+  `telegram_chat_id`. Webhook resolve organização antes de autorizar o remetente; fail closed sem
+  fallback em runtime para a antiga env global (só usada como backfill único na migration, para
+  organizações que já tinham `telegram_chat_id` configurado). Testado com 3 organizações
+  confirmando isolamento (usuário autorizado da org A rejeitado contra chat da org B). Duas notas
+  não bloqueantes do reviewer, registradas abaixo como novos itens de backlog.
+- [ ] **P3 — `telegram_configured` reflete só a env global.** A property em `core/config.py`
+  (exposta em `/health`/`/ready`) ainda depende só de `MPLACAS_TELEGRAM_ALLOWED_USER_ID`, não das
+  colunas por organização — pode reportar status desatualizado (`false` com organizações
+  corretamente configuradas via coluna própria, ou `true` só porque a env legada ainda existe sem
+  nenhuma organização usá-la). Não afeta autorização do webhook, só o sinal de status. Achado do
+  reviewer no PR do Telegram por organização.
+- [ ] **P3 — falta endpoint admin para configurar `telegram_chat_id`/`telegram_allowed_user_id`.**
+  Hoje só dá para configurar via acesso direto ao banco — mesma lacuna de ergonomia desde o PR-6 do
+  P0, agora estendida ao segundo campo. Fechar com um `PATCH /organizations/{id}` (ou endpoint
+  dedicado) sob `PlatformPrincipal`/`OrgAdminPrincipal`, decidir qual.
 - [ ] **P2 — chaves estáticas sem prazo de desligamento.** `MPLACAS_OPERATIONS_API_KEY` /
   `MPLACAS_OPERATIONS_READ_API_KEY` continuam autenticando com `organization_id` ausente e escopo
   irrestrito — bypass legítimo de todo o isolamento. O PR-8 do P0 só instrumentou o uso. Próximo
@@ -176,7 +186,7 @@ endereço real) estão nas "Negativas" do ADR-054.
 |---|---:|---:|---:|
 | P0 (isolamento de dados) | 10 | 0 | 0 |
 | P1 (onboarding/organizações) | 7 | 0 | 0 |
-| Backlog de tenancy | 2 | 0 | 4 |
+| Backlog de tenancy | 5 | 0 | 3 |
 | Dívida de documentação | 2 | 0 | 0 |
 
 **P0, P1 e a dívida de documentação fechados.** O P0 (9 PRs, ADR-053) garantiu que todo router de
@@ -187,9 +197,10 @@ convidar o ADMIN inicial e aceitar o convite deixaram de exigir acesso direto ao
 organização passou a administrar a própria organização por JWT — o 403 estrutural que bloqueava o
 self-service foi eliminado.
 
-O que resta em tenancy é o backlog: um item P1 (autenticação por organização no Telegram), dois P2
-(desligamento das chaves estáticas — agora mais viável, o PR-6 removeu o principal motivo legítimo
-de usá-las; janela de acesso residual pós-desativação, decisão arquitetural com custo) e dois P3
-(comentário desatualizado — cosmético, sem correção pendente; ordem de rotas — já documentado e
-coberto por teste, sem ação de código pendente). Nenhum é vazamento ativo de dado entre
-organizações; nenhum exige ação imediata.
+O que resta em tenancy é o backlog: um item P2 (desligamento das chaves estáticas — aguardando
+período de observação dos logs do PR-8 antes de definir prazo; agora mais viável, o PR-6 removeu o
+principal motivo legítimo de usá-las) e dois P3 (status `telegram_configured` desatualizado; falta
+endpoint admin para configurar `telegram_chat_id`/`telegram_allowed_user_id`, hoje só via banco).
+Autenticação por organização no Telegram, TOCTOU em `UserService.create`, comentário desatualizado
+e janela de acesso residual pós-desativação já foram fechados (código ou decisão formal). Nenhum
+item restante é vazamento ativo de dado entre organizações; nenhum exige ação imediata.
