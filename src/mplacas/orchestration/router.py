@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import hashlib
-import uuid
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from mplacas.audit.repository import AuditEventRepository
 from mplacas.alerts.models import AlertSeverity
 from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.climate.open_meteo import OpenMeteoHistoricalProvider
 from mplacas.core.config import get_settings
-from mplacas.core.security import require_operations_key
+from mplacas.core.tenancy import AdminPlant
 from mplacas.db.session import SessionFactory
 from mplacas.orchestration.execution_repository import PipelineExecutionAlreadyRunningError
 from mplacas.orchestration.runtime import run_ledger_backed_daily_pipeline
@@ -21,7 +20,6 @@ from mplacas.orchestration.status_service import get_latest_pipeline_execution
 router = APIRouter(
     prefix="/pipeline",
     tags=["pipeline"],
-    dependencies=[Depends(require_operations_key)],
 )
 
 
@@ -32,13 +30,14 @@ def _destination_ref(chat_id: str) -> str:
 @router.post("/run", status_code=status.HTTP_200_OK)
 async def run_pipeline(
     request: Request,
-    plant_id: uuid.UUID,
+    scoped: AdminPlant,
     target_date: date,
     expected_daily_production_kwh: Decimal = Query(gt=0),
     expected_cycle_production_kwh: Decimal | None = Query(default=None, gt=0),
     anomaly_days: int = Query(default=7, ge=1, le=90),
     minimum_severity: AlertSeverity = Query(default=AlertSeverity.WARNING),
 ) -> dict[str, object]:
+    plant_id = scoped.plant_id
     settings = get_settings()
     token = settings.telegram_bot_token
     chat_id = settings.telegram_alert_chat_id
@@ -139,9 +138,9 @@ async def run_pipeline(
 
 
 @router.get("/status/latest", status_code=status.HTTP_200_OK)
-async def latest_pipeline_status(plant_id: uuid.UUID) -> dict[str, object]:
+async def latest_pipeline_status(scoped: AdminPlant) -> dict[str, object]:
     async with SessionFactory() as session:
-        snapshot = await get_latest_pipeline_execution(session, plant_id=plant_id)
+        snapshot = await get_latest_pipeline_execution(session, plant_id=scoped.plant_id)
     if snapshot is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

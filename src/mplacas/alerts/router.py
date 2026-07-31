@@ -1,23 +1,21 @@
 from __future__ import annotations
 
 import hashlib
-import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from mplacas.audit.repository import AuditEventRepository
 from mplacas.alerts.models import AlertSeverity
 from mplacas.alerts.operations import run_operational_alert_pipeline
 from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.core.config import get_settings
-from mplacas.core.security import require_operations_key
+from mplacas.core.tenancy import AdminPlant
 from mplacas.db.session import SessionFactory
 
 router = APIRouter(
     prefix="/alerts",
     tags=["alerts"],
-    dependencies=[Depends(require_operations_key)],
 )
 
 
@@ -29,12 +27,13 @@ def _destination_ref(chat_id: str) -> str:
 @router.post("/run", status_code=status.HTTP_200_OK)
 async def run_alerts(
     request: Request,
-    plant_id: uuid.UUID,
+    scoped: AdminPlant,
     expected_daily_production_kwh: Decimal = Query(gt=0),
     expected_cycle_production_kwh: Decimal | None = Query(default=None, gt=0),
     anomaly_days: int = Query(default=7, ge=1, le=90),
     minimum_severity: AlertSeverity = Query(default=AlertSeverity.WARNING),
 ) -> dict[str, object]:
+    plant_id = scoped.plant_id
     settings = get_settings()
     token = settings.telegram_bot_token
     chat_id = settings.telegram_alert_chat_id

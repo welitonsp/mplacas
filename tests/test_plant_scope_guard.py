@@ -119,13 +119,8 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
         "param — resolved via core.tenancy.resolve_admin_plant_scope(principal, "
         "payload.plant_id) using an injected AdminPrincipal"
     ),
-    # alerts, climate, orchestration/pipeline: later PRs in the plan.
-    ("POST", "/alerts/run"): "PR-4/5 pending — alerts not yet migrated",
+    # climate: later PR in the plan (PR-5).
     ("POST", "/climate/collect"): "PR-4/5 pending — climate not yet migrated",
-    ("POST", "/pipeline/run"): "PR-4/5 pending — orchestration not yet migrated",
-    ("GET", "/pipeline/status/latest"): (
-        "PR-4/5 pending — orchestration not yet migrated"
-    ),
     # telegram: webhook has no OperationsPrincipal at all (authenticated via a
     # shared webhook secret header, not an operational credential/bearer
     # token) and infers the single configured plant globally — out of scope
