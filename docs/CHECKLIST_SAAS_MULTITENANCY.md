@@ -76,16 +76,15 @@ ADR-053 ou do ADR-054 para não se perderem.
   ausência dessas envs no ambiente. O PR-6 do P1 (org-admin por JWT em `/operations/credentials` e
   `/operations/users`) removeu o principal consumidor legítimo dessas chaves, o que torna esse
   desligamento mais viável do que era. (ADR-053, Negativas.)
-- [ ] **P2 — janela de ~15 min de acesso residual após desativar uma organização.** Um access token
-  JWT já emitido continua válido até expirar mesmo após `POST /organizations/{id}/deactivate`, porque
-  a autenticação bearer não relê o banco a cada request. As sessões (refresh) são revogadas em lote,
-  e refresh e credencial persistida já checam organização ativa — o resíduo é só o access token em
-  voo. Não é regressão: mesma característica já presente na desativação de usuário
-  (`credentials/router.py`, pré-existente). Fechar exige **decisão arquitetural**, não correção
-  mecânica: reduzir o TTL do access token (custo de usabilidade e de carga no refresh) ou introduzir
-  checagem de revogação no caminho quente (custo de latência e de um store de revogação). P2 porque
-  o impacto é limitado a uma janela curta e o gatilho (desativar organização) é raro e deliberado.
-  (ADR-054, Negativas; achado do PR-3 do P1.)
+- [x] **P2 — janela de ~15 min de acesso residual após desativar uma organização — decisão: aceitar
+  como está (2026-07-31).** Um access token JWT já emitido continua válido até expirar mesmo após
+  `POST /organizations/{id}/deactivate`. Decisão consciente do usuário: desativar organização é ação
+  rara e deliberada, não resposta a incidente de segurança — o custo de checar `organization.active`
+  a cada request autenticado (latência permanente) não se justifica para fechar uma janela de 15min
+  que já é mitigada por sessões revogadas em lote e refresh/credencial persistida checando
+  organização ativa. Reduzir o TTL do access token também foi descartado (aumentaria carga de
+  refresh para todo o sistema, não só para o caso raro de desativação). Não reabrir sem novo
+  requisito de produto que mude essa análise de custo. (ADR-054, Negativas; achado do PR-3 do P1.)
 - [x] **P2 — TOCTOU em `UserService.create` (`aac86cb`).** Corrigido: `flush()` do INSERT envolvido
   em `try/except IntegrityError`, rollback da sessão, relançado como o mesmo `CredentialError("user
   name is already in use")` já usado pela pré-checagem. Testado forçando a corrida (monkeypatch da
