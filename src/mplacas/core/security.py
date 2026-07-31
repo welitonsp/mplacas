@@ -3,48 +3,23 @@ from __future__ import annotations
 import hashlib
 import hmac
 import uuid
-from dataclasses import dataclass
-from enum import StrEnum
 
 from fastapi import Header, HTTPException, Request, status
 
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import JwtError, decode_token
+from mplacas.core.principal import OperationsPrincipal, OperationsRole
 from mplacas.core.tenancy import plant_scope_for_organization
 
-
-class OperationsRole(StrEnum):
-    ADMIN = "ADMIN"
-    READ = "READ"
-
-
-@dataclass(frozen=True, slots=True)
-class OperationsPrincipal:
-    role: OperationsRole
-    credential_id: str
-    plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE
-    organization_id: uuid.UUID | None = None
-
-    def can_read(self) -> bool:
-        return self.role in {OperationsRole.ADMIN, OperationsRole.READ}
-
-    def can_admin(self) -> bool:
-        return self.role is OperationsRole.ADMIN
-
-    def require_plant_access(self, plant_id: uuid.UUID) -> None:
-        if not self.plant_scope.allows(plant_id):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="plant not found",
-            )
-
-    def require_unrestricted_access(self) -> None:
-        if self.plant_scope.is_restricted:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="operational credential is restricted to plant resources",
-            )
+__all__ = [
+    "OperationsPrincipal",
+    "OperationsRole",
+    "authenticate_operations_key",
+    "require_operations_key",
+    "require_operations_read",
+    "validate_operations_key",
+]
 
 
 def validate_operations_key(provided: str | None, configured: str | None) -> None:

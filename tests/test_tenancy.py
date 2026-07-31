@@ -9,7 +9,10 @@ Covers the three sources of OperationsPrincipal that carry organization_id:
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import uuid
+from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -113,3 +116,46 @@ async def test_persisted_read_credential_with_plant_ids_is_org_restricted() -> N
     assert principal is not None
     assert principal.organization_id is not None
     assert principal.plant_scope.is_restricted is True
+
+
+def test_tenancy_resolves_scoped_plant_hints_without_importing_security() -> None:
+    """PR-2: ``core.tenancy`` must not depend on import order for correctness.
+
+    Regression test for a real bug the reviewer reproduced: when
+    ``OperationsPrincipal`` was only imported under ``TYPE_CHECKING`` in
+    ``core.tenancy`` (with ``core.security`` patching the real class into
+    ``tenancy``'s namespace as a side effect of its own import), importing
+    ``mplacas.core.tenancy`` on its own — without anything having imported
+    ``mplacas.core.security`` first in the same process — left
+    ``resolve_read_plant``/``resolve_admin_plant``'s forward reference to
+    ``OperationsPrincipal`` unresolved. FastAPI resolves those annotations via
+    ``typing.get_type_hints`` when building the dependency graph for
+    ``ReadPlant``/``AdminPlant``, so this silently corrupted route
+    registration for any router that imported only ``core.tenancy`` — a
+    scenario every subsequent PR migrating billing/alerts/climate to
+    ReadPlant/AdminPlant would have hit as soon as those routers stopped
+    importing ``core.security`` directly.
+
+    Runs in a fresh subprocess (not just a fresh module cache) so that no
+    other test in this same process has already imported ``core.security``
+    and made the bug impossible to observe.
+    """
+    script = (
+        "import sys\n"
+        "assert 'mplacas.core.security' not in sys.modules\n"
+        "from mplacas.core import tenancy\n"
+        "from typing import get_type_hints\n"
+        "get_type_hints(tenancy.resolve_read_plant, include_extras=True)\n"
+        "get_type_hints(tenancy.resolve_admin_plant, include_extras=True)\n"
+        "get_type_hints(tenancy._read_principal, include_extras=True)\n"
+        "get_type_hints(tenancy._admin_principal, include_extras=True)\n"
+        "assert 'mplacas.core.security' not in sys.modules\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=str(Path(__file__).resolve().parents[1]),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"

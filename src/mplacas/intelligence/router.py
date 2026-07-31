@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 
-from mplacas.core.security import OperationsPrincipal, require_operations_read
+from mplacas.core.tenancy import ReadPlant
 from mplacas.db.session import SessionFactory
 from mplacas.intelligence.anomaly_service import (
     AnomalyDataNotFoundError,
@@ -158,19 +157,17 @@ def _serialize_anomalies(result) -> dict[str, object]:
 @router.get("/cycles/{bill_id}")
 async def energy_cycle_summary(
     bill_id: uuid.UUID,
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
-    plant_id: uuid.UUID = Query(...),
+    scoped: ReadPlant,
     expected_production_kwh: Decimal | None = Query(default=None, ge=0),
 ) -> dict[str, object]:
-    principal.require_plant_access(plant_id)
     async with SessionFactory() as session:
         try:
             result = await analyze_persisted_cycle(
                 session,
                 bill_id=bill_id,
-                plant_id=plant_id,
+                plant_id=scoped.plant_id,
                 expected_production_kwh=expected_production_kwh,
-                plant_scope=principal.plant_scope,
+                plant_scope=scoped.principal.plant_scope,
             )
         except EnergyCycleNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -179,18 +176,16 @@ async def energy_cycle_summary(
 
 @router.get("/trends/latest")
 async def latest_energy_trend(
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
-    plant_id: uuid.UUID = Query(...),
+    scoped: ReadPlant,
     stable_tolerance_percent: Decimal = Query(default=Decimal("2.0"), ge=0, le=100),
 ) -> dict[str, object]:
-    principal.require_plant_access(plant_id)
     async with SessionFactory() as session:
         try:
             result = await compare_latest_confirmed_cycles(
                 session,
-                plant_id=plant_id,
+                plant_id=scoped.plant_id,
                 stable_tolerance_percent=stable_tolerance_percent,
-                plant_scope=principal.plant_scope,
+                plant_scope=scoped.principal.plant_scope,
             )
         except (EnergyHistoryNotFoundError, EnergyCycleNotFoundError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -199,20 +194,18 @@ async def latest_energy_trend(
 
 @router.get("/executive/latest")
 async def latest_executive_dashboard(
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
-    plant_id: uuid.UUID = Query(...),
+    scoped: ReadPlant,
     expected_production_kwh: Decimal | None = Query(default=None, ge=0),
     stable_tolerance_percent: Decimal = Query(default=Decimal("2.0"), ge=0, le=100),
 ) -> dict[str, object]:
-    principal.require_plant_access(plant_id)
     async with SessionFactory() as session:
         try:
             result = await _executive_dashboard_read_model.get(
                 session,
-                plant_id=plant_id,
+                plant_id=scoped.plant_id,
                 expected_production_kwh=expected_production_kwh,
                 stable_tolerance_percent=stable_tolerance_percent,
-                plant_scope=principal.plant_scope,
+                plant_scope=scoped.principal.plant_scope,
             )
         except EnergyCycleNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -221,17 +214,15 @@ async def latest_executive_dashboard(
 
 @router.get("/anomalies/latest")
 async def latest_energy_anomalies(
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
-    plant_id: uuid.UUID = Query(...),
+    scoped: ReadPlant,
     expected_daily_production_kwh: Decimal = Query(..., gt=0),
     days: int = Query(default=7, ge=1, le=90),
 ) -> dict[str, object]:
-    principal.require_plant_access(plant_id)
     async with SessionFactory() as session:
         try:
             result = await analyze_recent_persisted_anomalies(
                 session,
-                plant_id=plant_id,
+                plant_id=scoped.plant_id,
                 expected_daily_production_kwh=expected_daily_production_kwh,
                 days=days,
             )

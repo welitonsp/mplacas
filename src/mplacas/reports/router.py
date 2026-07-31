@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from mplacas.core.security import OperationsPrincipal, require_operations_read
+from mplacas.core.tenancy import ReadPlant
 from mplacas.db.session import SessionFactory
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError
 from mplacas.reports.export_service import InvalidExportFormat, ReportExportService
@@ -78,19 +79,17 @@ def _download_headers(
 @router.get("/monthly/latest")
 async def latest_monthly_report(
     response: Response,
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
-    plant_id: uuid.UUID = Query(...),
+    scoped: ReadPlant,
     expected_production_kwh: Decimal | None = Query(default=None, ge=0, deprecated=True),
     stable_tolerance_percent: Decimal = Query(
         default=Decimal("2.0"), ge=0, le=100, deprecated=True
     ),
 ) -> dict[str, object]:
-    principal.require_plant_access(plant_id)
     snapshot = await _build_report(
-        plant_id=plant_id,
+        plant_id=scoped.plant_id,
         expected_production_kwh=expected_production_kwh,
         stable_tolerance_percent=stable_tolerance_percent,
-        principal=principal,
+        principal=scoped.principal,
     )
     response.headers["Cache-Control"] = "no-store"
     for key, value in _snapshot_headers(snapshot).items():
@@ -100,19 +99,17 @@ async def latest_monthly_report(
 
 @router.get("/monthly/latest.csv")
 async def latest_monthly_report_csv(
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
-    plant_id: uuid.UUID = Query(...),
+    scoped: ReadPlant,
     expected_production_kwh: Decimal | None = Query(default=None, ge=0, deprecated=True),
     stable_tolerance_percent: Decimal = Query(
         default=Decimal("2.0"), ge=0, le=100, deprecated=True
     ),
 ) -> Response:
-    principal.require_plant_access(plant_id)
     snapshot = await _build_report(
-        plant_id=plant_id,
+        plant_id=scoped.plant_id,
         expected_production_kwh=expected_production_kwh,
         stable_tolerance_percent=stable_tolerance_percent,
-        principal=principal,
+        principal=scoped.principal,
     )
     report = snapshot.report
     filename = f"mplacas-monthly-{report.reference_month}-{report.plant_id}.csv"
@@ -125,19 +122,17 @@ async def latest_monthly_report_csv(
 
 @router.get("/monthly/latest.pdf")
 async def latest_monthly_report_pdf(
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
-    plant_id: uuid.UUID = Query(...),
+    scoped: ReadPlant,
     expected_production_kwh: Decimal | None = Query(default=None, ge=0, deprecated=True),
     stable_tolerance_percent: Decimal = Query(
         default=Decimal("2.0"), ge=0, le=100, deprecated=True
     ),
 ) -> Response:
-    principal.require_plant_access(plant_id)
     snapshot = await _build_report(
-        plant_id=plant_id,
+        plant_id=scoped.plant_id,
         expected_production_kwh=expected_production_kwh,
         stable_tolerance_percent=stable_tolerance_percent,
-        principal=principal,
+        principal=scoped.principal,
     )
     report = snapshot.report
     filename = f"mplacas-monthly-{report.reference_month}-{report.plant_id}.pdf"
@@ -150,19 +145,17 @@ async def latest_monthly_report_pdf(
 
 @router.get("/monthly/latest.xlsx")
 async def latest_monthly_report_xlsx(
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
-    plant_id: uuid.UUID = Query(...),
+    scoped: ReadPlant,
     expected_production_kwh: Decimal | None = Query(default=None, ge=0, deprecated=True),
     stable_tolerance_percent: Decimal = Query(
         default=Decimal("2.0"), ge=0, le=100, deprecated=True
     ),
 ) -> Response:
-    principal.require_plant_access(plant_id)
     snapshot = await _build_report(
-        plant_id=plant_id,
+        plant_id=scoped.plant_id,
         expected_production_kwh=expected_production_kwh,
         stable_tolerance_percent=stable_tolerance_percent,
-        principal=principal,
+        principal=scoped.principal,
     )
     report = snapshot.report
     filename = f"mplacas-monthly-{report.reference_month}-{report.plant_id}.xlsx"
@@ -180,16 +173,14 @@ async def latest_monthly_report_xlsx(
 
 @router.post("/monthly/exports", status_code=202)
 async def enqueue_monthly_export(
-    principal: Annotated[OperationsPrincipal, Depends(require_operations_read)],
-    plant_id: uuid.UUID = Query(...),
+    scoped: ReadPlant,
     format: str = Query(default="pdf", pattern="^(pdf|xlsx)$"),
 ) -> dict[str, object]:
     """Enqueue an async export task. Poll GET /monthly/exports/{task_id} for status."""
-    principal.require_plant_access(plant_id)
     async with SessionFactory() as session:
         try:
             task = await ReportExportService(session).enqueue(
-                plant_id=plant_id,
+                plant_id=scoped.plant_id,
                 reference_month="latest",
                 format=format,
             )
