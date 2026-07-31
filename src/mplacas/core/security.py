@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import uuid
 
 from fastapi import Header, HTTPException, Request, status
@@ -11,6 +12,9 @@ from mplacas.core.config import get_settings
 from mplacas.core.jwt import JwtError, decode_token
 from mplacas.core.principal import OperationsPrincipal, OperationsRole
 from mplacas.core.tenancy import plant_scope_for_organization
+from mplacas.observability.metrics import OUTCOME_SUCCESS, record_operation
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "OperationsPrincipal",
@@ -46,6 +50,37 @@ def _credential_id(*, role: OperationsRole, secret: str) -> str:
     return f"operations:{role.value.lower()}:{fingerprint}"
 
 
+def _warn_static_key_used(
+    *,
+    role: OperationsRole,
+    credential_id: str,
+    http_method: str | None,
+    http_path: str | None,
+) -> None:
+    """Emit a deprecation-tracking warning for the static operations API keys.
+
+    The static ``OPERATIONS_API_KEY`` / ``OPERATIONS_READ_API_KEY`` bypass any
+    organization-level isolation (they authenticate with ``organization_id``
+    unset). This does not change authentication behavior in any way — it only
+    records usage so a safe deprecation timeline can be defined later. Never
+    log the credential value itself, only its non-reversible fingerprint id.
+    """
+    logger.warning(
+        "operations_static_key_auth_used",
+        extra={
+            "operations_role": role.value,
+            "credential_id": credential_id,
+            "http_method": http_method,
+            "http_path": http_path,
+        },
+    )
+    record_operation(
+        operation=f"static_key_auth_{role.value.lower()}",
+        outcome=OUTCOME_SUCCESS,
+        duration_ms=0.0,
+    )
+
+
 def authenticate_operations_key(
     provided: str | None,
     *,
@@ -53,6 +88,8 @@ def authenticate_operations_key(
     read_key: str | None = None,
     read_plant_ids: frozenset[uuid.UUID] | None = None,
     require_admin: bool = False,
+    http_method: str | None = None,
+    http_path: str | None = None,
 ) -> OperationsPrincipal:
     if not admin_key:
         raise HTTPException(
@@ -60,9 +97,16 @@ def authenticate_operations_key(
             detail="operational authentication is not configured",
         )
     if provided is not None and hmac.compare_digest(provided, admin_key):
+        credential_id = _credential_id(role=OperationsRole.ADMIN, secret=admin_key)
+        _warn_static_key_used(
+            role=OperationsRole.ADMIN,
+            credential_id=credential_id,
+            http_method=http_method,
+            http_path=http_path,
+        )
         return OperationsPrincipal(
             role=OperationsRole.ADMIN,
-            credential_id=_credential_id(role=OperationsRole.ADMIN, secret=admin_key),
+            credential_id=credential_id,
         )
     if (
         not require_admin
@@ -70,9 +114,16 @@ def authenticate_operations_key(
         and provided is not None
         and hmac.compare_digest(provided, read_key)
     ):
+        credential_id = _credential_id(role=OperationsRole.READ, secret=read_key)
+        _warn_static_key_used(
+            role=OperationsRole.READ,
+            credential_id=credential_id,
+            http_method=http_method,
+            http_path=http_path,
+        )
         return OperationsPrincipal(
             role=OperationsRole.READ,
-            credential_id=_credential_id(role=OperationsRole.READ, secret=read_key),
+            credential_id=credential_id,
             plant_scope=(
                 PlantScope.restricted(read_plant_ids)
                 if read_plant_ids is not None
@@ -143,6 +194,8 @@ async def _authenticate_with_fallback(
     provided: str | None,
     *,
     require_admin: bool,
+    http_method: str | None = None,
+    http_path: str | None = None,
 ) -> OperationsPrincipal:
     settings = get_settings()
     try:
@@ -158,6 +211,8 @@ async def _authenticate_with_fallback(
                 None if require_admin else settings.operations_read_plant_id_set
             ),
             require_admin=require_admin,
+            http_method=http_method,
+            http_path=http_path,
         )
     except HTTPException as exc:
         if exc.status_code != status.HTTP_401_UNAUTHORIZED or provided is None:
@@ -183,7 +238,12 @@ async def require_operations_key(
         if principal is not None:
             request.state.operations_principal = principal
             return principal
-    principal = await _authenticate_with_fallback(x_api_key, require_admin=True)
+    principal = await _authenticate_with_fallback(
+        x_api_key,
+        require_admin=True,
+        http_method=request.method,
+        http_path=request.url.path,
+    )
     request.state.operations_principal = principal
     return principal
 
@@ -200,6 +260,11 @@ async def require_operations_read(
         if principal is not None:
             request.state.operations_principal = principal
             return principal
-    principal = await _authenticate_with_fallback(x_api_key, require_admin=False)
+    principal = await _authenticate_with_fallback(
+        x_api_key,
+        require_admin=False,
+        http_method=request.method,
+        http_path=request.url.path,
+    )
     request.state.operations_principal = principal
     return principal
