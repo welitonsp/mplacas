@@ -107,11 +107,18 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
         "organization-scoped user management "
         "(principal.require_unrestricted_access()), not plant-scoped"
     ),
-    # billing: PR-3 in the multi-tenancy plan migrates this router.
-    ("POST", "/billing/intake-text"): "PR-3 pending — billing not yet migrated",
-    ("GET", "/billing/pending"): "PR-3 pending — billing not yet migrated",
-    ("POST", "/billing/{bill_id}/confirm"): "PR-3 pending — billing not yet migrated",
-    ("POST", "/billing/{bill_id}/reject"): "PR-3 pending — billing not yet migrated",
+    # billing: plant_id is carried in the JSON request body (BillTextIntake),
+    # not a query parameter, so ReadPlant/AdminPlant (which resolve a query
+    # param) do not apply directly. The handler instead depends on
+    # core.tenancy.AdminPrincipal and calls
+    # core.tenancy.resolve_admin_plant_scope(principal, payload.plant_id)
+    # explicitly — the same organization-scoped resolve+validate logic,
+    # applied to a body field instead of a query param.
+    ("POST", "/billing/intake-text"): (
+        "plant_id is a JSON body field (BillTextIntake.plant_id), not a query "
+        "param — resolved via core.tenancy.resolve_admin_plant_scope(principal, "
+        "payload.plant_id) using an injected AdminPrincipal"
+    ),
     # alerts, climate, orchestration/pipeline: later PRs in the plan.
     ("POST", "/alerts/run"): "PR-4/5 pending — alerts not yet migrated",
     ("POST", "/climate/collect"): "PR-4/5 pending — climate not yet migrated",

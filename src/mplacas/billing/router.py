@@ -2,52 +2,26 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.audit.repository import AuditEventRepository
 from mplacas.billing.parser import BillParseError, parse_equatorial_bill_text
 from mplacas.billing.repository import UtilityBillRepository
 from mplacas.core.config import get_settings
-from mplacas.core.security import require_operations_key
-from mplacas.db.models import Plant
+from mplacas.core.tenancy import AdminPlant, AdminPrincipal, resolve_admin_plant_scope
 from mplacas.db.session import SessionFactory
 from mplacas.reports.snapshot import materialize_monthly_report_snapshot
 
 router = APIRouter(
     prefix="/billing",
     tags=["billing"],
-    dependencies=[Depends(require_operations_key)],
 )
 
 
 class BillTextIntake(BaseModel):
     plant_id: uuid.UUID | None = None
     text: str = Field(min_length=20)
-
-
-async def _resolve_plant_scope(
-    session: AsyncSession,
-    requested: uuid.UUID | None,
-) -> uuid.UUID:
-    if requested is not None:
-        if await session.get(Plant, requested) is None:
-            raise HTTPException(status_code=404, detail="plant not found")
-        return requested
-    plant_ids = list((await session.execute(select(Plant.id).limit(2))).scalars())
-    if len(plant_ids) == 1:
-        return plant_ids[0]
-    if len(plant_ids) > 1:
-        raise HTTPException(
-            status_code=409,
-            detail="plant_id is required when more than one plant exists",
-        )
-    raise HTTPException(
-        status_code=409,
-        detail="plant_id is required when no plant can be inferred",
-    )
 
 
 def _serialize(record) -> dict[str, object]:
@@ -72,7 +46,17 @@ def _serialize(record) -> dict[str, object]:
 
 
 @router.post("/intake-text", status_code=status.HTTP_202_ACCEPTED)
-async def intake_bill_text(request: Request, payload: BillTextIntake) -> dict[str, object]:
+async def intake_bill_text(
+    request: Request, payload: BillTextIntake, principal: AdminPrincipal
+) -> dict[str, object]:
+    # plant_id is carried in the request body (not a query param), so it
+    # cannot be resolved via the AdminPlant dependency directly — reuse the
+    # same organization-scoped resolve+validate logic explicitly instead.
+    # Resolved before parsing the (untrusted) bill text so a cross-tenant
+    # request is rejected without ever processing its payload.
+    scoped = await resolve_admin_plant_scope(principal, payload.plant_id)
+    plant_id = scoped.plant_id
+
     settings = get_settings()
     if len(payload.text.encode("utf-8")) > settings.bill_text_max_bytes:
         raise HTTPException(status_code=413, detail="bill text exceeds configured size limit")
@@ -82,7 +66,6 @@ async def intake_bill_text(request: Request, payload: BillTextIntake) -> dict[st
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     async with SessionFactory() as session:
-        plant_id = await _resolve_plant_scope(session, payload.plant_id)
         repository = UtilityBillRepository(session)
         try:
             record = await repository.create_pending(
@@ -111,14 +94,13 @@ async def intake_bill_text(request: Request, payload: BillTextIntake) -> dict[st
 
 @router.get("/pending")
 async def pending_bills(
-    plant_id: uuid.UUID | None = None,
+    scoped: AdminPlant,
     limit: int = Query(default=20, ge=1, le=100),
 ) -> dict[str, object]:
     async with SessionFactory() as session:
-        resolved = await _resolve_plant_scope(session, plant_id)
         records = await UtilityBillRepository(session).list_pending(
             limit=limit,
-            plant_id=resolved,
+            plant_id=scoped.plant_id,
         )
     return {"count": len(records), "items": [_serialize(record) for record in records]}
 
@@ -127,12 +109,11 @@ async def pending_bills(
 async def confirm_bill(
     request: Request,
     bill_id: uuid.UUID,
-    plant_id: uuid.UUID | None = None,
+    scoped: AdminPlant,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
-        resolved = await _resolve_plant_scope(session, plant_id)
         repository = UtilityBillRepository(session)
-        record = await repository.get(bill_id, plant_id=resolved)
+        record = await repository.get(bill_id, plant_id=scoped.plant_id)
         if record is None:
             raise HTTPException(status_code=404, detail="bill not found for plant")
         try:
@@ -175,12 +156,11 @@ async def confirm_bill(
 async def reject_bill(
     request: Request,
     bill_id: uuid.UUID,
-    plant_id: uuid.UUID | None = None,
+    scoped: AdminPlant,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
-        resolved = await _resolve_plant_scope(session, plant_id)
         repository = UtilityBillRepository(session)
-        record = await repository.get(bill_id, plant_id=resolved)
+        record = await repository.get(bill_id, plant_id=scoped.plant_id)
         if record is None:
             raise HTTPException(status_code=404, detail="bill not found for plant")
         try:

@@ -125,8 +125,7 @@ async def _infer_single_plant_for_organization(
     or persisted-credential principals). Static operational keys have no
     ``organization_id`` and fall back to inference across all plants, matching
     the pre-existing single-tenant behaviour (see
-    ``telegram.router._resolve_telegram_plant_scope`` and
-    ``billing.router._resolve_plant_scope``).
+    ``telegram.router._resolve_telegram_plant_scope``).
     """
     from mplacas.db.session import SessionFactory
 
@@ -149,14 +148,17 @@ async def _infer_single_plant_for_organization(
     )
 
 
-async def resolve_admin_plant(
-    principal: Annotated[OperationsPrincipal, Depends(_admin_principal)],
-    plant_id: uuid.UUID | None = Query(default=None),
+async def resolve_admin_plant_scope(
+    principal: OperationsPrincipal,
+    plant_id: uuid.UUID | None,
 ) -> ScopedPlant:
-    """Resolve an optional ``plant_id`` query param for admin endpoints.
+    """Resolve + validate a ``plant_id`` an admin caller may supply anywhere.
 
-    When omitted, infers the single plant belonging to the principal's
-    organization (409 if the organization has zero or more than one plant).
+    Shared by :func:`resolve_admin_plant` (``plant_id`` as a query param) and
+    callers that receive ``plant_id`` from elsewhere (e.g. a request body),
+    such as ``billing.router.intake_bill_text``. When omitted, infers the
+    single plant belonging to the principal's organization (409 if the
+    organization has zero or more than one plant).
     """
     resolved = (
         plant_id
@@ -167,5 +169,18 @@ async def resolve_admin_plant(
     return ScopedPlant(plant_id=resolved, principal=principal)
 
 
+async def resolve_admin_plant(
+    principal: Annotated[OperationsPrincipal, Depends(_admin_principal)],
+    plant_id: uuid.UUID | None = Query(default=None),
+) -> ScopedPlant:
+    """Resolve an optional ``plant_id`` query param for admin endpoints.
+
+    When omitted, infers the single plant belonging to the principal's
+    organization (409 if the organization has zero or more than one plant).
+    """
+    return await resolve_admin_plant_scope(principal, plant_id)
+
+
 ReadPlant = Annotated[ScopedPlant, Depends(resolve_read_plant)]
 AdminPlant = Annotated[ScopedPlant, Depends(resolve_admin_plant)]
+AdminPrincipal = Annotated[OperationsPrincipal, Depends(_admin_principal)]
