@@ -1,20 +1,22 @@
-# Checklist de remediação — Evolução SaaS Multitenancy (ADR-052)
+# Checklist de remediação — Evolução SaaS Multitenancy (ADR-052 → ADR-053)
 
-Última atualização: 2026-07-31 (sessão 2 — PR-1 a PR-5 concluídos e publicados)
-Base: `origin/main` em `4c8b421`
+Última atualização: 2026-07-31 (sessão 2 — P0 fechado: PR-1 a PR-9 concluídos)
+Base: `origin/main` em `37586cb`
 Origem: seção "Próximos passos" do `ADR-052-saas-multitenancy-evolution.md`, verificada item a
 item contra o código atual (não contra o texto do ADR, que estava parcialmente desatualizado).
+Decisão consolidada em `ADR-053-organization-isolation-enforced-in-routers.md`.
 
 Rastreia cada item pendente da evolução SaaS ao seu estado real, com a evidência correspondente.
 Legenda: `[x]` concluído, `[~]` parcial, `[ ]` pendente.
 
-## P0 — Isolamento de dados por organização (diagnóstico corrigido em 2026-07-31)
+## P0 — Isolamento de dados por organização — CONCLUÍDO (2026-07-31)
 
 O diagnóstico original desta seção (grep literal por `organization_id` nos routers) foi um
-**falso positivo de gravidade**. O isolamento já existe e já funciona para `reports`,
+**falso positivo de gravidade**. O isolamento já existia e já funcionava para `reports`,
 `intelligence` e `explanations` via `PlantScope` derivado do claim `org_id` do JWT
-(`core/security.py`), aplicado indiretamente — não pela string `organization_id`. O furo real é
-menor em número de módulos, mas mais grave onde existe:
+(`core/security.py`), aplicado indiretamente — não pela string `organization_id`. O furo real era
+menor em número de módulos, mas mais grave onde existia. Plano de 9 PRs desenhado pelo `architect`,
+todos concluídos, revisados pelo `reviewer` e publicados em `origin/main`:
 
 - [x] **PR-1 (`8fb1ad9`)**: invariante "credencial com `organization_id` nunca tem `PlantScope`
   irrestrito" — `credentials/service.py:_scope_for_credential` corrigido; `core/tenancy.py` criado.
@@ -31,17 +33,45 @@ menor em número de módulos, mas mais grave onde existe:
   sem `ScopedPlant` nem sem justificativa de allowlist válida. **Invariante "todo router de dado
   valida organização" fechada para billing/alerts/orchestration/climate/reports/intelligence/
   explanations.**
-- [ ] **`telegram`, `operations`**: não vazam dado (fail-closed hoje), mas quebram
-  funcionalmente assim que existir uma segunda organização — exigem decisão de modelo de dados,
-  não são apenas código (PR-6 e PR-7 do plano do architect, bloqueados aguardando decisão).
-- [ ] **Chaves estáticas `OPERATIONS_API_KEY`/`OPERATIONS_READ_API_KEY`**: concedem
-  `organization_id=None` com escopo irrestrito — bypass total de qualquer isolamento aplicado
-  acima enquanto essas envs existirem em produção (PR-8, bloqueado aguardando plano de migração).
+- [x] **PR-6 (`37586cb`)**: `telegram` associado a organização via `organizations.telegram_chat_id`
+  (nullable, unique — migração `0025`). Chat sem organização vinculada recebe 403; organização com
+  0 ou mais de 1 usina recebe 409. Cross-tenant provado em
+  `tests/test_telegram_webhook_cross_tenant.py`.
+- [x] **PR-7 — decisão sem código**: `/operations/jobs` e `/operations/status` permanecem
+  **platform-only**, exigindo `require_unrestricted_access`. É o comportamento já decidido no
+  ADR-037 (item 8) e já garantido de fato pela invariante do PR-1 — não houve mudança de código,
+  apenas a decisão registrada (ver ADR-053, seção PR-7). Filtrar jobs por organização exigiria
+  propagar `organization_id` por toda a trilha de execução, sem demanda de produto que justifique.
+- [x] **PR-8 (`dc14ff0`)**: uso das chaves estáticas
+  `OPERATIONS_API_KEY`/`OPERATIONS_READ_API_KEY` agora é logado (warning estruturado
+  `operations_static_key_auth_used` + métrica via `record_operation`), **sem mudança de
+  comportamento de autenticação**. Decisão do usuário: medir uso real antes de definir prazo de
+  desligamento.
+- [x] **PR-9**: `docs/ADR-053-organization-isolation-enforced-in-routers.md` + atualização deste
+  checklist.
 - [x] **`web`**: serve HTML estático, zero acesso a banco — nunca deveria ter estado nesta lista.
 
-Plano de remediação em 9 PRs desenhado pelo `architect` em 2026-07-31. PR-1 a PR-5 concluídos,
-revisados pelo `reviewer` e publicados em `origin/main`. PR-6/7/8 bloqueados aguardando decisão de
-produto/modelo de dados; PR-9 (ADR-053 + doc) pendente até os anteriores fecharem.
+## Backlog de tenancy (não é P0 — a invariante de isolamento por organização está fechada)
+
+Dois gaps conhecidos ficaram deliberadamente em aberto ao fim do plano. Nenhum dos dois é
+vazamento ativo de dado entre organizações via router; ambos estão registrados nas "Negativas" do
+ADR-053 para não se perderem.
+
+- [ ] **P1 — `telegram_allowed_user_id` é um único valor global do processo.** O PR-6 garante o
+  *roteamento* correto por `telegram_chat_id`, mas não há *autenticação por organização* no
+  Telegram: um usuário autorizado no processo segue autorizado para qualquer chat vinculado. Gap de
+  produto herdado (não introduzido pelo PR-6). Fechar exige um modelo de credencial de Telegram por
+  organização (ex.: `telegram_allowed_user_id` por linha de `organizations`, ou tabela de
+  associação usuário-Telegram ↔ organização). P1 porque vira problema real assim que existir uma
+  segunda organização usando o canal Telegram.
+- [ ] **P2 — chaves estáticas sem prazo de desligamento.** `MPLACAS_OPERATIONS_API_KEY` /
+  `MPLACAS_OPERATIONS_READ_API_KEY` continuam autenticando com `organization_id` ausente e escopo
+  irrestrito — bypass legítimo de todo o isolamento. O PR-8 só instrumentou o uso. Próximo passo:
+  analisar os logs/métricas de `operations_static_key_auth_used` após um período de observação,
+  identificar os consumidores reais, migrá-los para credenciais persistidas com organização, e só
+  então definir a data de remoção das envs. P2 porque depende de dado que ainda está sendo
+  coletado; enquanto isso, o isolamento por organização é uma garantia **condicionada** à ausência
+  dessas envs no ambiente.
 
 ## P1 — Onboarding e gestão de organizações
 
@@ -69,16 +99,19 @@ produto/modelo de dados; PR-9 (ADR-053 + doc) pendente até os anteriores fechar
   já estar implementada no código. Fechar ou reescrever para refletir o estado real — do contrário
   é uma fonte de verdade enganosa para quem só olhar o GitHub.
 
+
 ## Resumo
 
 | Categoria | Concluídos | Parciais | Pendentes |
 |---|---:|---:|---:|
-| P0 (isolamento de dados) | 7 | 0 | 2 |
+| P0 (isolamento de dados) | 10 | 0 | 0 |
+| Backlog de tenancy | 0 | 0 | 2 |
 | P1 (onboarding/organizações) | 0 | 0 | 2 |
 | Dívida de documentação | 0 | 0 | 2 |
 
-**PR-1 a PR-5 concluídos, revisados e publicados** — a invariante de isolamento por organização
-está fechada para todos os routers de dados do sistema. Restam em P0 apenas os dois itens que
-exigem decisão de produto/modelo de dados antes de qualquer código (telegram/operations, PR-6/7) e
-o plano de depreciação das chaves estáticas (PR-8) — nenhum dos três é mais um vazamento de dado
-ativo entre organizações via router de dados, que era o risco original desta seção.
+**P0 fechado.** Os 9 PRs do plano foram concluídos, revisados e publicados: todo router de dado do
+sistema valida a organização do chamador, e a regra é sustentada por um teste estrutural
+(`tests/test_plant_scope_guard.py`) que quebra o CI se uma rota nova sob prefixo de dado esquecer o
+`ScopedPlant`. Não há mais vazamento de dado ativo entre organizações via router — o risco original
+desta seção. O que resta em tenancy são os dois gaps de backlog acima (autenticação por organização
+no Telegram e desligamento das chaves estáticas), ambos rastreados no ADR-053.
