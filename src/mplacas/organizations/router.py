@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.audit.repository import AuditEventRepository
@@ -46,7 +47,25 @@ def _organization_view(record: OrganizationRecord) -> dict[str, object]:
         "active": record.active,
         "created_at": record.created_at,
         "telegram_chat_id": record.telegram_chat_id,
+        "telegram_allowed_user_id": record.telegram_allowed_user_id,
     }
+
+
+class OrganizationUpdateRequest(BaseModel):
+    """Partial update for an organization's Telegram linkage.
+
+    Only ``telegram_chat_id`` and ``telegram_allowed_user_id`` are editable
+    here (name/slug/active are out of scope for this endpoint). A field
+    omitted from the request body is left untouched; a field sent explicitly
+    as ``null`` clears (unlinks) the corresponding column. Both fields default
+    to ``None``, and ``model_fields_set`` (Pydantic's own tracking of which
+    fields were present in the parsed payload) is what distinguishes
+    "omitted" from "sent as null" in ``update_organization`` below — not the
+    field's value itself.
+    """
+
+    telegram_chat_id: int | None = None
+    telegram_allowed_user_id: int | None = None
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -311,6 +330,57 @@ async def get_organization(
         record = await _get_own_or_404(
             session, organization_id, principal.organization_id
         )
+    return _organization_view(record)
+
+
+@router.patch("/{organization_id}")
+async def update_organization(
+    request: Request,
+    organization_id: uuid.UUID,
+    payload: OrganizationUpdateRequest,
+    principal: AdminPrincipal,
+) -> dict[str, object]:
+    """Partially update an organization's Telegram linkage.
+
+    ``AdminPrincipal`` (not ``OrgAdminPrincipal``) plus ``_get_own_or_404``,
+    same as ``get_organization`` above: this lets an organization's own admin
+    self-configure its Telegram linkage while also letting the platform
+    (static operational key, ``organization_id is None``) edit any
+    organization for support/operations — the same "platform sees/edits any,
+    tenant only its own" split already implemented by ``_get_own_or_404``, so
+    no new dependency is needed.
+    """
+    fields_set = payload.model_fields_set
+    async with SessionFactory() as session:
+        record = await _get_own_or_404(
+            session, organization_id, principal.organization_id
+        )
+
+        if "telegram_chat_id" in fields_set:
+            record.telegram_chat_id = payload.telegram_chat_id
+        if "telegram_allowed_user_id" in fields_set:
+            record.telegram_allowed_user_id = payload.telegram_allowed_user_id
+        try:
+            await session.flush()
+        except IntegrityError as exc:
+            # telegram_chat_id is unique across organizations: surface a
+            # conflict rather than a 500 when it is already linked elsewhere.
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="telegram_chat_id is already linked to another organization",
+            ) from exc
+
+        await AuditEventRepository(session).record(
+            request,
+            action="organizations.update",
+            resource_type="organization",
+            resource_id=str(record.id),
+            outcome="SUCCEEDED",
+            details={"fields_updated": sorted(fields_set)},
+        )
+        await session.commit()
+
     return _organization_view(record)
 
 

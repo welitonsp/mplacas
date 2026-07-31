@@ -157,6 +157,10 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
         "organization management (AdminPrincipal), not plant-scoped — "
         "see core.tenancy.AdminPrincipal/PlatformPrincipal"
     ),
+    ("PATCH", "/organizations/{organization_id}"): (
+        "organization management (AdminPrincipal), not plant-scoped — "
+        "see core.tenancy.AdminPrincipal/PlatformPrincipal"
+    ),
     ("POST", "/organizations/{organization_id}/deactivate"): (
         "organization management (PlatformPrincipal), not plant-scoped — "
         "see core.tenancy.AdminPrincipal/PlatformPrincipal"

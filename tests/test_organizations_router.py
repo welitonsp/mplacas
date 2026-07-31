@@ -551,3 +551,177 @@ def test_revoke_invitation_unknown_id_returns_404(monkeypatch, tmp_path) -> None
         headers=_admin_headers(org_id),
     )
     assert response.status_code == 404
+
+
+def test_patch_organization_by_own_org_admin_updates_telegram_fields(
+    monkeypatch, tmp_path
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    response = client.patch(
+        f"/organizations/{org_id}",
+        json={"telegram_chat_id": 123456, "telegram_allowed_user_id": 789},
+        headers=_admin_headers(org_id),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["telegram_chat_id"] == 123456
+    assert body["telegram_allowed_user_id"] == 789
+
+    import asyncio
+
+    async def _fetch():
+        async with factory() as session:
+            return await session.get(OrganizationRecord, org_id)
+
+    record = asyncio.run(_fetch())
+    assert record is not None
+    assert record.telegram_chat_id == 123456
+    assert record.telegram_allowed_user_id == 789
+
+
+def test_patch_organization_by_other_org_admin_returns_404(
+    monkeypatch, tmp_path
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_a_id = _seed_org(factory)
+    org_b_id = _seed_org(factory)
+
+    response = client.patch(
+        f"/organizations/{org_b_id}",
+        json={"telegram_chat_id": 123456},
+        headers=_admin_headers(org_a_id),
+    )
+    assert response.status_code == 404
+
+    import asyncio
+
+    async def _fetch():
+        async with factory() as session:
+            return await session.get(OrganizationRecord, org_b_id)
+
+    record = asyncio.run(_fetch())
+    assert record is not None
+    assert record.telegram_chat_id is None
+
+
+def test_patch_organization_by_platform_updates_any_organization(
+    monkeypatch, tmp_path
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    response = client.patch(
+        f"/organizations/{org_id}",
+        json={"telegram_chat_id": 555},
+        headers={"X-API-Key": "synthetic-admin-key"},
+    )
+    assert response.status_code == 200
+    assert response.json()["telegram_chat_id"] == 555
+
+
+def test_patch_organization_partial_update_does_not_clear_other_field(
+    monkeypatch, tmp_path
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    first = client.patch(
+        f"/organizations/{org_id}",
+        json={"telegram_chat_id": 111, "telegram_allowed_user_id": 222},
+        headers=_admin_headers(org_id),
+    )
+    assert first.status_code == 200
+
+    second = client.patch(
+        f"/organizations/{org_id}",
+        json={"telegram_chat_id": 333},
+        headers=_admin_headers(org_id),
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert body["telegram_chat_id"] == 333
+    assert body["telegram_allowed_user_id"] == 222
+
+
+def test_patch_organization_explicit_null_unlinks_field(monkeypatch, tmp_path) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    first = client.patch(
+        f"/organizations/{org_id}",
+        json={"telegram_chat_id": 111, "telegram_allowed_user_id": 222},
+        headers=_admin_headers(org_id),
+    )
+    assert first.status_code == 200
+
+    second = client.patch(
+        f"/organizations/{org_id}",
+        json={"telegram_chat_id": None},
+        headers=_admin_headers(org_id),
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert body["telegram_chat_id"] is None
+    assert body["telegram_allowed_user_id"] == 222
+
+
+def test_patch_organization_duplicate_telegram_chat_id_returns_409_and_session_stays_usable(
+    monkeypatch, tmp_path
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_a_id = _seed_org(factory)
+    org_b_id = _seed_org(factory)
+
+    linked = client.patch(
+        f"/organizations/{org_a_id}",
+        json={"telegram_chat_id": 999},
+        headers=_admin_headers(org_a_id),
+    )
+    assert linked.status_code == 200
+    assert linked.json()["telegram_chat_id"] == 999
+
+    conflict = client.patch(
+        f"/organizations/{org_b_id}",
+        json={"telegram_chat_id": 999},
+        headers=_admin_headers(org_b_id),
+    )
+    assert conflict.status_code == 409
+
+    import asyncio
+
+    async def _fetch(org_id):
+        async with factory() as session:
+            return await session.get(OrganizationRecord, org_id)
+
+    record_b = asyncio.run(_fetch(org_b_id))
+    assert record_b is not None
+    assert record_b.telegram_chat_id is None
+
+    # The IntegrityError caught above rolled back its own session, not the
+    # process/engine: a fresh PATCH against the same organization right after
+    # must still work, proving no connection/session was left unusable.
+    recovered = client.patch(
+        f"/organizations/{org_b_id}",
+        json={"telegram_chat_id": 1000},
+        headers=_admin_headers(org_b_id),
+    )
+    assert recovered.status_code == 200
+    assert recovered.json()["telegram_chat_id"] == 1000
+
+    record_b_after = asyncio.run(_fetch(org_b_id))
+    assert record_b_after is not None
+    assert record_b_after.telegram_chat_id == 1000
+
+
+def test_patch_organization_requires_admin_not_read(monkeypatch, tmp_path) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    response = client.patch(
+        f"/organizations/{org_id}",
+        json={"telegram_chat_id": 123},
+        headers=_read_headers(org_id),
+    )
+    assert response.status_code == 403
