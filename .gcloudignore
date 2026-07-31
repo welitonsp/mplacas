@@ -14,8 +14,7 @@ __pycache__/
 infra/gcp/config.env
 tests/
 docs/
-storage/
-reports/
+/storage/
 *.db
 *.sqlite3
 *.dump
