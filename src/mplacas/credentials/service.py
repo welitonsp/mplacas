@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE, PlantScope
 from mplacas.core.security import OperationsPrincipal, OperationsRole
+from mplacas.core.tenancy import plant_scope_for_organization_in_session
 from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
 from mplacas.db.models import Plant
 from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
@@ -173,6 +174,10 @@ class CredentialService:
     async def _scope_for_credential(self, record: ApiCredentialRecord) -> PlantScope:
         if record.plant_ids is not None:
             return PlantScope.restricted(uuid.UUID(item) for item in record.plant_ids)
+        if record.organization_id is not None:
+            return await plant_scope_for_organization_in_session(
+                self._session, record.organization_id
+            )
         return UNRESTRICTED_PLANT_SCOPE
 
     async def create(

@@ -182,8 +182,12 @@ def test_user_endpoints_manage_lifecycle(monkeypatch, tmp_path) -> None:
     assert credential.json()["user_id"] == user_id
     secret = credential.json()["secret"]
 
+    # A READ credential bound to an organization without an explicit plant
+    # scope now derives its PlantScope from that organization's own plants
+    # (PR-1 invariant), so it is denied on org-wide, unrestricted-only
+    # endpoints such as /operations/jobs.
     jobs = client.get("/operations/jobs", headers={"X-API-Key": secret})
-    assert jobs.status_code == 200
+    assert jobs.status_code == 403
 
     listed = client.get("/operations/users", headers=admin)
     assert listed.status_code == 200

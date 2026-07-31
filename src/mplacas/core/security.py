@@ -7,12 +7,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from fastapi import Header, HTTPException, Request, status
-from sqlalchemy import select
 
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import JwtError, decode_token
-from mplacas.db.models import Plant
+from mplacas.core.tenancy import plant_scope_for_organization
 
 
 class OperationsRole(StrEnum):
@@ -34,15 +33,6 @@ class OperationsPrincipal:
         return self.role is OperationsRole.ADMIN
 
     def require_plant_access(self, plant_id: uuid.UUID) -> None:
-        # Static operational keys remain truly unrestricted because they are not
-        # organization-bound. Persisted credentials always carry organization_id;
-        # if they do not also carry an explicit plant scope, fail closed until the
-        # route can verify the requested plant belongs to that organization.
-        if self.organization_id is not None and self.plant_scope.plant_ids is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="plant not found",
-            )
         if not self.plant_scope.allows(plant_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -144,20 +134,6 @@ async def _resolve_persisted_credential(
     return principal
 
 
-async def _plant_scope_for_org(org_id: uuid.UUID) -> PlantScope:
-    from mplacas.db.session import SessionFactory
-
-    async with SessionFactory() as session:
-        result = await session.execute(
-            select(Plant.id).where(Plant.organization_id == org_id)
-        )
-        plant_ids = frozenset(row[0] for row in result)
-
-    if not plant_ids:
-        return PlantScope.empty()
-    return PlantScope.restricted(plant_ids)
-
-
 async def _authenticate_bearer(
     token: str,
     *,
@@ -179,7 +155,7 @@ async def _authenticate_bearer(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="admin role required",
         )
-    scope = await _plant_scope_for_org(claims.org_id)
+    scope = await plant_scope_for_organization(claims.org_id)
     return OperationsPrincipal(
         role=OperationsRole(claims.role),
         credential_id=f"user:{claims.sub}",

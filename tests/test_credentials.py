@@ -86,7 +86,10 @@ async def test_create_stores_hash_only_and_resolves_principal() -> None:
 
 
 @pytest.mark.asyncio
-async def test_org_bound_unscoped_credential_denies_blind_plant_access() -> None:
+async def test_org_bound_unscoped_credential_is_restricted_to_org_plants() -> None:
+    """A persisted credential with organization_id and no explicit plant_ids
+    must never resolve to an unrestricted PlantScope; it is derived from the
+    organization's own plants instead (see ADR-052 / PR-1)."""
     factory = await _factory()
     async with factory() as session:
         await _ensure_plants(session, PLANT_A)
@@ -100,11 +103,40 @@ async def test_org_bound_unscoped_credential_denies_blind_plant_access() -> None
         principal = await CredentialService(session).resolve(secret)
 
     assert principal is not None
-    assert principal.plant_scope.is_restricted is False
-    principal.require_unrestricted_access()
+    assert principal.organization_id is not None
+    assert principal.plant_scope.is_restricted is True
+    assert principal.plant_scope.allows(PLANT_A) is True
+    assert principal.plant_scope.allows(PLANT_B) is False
+    principal.require_plant_access(PLANT_A)
     with pytest.raises(HTTPException) as exc_info:
-        principal.require_plant_access(PLANT_A)
+        principal.require_plant_access(PLANT_B)
     assert exc_info.value.status_code == 404
+    with pytest.raises(HTTPException) as global_error:
+        principal.require_unrestricted_access()
+    assert global_error.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_org_bound_admin_credential_without_plants_is_deny_all() -> None:
+    """An organization with no plants yet must deny access rather than grant
+    unrestricted access to an ADMIN credential."""
+    factory = await _factory()
+    async with factory() as session:
+        organization_id = await _ensure_default_organization(session)
+        _, secret = await CredentialService(session).create(
+            name="admin-sem-usinas",
+            role=OperationsRole.ADMIN,
+            organization_id=organization_id,
+        )
+        await session.commit()
+
+    async with factory() as session:
+        principal = await CredentialService(session).resolve(secret)
+
+    assert principal is not None
+    assert principal.organization_id is not None
+    assert principal.plant_scope.is_restricted is True
+    assert principal.plant_scope.allows(PLANT_A) is False
 
 
 @pytest.mark.asyncio
@@ -281,11 +313,15 @@ def test_credential_endpoints_require_admin_and_return_secret_once(
     assert org_scoped.status_code == 201
     db_secret = org_scoped.json()["secret"]
 
+    # An org-bound READ credential without an explicit plant scope now
+    # resolves to that organization's own plants (PR-1 invariant) instead of
+    # UNRESTRICTED_PLANT_SCOPE, so it can no longer reach org-wide,
+    # unrestricted-only endpoints such as /operations/jobs.
     jobs_with_db_credential = client.get(
         "/operations/jobs",
         headers={"X-API-Key": db_secret},
     )
-    assert jobs_with_db_credential.status_code == 200
+    assert jobs_with_db_credential.status_code == 403
 
     admin_denied_for_db_read = client.post(
         "/operations/credentials",
