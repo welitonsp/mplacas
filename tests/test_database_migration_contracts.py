@@ -156,11 +156,11 @@ def test_auth_sessions_rate_limits_and_roles_migration_is_present() -> None:
         ROOT
         / "migrations"
         / "versions"
-        / "20260726_0023_auth_sessions_rate_limits_roles.py"
+        / "20260726_0024_auth_sessions_rate_limits_roles.py"
     ).read_text(encoding="utf-8")
 
-    assert 'revision = "20260726_0023"' in source
-    assert 'down_revision = "20260720_0022"' in source
+    assert 'revision = "20260726_0024"' in source
+    assert 'down_revision = "20260720_0023"' in source
     assert '"auth_sessions"' in source
     assert '"refresh_token_hash"' in source
     assert '"login_rate_limits"' in source
