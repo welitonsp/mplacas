@@ -109,7 +109,7 @@ SPA construída com React 19 + TypeScript + Vite + Tailwind CSS 4, publicada no 
 - Múltiplos usuários com senhas individuais, rastreáveis por `credential_id` na trilha de auditoria
   (ADR-032).
 - `organization_id` prepara o sistema para isolamento completo de dados por organização nos routers
-  (próximo passo: filtrar consultas por `organization_id` do token JWT).
+  — fechado pelo ADR-053 (dependency `ReadPlant`/`AdminPlant`, teste-guarda estrutural).
 - Frontend desacoplado permite atualizações de UI sem redeploy do backend.
 - Tokens curtos (15 min) reduzem a janela de exposição; refresh token in-memory impede persistência
   de credenciais de longa duração no navegador.
@@ -117,9 +117,9 @@ SPA construída com React 19 + TypeScript + Vite + Tailwind CSS 4, publicada no 
 
 ### Negativas / Limites atuais
 
-- `organization_id` ainda não filtra consultas nos routers de dados (plants, billing, reports,
-  intelligence). O isolamento é estrutural no schema, não aplicado nas queries. Aplicação será
-  feita incrementalmente por router.
+- ~~`organization_id` ainda não filtra consultas nos routers de dados~~ — fechado pelo ADR-053:
+  todo router de dado valida a organização do chamador via `ReadPlant`/`AdminPlant`, com teste
+  estrutural (`tests/test_plant_scope_guard.py`) impedindo regressão futura.
 - Refresh token em memória: usuários precisam fazer login ao recarregar a aba — tradeoff de
   segurança intencional versus conveniência.
 - `MPLACAS_JWT_SECRET` precisa ser rotacionado manualmente — rotacionar o secret invalida todos
@@ -132,8 +132,8 @@ SPA construída com React 19 + TypeScript + Vite + Tailwind CSS 4, publicada no 
 
 Rastreados item a item, com evidência de código, em `docs/CHECKLIST_SAAS_MULTITENANCY.md`:
 
-1. Extrair `organization_id` do JWT e propagar como contexto de autorização nos routers de dados
-   (P0 — hoje só `auth/router.py` e `credentials/router.py` filtram por organização).
+1. ~~Extrair `organization_id` do JWT e propagar como contexto de autorização nos routers de
+   dados~~ — concluído, ver ADR-053.
 2. Adicionar endpoint de gerenciamento de organizações (`GET/POST /organizations`).
 3. Implementar fluxo de convite/ativação de usuário.
 
