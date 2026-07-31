@@ -101,11 +101,18 @@ class Settings(BaseSettings):
 
     @property
     def telegram_configured(self) -> bool:
-        return bool(
-            self.telegram_bot_token
-            and self.telegram_webhook_secret
-            and self.telegram_allowed_user_id
-        )
+        """Whether the global Telegram webhook infrastructure is set up.
+
+        ``telegram_allowed_user_id`` is intentionally excluded: since it moved
+        to a per-organization column (``organizations.telegram_allowed_user_id``),
+        it is no longer a global setting and has no bearing on whether the
+        shared bot token / webhook secret infrastructure is ready. Including
+        it here would make this health signal misleading — reporting
+        ``False`` even though every organization is correctly configured via
+        its own column, or ``True`` based on a legacy env var that no
+        organization actually uses.
+        """
+        return bool(self.telegram_bot_token and self.telegram_webhook_secret)
 
     @property
     def telegram_alerts_configured(self) -> bool:
