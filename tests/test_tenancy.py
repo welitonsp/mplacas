@@ -13,8 +13,10 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import mplacas.db.session as db_session
@@ -22,6 +24,7 @@ from mplacas.core import security
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import encode_access_token
 from mplacas.core.security import OperationsRole
+from mplacas.core.tenancy import require_organization_admin, require_platform_admin
 from mplacas.credentials.service import CredentialService
 from mplacas.db.base import Base
 from mplacas.db.models import Plant
@@ -159,3 +162,94 @@ def test_tenancy_resolves_scoped_plant_hints_without_importing_security() -> Non
         timeout=60,
     )
     assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+
+
+# ---------------------------------------------------------------------------
+# PR-1: require_platform_admin / require_organization_admin discrimination
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_static_key_principal_is_platform_admin_not_org_admin(monkeypatch) -> None:
+    """The static operational API key (organization_id=None, unrestricted)
+    is the platform admin: it passes require_platform_admin and gets 409 from
+    require_organization_admin (no organization to administer)."""
+    monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "static-admin-key")
+    get_settings.cache_clear()
+
+    fake_request = SimpleNamespace(
+        state=SimpleNamespace(), method="POST", url=SimpleNamespace(path="/test")
+    )
+    principal = await security.require_operations_key(
+        request=fake_request, authorization=None, x_api_key="static-admin-key"
+    )
+
+    assert principal.organization_id is None
+    assert principal.plant_scope.is_restricted is False
+
+    result = await require_platform_admin(principal)
+    assert result is principal
+
+    with pytest.raises(HTTPException) as exc_info:
+        await require_organization_admin(principal)
+    assert exc_info.value.status_code == 409
+
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_bearer_jwt_principal_is_org_admin_not_platform_admin(monkeypatch) -> None:
+    """A bearer JWT ADMIN principal (organization_id set) passes
+    require_organization_admin and gets 403 from require_platform_admin."""
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret")
+    get_settings.cache_clear()
+    factory = await _factory()
+    monkeypatch.setattr(db_session, "SessionFactory", factory)
+
+    organization_id = await _seed_org_with_plant(factory)
+    token = encode_access_token(uuid.uuid4(), organization_id, OperationsRole.ADMIN.value)
+
+    principal = await security._authenticate_bearer(token, require_admin=True)
+    assert principal is not None
+    assert principal.organization_id == organization_id
+
+    result = await require_organization_admin(principal)
+    assert result is principal
+
+    with pytest.raises(HTTPException) as exc_info:
+        await require_platform_admin(principal)
+    assert exc_info.value.status_code == 403
+
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_persisted_admin_credential_without_plant_ids_passes_org_admin() -> None:
+    """A persisted ADMIN credential with an organization is org-restricted via
+    inheritance (plant_scope.is_restricted is True) but must still pass
+    require_organization_admin: organization_id, not plant-scope granularity,
+    is what identifies "which organization" here."""
+    factory = await _factory()
+    organization_id = await _seed_org_with_plant(factory)
+
+    async with factory() as session:
+        _, secret = await CredentialService(session).create(
+            name="admin-org-2",
+            role=OperationsRole.ADMIN,
+            organization_id=organization_id,
+        )
+        await session.commit()
+
+    async with factory() as session:
+        principal = await CredentialService(session).resolve(secret)
+
+    assert principal is not None
+    assert principal.organization_id == organization_id
+    assert principal.plant_scope.is_restricted is True
+
+    result = await require_organization_admin(principal)
+    assert result is principal
+
+    with pytest.raises(HTTPException) as exc_info:
+        await require_platform_admin(principal)
+    assert exc_info.value.status_code == 403

@@ -199,3 +199,61 @@ async def resolve_admin_plant(
 ReadPlant = Annotated[ScopedPlant, Depends(resolve_read_plant)]
 AdminPlant = Annotated[ScopedPlant, Depends(resolve_admin_plant)]
 AdminPrincipal = Annotated[OperationsPrincipal, Depends(_admin_principal)]
+
+
+# ---------------------------------------------------------------------------
+# Platform vs. organization admin discrimination (PR-1 of the onboarding plan)
+# ---------------------------------------------------------------------------
+#
+# ``AdminPrincipal`` alone only proves the caller holds an ADMIN-role
+# credential; it does not say whether that credential belongs to the
+# platform operator (the static ``MPLACAS_OPERATIONS_API_KEY``, today the only
+# admin principal with no ``organization_id``) or to a tenant organization
+# (bearer JWT or a persisted credential created for a specific organization).
+# The two dependencies below make that distinction explicit for routers that
+# need to tell the two apart, without changing any existing router yet.
+
+
+async def require_platform_admin(
+    principal: Annotated[OperationsPrincipal, Depends(_admin_principal)],
+) -> OperationsPrincipal:
+    """Require an ADMIN principal that belongs to the platform, not a tenant.
+
+    Today, in practice, only the static operational API key qualifies: it is
+    the sole admin principal with no ``organization_id`` and an unrestricted
+    ``PlantScope``. Any principal with an ``organization_id`` set (bearer JWT
+    or persisted credential) is rejected with 403.
+    """
+    if principal.organization_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="this operation requires a platform administrator",
+        )
+    return principal
+
+
+async def require_organization_admin(
+    principal: Annotated[OperationsPrincipal, Depends(_admin_principal)],
+) -> OperationsPrincipal:
+    """Require an ADMIN principal that belongs to a specific organization.
+
+    Accepts any ADMIN principal with ``organization_id`` set, regardless of
+    whether its ``PlantScope`` ended up restricted-by-inheritance (the normal
+    case for a persisted ADMIN credential, which is never plant-restricted
+    explicitly — see ``CredentialService.create``) or otherwise; the
+    presence of ``organization_id`` is what identifies "which organization",
+    not the granularity of the plant scope. Rejects platform principals
+    (``organization_id is None``) with 409, since there is no organization to
+    administer.
+    """
+    if principal.organization_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this operation requires an organization; none can be inferred "
+            "for a platform administrator",
+        )
+    return principal
+
+
+PlatformPrincipal = Annotated[OperationsPrincipal, Depends(require_platform_admin)]
+OrgAdminPrincipal = Annotated[OperationsPrincipal, Depends(require_organization_admin)]
