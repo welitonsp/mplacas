@@ -157,6 +157,18 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
         "organization management (PlatformPrincipal), not plant-scoped — "
         "see core.tenancy.AdminPrincipal/PlatformPrincipal"
     ),
+    ("POST", "/organizations/invitations"): (
+        "invitation management (OrgAdminPrincipal), not plant-scoped — "
+        "see core.tenancy.OrgAdminPrincipal"
+    ),
+    ("GET", "/organizations/invitations"): (
+        "invitation management (OrgAdminPrincipal), not plant-scoped — "
+        "see core.tenancy.OrgAdminPrincipal"
+    ),
+    ("POST", "/organizations/invitations/{invitation_id}/revoke"): (
+        "invitation management (OrgAdminPrincipal), not plant-scoped — "
+        "see core.tenancy.OrgAdminPrincipal"
+    ),
     ("POST", "/telegram/webhook"): (
         "webhook has no OperationsPrincipal — authenticated via Telegram's "
         "shared secret header + a single global telegram_allowed_user_id, "

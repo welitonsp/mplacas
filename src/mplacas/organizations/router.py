@@ -12,9 +12,10 @@ from mplacas.audit.repository import AuditEventRepository
 from mplacas.auth.session_service import AuthSessionService
 from mplacas.core.config import get_settings
 from mplacas.core.principal import OperationsRole
-from mplacas.core.tenancy import AdminPrincipal, PlatformPrincipal
+from mplacas.core.tenancy import AdminPrincipal, OrgAdminPrincipal, PlatformPrincipal
 from mplacas.db.session import SessionFactory
 from mplacas.organizations.db_models import OrganizationRecord
+from mplacas.organizations.invitation_db_models import UserInvitationRecord
 from mplacas.organizations.invitation_service import InvitationError, InvitationService
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
@@ -28,6 +29,15 @@ class OrganizationCreateRequest(BaseModel):
     admin_username: str = Field(min_length=1, max_length=80)
 
 
+class InvitationCreateRequest(BaseModel):
+    # Deliberately no ``organization_id`` field: it is always derived from
+    # ``principal.organization_id`` (see ``create_invitation``), never
+    # accepted from the request body, following the same convention as
+    # ``credentials.router._resolve_organization_id``.
+    username: str = Field(min_length=1, max_length=80)
+    role: OperationsRole
+
+
 def _organization_view(record: OrganizationRecord) -> dict[str, object]:
     return {
         "id": str(record.id),
@@ -36,6 +46,49 @@ def _organization_view(record: OrganizationRecord) -> dict[str, object]:
         "active": record.active,
         "created_at": record.created_at,
         "telegram_chat_id": record.telegram_chat_id,
+    }
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _invitation_status(record: UserInvitationRecord) -> str:
+    """Derive a display status for an invitation, never persisted as a column.
+
+    Precedence when more than one condition holds at once: ``ACCEPTED`` beats
+    everything else (an invitation that was consumed is settled, regardless of
+    ``revoked_at``/``expires_at`` afterwards); otherwise ``REVOKED`` beats
+    ``EXPIRED`` (an admin's explicit revoke is the more specific, more recent
+    signal than the invitation simply having aged out).
+    """
+    if record.accepted_at is not None:
+        return "ACCEPTED"
+    if record.revoked_at is not None:
+        return "REVOKED"
+    if _as_utc(record.expires_at) <= datetime.now(timezone.utc):
+        return "EXPIRED"
+    return "PENDING"
+
+
+def _invitation_view(record: UserInvitationRecord) -> dict[str, object]:
+    """Render an invitation for API responses.
+
+    Never includes ``token`` or ``token_hash``: the plaintext token is only
+    ever returned once, at creation time, by ``create_invitation`` itself
+    (added to the dict there, not here), and the hash is never exposed.
+    """
+    return {
+        "id": str(record.id),
+        "username": record.username,
+        "role": record.role,
+        "created_at": record.created_at,
+        "expires_at": record.expires_at,
+        "accepted_at": record.accepted_at,
+        "revoked_at": record.revoked_at,
+        "status": _invitation_status(record),
     }
 
 
@@ -139,6 +192,114 @@ async def list_organizations(principal: AdminPrincipal) -> dict[str, object]:
         "count": len(records),
         "items": [_organization_view(record) for record in records],
     }
+
+
+@router.post("/invitations", status_code=status.HTTP_201_CREATED)
+async def create_invitation(
+    request: Request,
+    payload: InvitationCreateRequest,
+    principal: OrgAdminPrincipal,
+) -> dict[str, object]:
+    # ``require_organization_admin`` (behind ``OrgAdminPrincipal``) guarantees
+    # ``organization_id`` is set; ``organization_id`` is never accepted from
+    # the request body (see ``InvitationCreateRequest``).
+    organization_id = principal.organization_id
+    assert organization_id is not None
+
+    settings = get_settings()
+    async with SessionFactory() as session:
+        try:
+            invitation, token = await InvitationService(session).create(
+                organization_id=organization_id,
+                username=payload.username,
+                role=payload.role,
+                created_by_user_id=None,
+                ttl_seconds=settings.auth_invitation_ttl_seconds,
+            )
+        except InvitationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
+        await AuditEventRepository(session).record(
+            request,
+            action="invitations.create",
+            resource_type="user_invitation",
+            resource_id=str(invitation.id),
+            outcome="SUCCEEDED",
+            details={"username": invitation.username, "role": invitation.role},
+        )
+        await session.commit()
+
+    view = _invitation_view(invitation)
+    view["token"] = token
+    view["token_notice"] = "store this token now; it is not retrievable again"
+    return view
+
+
+@router.get("/invitations")
+async def list_invitations(principal: OrgAdminPrincipal) -> dict[str, object]:
+    organization_id = principal.organization_id
+    assert organization_id is not None
+
+    async with SessionFactory() as session:
+        records = await InvitationService(session).list(organization_id=organization_id)
+    return {
+        "count": len(records),
+        "items": [_invitation_view(record) for record in records],
+    }
+
+
+@router.post("/invitations/{invitation_id}/revoke")
+async def revoke_invitation(
+    request: Request,
+    invitation_id: uuid.UUID,
+    principal: OrgAdminPrincipal,
+) -> dict[str, object]:
+    organization_id = principal.organization_id
+    assert organization_id is not None
+
+    async with SessionFactory() as session:
+        revoked = await InvitationService(session).revoke(
+            invitation_id=invitation_id,
+            organization_id=organization_id,
+        )
+        if not revoked:
+            # Either the invitation does not exist, or it belongs to another
+            # organization: 404 either way, so the response never reveals
+            # whether an invitation with that id exists for another tenant
+            # (same convention as ``_get_own_or_404`` above).
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="invitation not found",
+            )
+
+        record = await session.get(UserInvitationRecord, invitation_id)
+        assert record is not None
+
+        await AuditEventRepository(session).record(
+            request,
+            action="invitations.revoke",
+            resource_type="user_invitation",
+            resource_id=str(invitation_id),
+            outcome="SUCCEEDED",
+            details={"username": record.username},
+        )
+        await session.commit()
+
+    return _invitation_view(record)
+
+
+# ---------------------------------------------------------------------------
+# ``/{organization_id}`` routes: registered after the ``/invitations`` routes
+# above. FastAPI/Starlette matches routes in registration order and, absent
+# an explicit ``:uuid`` path converter, compiles ``{organization_id}`` to a
+# generic ``[^/]+`` regex — so if this route were registered first, a request
+# to ``/organizations/invitations`` would match here instead, with
+# ``organization_id="invitations"`` failing UUID validation (422) rather than
+# reaching the invitations routes.
+# ---------------------------------------------------------------------------
 
 
 @router.get("/{organization_id}")

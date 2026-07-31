@@ -327,3 +327,227 @@ def test_post_organizations_requires_platform_principal_not_read(
         json={"name": "X", "slug": "x", "admin_username": "a@b.com"},
     )
     assert unauthorized.status_code == 401
+
+
+def _seed_org(factory) -> uuid.UUID:
+    import asyncio
+
+    slug = f"tenant-{uuid.uuid4().hex[:12]}"
+
+    async def _seed() -> uuid.UUID:
+        async with factory() as session:
+            org = OrganizationRecord(name="Tenant", slug=slug, active=True)
+            session.add(org)
+            await session.flush()
+            await session.commit()
+            return org.id
+
+    return asyncio.run(_seed())
+
+
+def _admin_headers(org_id: uuid.UUID) -> dict[str, str]:
+    token = encode_access_token(uuid.uuid4(), org_id, OperationsRole.ADMIN.value)
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _read_headers(org_id: uuid.UUID) -> dict[str, str]:
+    token = encode_access_token(uuid.uuid4(), org_id, OperationsRole.READ.value)
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_post_invitations_creates_for_own_organization_ignoring_body_org_id(
+    monkeypatch, tmp_path
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    response = client.post(
+        "/organizations/invitations",
+        json={
+            "username": "new-user@tenant.example",
+            "role": "READ",
+            # Hypothetical attempt to target another organization: must be
+            # ignored, since ``InvitationCreateRequest`` has no such field.
+            "organization_id": str(uuid.uuid4()),
+        },
+        headers=_admin_headers(org_id),
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["username"] == "new-user@tenant.example"
+    assert body["role"] == "READ"
+    assert "token" in body and body["token"]
+    assert body["token_notice"]
+
+    import asyncio
+
+    from mplacas.organizations.invitation_db_models import UserInvitationRecord
+
+    async def _fetch():
+        async with factory() as session:
+            return await session.get(UserInvitationRecord, uuid.UUID(body["id"]))
+
+    record = asyncio.run(_fetch())
+    assert record is not None
+    assert record.organization_id == org_id
+
+
+def test_post_invitations_requires_admin_not_read(monkeypatch, tmp_path) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    response = client.post(
+        "/organizations/invitations",
+        json={"username": "new-user@tenant.example", "role": "READ"},
+        headers=_read_headers(org_id),
+    )
+    assert response.status_code == 403
+
+
+def test_get_invitations_never_includes_token_or_hash(monkeypatch, tmp_path) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    create_response = client.post(
+        "/organizations/invitations",
+        json={"username": "new-user@tenant.example", "role": "READ"},
+        headers=_admin_headers(org_id),
+    )
+    assert create_response.status_code == 201
+
+    list_response = client.get(
+        "/organizations/invitations", headers=_admin_headers(org_id)
+    )
+    assert list_response.status_code == 200
+    items = list_response.json()["items"]
+    assert len(items) == 1
+    keys = set(items[0].keys())
+    assert "token" not in keys
+    assert "token_hash" not in keys
+
+
+def test_get_invitations_derives_status_for_all_four_cases(
+    monkeypatch, tmp_path
+) -> None:
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+
+    from mplacas.organizations.invitation_db_models import UserInvitationRecord
+    from mplacas.organizations.invitation_service import hash_invitation_token
+
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    now = datetime.now(timezone.utc)
+
+    async def _seed_invitations() -> None:
+        async with factory() as session:
+            pending = UserInvitationRecord(
+                organization_id=org_id,
+                username="pending@tenant.example",
+                role=OperationsRole.READ.value,
+                token_hash=hash_invitation_token("pending-token"),
+                expires_at=now + timedelta(days=1),
+            )
+            accepted = UserInvitationRecord(
+                organization_id=org_id,
+                username="accepted@tenant.example",
+                role=OperationsRole.READ.value,
+                token_hash=hash_invitation_token("accepted-token"),
+                expires_at=now + timedelta(days=1),
+                accepted_at=now,
+            )
+            revoked = UserInvitationRecord(
+                organization_id=org_id,
+                username="revoked@tenant.example",
+                role=OperationsRole.READ.value,
+                token_hash=hash_invitation_token("revoked-token"),
+                expires_at=now + timedelta(days=1),
+                revoked_at=now,
+            )
+            expired = UserInvitationRecord(
+                organization_id=org_id,
+                username="expired@tenant.example",
+                role=OperationsRole.READ.value,
+                token_hash=hash_invitation_token("expired-token"),
+                expires_at=now - timedelta(days=1),
+            )
+            session.add_all([pending, accepted, revoked, expired])
+            await session.flush()
+            await session.commit()
+
+    asyncio.run(_seed_invitations())
+
+    response = client.get(
+        "/organizations/invitations", headers=_admin_headers(org_id)
+    )
+    assert response.status_code == 200
+    by_username = {item["username"]: item["status"] for item in response.json()["items"]}
+    assert by_username["pending@tenant.example"] == "PENDING"
+    assert by_username["accepted@tenant.example"] == "ACCEPTED"
+    assert by_username["revoked@tenant.example"] == "REVOKED"
+    assert by_username["expired@tenant.example"] == "EXPIRED"
+
+
+def test_invitations_isolated_between_organizations(monkeypatch, tmp_path) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_a_id = _seed_org(factory)
+    org_b_id = _seed_org(factory)
+
+    create_response = client.post(
+        "/organizations/invitations",
+        json={"username": "user@org-b.example", "role": "READ"},
+        headers=_admin_headers(org_b_id),
+    )
+    assert create_response.status_code == 201
+    invitation_id = create_response.json()["id"]
+
+    list_response = client.get(
+        "/organizations/invitations", headers=_admin_headers(org_a_id)
+    )
+    assert list_response.status_code == 200
+    assert list_response.json()["items"] == []
+
+    revoke_response = client.post(
+        f"/organizations/invitations/{invitation_id}/revoke",
+        headers=_admin_headers(org_a_id),
+    )
+    assert revoke_response.status_code == 404
+
+
+def test_revoke_invitation_marks_revoked_and_updates_status(
+    monkeypatch, tmp_path
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    create_response = client.post(
+        "/organizations/invitations",
+        json={"username": "user@tenant.example", "role": "READ"},
+        headers=_admin_headers(org_id),
+    )
+    invitation_id = create_response.json()["id"]
+
+    revoke_response = client.post(
+        f"/organizations/invitations/{invitation_id}/revoke",
+        headers=_admin_headers(org_id),
+    )
+    assert revoke_response.status_code == 200
+    assert revoke_response.json()["status"] == "REVOKED"
+
+    list_response = client.get(
+        "/organizations/invitations", headers=_admin_headers(org_id)
+    )
+    items = list_response.json()["items"]
+    assert items[0]["status"] == "REVOKED"
+
+
+def test_revoke_invitation_unknown_id_returns_404(monkeypatch, tmp_path) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    response = client.post(
+        f"/organizations/invitations/{uuid.uuid4()}/revoke",
+        headers=_admin_headers(org_id),
+    )
+    assert response.status_code == 404
