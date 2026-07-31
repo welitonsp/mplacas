@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     auth_login_max_attempts: int = 5
     auth_login_window_seconds: int = 900
     auth_login_lockout_seconds: int = 900
+    auth_invitation_ttl_seconds: int = 259_200
     cors_allowed_origins: str | None = None
 
     @property
@@ -151,6 +152,7 @@ class Settings(BaseSettings):
         "auth_login_max_attempts",
         "auth_login_window_seconds",
         "auth_login_lockout_seconds",
+        "auth_invitation_ttl_seconds",
     )
     @classmethod
     def _validate_positive_auth_value(cls, value: int) -> int:
