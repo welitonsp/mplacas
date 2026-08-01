@@ -75,6 +75,10 @@ interface AnomalyDailyPoint {
   expected_production_kwh: MetricValue
   level: AnomalyLevel
   deviation_percent: MetricValue
+  // Preenchido só quando a usina tem coordenadas configuradas (coleta Open-Meteo
+  // ativa). Em qualquer organização nova vem `null` — todo consumidor deste campo
+  // precisa tratar ausência sem quebrar (ver YieldCard e overlay de irradiância).
+  irradiation_kwh_m2: MetricValue
 }
 
 interface AnomalyDashboardResponse {
@@ -175,6 +179,7 @@ function parseAnomalyDaily(value: unknown): AnomalyDailyPoint {
     expected_production_kwh: metricValue(value, 'expected_production_kwh'),
     level: requireAnomalyLevel(value, 'level'),
     deviation_percent: metricValue(value, 'deviation_percent'),
+    irradiation_kwh_m2: metricValue(value, 'irradiation_kwh_m2'),
   }
 }
 
@@ -269,6 +274,56 @@ function clampPercent(value: number): number {
 // configurável por usina na tela; quando o backend expuser esse dado por
 // planta, substituir por um valor vindo da API em vez desta constante fixa.
 const EXPECTED_DAILY_PRODUCTION_KWH = 18.7
+
+// Rendimento = produção real (kWh) / irradiância (kWh/m²) — kWh gerados por
+// cada kWh/m² de sol recebido. É a métrica que separa "problema na usina" de
+// "estava nublado": produção baixa com irradiância baixa é dia nublado (normal),
+// produção baixa com irradiância alta é problema real. Calculado 100% no
+// frontend a partir do `daily` que a API já retorna — sem endpoint novo.
+interface DayYieldInfo {
+  date: string
+  yieldValue: number
+  deviationPercent: number
+}
+
+interface YieldStats {
+  periodYield: number | null
+  days: DayYieldInfo[]
+}
+
+// Limiar para marcar um dia como "rendimento atípico" em relação à média do
+// período. Referência: os dois exemplos reais desta usina que motivaram a
+// feature têm desvio de -33% e +27% — 20% cobre esses casos com folga sem
+// sinalizar ruído normal de dia a dia.
+const YIELD_ATYPICAL_THRESHOLD_PERCENT = 20
+
+function computeYieldStats(daily: AnomalyDailyPoint[]): YieldStats {
+  const pairs = daily
+    .map((d) => ({
+      date: d.date,
+      actual: toNumber(d.actual_production_kwh),
+      irradiation: toNumber(d.irradiation_kwh_m2),
+    }))
+    .filter(
+      (p): p is { date: string; actual: number; irradiation: number } =>
+        p.actual != null && p.actual > 0 && p.irradiation != null && p.irradiation > 0
+    )
+
+  if (pairs.length === 0) return { periodYield: null, days: [] }
+
+  const totalActual = pairs.reduce((sum, p) => sum + p.actual, 0)
+  const totalIrradiation = pairs.reduce((sum, p) => sum + p.irradiation, 0)
+  if (totalIrradiation <= 0) return { periodYield: null, days: [] }
+
+  const periodYield = totalActual / totalIrradiation
+  const days = pairs.map((p) => {
+    const yieldValue = p.actual / p.irradiation
+    const deviationPercent = ((yieldValue - periodYield) / periodYield) * 100
+    return { date: p.date, yieldValue, deviationPercent }
+  })
+
+  return { periodYield, days }
+}
 
 function formatShortDate(isoDate: string): string {
   const [, month, day] = isoDate.split('-')
@@ -937,6 +992,38 @@ function ProductionHistoryChart({
   const activeDay = activeIndex != null ? daily[activeIndex] : daily[daily.length - 1]
   const activeSeverity = levelSeverity(activeDay.level)
 
+  // Irradiância só vem preenchida quando a usina tem coordenadas configuradas
+  // (coleta Open-Meteo ativa). Overlay e legenda somem por completo quando o
+  // dado não existe — sem quebrar o gráfico de produção que já funcionava.
+  const irradiationValues = daily.map((d) => toNumber(d.irradiation_kwh_m2))
+  const hasIrradiation = irradiationValues.some((v) => v != null)
+  const maxIrradiationScale = hasIrradiation
+    ? Math.max(...irradiationValues.filter((v): v is number => v != null), 0.1) * 1.15
+    : 0
+
+  // Escala própria (0–maxIrradiationScale) desenhada como polilinha num eixo
+  // Y independente do das barras de produção — kWh e kWh/m² são grandezas
+  // diferentes, não dá pra comparar magnitude num eixo único (ver skill dataviz).
+  function buildIrradiationPath(): string {
+    let d = ''
+    let drawing = false
+    irradiationValues.forEach((v, i) => {
+      if (v == null) {
+        drawing = false
+        return
+      }
+      const x = i + 0.5
+      const y = 100 - clampPercent((v / maxIrradiationScale) * 100)
+      d += `${drawing ? 'L' : 'M'}${x} ${y} `
+      drawing = true
+    })
+    return d.trim()
+  }
+
+  const yieldStats = computeYieldStats(daily)
+  const activeIrradiation = toNumber(activeDay.irradiation_kwh_m2)
+  const activeYieldInfo = yieldStats.days.find((d) => d.date === activeDay.date) ?? null
+
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -963,6 +1050,12 @@ function ProductionHistoryChart({
             <span className="h-0 w-3 border-t border-dashed border-gray-400" />
             Esperado
           </span>
+          {hasIrradiation && (
+            <span className="inline-flex items-center gap-1">
+              <span className="h-0 w-3 border-t-2 border-[var(--color-data-secondary)]" />
+              Irradiância solar — eixo à direita, kWh/m²
+            </span>
+          )}
         </div>
       </div>
 
@@ -975,10 +1068,32 @@ function ProductionHistoryChart({
       )}
 
       <div className="mt-4 overflow-x-auto">
-        <div
-          className="flex items-end gap-[2px]"
-          style={{ minWidth: `${daily.length * 8}px`, height: '160px' }}
-        >
+        <div className="relative" style={{ minWidth: `${daily.length * 8}px` }}>
+          {hasIrradiation && (
+            <>
+              <span className="pointer-events-none absolute right-0 top-0 z-10 text-[10px] font-medium text-[var(--color-data-secondary)]">
+                {formatNumber(maxIrradiationScale, 1)} kWh/m²
+              </span>
+              <span className="pointer-events-none absolute right-0 bottom-0 z-10 text-[10px] font-medium text-[var(--color-data-secondary)]">
+                0 kWh/m²
+              </span>
+              <svg
+                className="pointer-events-none absolute inset-0 h-full w-full"
+                viewBox={`0 0 ${daily.length} 100`}
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <path
+                  d={buildIrradiationPath()}
+                  fill="none"
+                  stroke="var(--color-data-secondary)"
+                  strokeWidth="1.5"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
+            </>
+          )}
+          <div className="flex items-end gap-[2px]" style={{ height: '160px' }}>
           {daily.map((d, i) => {
             const actual = toNumber(d.actual_production_kwh) ?? 0
             const expected = toNumber(d.expected_production_kwh) ?? 0
@@ -1014,6 +1129,7 @@ function ProductionHistoryChart({
               </button>
             )
           })}
+          </div>
         </div>
       </div>
 
@@ -1041,7 +1157,80 @@ function ProductionHistoryChart({
           <span className={`h-1.5 w-1.5 rounded-full ${SEVERITY_DOT[activeSeverity]}`} />
           {LEVEL_LABEL[activeDay.level]}
         </span>
+        {activeIrradiation != null && (
+          <span>
+            Irradiância:{' '}
+            <strong className="text-[var(--color-data-secondary)]">
+              {formatNumber(activeIrradiation, 2)} kWh/m²
+            </strong>
+          </span>
+        )}
+        {activeYieldInfo && (
+          <span>
+            Rendimento:{' '}
+            <strong className="text-[var(--color-data-secondary)]">
+              {formatNumber(activeYieldInfo.yieldValue, 2)} kWh por kWh/m²
+            </strong>{' '}
+            <span className="text-gray-400">
+              ({activeYieldInfo.deviationPercent > 0 ? '+' : ''}
+              {formatNumber(activeYieldInfo.deviationPercent, 0)}% vs. média do período)
+            </span>
+          </span>
+        )}
       </div>
+    </div>
+  )
+}
+
+function YieldCard({ daily }: { daily: AnomalyDailyPoint[] }) {
+  const { periodYield, days } = computeYieldStats(daily)
+
+  // Sem irradiância disponível (usina sem coordenadas configuradas), o card
+  // simplesmente não existe — rendimento não faz sentido sem o denominador.
+  if (periodYield == null) return null
+
+  const atypicalDays = days
+    .filter((d) => Math.abs(d.deviationPercent) >= YIELD_ATYPICAL_THRESHOLD_PERCENT)
+    .sort((a, b) => Math.abs(b.deviationPercent) - Math.abs(a.deviationPercent))
+    .slice(0, 3)
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+        Rendimento do período
+      </p>
+      <p className="mt-1 text-[11px] text-gray-400">kWh gerados por kWh/m² de sol recebido</p>
+      <p className="mt-2 text-2xl font-semibold text-[var(--color-data-secondary)]">
+        {formatNumber(periodYield, 2)}
+        <span className="ml-1 text-sm font-normal text-gray-500">kWh/kWh·m²</span>
+      </p>
+
+      {atypicalDays.length === 0 ? (
+        <p className="mt-4 text-xs text-gray-500">
+          Rendimento estável — nenhum dia com desvio relevante em relação à média do período.
+        </p>
+      ) : (
+        <>
+          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-gray-500">
+            Dias com rendimento fora do padrão
+          </p>
+          <ul className="mt-2 space-y-2 text-xs text-gray-600">
+            {atypicalDays.map((d) => (
+              <li key={d.date} className="flex items-center justify-between gap-2">
+                <span className="font-medium text-gray-900">{formatShortDate(d.date)}</span>
+                <span>
+                  {d.deviationPercent > 0 ? 'acima' : 'abaixo'} da média em{' '}
+                  <strong className="text-gray-900">{formatNumber(Math.abs(d.deviationPercent), 0)}%</strong>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-[11px] text-gray-400">
+            Rendimento bem abaixo da média com sol disponível costuma indicar problema real na
+            usina; bem acima costuma indicar dia de céu limpo apesar de pouca produção esperada.
+          </p>
+        </>
+      )}
     </div>
   )
 }
@@ -1276,10 +1465,19 @@ export function DashboardPage() {
                   <div className="h-40 w-full rounded bg-gray-100" />
                 </div>
               ) : anomalyState.data ? (
-                <ProductionHistoryChart
-                  daily={anomalyState.data.daily}
-                  currentStreakDays={anomalyState.data.current_streak_days}
-                />
+                <div
+                  className={
+                    anomalyState.data.daily.some((d) => toNumber(d.irradiation_kwh_m2) != null)
+                      ? 'grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]'
+                      : ''
+                  }
+                >
+                  <ProductionHistoryChart
+                    daily={anomalyState.data.daily}
+                    currentStreakDays={anomalyState.data.current_streak_days}
+                  />
+                  <YieldCard daily={anomalyState.data.daily} />
+                </div>
               ) : (
                 <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
