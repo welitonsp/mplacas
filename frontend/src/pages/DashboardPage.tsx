@@ -34,9 +34,26 @@ interface ExecutiveCycle {
   indicators: ExecutiveIndicators
 }
 
+type TrendDirection = 'UP' | 'DOWN' | 'STABLE'
+
+interface TrendMetric {
+  absolute_delta: MetricValue
+  percent_delta: MetricValue
+  direction: TrendDirection
+}
+
+interface TrendMetrics {
+  production: TrendMetric
+  total_consumption: TrendMetric
+  imported_energy: TrendMetric
+  self_sufficiency_delta_points: MetricValue
+  health_score_delta: MetricValue
+}
+
 interface ExecutiveTrend {
   current_reference_month: string
   previous_reference_month: string
+  metrics: TrendMetrics
 }
 
 interface ExecutiveDashboardResponse {
@@ -46,6 +63,26 @@ interface ExecutiveDashboardResponse {
   priority_actions: string[]
   current_cycle: ExecutiveCycle
   trend: ExecutiveTrend | null
+}
+
+// Vocabulário compartilhado com o backend (ver intelligence/anomaly_engine.py::AnomalyLevel).
+type AnomalyLevel = 'NORMAL' | 'ATTENTION' | 'ANOMALY' | 'CRITICAL'
+const ANOMALY_LEVELS: ReadonlySet<string> = new Set(['NORMAL', 'ATTENTION', 'ANOMALY', 'CRITICAL'])
+
+interface AnomalyDailyPoint {
+  date: string
+  actual_production_kwh: MetricValue
+  expected_production_kwh: MetricValue
+  level: AnomalyLevel
+  deviation_percent: MetricValue
+}
+
+interface AnomalyDashboardResponse {
+  plant_id: string
+  days_analyzed: number
+  current_streak_days: number
+  worst_level: AnomalyLevel
+  daily: AnomalyDailyPoint[]
 }
 
 interface FetchState {
@@ -85,13 +122,72 @@ function numberValue(source: Record<string, unknown>, key: string): number {
   throw new Error(`Resposta inválida da API: ${key}`)
 }
 
+const TREND_DIRECTIONS: ReadonlySet<string> = new Set(['UP', 'DOWN', 'STABLE'])
+
+function requireDirection(source: Record<string, unknown>, key: string): TrendDirection {
+  const value = source[key]
+  if (typeof value !== 'string' || !TREND_DIRECTIONS.has(value)) {
+    throw new Error(`Resposta inválida da API: ${key}`)
+  }
+  return value as TrendDirection
+}
+
+function parseTrendMetric(source: Record<string, unknown>, key: string): TrendMetric {
+  const metric = requireRecord(source, key)
+  return {
+    absolute_delta: metricValue(metric, 'absolute_delta'),
+    percent_delta: metricValue(metric, 'percent_delta'),
+    direction: requireDirection(metric, 'direction'),
+  }
+}
+
 function optionalTrend(source: Record<string, unknown>): ExecutiveTrend | null {
   const trend = source.trend
   if (trend === null) return null
   if (!isRecord(trend)) throw new Error('Resposta inválida da API: trend')
+  const metrics = requireRecord(trend, 'metrics')
   return {
     current_reference_month: requireString(trend, 'current_reference_month'),
     previous_reference_month: requireString(trend, 'previous_reference_month'),
+    metrics: {
+      production: parseTrendMetric(metrics, 'production'),
+      total_consumption: parseTrendMetric(metrics, 'total_consumption'),
+      imported_energy: parseTrendMetric(metrics, 'imported_energy'),
+      self_sufficiency_delta_points: metricValue(metrics, 'self_sufficiency_delta_points'),
+      health_score_delta: metricValue(metrics, 'health_score_delta'),
+    },
+  }
+}
+
+function requireAnomalyLevel(source: Record<string, unknown>, key: string): AnomalyLevel {
+  const value = source[key]
+  if (typeof value !== 'string' || !ANOMALY_LEVELS.has(value)) {
+    throw new Error(`Resposta inválida da API: ${key}`)
+  }
+  return value as AnomalyLevel
+}
+
+function parseAnomalyDaily(value: unknown): AnomalyDailyPoint {
+  if (!isRecord(value)) throw new Error('Resposta inválida da API: daily')
+  return {
+    date: requireString(value, 'date'),
+    actual_production_kwh: metricValue(value, 'actual_production_kwh'),
+    expected_production_kwh: metricValue(value, 'expected_production_kwh'),
+    level: requireAnomalyLevel(value, 'level'),
+    deviation_percent: metricValue(value, 'deviation_percent'),
+  }
+}
+
+function parseAnomalyDashboard(payload: unknown): AnomalyDashboardResponse {
+  if (!isRecord(payload)) throw new Error('Resposta inválida da API.')
+  const daily = payload.daily
+  if (!Array.isArray(daily)) throw new Error('Resposta inválida da API: daily')
+  return {
+    plant_id: requireString(payload, 'plant_id'),
+    days_analyzed: numberValue(payload, 'days_analyzed'),
+    current_streak_days: numberValue(payload, 'current_streak_days'),
+    worst_level: requireAnomalyLevel(payload, 'worst_level'),
+    daily: daily.map(parseAnomalyDaily),
   }
 }
 
@@ -167,6 +263,19 @@ function clampPercent(value: number): number {
   return Math.min(Math.max(value, 0), 100)
 }
 
+// Produção diária esperada usada como referência para o cálculo de anomalias
+// (GET /energy/anomalies/latest). Baseada no orçamento de geração de 562 kWh/mês
+// do relatório SolarView desta usina (562/30 ≈ 18,7 kWh/dia) — ainda não é
+// configurável por usina na tela; quando o backend expuser esse dado por
+// planta, substituir por um valor vindo da API em vez desta constante fixa.
+const EXPECTED_DAILY_PRODUCTION_KWH = 18.7
+
+function formatShortDate(isoDate: string): string {
+  const [, month, day] = isoDate.split('-')
+  if (!month || !day) return isoDate
+  return `${day}/${month}`
+}
+
 // Status é calculado no backend (ver intelligence/executive_service.py) — o front
 // apenas mapeia o mesmo vocabulário para rótulo pt-BR e cor de severidade, sem
 // reimplementar os limiares de health_score.
@@ -213,6 +322,46 @@ const SEVERITY_DOT: Record<Severity, string> = {
   warning: 'bg-[var(--color-warning)]',
   danger: 'bg-[var(--color-danger)]',
   neutral: 'bg-gray-400',
+}
+
+const LEVEL_LABEL: Record<AnomalyLevel, string> = {
+  NORMAL: 'Normal',
+  ATTENTION: 'Atenção',
+  ANOMALY: 'Anomalia',
+  CRITICAL: 'Crítico',
+}
+
+// NORMAL = produção dentro do esperado (bom). ATTENTION = desvio leve.
+// ANOMALY/CRITICAL = desvio relevante — mesma cor de alerta para os dois,
+// diferenciados pelo rótulo textual (ver LEVEL_LABEL), sem inventar um quinto tom.
+function levelSeverity(level: AnomalyLevel): Severity {
+  if (level === 'NORMAL') return 'success'
+  if (level === 'ATTENTION') return 'warning'
+  return 'danger'
+}
+
+type TrendMetricKey = 'production' | 'total_consumption' | 'imported_energy'
+
+// O sentido de "bom"/"ruim" depende da métrica: produção subir é bom, energia
+// importada subir é ruim, e consumo total não tem um sentido óbvio de bom/ruim
+// (não pintamos essa métrica). Não usar DOWN=vermelho/UP=verde de forma cega.
+const GOOD_DIRECTION: Record<TrendMetricKey, TrendDirection | null> = {
+  production: 'UP',
+  imported_energy: 'DOWN',
+  total_consumption: null,
+}
+
+function trendSeverity(metricKey: TrendMetricKey, direction: TrendDirection): Severity {
+  const good = GOOD_DIRECTION[metricKey]
+  if (good === null || direction === 'STABLE') return 'neutral'
+  return direction === good ? 'success' : 'danger'
+}
+
+const DIRECTION_SYMBOL: Record<TrendDirection, string> = { UP: '▲', DOWN: '▼', STABLE: '▬' }
+const DIRECTION_TEXT: Record<TrendDirection, string> = {
+  UP: 'aumentou',
+  DOWN: 'diminuiu',
+  STABLE: 'estável',
 }
 
 function SectionTitle({ children }: { children: string }) {
@@ -409,6 +558,231 @@ function QualityBanner({ quality }: { quality: CycleQuality }) {
   )
 }
 
+function TrendMetricItem({
+  label,
+  metric,
+  metricKey,
+  unit,
+}: {
+  label: string
+  metric: TrendMetric
+  metricKey: TrendMetricKey
+  unit: string
+}) {
+  const severity = trendSeverity(metricKey, metric.direction)
+  const absolute = toNumber(metric.absolute_delta)
+  const percent = toNumber(metric.percent_delta)
+  const sign = absolute != null && absolute > 0 ? '+' : ''
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5">
+      <span className="text-sm text-gray-600">{label}</span>
+      <span className={`inline-flex items-center gap-1.5 text-sm font-semibold ${SEVERITY_TEXT[severity]}`}>
+        <span aria-hidden="true">{DIRECTION_SYMBOL[metric.direction]}</span>
+        <span>
+          {sign}
+          {formatNumber(absolute)} {unit}
+        </span>
+        {percent != null && (
+          <span className="text-xs font-normal text-gray-400">
+            ({percent > 0 ? '+' : ''}
+            {formatNumber(percent, 1)}% · {DIRECTION_TEXT[metric.direction]})
+          </span>
+        )}
+      </span>
+    </div>
+  )
+}
+
+function TrendCard({ trend }: { trend: ExecutiveTrend }) {
+  const points = toNumber(trend.metrics.self_sufficiency_delta_points)
+  const pointsSeverity: Severity = points == null || points === 0 ? 'neutral' : points > 0 ? 'success' : 'danger'
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+        Comparação com o ciclo anterior
+      </p>
+      <p className="mt-1 text-xs text-gray-400">
+        {trend.previous_reference_month} → {trend.current_reference_month}
+      </p>
+      <div className="mt-2 divide-y divide-gray-100">
+        <TrendMetricItem
+          label="Produção"
+          metric={trend.metrics.production}
+          metricKey="production"
+          unit="kWh"
+        />
+        <TrendMetricItem
+          label="Consumo total"
+          metric={trend.metrics.total_consumption}
+          metricKey="total_consumption"
+          unit="kWh"
+        />
+        <TrendMetricItem
+          label="Energia importada"
+          metric={trend.metrics.imported_energy}
+          metricKey="imported_energy"
+          unit="kWh"
+        />
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5">
+          <span className="text-sm text-gray-600">Autossuficiência</span>
+          <span className={`text-sm font-semibold ${SEVERITY_TEXT[pointsSeverity]}`}>
+            {points != null && points > 0 ? '+' : ''}
+            {formatNumber(points, 1)} p.p.
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const ANOMALY_LEGEND: { level: AnomalyLevel; label: string }[] = [
+  { level: 'NORMAL', label: 'Normal' },
+  { level: 'ATTENTION', label: 'Atenção' },
+  { level: 'ANOMALY', label: 'Anomalia/crítico' },
+]
+
+function ProductionHistoryChart({
+  daily,
+  currentStreakDays,
+}: {
+  daily: AnomalyDailyPoint[]
+  currentStreakDays: number
+}) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+
+  if (daily.length === 0) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          Histórico de produção diária
+        </p>
+        <p className="mt-4 text-sm text-gray-400">
+          Ainda não há dados diários suficientes para este gráfico.
+        </p>
+      </div>
+    )
+  }
+
+  const maxValue =
+    Math.max(
+      ...daily.map((d) => {
+        const actual = toNumber(d.actual_production_kwh) ?? 0
+        const expected = toNumber(d.expected_production_kwh) ?? 0
+        return Math.max(actual, expected)
+      }),
+      1
+    ) * 1.1
+
+  const activeDay = activeIndex != null ? daily[activeIndex] : daily[daily.length - 1]
+  const activeSeverity = levelSeverity(activeDay.level)
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          Histórico de produção diária ({daily.length} dias)
+        </p>
+        <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500">
+          {ANOMALY_LEGEND.map((item) => (
+            <span key={item.level} className="inline-flex items-center gap-1">
+              <span className={`h-2 w-2 rounded-full ${SEVERITY_DOT[levelSeverity(item.level)]}`} />
+              {item.label}
+            </span>
+          ))}
+          <span className="inline-flex items-center gap-1">
+            <span className="h-0 w-3 border-t border-dashed border-gray-400" />
+            Esperado
+          </span>
+        </div>
+      </div>
+
+      {currentStreakDays > 0 && (
+        <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-[var(--color-danger)]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-danger)]" />
+          {currentStreakDays} dia{currentStreakDays > 1 ? 's' : ''} seguido{currentStreakDays > 1 ? 's' : ''} com
+          produção abaixo do esperado.
+        </p>
+      )}
+
+      <div className="mt-4 overflow-x-auto">
+        <div
+          className="flex items-end gap-[2px]"
+          style={{ minWidth: `${daily.length * 8}px`, height: '160px' }}
+        >
+          {daily.map((d, i) => {
+            const actual = toNumber(d.actual_production_kwh) ?? 0
+            const expected = toNumber(d.expected_production_kwh) ?? 0
+            const barHeightPercent = clampPercent((actual / maxValue) * 100)
+            const expectedHeightPercent = clampPercent((expected / maxValue) * 100)
+            const severity = levelSeverity(d.level)
+            const isActive = activeIndex === i
+
+            return (
+              <button
+                key={d.date}
+                type="button"
+                className="relative flex h-full flex-1 items-end rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+                style={{ minWidth: '6px' }}
+                onMouseEnter={() => setActiveIndex(i)}
+                onFocus={() => setActiveIndex(i)}
+                onMouseLeave={() => setActiveIndex(null)}
+                onBlur={() => setActiveIndex(null)}
+                aria-label={`${formatShortDate(d.date)}: ${formatNumber(actual)} kWh produzidos de ${formatNumber(
+                  expected
+                )} kWh esperados. Nível: ${LEVEL_LABEL[d.level]}.`}
+              >
+                <span
+                  className="absolute right-0 left-0 border-t border-dashed border-gray-400"
+                  style={{ bottom: `${expectedHeightPercent}%` }}
+                />
+                <span
+                  className={`w-full rounded-t-sm ${SEVERITY_BAR[severity]} ${
+                    isActive ? '' : 'opacity-90'
+                  }`}
+                  style={{ height: `${Math.max(barHeightPercent, 2)}%` }}
+                />
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="mt-1 flex justify-between text-[10px] text-gray-400">
+        <span>{formatShortDate(daily[0].date)}</span>
+        <span>{formatShortDate(daily[Math.floor(daily.length / 2)].date)}</span>
+        <span>{formatShortDate(daily[daily.length - 1].date)}</span>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600">
+        <span className="font-medium text-gray-900">{formatShortDate(activeDay.date)}</span>
+        <span>
+          Real: <strong className="text-gray-900">{formatNumber(activeDay.actual_production_kwh)} kWh</strong>
+        </span>
+        <span>
+          Esperado:{' '}
+          <strong className="text-gray-900">{formatNumber(activeDay.expected_production_kwh)} kWh</strong>
+        </span>
+        {activeDay.deviation_percent != null && (
+          <span className={SEVERITY_TEXT[activeSeverity]}>
+            Desvio: {formatNumber(activeDay.deviation_percent, 1)}%
+          </span>
+        )}
+        <span className={`inline-flex items-center gap-1 font-medium ${SEVERITY_TEXT[activeSeverity]}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${SEVERITY_DOT[activeSeverity]}`} />
+          {LEVEL_LABEL[activeDay.level]}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+interface AnomalyFetchState {
+  data: AnomalyDashboardResponse | null
+  loading: boolean
+}
+
 export function DashboardPage() {
   const { logout } = useAuth()
   const [state, setState] = useState<FetchState>({
@@ -417,6 +791,7 @@ export function DashboardPage() {
     error: null,
     lastUpdated: null,
   })
+  const [anomalyState, setAnomalyState] = useState<AnomalyFetchState>({ data: null, loading: true })
 
   const fetchData = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }))
@@ -439,9 +814,30 @@ export function DashboardPage() {
     }
   }, [])
 
+  const fetchAnomalies = useCallback(async () => {
+    setAnomalyState((prev) => ({ ...prev, loading: true }))
+    try {
+      const response = await apiFetch(
+        `/energy/anomalies/latest?plant_id=${encodeURIComponent(PLANT_ID)}` +
+          `&expected_daily_production_kwh=${EXPECTED_DAILY_PRODUCTION_KWH}&days=90`
+      )
+      if (!response.ok) {
+        // Sem dado diário suficiente (404) ou sessão expirada: não é um erro que
+        // deva bloquear o resto do dashboard, então falha silenciosamente aqui.
+        setAnomalyState({ data: null, loading: false })
+        return
+      }
+      const data = parseAnomalyDashboard(await response.json())
+      setAnomalyState({ data, loading: false })
+    } catch {
+      setAnomalyState({ data: null, loading: false })
+    }
+  }, [])
+
   useEffect(() => {
     void fetchData()
-  }, [fetchData])
+    void fetchAnomalies()
+  }, [fetchData, fetchAnomalies])
 
   const { data, loading, error, lastUpdated } = state
   const indicators = data?.current_cycle.indicators
@@ -479,7 +875,10 @@ export function DashboardPage() {
               </span>
             )}
             <button
-              onClick={() => void fetchData()}
+              onClick={() => {
+                void fetchData()
+                void fetchAnomalies()
+              }}
               disabled={loading}
               className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors"
             >
@@ -537,6 +936,13 @@ export function DashboardPage() {
               </div>
             )}
 
+            {data.trend && (
+              <div className="mt-8">
+                <SectionTitle>Tendência</SectionTitle>
+                <TrendCard trend={data.trend} />
+              </div>
+            )}
+
             <div className="mt-8">
               <SectionTitle>Energia e produção</SectionTitle>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -578,6 +984,30 @@ export function DashboardPage() {
             </div>
 
             <div className="mt-8">
+              <SectionTitle>Histórico de produção</SectionTitle>
+              {anomalyState.loading && !anomalyState.data ? (
+                <div className="animate-pulse rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <div className="mb-3 h-3 w-1/3 rounded bg-gray-200" />
+                  <div className="h-40 w-full rounded bg-gray-100" />
+                </div>
+              ) : anomalyState.data ? (
+                <ProductionHistoryChart
+                  daily={anomalyState.data.daily}
+                  currentStreakDays={anomalyState.data.current_streak_days}
+                />
+              ) : (
+                <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    Histórico de produção diária
+                  </p>
+                  <p className="mt-4 text-sm text-gray-400">
+                    Não foi possível carregar o histórico de produção diária no momento.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-8">
               <SectionTitle>Indicadores percentuais</SectionTitle>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <MetricCard
@@ -604,13 +1034,6 @@ export function DashboardPage() {
                 />
               </div>
             </div>
-
-            {data.trend && (
-              <p className="mt-6 text-xs text-gray-400 text-right">
-                Tendência calculada entre {data.trend.previous_reference_month} e{' '}
-                {data.trend.current_reference_month}.
-              </p>
-            )}
           </>
         )}
       </main>
