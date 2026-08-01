@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /c/Mplacas/.claude/skills/adr-writer)",
+      "Edit(/.claude/skills/adr-writer/**)",
+      "Bash(mkdir -p /c/Mplacas/.claude/skills/python-quality /c/Mplacas/.claude/skills/alembic-migrations)",
+      "Edit(/.claude/skills/python-quality/**)",
+      "Edit(/.claude/skills/alembic-migrations/**)",
+      "Bash(mkdir -p /c/Mplacas/.claude/skills/solar-energy-math)",
+      "Edit(/.claude/skills/solar-energy-math/**)",
+      "Bash(git -C /c/Mplacas remote -v)",
+      "Bash(git -C /c/Mplacas status)",
+      "Bash(git -C /c/Mplacas fetch --all --prune)",
+      "Bash(gh auth *)",
+      "Bash(gh repo *)",
+      "Bash(git -C /c/Mplacas log --oneline 3787273..origin/main)",
+      "Bash(gh issue *)",
+      "Bash(gh run *)",
+      "Bash(git -C /c/Mplacas pull --ff-only origin main)",
+      "Bash(git -C /c/Mplacas mv migrations/versions/20260726_0023_auth_sessions_rate_limits_roles.py migrations/versions/20260726_0024_auth_sessions_rate_limits_roles.py)",
+      "Bash(pip show *)",
+      "Bash(/c/Mplacas/.venv/Scripts/python.exe -c \"import opentelemetry\")",
+      "Bash(/c/Mplacas/.venv-1/Scripts/python.exe -c \"import opentelemetry\")",
+      "Bash(/c/Mplacas/.venv/Scripts/python.exe -m ruff check .)",
+      "Bash(/c/Mplacas/.venv/Scripts/python.exe -m mypy)",
+      "Bash(/c/Mplacas/.venv/Scripts/python.exe -m pytest -q -k \"migration or auth_session\")",
+      "Bash(/c/Mplacas/.venv/Scripts/python.exe -m pytest -q)",
+      "Bash(git -C /c/Mplacas add migrations/versions/20260726_0023_auth_sessions_rate_limits_roles.py migrations/versions/20260726_0024_auth_sessions_rate_limits_roles.py tests/test_database_migration_contracts.py)",
+      "Bash(git -C /c/Mplacas add migrations/versions/20260726_0024_auth_sessions_rate_limits_roles.py tests/test_database_migration_contracts.py)",
+      "Bash(git -C /c/Mplacas diff --staged)"
+    ],
+    "additionalDirectories": [
+      "C:\\Mplacas\\.claude\\skills"
+    ]
+  }
+}
