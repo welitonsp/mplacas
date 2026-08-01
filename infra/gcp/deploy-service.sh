@@ -36,6 +36,28 @@ confirm_exact \
   "DEPLOY-MPLACAS-${GCP_PROJECT_ID}" \
   "Type DEPLOY-MPLACAS-${GCP_PROJECT_ID} to deploy the service:"
 
+env_vars="MPLACAS_ENVIRONMENT=production,MPLACAS_TIMEZONE=${MPLACAS_TIMEZONE},MPLACAS_GCP_PROJECT_ID=${GCP_PROJECT_ID},MPLACAS_CLOUD_TRACE_ENABLED=true,MPLACAS_CLOUD_METRICS_ENABLED=true,MPLACAS_CORS_ALLOWED_ORIGINS=${MPLACAS_CORS_ALLOWED_ORIGINS}"
+if [[ -n "${MPLACAS_TELEGRAM_ALERT_CHAT_ID:-}" ]]; then
+  env_vars="${env_vars},MPLACAS_TELEGRAM_ALERT_CHAT_ID=${MPLACAS_TELEGRAM_ALERT_CHAT_ID}"
+  log "MPLACAS_TELEGRAM_ALERT_CHAT_ID configured"
+else
+  log "MPLACAS_TELEGRAM_ALERT_CHAT_ID not set; skipping"
+fi
+
+secrets="MPLACAS_DATABASE_URL=${SECRET_DATABASE_URL}:latest,MPLACAS_OPERATIONS_API_KEY=${SECRET_OPERATIONS_KEY}:latest,MPLACAS_JWT_SECRET=${SECRET_JWT}:latest"
+if gcloud secrets describe "$SECRET_TELEGRAM_BOT_TOKEN" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
+  secrets="${secrets},MPLACAS_TELEGRAM_BOT_TOKEN=${SECRET_TELEGRAM_BOT_TOKEN}:latest"
+  log "Telegram bot token secret detected; wiring MPLACAS_TELEGRAM_BOT_TOKEN"
+else
+  log "Telegram bot token secret not found; skipping MPLACAS_TELEGRAM_BOT_TOKEN"
+fi
+if gcloud secrets describe "$SECRET_TELEGRAM_WEBHOOK_SECRET" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
+  secrets="${secrets},MPLACAS_TELEGRAM_WEBHOOK_SECRET=${SECRET_TELEGRAM_WEBHOOK_SECRET}:latest"
+  log "Telegram webhook secret detected; wiring MPLACAS_TELEGRAM_WEBHOOK_SECRET"
+else
+  log "Telegram webhook secret not found; skipping MPLACAS_TELEGRAM_WEBHOOK_SECRET"
+fi
+
 gcloud run deploy "$GCP_SERVICE_NAME" \
   --source "$(repo_root)" \
   --region "$GCP_REGION" \
@@ -47,10 +69,8 @@ gcloud run deploy "$GCP_SERVICE_NAME" \
   --memory "$GCP_MEMORY" \
   --concurrency "$GCP_CONCURRENCY" \
   --timeout "$GCP_REQUEST_TIMEOUT" \
-  --set-env-vars \
-    "MPLACAS_ENVIRONMENT=production,MPLACAS_TIMEZONE=${MPLACAS_TIMEZONE},MPLACAS_GCP_PROJECT_ID=${GCP_PROJECT_ID},MPLACAS_CLOUD_TRACE_ENABLED=true,MPLACAS_CLOUD_METRICS_ENABLED=true,MPLACAS_CORS_ALLOWED_ORIGINS=${MPLACAS_CORS_ALLOWED_ORIGINS}" \
-  --set-secrets \
-    "MPLACAS_DATABASE_URL=${SECRET_DATABASE_URL}:latest,MPLACAS_OPERATIONS_API_KEY=${SECRET_OPERATIONS_KEY}:latest,MPLACAS_JWT_SECRET=${SECRET_JWT}:latest" \
+  --set-env-vars "$env_vars" \
+  --set-secrets "$secrets" \
   --allow-unauthenticated \
   --quiet
 

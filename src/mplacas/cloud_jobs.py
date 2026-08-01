@@ -32,6 +32,7 @@ from mplacas.retention.timeseries_service import (
     TimeSeriesRetentionService,
     TimeSeriesRetentionWindows,
 )
+from mplacas.reports.daily_digest import send_daily_digest
 from mplacas.observability.context import (
     bind_correlation_context,
     new_correlation_context,
@@ -140,6 +141,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="purge terminal operational records past their retention window",
     )
     retention.set_defaults(handler=_handle_retention)
+
+    digest = subparsers.add_parser(
+        "daily-digest",
+        help="build and send the informational daily production digest",
+    )
+    digest.add_argument("--target-date", default=None, help="YYYY-MM-DD; defaults to yesterday")
+    digest.set_defaults(handler=_handle_daily_digest)
     return parser
 
 
@@ -175,6 +183,11 @@ def _handle_drain_report_exports(args: argparse.Namespace) -> int:
 
 def _handle_retention(_args: argparse.Namespace) -> int:
     asyncio.run(run_retention())
+    return 0
+
+
+def _handle_daily_digest(args: argparse.Namespace) -> int:
+    asyncio.run(run_daily_digest(target_date=args.target_date))
     return 0
 
 
@@ -354,6 +367,58 @@ async def run_daily_pipeline(
     logger.info(
         "cloud_job_daily_pipeline_completed",
         extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
+    )
+
+
+async def run_daily_digest(
+    *,
+    target_date: str | None,
+    now: datetime | None = None,
+) -> None:
+    settings = get_settings()
+    plant_name = settings.cloud_job_plant_name
+    if plant_name is None or not plant_name.strip():
+        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
+    plant_id = await _resolve_plant_id(plant_name)
+    expected_daily = _required_decimal(
+        settings.cloud_job_expected_daily_production_kwh,
+        "MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH",
+    )
+    token = settings.telegram_bot_token
+    chat_id = settings.telegram_alert_chat_id
+    if token is None or not chat_id:
+        raise RuntimeError("Telegram alert delivery must be configured for daily digest")
+
+    resolved_date = _resolve_target_date(
+        target_date=target_date,
+        timezone_name=settings.timezone,
+        now=now,
+    )
+    provider = TelegramAlertProvider(
+        bot_token=token.get_secret_value(),
+        chat_id=chat_id,
+        timeout_seconds=settings.request_timeout_seconds,
+    )
+
+    logger.info(
+        "cloud_job_daily_digest_started",
+        extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
+    )
+    async with SessionFactory() as session:
+        sent = await send_daily_digest(
+            session,
+            plant_id=plant_id,
+            target_date=resolved_date,
+            expected_daily_production_kwh=expected_daily,
+            provider=provider,
+        )
+    logger.info(
+        "cloud_job_daily_digest_completed",
+        extra={
+            "plant_id": str(plant_id),
+            "target_date": resolved_date.isoformat(),
+            "sent": sent,
+        },
     )
 
 

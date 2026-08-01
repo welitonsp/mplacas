@@ -6,6 +6,8 @@ readonly SECRET_DATABASE_URL="mplacas-database-url"
 readonly SECRET_MIGRATION_DATABASE_URL="mplacas-migration-database-url"
 readonly SECRET_OPERATIONS_KEY="mplacas-operations-api-key"
 readonly SECRET_JWT="mplacas-jwt-secret"
+readonly SECRET_TELEGRAM_BOT_TOKEN="mplacas-telegram-bot-token"
+readonly SECRET_TELEGRAM_WEBHOOK_SECRET="mplacas-telegram-webhook-secret"
 
 # Public arrays consumed by scripts that source this library.
 # shellcheck disable=SC2034
@@ -24,6 +26,8 @@ readonly MPLACAS_SECRET_NAMES=(
   "$SECRET_MIGRATION_DATABASE_URL"
   "$SECRET_OPERATIONS_KEY"
   "$SECRET_JWT"
+  "$SECRET_TELEGRAM_BOT_TOKEN"
+  "$SECRET_TELEGRAM_WEBHOOK_SECRET"
 )
 
 : "${GCP_PROJECT_ID:=}"
@@ -39,6 +43,7 @@ readonly MPLACAS_SECRET_NAMES=(
 : "${GCP_REQUEST_TIMEOUT:=}"
 : "${MPLACAS_TIMEZONE:=}"
 : "${MPLACAS_CORS_ALLOWED_ORIGINS:=}"
+: "${MPLACAS_TELEGRAM_ALERT_CHAT_ID:=}"
 
 log() {
   printf '[mplacas:gcp] %s\n' "$*"

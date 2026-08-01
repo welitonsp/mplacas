@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -78,6 +79,70 @@ async def test_runtime_allows_retry_after_provider_failure() -> None:
     assert failed.status is AlertDeliveryStatus.FAILED
     assert recovered.status is AlertDeliveryStatus.SENT
     assert recovered_provider.calls == 1
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self._payload
+
+
+@pytest.mark.asyncio
+async def test_send_message_omits_optional_fields_when_not_given() -> None:
+    provider = TelegramAlertProvider(bot_token="token", chat_id="123")
+    mock_client = AsyncMock()
+    mock_client.post.return_value = _FakeResponse({"ok": True})
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = False
+
+    with patch("mplacas.alerts.telegram.httpx.AsyncClient", return_value=mock_client):
+        await provider.send_message("plain text")
+
+    payload = mock_client.post.call_args.kwargs["json"]
+    assert payload["text"] == "plain text"
+    assert "parse_mode" not in payload
+    assert "reply_markup" not in payload
+
+
+@pytest.mark.asyncio
+async def test_send_message_includes_parse_mode_and_inline_keyboard() -> None:
+    provider = TelegramAlertProvider(bot_token="token", chat_id="123")
+    mock_client = AsyncMock()
+    mock_client.post.return_value = _FakeResponse({"ok": True})
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = False
+    reply_markup = {"inline_keyboard": [[{"text": "Abrir painel", "url": "https://example.test"}]]}
+
+    with patch("mplacas.alerts.telegram.httpx.AsyncClient", return_value=mock_client):
+        await provider.send_message(
+            "<b>rich</b>", parse_mode="HTML", reply_markup=reply_markup
+        )
+
+    payload = mock_client.post.call_args.kwargs["json"]
+    assert payload["parse_mode"] == "HTML"
+    assert payload["reply_markup"] == reply_markup
+
+
+@pytest.mark.asyncio
+async def test_send_delegates_to_send_message_without_parse_mode() -> None:
+    provider = TelegramAlertProvider(bot_token="token", chat_id="123")
+    mock_client = AsyncMock()
+    mock_client.post.return_value = _FakeResponse({"ok": True})
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = False
+
+    with patch("mplacas.alerts.telegram.httpx.AsyncClient", return_value=mock_client):
+        await provider.send(_alert())
+
+    payload = mock_client.post.call_args.kwargs["json"]
+    assert "MPLACAS — WARNING" in payload["text"]
+    assert "parse_mode" not in payload
+    assert "reply_markup" not in payload
 
 
 @pytest.mark.asyncio

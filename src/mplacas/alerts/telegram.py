@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Mapping
 
 import httpx
 
@@ -27,12 +28,32 @@ class TelegramAlertProvider:
     async def send(self, alert: AlertCandidate) -> None:
         alert.validate()
         text = format_telegram_alert(alert)
+        await self.send_message(text)
+
+    async def send_message(
+        self,
+        text: str,
+        *,
+        parse_mode: str | None = None,
+        reply_markup: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Deliver an arbitrary message, optionally rich (HTML + inline keyboard).
+
+        ``send`` remains the entry point for the existing operational-alert
+        path (plain text, no formatting). This method is the lower-level
+        primitive shared by alerts and any other message type — e.g. the
+        daily digest — that needs ``parse_mode``/``reply_markup`` support.
+        """
         url = f"{self.api_base_url.rstrip('/')}/bot{self.bot_token}/sendMessage"
-        payload = {
+        payload: dict[str, Any] = {
             "chat_id": self.chat_id,
             "text": text,
             "disable_web_page_preview": True,
         }
+        if parse_mode is not None:
+            payload["parse_mode"] = parse_mode
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
         timeout = httpx.Timeout(self.timeout_seconds)
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, json=payload)
