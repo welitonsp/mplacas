@@ -56,6 +56,7 @@ _DATA_PREFIXES = (
     "/operations",
     "/telegram",
     "/organizations",
+    "/plants",
 )
 
 # (method, path) -> justification for not using ReadPlant/AdminPlant/ScopedPlant.

@@ -27,6 +27,7 @@ from mplacas.observability.context import (
 from mplacas.operations.router import router as operations_router
 from mplacas.orchestration.router import router as orchestration_router
 from mplacas.organizations.router import router as organizations_router
+from mplacas.plants.router import router as plants_router
 from mplacas.reports.router import router as reports_router
 from mplacas.telegram.router import router as telegram_router
 from mplacas.web.router import router as web_router
@@ -148,6 +149,7 @@ app.include_router(alerts_router)
 app.include_router(climate_router)
 app.include_router(orchestration_router)
 app.include_router(organizations_router)
+app.include_router(plants_router)
 app.include_router(reports_router)
 app.include_router(web_router)
 app.mount(

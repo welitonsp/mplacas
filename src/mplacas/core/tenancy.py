@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Query, Request, status
+from fastapi import Depends, Header, HTTPException, Path, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -196,8 +196,26 @@ async def resolve_admin_plant(
     return await resolve_admin_plant_scope(principal, plant_id)
 
 
+async def resolve_admin_plant_path(
+    principal: Annotated[OperationsPrincipal, Depends(_admin_principal)],
+    plant_id: uuid.UUID = Path(...),
+) -> ScopedPlant:
+    """Resolve a required ``plant_id`` *path* param for admin endpoints.
+
+    Same resolve+validate semantics as :func:`resolve_admin_plant` (404, not
+    403, for a plant outside the caller's organization), but for routes that
+    carry ``plant_id`` in the URL path (e.g. ``/plants/{plant_id}/...``)
+    rather than as a query parameter. A route cannot use
+    :func:`resolve_admin_plant` for this case: FastAPI resolves a path
+    parameter and a same-named ``Query`` parameter declared by a sub-dependant
+    as a conflict, not a merge.
+    """
+    return await resolve_admin_plant_scope(principal, plant_id)
+
+
 ReadPlant = Annotated[ScopedPlant, Depends(resolve_read_plant)]
 AdminPlant = Annotated[ScopedPlant, Depends(resolve_admin_plant)]
+AdminPlantPath = Annotated[ScopedPlant, Depends(resolve_admin_plant_path)]
 AdminPrincipal = Annotated[OperationsPrincipal, Depends(_admin_principal)]
 
 
