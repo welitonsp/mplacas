@@ -331,6 +331,16 @@ const LEVEL_LABEL: Record<AnomalyLevel, string> = {
   CRITICAL: 'Crítico',
 }
 
+// Mesmos limiares usados em intelligence/energy_engine.py para o desvio do ciclo
+// vs. produção esperada: < 70% = PRODUCTION_WELL_BELOW_EXPECTED (CRITICAL/danger),
+// < 85% = PRODUCTION_BELOW_EXPECTED (WARNING), >= 85% = dentro do esperado (success).
+// Não inventar um limiar novo aqui — reaproveita o mesmo vocabulário do backend.
+function performanceSeverity(percent: number): Severity {
+  if (percent < 70) return 'danger'
+  if (percent < 85) return 'warning'
+  return 'success'
+}
+
 // NORMAL = produção dentro do esperado (bom). ATTENTION = desvio leve.
 // ANOMALY/CRITICAL = desvio relevante — mesma cor de alerta para os dois,
 // diferenciados pelo rótulo textual (ver LEVEL_LABEL), sem inventar um quinto tom.
@@ -675,15 +685,31 @@ function ProductionHistoryChart({
       1
     ) * 1.1
 
+  // % de desempenho do período: soma do real dividido pela soma do esperado no
+  // conjunto de dias exibido — derivado do array `daily` já em mãos, sem cálculo
+  // novo no backend (ver instrução da tarefa).
+  const totalActual = daily.reduce((sum, d) => sum + (toNumber(d.actual_production_kwh) ?? 0), 0)
+  const totalExpected = daily.reduce((sum, d) => sum + (toNumber(d.expected_production_kwh) ?? 0), 0)
+  const performancePercent = totalExpected > 0 ? (totalActual / totalExpected) * 100 : null
+
   const activeDay = activeIndex != null ? daily[activeIndex] : daily[daily.length - 1]
   const activeSeverity = levelSeverity(activeDay.level)
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-          Histórico de produção diária ({daily.length} dias)
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+            Histórico de produção diária ({daily.length} dias)
+          </p>
+          {performancePercent != null && (
+            <span
+              className={`text-lg font-semibold ${SEVERITY_TEXT[performanceSeverity(performancePercent)]}`}
+            >
+              Desempenho: {formatNumber(performancePercent, 1)}%
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500">
           {ANOMALY_LEGEND.map((item) => (
             <span key={item.level} className="inline-flex items-center gap-1">
