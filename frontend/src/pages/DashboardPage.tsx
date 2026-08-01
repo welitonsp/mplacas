@@ -482,6 +482,248 @@ function ProductionSplitCard({
   )
 }
 
+// Cor "grid" reutilizada em todo o diagrama de fluxo e no donut: mesmo cinza
+// (gray-300, hex #d1d5db) já usado em ProductionSplitCard para "injetada na
+// rede". Autoconsumo = brand-primary em todos os pontos. Composição não é
+// severidade (bom/ruim) — por isso não usamos success/warning/danger aqui,
+// ver skill dataviz.
+const GRID_HEX = '#d1d5db'
+
+function EnergyFlowDiagram({
+  production,
+  selfConsumption,
+  injected,
+  imported,
+  consumption,
+}: {
+  production: MetricValue
+  selfConsumption: MetricValue
+  injected: MetricValue
+  imported: MetricValue
+  consumption: MetricValue
+}) {
+  const prod = toNumber(production)
+  const sc = toNumber(selfConsumption)
+  const inj = toNumber(injected)
+  const imp = toNumber(imported)
+  const cons = toNumber(consumption)
+
+  const hasData = prod != null && prod > 0 && cons != null && cons > 0 && sc != null && inj != null && imp != null
+
+  if (!hasData) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          Fluxo de energia no ciclo
+        </p>
+        <p className="mt-4 text-sm text-gray-400">Dados insuficientes para o diagrama.</p>
+      </div>
+    )
+  }
+
+  const production_ = prod as number
+  const consumption_ = cons as number
+  const selfConsumption_ = sc as number
+  const injected_ = inj as number
+  const imported_ = imp as number
+
+  const prodAutoPercent = (selfConsumption_ / production_) * 100
+  const prodExportPercent = (injected_ / production_) * 100
+  const consAutoPercent = (selfConsumption_ / consumption_) * 100
+  const consImportPercent = (imported_ / consumption_) * 100
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+        Fluxo de energia no ciclo
+      </p>
+
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_1fr] sm:grid-rows-2 sm:items-center sm:gap-x-6 sm:gap-y-3">
+        {/* Nó: Produção */}
+        <div className="sm:col-start-1 sm:row-start-1 sm:row-span-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Produção</p>
+          <p className="mt-1 text-xl font-semibold text-gray-900">{formatNumber(production_)} kWh</p>
+          <div className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-gray-100">
+            <div
+              className="h-full bg-[var(--color-brand-primary)]"
+              style={{ width: `${clampPercent(prodAutoPercent)}%` }}
+            />
+            <div className="h-full bg-gray-300" style={{ width: `${clampPercent(prodExportPercent)}%` }} />
+          </div>
+          <ul className="mt-2 space-y-1 text-xs text-gray-600">
+            <li className="flex items-center gap-1.5">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-brand-primary)]" />
+              Autoconsumo: <span className="font-medium text-gray-900">{formatNumber(selfConsumption_)} kWh</span>
+            </li>
+            <li className="flex items-center gap-1.5">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-gray-300" />
+              Exportada: <span className="font-medium text-gray-900">{formatNumber(injected_)} kWh</span>
+            </li>
+          </ul>
+        </div>
+
+        {/* Seta: autoconsumo direto (produção → consumo) */}
+        <div className="flex items-center justify-center gap-2 text-center sm:col-start-2 sm:row-start-1">
+          <span aria-hidden="true" className="text-lg text-[var(--color-brand-primary)] sm:hidden">
+            ↓
+          </span>
+          <span aria-hidden="true" className="hidden text-lg text-[var(--color-brand-primary)] sm:inline">
+            →
+          </span>
+          <span className="text-xs text-gray-500">
+            autoconsumo
+            <br />
+            <span className="font-medium text-gray-900">{formatNumber(selfConsumption_)} kWh</span>
+          </span>
+        </div>
+
+        {/* Nó: Rede (exportada entra, importada sai) */}
+        <div className="rounded-lg border border-dashed border-gray-200 bg-white p-3 text-center sm:col-start-2 sm:row-start-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Rede</p>
+          <p className="mt-1 text-xs text-gray-600">
+            <span aria-hidden="true">←</span> Exportada: <span className="font-medium text-gray-900">{formatNumber(injected_)} kWh</span>
+          </p>
+          <p className="mt-0.5 text-xs text-gray-600">
+            Importada: <span className="font-medium text-gray-900">{formatNumber(imported_)} kWh</span> <span aria-hidden="true">→</span>
+          </p>
+        </div>
+
+        {/* Nó: Consumo */}
+        <div className="sm:col-start-3 sm:row-start-1 sm:row-span-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Consumo</p>
+          <p className="mt-1 text-xl font-semibold text-gray-900">{formatNumber(consumption_)} kWh</p>
+          <div className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-gray-100">
+            <div
+              className="h-full bg-[var(--color-brand-primary)]"
+              style={{ width: `${clampPercent(consAutoPercent)}%` }}
+            />
+            <div className="h-full bg-gray-300" style={{ width: `${clampPercent(consImportPercent)}%` }} />
+          </div>
+          <ul className="mt-2 space-y-1 text-xs text-gray-600">
+            <li className="flex items-center gap-1.5">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-brand-primary)]" />
+              Autoconsumo: <span className="font-medium text-gray-900">{formatNumber(selfConsumption_)} kWh</span>
+            </li>
+            <li className="flex items-center gap-1.5">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-gray-300" />
+              Importada: <span className="font-medium text-gray-900">{formatNumber(imported_)} kWh</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const DONUT_RADIUS = 46
+const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS
+
+function ConsumptionDonut({
+  imported,
+  selfConsumption,
+}: {
+  imported: MetricValue
+  selfConsumption: MetricValue
+}) {
+  const imp = toNumber(imported)
+  const sc = toNumber(selfConsumption)
+  const total = (imp ?? 0) + (sc ?? 0)
+  const hasData = imp != null && sc != null && total > 0
+
+  if (!hasData) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          Origem do consumo
+        </p>
+        <p className="mt-4 text-sm text-gray-400">Dados insuficientes para o gráfico.</p>
+      </div>
+    )
+  }
+
+  const imported_ = imp as number
+  const selfConsumption_ = sc as number
+  const importedPercent = (imported_ / total) * 100
+  const selfConsumptionPercent = (selfConsumption_ / total) * 100
+
+  const selfConsumptionLength = (selfConsumptionPercent / 100) * DONUT_CIRCUMFERENCE
+  const importedLength = (importedPercent / 100) * DONUT_CIRCUMFERENCE
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+        Origem do consumo
+      </p>
+
+      <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-center">
+        <svg
+          viewBox="0 0 120 120"
+          className="h-32 w-32 shrink-0"
+          role="img"
+          aria-label={`Origem do consumo: ${formatNumber(selfConsumption_)} kWh de autoconsumo (${formatNumber(
+            selfConsumptionPercent,
+            0
+          )}%) e ${formatNumber(imported_)} kWh importados da concessionária (${formatNumber(
+            importedPercent,
+            0
+          )}%), total de ${formatNumber(total)} kWh.`}
+        >
+          <circle cx="60" cy="60" r={DONUT_RADIUS} fill="none" stroke="#f3f4f6" strokeWidth="16" />
+          <circle
+            cx="60"
+            cy="60"
+            r={DONUT_RADIUS}
+            fill="none"
+            stroke="var(--color-brand-primary)"
+            strokeWidth="16"
+            strokeDasharray={`${selfConsumptionLength} ${DONUT_CIRCUMFERENCE}`}
+            strokeDashoffset="0"
+            transform="rotate(-90 60 60)"
+          />
+          <circle
+            cx="60"
+            cy="60"
+            r={DONUT_RADIUS}
+            fill="none"
+            stroke={GRID_HEX}
+            strokeWidth="16"
+            strokeDasharray={`${importedLength} ${DONUT_CIRCUMFERENCE}`}
+            strokeDashoffset={-selfConsumptionLength}
+            transform="rotate(-90 60 60)"
+          />
+          <text
+            x="60"
+            y="56"
+            textAnchor="middle"
+            className="fill-gray-900 text-[16px] font-semibold"
+          >
+            {formatNumber(total, 0)}
+          </text>
+          <text x="60" y="72" textAnchor="middle" className="fill-gray-400 text-[10px]">
+            kWh
+          </text>
+        </svg>
+
+        {/* Alternativa textual acessível ao SVG — não depende só da cor/gráfico. */}
+        <ul className="w-full space-y-2 text-sm text-gray-600">
+          <li className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--color-brand-primary)]" />
+            <span className="flex-1">Autoconsumo</span>
+            <span className="font-medium text-gray-900">{formatNumber(selfConsumption_)} kWh</span>
+            <span className="text-xs text-gray-400">({formatNumber(selfConsumptionPercent, 0)}%)</span>
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-gray-300" />
+            <span className="flex-1">Importada da concessionária</span>
+            <span className="font-medium text-gray-900">{formatNumber(imported_)} kWh</span>
+            <span className="text-xs text-gray-400">({formatNumber(importedPercent, 0)}%)</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 function HeroCard({
   referenceMonth,
   headline,
@@ -1005,6 +1247,23 @@ export function DashboardPage() {
                 <ProductionSplitCard
                   selfConsumption={indicators.estimated_self_consumption_kwh}
                   injected={indicators.injected_kwh}
+                />
+              </div>
+            </div>
+
+            <div className="mt-8">
+              <SectionTitle>Fluxo de energia</SectionTitle>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+                <EnergyFlowDiagram
+                  production={indicators.cycle_production_kwh}
+                  selfConsumption={indicators.estimated_self_consumption_kwh}
+                  injected={indicators.injected_kwh}
+                  imported={indicators.imported_kwh}
+                  consumption={indicators.estimated_total_consumption_kwh}
+                />
+                <ConsumptionDonut
+                  imported={indicators.imported_kwh}
+                  selfConsumption={indicators.estimated_self_consumption_kwh}
                 />
               </div>
             </div>
