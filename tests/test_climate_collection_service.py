@@ -111,6 +111,62 @@ async def test_collects_and_upserts_climate_observations_idempotently() -> None:
 
 
 @pytest.mark.asyncio
+async def test_persists_and_round_trips_temperature_mean_c() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as session:
+        plant = Plant(
+            name="Synthetic plant",
+            latitude=Decimal("-17.744000"),
+            longitude=Decimal("-48.625000"),
+        )
+        session.add(plant)
+        await session.commit()
+
+        observations = (
+            DailyClimateObservation(
+                observation_date=date(2026, 7, 12),
+                irradiation_kwh_m2=Decimal("5.100"),
+                cloud_cover_percent=Decimal("35.0"),
+                precipitation_mm=Decimal("0.0"),
+                temperature_mean_c=Decimal("28.40"),
+                source="SYNTHETIC_WEATHER",
+            ),
+            DailyClimateObservation(
+                observation_date=date(2026, 7, 13),
+                irradiation_kwh_m2=Decimal("4.200"),
+                cloud_cover_percent=Decimal("55.0"),
+                precipitation_mm=Decimal("1.2"),
+                temperature_mean_c=None,
+                source="SYNTHETIC_WEATHER",
+            ),
+        )
+        await collect_and_persist_daily_climate(
+            session,
+            plant_id=plant.id,
+            provider=FakeClimateProvider(observations),
+            start_date=date(2026, 7, 12),
+            end_date=date(2026, 7, 13),
+        )
+        await session.commit()
+
+        records = (
+            await session.scalars(
+                select(DailyClimateObservationRecord).order_by(
+                    DailyClimateObservationRecord.observation_date
+                )
+            )
+        ).all()
+        assert records[0].temperature_mean_c == Decimal("28.40")
+        assert records[1].temperature_mean_c is None
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_requires_plant_coordinates_before_collection() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as connection:

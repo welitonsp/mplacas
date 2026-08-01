@@ -197,6 +197,35 @@ def test_bill_tariff_fields_migration_is_present() -> None:
     assert "add_column" not in downgrade_body(source)
 
 
+def test_climate_temperature_mean_migration_is_present() -> None:
+    source = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "20260801_0029_add_climate_temperature_mean.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision = "20260801_0029"' in source
+    assert 'down_revision = "20260801_0028"' in source
+    assert "batch_alter_table" in source
+    assert '"temperature_mean_c"' in source
+    assert "sa.Numeric(5, 2)" in source
+    assert "nullable=True" in source
+
+    def upgrade_body(text: str) -> str:
+        start = text.index("def upgrade()")
+        end = text.index("def downgrade()")
+        return text[start:end]
+
+    def downgrade_body(text: str) -> str:
+        start = text.index("def downgrade()")
+        return text[start:]
+
+    assert "drop_column" not in upgrade_body(source)
+    assert "add_column" not in downgrade_body(source)
+    assert "drop_column" in downgrade_body(source)
+
+
 def test_organization_id_orm_nullability_matches_production_migrations() -> None:
     from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
     from mplacas.db.models import Plant

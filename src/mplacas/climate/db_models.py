@@ -20,6 +20,7 @@ class DailyClimateObservationRecord(Base):
     irradiation_kwh_m2: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
     cloud_cover_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     precipitation_mm: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    temperature_mean_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     source: Mapped[str] = mapped_column(String(40), default="MANUAL")
     collected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
