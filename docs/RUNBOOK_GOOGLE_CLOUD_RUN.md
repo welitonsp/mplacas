@@ -146,11 +146,17 @@ python -m mplacas.cloud_jobs daily-pipeline
 Configuração esperada:
 
 ```text
-MPLACAS_CLOUD_JOB_PLANT_ID=<uuid-da-usina>
+MPLACAS_CLOUD_JOB_PLANT_NAME=<nome-da-usina>
 MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH=<decimal>
 MPLACAS_CLOUD_JOB_EXPECTED_CYCLE_PRODUCTION_KWH=<decimal opcional>
 MPLACAS_CLOUD_JOB_ANOMALY_DAYS=7
 ```
+
+A usina é resolvida (e criada, se ainda não existir) pelo nome antes de qualquer outra
+operação do pipeline, na mesma lógica usada pela coleta — o `Plant.id` real nunca é lido de uma
+variável de ambiente. `MPLACAS_CLOUD_JOB_PLANT_ID` não existe mais: usar um UUID arbitrário nessa
+variável nunca correspondia ao `id` real gerado pelo banco a partir do nome, o que causava falhas
+de chave estrangeira em operações que dependiam dele.
 
 Sem `--target-date`, o job usa o dia anterior em `MPLACAS_TIMEZONE`. Para reprocessamento
 controlado:
@@ -173,9 +179,14 @@ Configuração adicional esperada (as credenciais ficam apenas no ambiente, nunc
 ```text
 MPLACAS_NEP_ACCOUNT=<conta-nepviewer>
 MPLACAS_NEP_PASSWORD=<senha-nepviewer>
-MPLACAS_CLOUD_JOB_PLANT_ID=<uuid-da-usina>
 MPLACAS_CLOUD_JOB_PLANT_NAME=<nome-da-usina>
 ```
+
+Antes de coletar, o job resolve (ou cria, na primeira execução de uma usina nova) a `Plant` pelo
+nome numa transação curta e isolada, com commit imediato — só então usa o `Plant.id` real
+resultante para tudo daí em diante, inclusive o enfileiramento de retries em `collection_tasks`.
+Isso evita que uma primeira coleta de usina nova falhe por violação de chave estrangeira ao tentar
+reagendar uma tentativa antes de a usina existir no banco.
 
 Se a API estiver indisponível ou incompleta mesmo após o retry, o dia é enfileirado em
 `collection_tasks` para nova tentativa, sem falhar em definitivo. Sem `--target-date`, o job usa o
@@ -241,7 +252,7 @@ Falhas comuns:
 
 - `/ready` 503: validar Secret Manager, Neon, rede pública permitida e SSL do PostgreSQL.
 - Migração falha: revisar Alembic e permissões do usuário do banco.
-- Job diário falha: validar `MPLACAS_CLOUD_JOB_PLANT_ID`, produção esperada, Telegram e lock.
+- Job diário falha: validar `MPLACAS_CLOUD_JOB_PLANT_NAME`, produção esperada, Telegram e lock.
 - Custo inesperado: revisar instâncias mínimas, instâncias máximas, região e serviços ativos.
 
 ## Remoção de recursos

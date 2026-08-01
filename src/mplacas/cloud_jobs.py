@@ -24,6 +24,7 @@ from mplacas.collection.drain import drain_collection_queue
 from mplacas.reports.drain import drain_report_exports
 from mplacas.collection.job import run_solar_collection
 from mplacas.core.config import get_settings
+from mplacas.db.repositories.plant import PlantRepository
 from mplacas.db.session import SessionFactory
 from mplacas.db.session import engine as database_engine
 from mplacas.retention.service import RetentionService, RetentionWindows
@@ -183,10 +184,10 @@ async def run_collection(
     now: datetime | None = None,
 ) -> None:
     settings = get_settings()
-    plant_id = _required_uuid(settings.cloud_job_plant_id, "MPLACAS_CLOUD_JOB_PLANT_ID")
     plant_name = settings.cloud_job_plant_name
     if plant_name is None or not plant_name.strip():
         raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
+    plant_id = await _resolve_plant_id(plant_name)
     resolved_date = _resolve_target_date(
         target_date=target_date,
         timezone_name=settings.timezone,
@@ -298,7 +299,10 @@ async def run_daily_pipeline(
     now: datetime | None = None,
 ) -> None:
     settings = get_settings()
-    plant_id = _required_uuid(settings.cloud_job_plant_id, "MPLACAS_CLOUD_JOB_PLANT_ID")
+    plant_name = settings.cloud_job_plant_name
+    if plant_name is None or not plant_name.strip():
+        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
+    plant_id = await _resolve_plant_id(plant_name)
     expected_daily = _required_decimal(
         settings.cloud_job_expected_daily_production_kwh,
         "MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH",
@@ -400,10 +404,20 @@ def _resolve_target_date(
     return (current - timedelta(days=1)).date()
 
 
-def _required_uuid(value: str | None, env_name: str) -> uuid.UUID:
-    if value is None or not value.strip():
-        raise RuntimeError(f"{env_name} is required")
-    return uuid.UUID(value)
+async def _resolve_plant_id(plant_name: str) -> uuid.UUID:
+    """Resolve o `Plant.id` real a partir do nome, criando a usina se necessário.
+
+    Roda numa transação curta e isolada, com commit imediato, de forma que o
+    `id` resultante já esteja persistido (e visível a outras transações) antes
+    de ser usado para qualquer operação subsequente — em particular o
+    enfileiramento de retries de coleta, que depende de uma FK válida para
+    `plants.id`.
+    """
+    async with SessionFactory() as session:
+        plant = await PlantRepository(session).get_or_create(plant_name)
+        plant_id = plant.id
+        await session.commit()
+    return plant_id
 
 
 def _required_decimal(value: Decimal | None, env_name: str) -> Decimal:

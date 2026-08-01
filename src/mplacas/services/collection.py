@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.db.models import DataStatus, Device, Plant
 from mplacas.db.repositories.daily_energy import DailyEnergyRepository
+from mplacas.db.repositories.plant import PlantRepository
 from mplacas.providers.base import SolarProvider
 
 
@@ -26,6 +27,7 @@ class SolarCollectionService:
         self._session = session
         self._provider = provider
         self._energy = DailyEnergyRepository(session)
+        self._plants = PlantRepository(session)
 
     async def collect(
         self,
@@ -105,13 +107,7 @@ class SolarCollectionService:
         )
 
     async def _get_or_create_plant(self, name: str) -> Plant:
-        result = await self._session.execute(select(Plant).where(Plant.name == name))
-        plant = result.scalar_one_or_none()
-        if plant is None:
-            plant = Plant(name=name)
-            self._session.add(plant)
-            await self._session.flush()
-        return plant
+        return await self._plants.get_or_create(name)
 
     async def _get_or_create_device(
         self, *, plant: Plant, serial_number: str, model_name: str | None
