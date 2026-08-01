@@ -58,6 +58,19 @@ _FIELD_PATTERNS: dict[str, tuple[str, ...]] = {
         r"custeio de ilumina[cç][aã]o p[uú]blica|cip)\s*[:\-]?\s*r?\$?\s*"
         r"([\d\.]+(?:,\d+)?)",
     ),
+    # CONSUMO SCEE kWh <qty> <tariff w/tax> <total> <base> <total> <pct>% <tax value>
+    # <tariff w/o tax>
+    "tariff_with_taxes_brl_kwh": (
+        r"consumo scee kwh\s+[\d\.]+,\d+\s+([\d\.]+,\d+)",
+    ),
+    "tariff_without_taxes_brl_kwh": (
+        r"consumo scee kwh\s+[\d\.]+,\d+\s+[\d\.]+,\d+\s+[\d\.]+,\d+\s+[\d\.]+,\d+\s+"
+        r"[\d\.]+,\d+\s+\d+%\s+[\d\.]+,\d+\s+([\d\.]+,\d+)",
+    ),
+    # PARC INJET S/DESC - <pct>% - GD II <n> kWh <qty> <fio b tariff> ...
+    "wire_b_tariff_brl_kwh": (
+        r"parc injet[^k]*kwh\s+[\d\.]+,\d+\s+([\d\.]+,\d+)",
+    ),
 }
 
 # SCEE four-date reading line: anterior atual dias próxima
@@ -146,6 +159,11 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
         total_amount_brl=_parse_decimal(values["total_amount_brl"]),
         public_lighting_brl=_parse_decimal(values.get("public_lighting_brl", "0")),
         generation_cycle_kwh=_extract_generation_cycle_kwh(normalized),
+        tariff_with_taxes_brl_kwh=_parse_optional_decimal(values.get("tariff_with_taxes_brl_kwh")),
+        tariff_without_taxes_brl_kwh=_parse_optional_decimal(
+            values.get("tariff_without_taxes_brl_kwh")
+        ),
+        wire_b_tariff_brl_kwh=_parse_optional_decimal(values.get("wire_b_tariff_brl_kwh")),
     )
     bill.validate()
     return bill
@@ -175,6 +193,12 @@ def _extract_generation_cycle_kwh(normalized: str) -> Decimal | None:
         return _parse_decimal(m.group(1))
     except BillParseError:
         return None
+
+
+def _parse_optional_decimal(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    return _parse_decimal(value)
 
 
 def _parse_reference_month_scee(raw: str) -> str:

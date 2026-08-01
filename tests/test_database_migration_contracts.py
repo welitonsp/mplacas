@@ -167,6 +167,36 @@ def test_auth_sessions_rate_limits_and_roles_migration_is_present() -> None:
     assert '"role"' in source
 
 
+def test_bill_tariff_fields_migration_is_present() -> None:
+    source = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "20260801_0028_add_bill_tariff_fields.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision = "20260801_0028"' in source
+    assert 'down_revision = "20260731_0027"' in source
+    assert "batch_alter_table" in source
+    assert '"tariff_with_taxes_brl_kwh"' in source
+    assert '"tariff_without_taxes_brl_kwh"' in source
+    assert '"wire_b_tariff_brl_kwh"' in source
+    assert "sa.Numeric(12, 6)" in source
+    assert "nullable=True" in source
+
+    def upgrade_body(text: str) -> str:
+        start = text.index("def upgrade()")
+        end = text.index("def downgrade()")
+        return text[start:end]
+
+    def downgrade_body(text: str) -> str:
+        start = text.index("def downgrade()")
+        return text[start:]
+
+    assert "drop_column" not in upgrade_body(source)
+    assert "add_column" not in downgrade_body(source)
+
+
 def test_organization_id_orm_nullability_matches_production_migrations() -> None:
     from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
     from mplacas.db.models import Plant

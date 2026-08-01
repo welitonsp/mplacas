@@ -67,6 +67,13 @@ class UtilityBillRecord(Base):
         Numeric(12, 2), default=Decimal("0")
     )
     generation_cycle_kwh: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), nullable=True)
+    tariff_with_taxes_brl_kwh: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 6), nullable=True
+    )
+    tariff_without_taxes_brl_kwh: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 6), nullable=True
+    )
+    wire_b_tariff_brl_kwh: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     status: Mapped[BillStatus] = mapped_column(
         Enum(BillStatus), default=BillStatus.PENDING_REVIEW, index=True
     )

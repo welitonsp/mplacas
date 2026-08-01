@@ -4,6 +4,15 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+# Plausible upper bound for a R$/kWh tariff field. The parser anchors these
+# fields by ordinal column position on the bill line (see ADR-056), which is
+# structurally fragile to a distributor layout shift — a shifted column can
+# silently capture an unrelated monetary total (e.g. R$ 48,69) instead of the
+# R$/kWh rate (e.g. R$ 0,175126). 5 R$/kWh is generous headroom over today's
+# real Brazilian residential tariff with taxes (~R$ 0.80/kWh) while still
+# catching any order-of-magnitude column mismatch.
+_MAX_PLAUSIBLE_TARIFF_BRL_KWH = Decimal("5")
+
 
 @dataclass(frozen=True, slots=True)
 class UtilityBill:
@@ -19,6 +28,9 @@ class UtilityBill:
     total_amount_brl: Decimal
     public_lighting_brl: Decimal = Decimal("0")
     generation_cycle_kwh: Decimal | None = None
+    tariff_with_taxes_brl_kwh: Decimal | None = None
+    tariff_without_taxes_brl_kwh: Decimal | None = None
+    wire_b_tariff_brl_kwh: Decimal | None = None
 
     def validate(self) -> None:
         if self.cycle_end < self.cycle_start:
@@ -38,6 +50,24 @@ class UtilityBill:
             raise ValueError("bill values cannot be negative")
         if self.generation_cycle_kwh is not None and self.generation_cycle_kwh < 0:
             raise ValueError("bill values cannot be negative")
+        optional_tariff_fields = (
+            ("tariff_with_taxes_brl_kwh", self.tariff_with_taxes_brl_kwh),
+            ("tariff_without_taxes_brl_kwh", self.tariff_without_taxes_brl_kwh),
+            ("wire_b_tariff_brl_kwh", self.wire_b_tariff_brl_kwh),
+        )
+        if any(value is not None and value < 0 for _, value in optional_tariff_fields):
+            raise ValueError("bill values cannot be negative")
+        # Fail closed on an implausible tariff rather than persist a value that
+        # would silently become a fabricated savings figure downstream — see
+        # ADR-056. A shifted regex capture (e.g. a total in R$ instead of a
+        # R$/kWh rate) lands well outside this range, so it is rejected here
+        # instead of being written to the database as a plausible-looking number.
+        for name, value in optional_tariff_fields:
+            if value is not None and not (0 < value <= _MAX_PLAUSIBLE_TARIFF_BRL_KWH):
+                raise ValueError(
+                    f"{name} is outside the plausible tariff range "
+                    f"(0, {_MAX_PLAUSIBLE_TARIFF_BRL_KWH}] BRL/kWh: {value}"
+                )
 
 
 @dataclass(frozen=True, slots=True)

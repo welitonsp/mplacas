@@ -20,6 +20,9 @@ def _bill(
     status: BillStatus,
     source_hash: str,
     created_at: datetime,
+    tariff_with_taxes_brl_kwh: Decimal | None = None,
+    tariff_without_taxes_brl_kwh: Decimal | None = None,
+    wire_b_tariff_brl_kwh: Decimal | None = None,
 ) -> UtilityBillRecord:
     return UtilityBillRecord(
         plant_id=plant_id,
@@ -34,6 +37,9 @@ def _bill(
         credit_balance_kwh=Decimal("20"),
         total_amount_brl=Decimal("60"),
         public_lighting_brl=Decimal("30"),
+        tariff_with_taxes_brl_kwh=tariff_with_taxes_brl_kwh,
+        tariff_without_taxes_brl_kwh=tariff_without_taxes_brl_kwh,
+        wire_b_tariff_brl_kwh=wire_b_tariff_brl_kwh,
         status=status,
         source_hash=source_hash,
         created_at=created_at,
@@ -166,5 +172,74 @@ async def test_read_repository_fails_closed_for_principal_outside_plant_scope() 
         assert await repository.by_id(confirmed.id, plant_id=denied_plant.id) is None
         assert await repository.latest(plant_id=denied_plant.id) is None
         assert await repository.two_latest(plant_id=denied_plant.id) == ()
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_confirmed_bill_round_trips_tariff_fields() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as session:
+        plant = Plant(name="Target plant")
+        session.add(plant)
+        await session.flush()
+        confirmed = _bill(
+            plant_id=plant.id,
+            reference_month="2026-06",
+            cycle_end=date(2026, 6, 30),
+            status=BillStatus.CONFIRMED,
+            source_hash="g" * 64,
+            created_at=datetime(2026, 7, 1, tzinfo=UTC),
+            tariff_with_taxes_brl_kwh=Decimal("0.799059"),
+            tariff_without_taxes_brl_kwh=Decimal("0.613030"),
+            wire_b_tariff_brl_kwh=Decimal("0.175126"),
+        )
+        session.add(confirmed)
+        await session.commit()
+
+        repository = ConfirmedBillReadRepository(session)
+        result = await repository.by_id(confirmed.id, plant_id=plant.id)
+
+        assert result is not None
+        assert result.bill.tariff_with_taxes_brl_kwh == Decimal("0.799059")
+        assert result.bill.tariff_without_taxes_brl_kwh == Decimal("0.613030")
+        assert result.bill.wire_b_tariff_brl_kwh == Decimal("0.175126")
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_confirmed_bill_tariff_fields_default_to_none() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as session:
+        plant = Plant(name="Target plant")
+        session.add(plant)
+        await session.flush()
+        confirmed = _bill(
+            plant_id=plant.id,
+            reference_month="2026-06",
+            cycle_end=date(2026, 6, 30),
+            status=BillStatus.CONFIRMED,
+            source_hash="h" * 64,
+            created_at=datetime(2026, 7, 1, tzinfo=UTC),
+        )
+        session.add(confirmed)
+        await session.commit()
+
+        repository = ConfirmedBillReadRepository(session)
+        result = await repository.by_id(confirmed.id, plant_id=plant.id)
+
+        assert result is not None
+        assert result.bill.tariff_with_taxes_brl_kwh is None
+        assert result.bill.tariff_without_taxes_brl_kwh is None
+        assert result.bill.wire_b_tariff_brl_kwh is None
 
     await engine.dispose()

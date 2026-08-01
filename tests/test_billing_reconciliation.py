@@ -69,3 +69,89 @@ def test_bill_rejects_negative_generation_cycle_kwh() -> None:
 def test_bill_accepts_absent_generation_cycle_kwh() -> None:
     bill = replace(make_bill(), generation_cycle_kwh=None)
     bill.validate()  # must not raise
+
+
+def test_bill_rejects_negative_tariff_with_taxes() -> None:
+    invalid = replace(make_bill(), tariff_with_taxes_brl_kwh=Decimal("-0.1"))
+    with pytest.raises(ValueError, match="negative"):
+        invalid.validate()
+
+
+def test_bill_rejects_negative_tariff_without_taxes() -> None:
+    invalid = replace(make_bill(), tariff_without_taxes_brl_kwh=Decimal("-0.1"))
+    with pytest.raises(ValueError, match="negative"):
+        invalid.validate()
+
+
+def test_bill_rejects_negative_wire_b_tariff() -> None:
+    invalid = replace(make_bill(), wire_b_tariff_brl_kwh=Decimal("-0.1"))
+    with pytest.raises(ValueError, match="negative"):
+        invalid.validate()
+
+
+def test_bill_accepts_absent_tariff_fields() -> None:
+    bill = replace(
+        make_bill(),
+        tariff_with_taxes_brl_kwh=None,
+        tariff_without_taxes_brl_kwh=None,
+        wire_b_tariff_brl_kwh=None,
+    )
+    bill.validate()  # must not raise
+
+
+def test_bill_accepts_present_tariff_fields() -> None:
+    bill = replace(
+        make_bill(),
+        tariff_with_taxes_brl_kwh=Decimal("0.799059"),
+        tariff_without_taxes_brl_kwh=Decimal("0.613030"),
+        wire_b_tariff_brl_kwh=Decimal("0.175126"),
+    )
+    bill.validate()  # must not raise
+    assert bill.tariff_with_taxes_brl_kwh == Decimal("0.799059")
+    assert bill.tariff_without_taxes_brl_kwh == Decimal("0.613030")
+    assert bill.wire_b_tariff_brl_kwh == Decimal("0.175126")
+
+
+# ---------------------------------------------------------------------------
+# Tariff plausibility range guard — fail closed on a mis-anchored capture
+# (see ADR-056: tariff extraction is positional, not label-anchored).
+# ---------------------------------------------------------------------------
+
+
+def test_bill_rejects_tariff_that_is_actually_a_monetary_total() -> None:
+    """A shifted regex capture (e.g. R$ 48,69 instead of R$/kWh 0,175126) must
+    fail closed rather than persist a plausible-looking but wrong value."""
+    invalid = replace(make_bill(), wire_b_tariff_brl_kwh=Decimal("48.69"))
+    with pytest.raises(ValueError, match="plausible tariff range"):
+        invalid.validate()
+
+
+def test_bill_rejects_zero_tariff() -> None:
+    invalid = replace(make_bill(), tariff_with_taxes_brl_kwh=Decimal("0"))
+    with pytest.raises(ValueError, match="plausible tariff range"):
+        invalid.validate()
+
+
+def test_bill_rejects_tariff_above_plausible_upper_bound() -> None:
+    invalid = replace(make_bill(), tariff_without_taxes_brl_kwh=Decimal("5.01"))
+    with pytest.raises(ValueError, match="plausible tariff range"):
+        invalid.validate()
+
+
+def test_bill_accepts_tariff_at_plausible_upper_bound() -> None:
+    bill = replace(make_bill(), tariff_without_taxes_brl_kwh=Decimal("5"))
+    bill.validate()  # must not raise
+
+
+@pytest.mark.parametrize(
+    "with_taxes",
+    [Decimal("0.774023"), Decimal("0.799059"), Decimal("0.814841")],
+)
+def test_bill_accepts_all_three_real_production_tariffs(with_taxes: Decimal) -> None:
+    bill = replace(
+        make_bill(),
+        tariff_with_taxes_brl_kwh=with_taxes,
+        tariff_without_taxes_brl_kwh=Decimal("0.613030"),
+        wire_b_tariff_brl_kwh=Decimal("0.175126"),
+    )
+    bill.validate()  # must not raise
