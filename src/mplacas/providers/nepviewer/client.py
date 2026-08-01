@@ -112,7 +112,12 @@ class NepViewerClient(SolarProvider):
             return None
         if not isinstance(value, str):
             raise ProviderSchemaError("Timestamp inválido")
-        for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%Y-%m-%d %H:%M:%S"):
+        for fmt in (
+            "%d/%m/%Y %H:%M:%S",
+            "%d/%m/%Y %H:%M",
+            "%Y-%m-%d %H:%M:%S",
+            "%d/%m/%Y",
+        ):
             try:
                 return datetime.strptime(value, fmt)
             except ValueError:

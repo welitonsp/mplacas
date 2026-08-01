@@ -146,7 +146,7 @@ async def test_client_flags_missing_day_when_completeness_expected() -> None:
             200,
             json={
                 "data": {
-                    "xAxisData": ["18/07/2026 00:00:00"],
+                    "xAxisData": ["18/07/2026"],
                     "series": [{"data": [10.0]}],
                 }
             },
@@ -204,7 +204,7 @@ async def test_factory_wraps_client_with_resilience() -> None:
             200,
             json={
                 "data": {
-                    "xAxisData": ["19/07/2026 00:00:00"],
+                    "xAxisData": ["19/07/2026"],
                     "series": [{"data": [15.0]}],
                 }
             },
