@@ -15,9 +15,10 @@ from mplacas.observability.context import (
     parse_cloud_trace_context,
     parse_traceparent,
 )
-from mplacas.observability.logging import CloudJsonFormatter
+from mplacas.observability.logging import CloudJsonFormatter, SecretRedactionFilter
 from mplacas.observability.operations import observe_operation
 from mplacas.observability.propagation import CloudTraceContextPropagator
+from mplacas.observability.sanitize import redact_secrets
 from mplacas.observability.tracing import sanitized_http_url
 
 TRACE_ID = "0123456789abcdef0123456789abcdef"
@@ -129,6 +130,179 @@ def test_http_trace_url_drops_query_and_redacts_telegram_token() -> None:
     assert safe == "https://api.telegram.org/bot<redacted>/sendMessage"
     assert "secret-value" not in safe
     assert "chat_id" not in safe
+
+
+def _capture_with_filter(record: logging.LogRecord) -> str:
+    buffer = StringIO()
+    handler = logging.StreamHandler(buffer)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    handler.addFilter(SecretRedactionFilter())
+    handler.handle(record)
+    return buffer.getvalue()
+
+
+def test_secret_redaction_filter_scrubs_token_embedded_directly_in_message() -> None:
+    record = logging.LogRecord(
+        name="httpx",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="HTTP Request: POST https://api.telegram.org/botsecret-value/sendMessage",
+        args=(),
+        exc_info=None,
+    )
+
+    output = _capture_with_filter(record)
+
+    assert "secret-value" not in output
+    assert "/bot<redacted>" in output
+
+
+def test_secret_redaction_filter_scrubs_token_passed_via_lazy_args() -> None:
+    # Mirrors httpx's own logging call:
+    # logger.info('HTTP Request: %s %s "%s %d %s"', method, url, http_version, status, reason)
+    request = httpx.Request(
+        "POST", "https://api.telegram.org/botsecret-value/sendMessage"
+    )
+    record = logging.LogRecord(
+        name="httpx",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg='HTTP Request: %s %s "%s %d %s"',
+        args=("POST", request.url, "HTTP/1.1", 200, "OK"),
+        exc_info=None,
+    )
+
+    output = _capture_with_filter(record)
+
+    assert "secret-value" not in output
+    assert "/bot<redacted>" in output
+    assert "200" in output
+    assert "OK" in output
+
+
+def test_secret_redaction_filter_leaves_normal_log_messages_intact() -> None:
+    record = logging.LogRecord(
+        name="mplacas.nepviewer",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="fetched %s readings for station %s",
+        args=(42, "station-1"),
+        exc_info=None,
+    )
+
+    output = _capture_with_filter(record)
+
+    assert output.strip() == "fetched 42 readings for station station-1"
+
+
+def test_secret_redaction_filter_keeps_cloud_json_formatter_valid() -> None:
+    record = logging.LogRecord(
+        name="httpx",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg='HTTP Request: %s %s "%s %d %s"',
+        args=(
+            "POST",
+            "https://api.telegram.org/botsecret-value/sendMessage",
+            "HTTP/1.1",
+            200,
+            "OK",
+        ),
+        exc_info=None,
+    )
+    SecretRedactionFilter().filter(record)
+    formatter = CloudJsonFormatter(service_name="mplacas-api", project_id=None)
+
+    payload = json.loads(formatter.format(record))
+
+    assert "secret-value" not in json.dumps(payload)
+    assert "/bot<redacted>" in payload["message"]
+
+
+def test_redact_secrets_only_touches_known_patterns() -> None:
+    assert redact_secrets("plain text with no secrets") == "plain text with no secrets"
+    assert (
+        redact_secrets("https://api.telegram.org/bot123:ABC-token/sendMessage")
+        == "https://api.telegram.org/bot<redacted>/sendMessage"
+    )
+
+
+def test_redact_secrets_does_not_mangle_lookalike_unrelated_paths() -> None:
+    assert redact_secrets("POST /bots/create 201") == "POST /bots/create 201"
+    assert redact_secrets("checking /bot-status page") == "checking /bot-status page"
+
+
+def _make_chained_telegram_http_error() -> Exception:
+    token = "8916381999:AAF-X7zOBPpmq1adI40E99AKxqzHST0wstM"
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    request = httpx.Request("POST", url)
+    response = httpx.Response(400, request=request, json={"ok": False})
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as status_error:
+        try:
+            # Mirror the "wrap and re-raise" pattern used elsewhere in the
+            # codebase (e.g. TelegramClientError(...) from exc): the outer
+            # exception's message is generic, but the original, token-
+            # bearing exception is preserved as __cause__ and still gets
+            # rendered by traceback formatting.
+            raise RuntimeError("telegram delivery request failed") from status_error
+        except RuntimeError as wrapped:
+            return wrapped
+    raise AssertionError("expected raise_for_status to raise")
+
+
+def test_secret_redaction_filter_scrubs_token_from_exception_and_chained_cause() -> None:
+    error = _make_chained_telegram_http_error()
+    try:
+        raise error
+    except RuntimeError:
+        record = logging.LogRecord(
+            name="mplacas.alerts",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=1,
+            msg="operation_failed",
+            args=(),
+            exc_info=(type(error), error, error.__traceback__),
+        )
+
+    text_output = _capture_with_filter(record)
+    assert "8916381999" not in text_output
+    assert "wstM" not in text_output
+    assert "/bot<redacted>" in text_output
+    # The chained cause (httpx.HTTPStatusError, whose str() embeds the URL)
+    # must be redacted too, not just the top-level RuntimeError.
+    assert "api.telegram.org" in text_output
+
+
+def test_secret_redaction_filter_scrubs_token_from_exception_in_json_formatter() -> None:
+    error = _make_chained_telegram_http_error()
+    try:
+        raise error
+    except RuntimeError:
+        record = logging.LogRecord(
+            name="mplacas.alerts",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=1,
+            msg="operation_failed",
+            args=(),
+            exc_info=(type(error), error, error.__traceback__),
+        )
+
+    SecretRedactionFilter().filter(record)
+    formatter = CloudJsonFormatter(service_name="mplacas-api", project_id=None)
+    payload = json.loads(formatter.format(record))
+    serialized = json.dumps(payload)
+
+    assert "8916381999" not in serialized
+    assert "wstM" not in serialized
+    assert "/bot<redacted>" in payload["exception"]
 
 
 def test_bound_context_is_reset() -> None:

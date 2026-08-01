@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterator
@@ -27,8 +26,8 @@ from mplacas.core.config import Settings
 from mplacas.observability.logging import configure_logging
 from mplacas.observability.metrics import MetricsRuntime, configure_metrics
 from mplacas.observability.propagation import CloudTraceContextPropagator
+from mplacas.observability.sanitize import TELEGRAM_TOKEN_PATTERN
 
-_TELEGRAM_TOKEN = re.compile(r"/bot[^/]+")
 _TRACER_NAME = "mplacas"
 _runtime: ObservabilityRuntime | None = None
 
@@ -115,7 +114,7 @@ def sanitized_http_url(request: RequestInfo) -> str:
     parsed = urlsplit(str(request.url))
     path = parsed.path
     if (parsed.hostname or "").lower() == "api.telegram.org":
-        path = _TELEGRAM_TOKEN.sub("/bot<redacted>", path, count=1)
+        path = TELEGRAM_TOKEN_PATTERN.sub("/bot<redacted>", path, count=1)
     hostname = parsed.hostname or ""
     netloc = f"[{hostname}]" if ":" in hostname else hostname
     if parsed.port is not None:

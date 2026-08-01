@@ -55,10 +55,18 @@ class TelegramAlertProvider:
         if reply_markup is not None:
             payload["reply_markup"] = reply_markup
         timeout = httpx.Timeout(self.timeout_seconds)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            body = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                body = response.json()
+        except httpx.HTTPError as exc:
+            # httpx exceptions (notably HTTPStatusError) render the request
+            # URL — which embeds the bot token — in str(exc). Never let the
+            # raw exception escape this boundary; the token is scrubbed
+            # from logs by SecretRedactionFilter as defense in depth, but
+            # this is the primary control.
+            raise RuntimeError("telegram delivery request failed") from exc
         if body.get("ok") is not True:
             raise RuntimeError("telegram delivery was not acknowledged")
 
