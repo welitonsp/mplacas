@@ -60,6 +60,17 @@ def test_restore_drill_is_automated_and_fail_closed() -> None:
     assert 'cron: "0 5 * * *"' in workflow
     assert "retention-days: 35" in workflow
     assert "environment: production-restore-drill" in workflow
+    assert "postgres:16@sha256:" in workflow
+    assert "POSTGRES_HOST_AUTH_METHOD: trust" in workflow
+    assert (
+        "MPLACAS_RESTORE_DATABASE_URL: "
+        "postgresql://postgres@localhost:5432/mplacas_restore_check"
+    ) in workflow
+    assert "MPLACAS_RESTORE_CONFIRM_HOST: localhost" in workflow
+    assert "secrets.MPLACAS_RESTORE_DATABASE_URL" not in workflow
+    assert "secrets.MPLACAS_RESTORE_CONFIRM_HOST" not in workflow
+    assert 'host not in {"localhost", "127.0.0.1", "::1"}' in script
+    assert "remote restore URL must contain a password" in script
     assert "Open deduplicated restore incident" in workflow
 
 
