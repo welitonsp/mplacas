@@ -19,7 +19,7 @@ jobs:
     environment: production-restore-drill
     services:
       postgres:
-        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        image: postgres:18@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
         env:
           POSTGRES_USER: postgres
           POSTGRES_DB: mplacas_restore_check
@@ -46,7 +46,8 @@ jobs:
       - name: Install PostgreSQL client and application
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client gnupg
+          sudo apt-get install -y postgresql-client-18 gnupg
+          pg_dump --version | grep -E '^pg_dump \(PostgreSQL\) 18\.'
           python -m pip install --require-hashes -r requirements-dev.lock
           python -m pip install --no-deps --no-build-isolation .
       - name: Execute encrypted backup and restore drill
