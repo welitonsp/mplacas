@@ -64,7 +64,9 @@ def test_restore_drill_is_automated_and_fail_closed() -> None:
     assert 'cron: "0 5 * * *"' in workflow
     assert "retention-days: 35" in workflow
     assert "environment: production-restore-drill" in workflow
-    assert "postgres:16@sha256:" in workflow
+    assert "postgres:18@sha256:" in workflow
+    assert "postgresql-client-18" in workflow
+    assert "pg_dump --version" in workflow
     assert "POSTGRES_HOST_AUTH_METHOD: trust" in workflow
     assert (
         "MPLACAS_RESTORE_DATABASE_URL: "

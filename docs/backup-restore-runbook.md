@@ -46,7 +46,7 @@ Na automação, configure o environment `production-restore-drill` com:
 - variável `MPLACAS_RESTORE_DRILL_OWNER`;
 - acesso administrativo restrito para alterações manuais de secrets.
 
-O workflow cria um PostgreSQL 16 efêmero dentro do runner e fixa
+O workflow cria um PostgreSQL 18 efêmero dentro do runner e fixa
 `MPLACAS_RESTORE_DATABASE_URL=postgresql://postgres@localhost:5432/mplacas_restore_check` e
 `MPLACAS_RESTORE_CONFIRM_HOST=localhost`; o serviço é destruído com o runner. O hostname de
 confirmação deve ser exatamente o hostname do alvo descartável e diferente do hostname de produção.
@@ -61,7 +61,8 @@ O workflow `.github/workflows/restore-drill.yml` executa diariamente:
 bash infra/backup/run-restore-drill.sh
 ```
 
-Ele cria um PostgreSQL 16 efêmero no runner, gera um dump custom da origem, valida sua estrutura,
+Ele cria um PostgreSQL 18 efêmero no runner e valida que o cliente `pg_dump` também está na
+versão principal 18 antes de gerar um dump custom da origem e validar sua estrutura,
 calcula SHA-256, persiste somente a cópia cifrada com GPG/AES-256 por 35 dias, restaura no alvo
 descartável, aplica `alembic upgrade head`, verifica
 tabelas críticas e inicia uma API isolada para validar `/ready`. O artifact contém o dump cifrado
