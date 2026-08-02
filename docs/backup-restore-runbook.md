@@ -54,6 +54,8 @@ Essa validação fail-closed acontece antes do `pg_restore`. Execuções locais 
 Neon descartável, mas o workflow não depende de infraestrutura externa para o destino.
 Destinos loopback usam `sslmode=disable`, pois o serviço efêmero não expõe TLS; qualquer destino
 remoto continua obrigado a usar `require`, `verify-ca` ou `verify-full` e senha.
+Tanto `pg_restore` quanto `psql` recebem os campos validados da conexão separadamente, impedindo
+fallback implícito para o socket PostgreSQL do runner.
 
 ## Automação diária
 

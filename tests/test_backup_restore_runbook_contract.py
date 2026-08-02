@@ -57,10 +57,13 @@ def test_restore_drill_is_automated_and_fail_closed() -> None:
     assert all(term in script for term in required_script_terms)
     assert '--dbname "$SOURCE_DSN"' in script
     assert 'PGDATABASE="$MPLACAS_BACKUP_SOURCE_URL"' not in script
+    assert 'PGDATABASE="$MPLACAS_RESTORE_DATABASE_URL"' not in script
     assert '"postgresql+asyncpg"' in script
     assert 'source_url._replace(scheme="postgresql")' in script
     assert '--dbname "$MPLACAS_RESTORE_DATABASE_URL"' not in script
     assert 'PGPASSWORD="${RESTORE_CONNECTION[3]}"' in script
+    assert script.count('PGHOST="${RESTORE_CONNECTION[0]}"') == 2
+    assert script.count('PGSSLMODE="${RESTORE_CONNECTION[5]}"') == 2
     assert 'cron: "0 5 * * *"' in workflow
     assert "retention-days: 35" in workflow
     assert "environment: production-restore-drill" in workflow
