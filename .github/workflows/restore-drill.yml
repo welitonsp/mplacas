@@ -46,7 +46,23 @@ jobs:
       - name: Install PostgreSQL client and application
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client-18 gnupg
+          sudo apt-get install -y ca-certificates curl gnupg
+          pgdg_key="$(mktemp)"
+          curl --fail --silent --show-error --location \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            --output "$pgdg_key"
+          test "$(gpg --show-keys --with-colons "$pgdg_key" | awk -F: '$1 == "fpr" {print $10; exit}')" = \
+            "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"
+          sudo install -d -m 0755 /usr/share/postgresql-common/pgdg
+          sudo gpg --batch --yes --dearmor \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg \
+            "$pgdg_key"
+          rm -f "$pgdg_key"
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-18
           pg_dump --version | grep -E '^pg_dump \(PostgreSQL\) 18\.'
           python -m pip install --require-hashes -r requirements-dev.lock
           python -m pip install --no-deps --no-build-isolation .

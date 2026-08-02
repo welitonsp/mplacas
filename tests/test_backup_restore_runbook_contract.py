@@ -67,6 +67,9 @@ def test_restore_drill_is_automated_and_fail_closed() -> None:
     assert "postgres:18@sha256:" in workflow
     assert "postgresql-client-18" in workflow
     assert "pg_dump --version" in workflow
+    assert "https://apt.postgresql.org/pub/repos/apt" in workflow
+    assert "signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg" in workflow
+    assert "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8" in workflow
     assert "POSTGRES_HOST_AUTH_METHOD: trust" in workflow
     assert (
         "MPLACAS_RESTORE_DATABASE_URL: "

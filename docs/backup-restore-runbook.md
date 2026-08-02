@@ -67,6 +67,8 @@ calcula SHA-256, persiste somente a cópia cifrada com GPG/AES-256 por 35 dias, 
 descartável, aplica `alembic upgrade head`, verifica
 tabelas críticas e inicia uma API isolada para validar `/ready`. O artifact contém o dump cifrado
 e um manifest JSON auditável; o dump em claro é eliminado ao final mesmo em caso de falha.
+O cliente 18 vem do repositório oficial PGDG configurado com `signed-by`; o workflow confere a
+impressão digital completa da chave antes de confiar nela e instalar o pacote.
 A origem é validada e normalizada de `postgres://` ou `postgresql+asyncpg://` para a DSN libpq
 `postgresql://`, sem registrar credenciais, e é fornecida explicitamente a `pg_dump --dbname`.
 Isso impede fallback silencioso para o socket PostgreSQL local quando o backup deve ler a origem.
