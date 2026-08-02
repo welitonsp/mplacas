@@ -4,7 +4,7 @@ import hashlib
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +45,10 @@ class TokenResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
     refresh_token: str
 
 
@@ -248,6 +252,24 @@ async def refresh(
         access_token=encode_access_token(claims.sub, claims.org_id, user.role),
         refresh_token=new_refresh_token,
     )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    body: LogoutRequest,
+    session: AsyncSession = Depends(_get_session),
+) -> Response:
+    """Revoke the presented refresh session without exposing token validity."""
+
+    try:
+        claims = decode_token(body.refresh_token, expected_type="refresh")
+    except JwtError:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    if claims.jti is not None:
+        await AuthSessionService(session).revoke(session_id=claims.jti)
+        await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

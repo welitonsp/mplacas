@@ -9,6 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.climate.db_models import DailyClimateObservationRecord
 from mplacas.db.models import DailyEnergy
+from mplacas.photovoltaic.db_models import (
+    DailyPvLossAssessmentRecord,
+    DailyPvPerformanceRecord,
+    DailySolarModelResultRecord,
+    SeasonalPvBaselineRecord,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +73,44 @@ class TimeSeriesRetentionService:
             energy_result.rowcount if isinstance(energy_result, CursorResult) else 0
         ) or 0
 
+        loss_result = await self._session.execute(
+            delete(DailyPvLossAssessmentRecord).where(
+                DailyPvLossAssessmentRecord.observation_date < climate_cutoff
+            )
+        )
+        loss_deleted = (
+            loss_result.rowcount if isinstance(loss_result, CursorResult) else 0
+        ) or 0
+
+        baseline_result = await self._session.execute(
+            delete(SeasonalPvBaselineRecord).where(
+                SeasonalPvBaselineRecord.observation_date < climate_cutoff
+            )
+        )
+        baseline_deleted = (
+            baseline_result.rowcount if isinstance(baseline_result, CursorResult) else 0
+        ) or 0
+
+        performance_result = await self._session.execute(
+            delete(DailyPvPerformanceRecord).where(
+                DailyPvPerformanceRecord.observation_date < climate_cutoff
+            )
+        )
+        performance_deleted = (
+            performance_result.rowcount
+            if isinstance(performance_result, CursorResult)
+            else 0
+        ) or 0
+
+        solar_result = await self._session.execute(
+            delete(DailySolarModelResultRecord).where(
+                DailySolarModelResultRecord.observation_date < climate_cutoff
+            )
+        )
+        solar_deleted = (
+            solar_result.rowcount if isinstance(solar_result, CursorResult) else 0
+        ) or 0
+
         climate_result = await self._session.execute(
             delete(DailyClimateObservationRecord).where(
                 DailyClimateObservationRecord.observation_date < climate_cutoff
@@ -81,6 +125,10 @@ class TimeSeriesRetentionService:
             extra={
                 "daily_energy_deleted": energy_deleted,
                 "climate_observations_deleted": climate_deleted,
+                "solar_model_results_deleted": solar_deleted,
+                "pv_performance_results_deleted": performance_deleted,
+                "seasonal_pv_baseline_results_deleted": baseline_deleted,
+                "daily_pv_loss_assessments_deleted": loss_deleted,
                 "energy_cutoff": energy_cutoff.isoformat(),
                 "climate_cutoff": climate_cutoff.isoformat(),
             },

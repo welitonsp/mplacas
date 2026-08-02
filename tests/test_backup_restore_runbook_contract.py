@@ -4,6 +4,8 @@ from pathlib import Path
 
 
 RUNBOOK = Path("docs/backup-restore-runbook.md")
+AUTOMATION = Path("infra/backup/run-restore-drill.sh")
+WORKFLOW = Path(".github/workflows/restore-drill.yml")
 
 
 def test_backup_restore_runbook_exists() -> None:
@@ -35,3 +37,37 @@ def test_backup_restore_runbook_requires_restore_rehearsal() -> None:
     assert "restauração de ensaio" in content
     assert "falha de `/ready` bloqueia promoção do backup" in content
     assert "não usa o banco de produção como destino" in content
+
+
+def test_restore_drill_is_automated_and_fail_closed() -> None:
+    script = AUTOMATION.read_text(encoding="utf-8")
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    required_script_terms = {
+        "MPLACAS_RESTORE_CONFIRM_HOST",
+        "restore target must use a different host/branch than production",
+        "pg_dump",
+        "pg_restore",
+        "--exit-on-error",
+        "alembic.ini upgrade head",
+        "http://127.0.0.1:18080/ready",
+        '"decision": "approved"',
+        "--cipher-algo AES256",
+    }
+    assert all(term in script for term in required_script_terms)
+    assert '--dbname "$MPLACAS_RESTORE_DATABASE_URL"' not in script
+    assert 'PGPASSWORD="${RESTORE_CONNECTION[3]}"' in script
+    assert 'cron: "0 5 * * *"' in workflow
+    assert "retention-days: 35" in workflow
+    assert "environment: production-restore-drill" in workflow
+    assert "Open deduplicated restore incident" in workflow
+
+
+def test_restore_drill_objectives_are_explicit() -> None:
+    content = RUNBOOK.read_text(encoding="utf-8")
+
+    assert "**RPO:** no máximo 24 horas" in content
+    assert "**RTO:** até 4 horas" in content
+    assert "**Retenção:** 35 dias" in content
+    assert "MPLACAS_RESTORE_DRILL_OWNER" in content
+    assert "PITR" in content

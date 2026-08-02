@@ -4,10 +4,11 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import CursorResult, delete
+from sqlalchemy import CursorResult, and_, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.alerts.db_models import AlertDeliveryRecord
+from mplacas.auth.db_models import AuthSessionRecord, LoginRateLimitRecord
 from mplacas.collection.db_models import CollectionTaskRecord, CollectionTaskStatus
 from mplacas.events.db_models import OutboxEventRecord, OutboxEventStatus
 from mplacas.operations.models import JobRun, JobStatus
@@ -15,6 +16,7 @@ from mplacas.orchestration.db_models import (
     PipelineExecutionRecord,
     PipelineExecutionStatus,
 )
+from mplacas.organizations.invitation_db_models import UserInvitationRecord
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,9 @@ class RetentionWindows:
     outbox_events_days: int = 30
     collection_tasks_days: int = 30
     alert_delivery_records_days: int = 365
+    auth_sessions_days: int = 90
+    login_rate_limits_days: int = 30
+    user_invitations_days: int = 365
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -56,6 +61,9 @@ class RetentionWindows:
             ("outbox_events_days", self.outbox_events_days),
             ("collection_tasks_days", self.collection_tasks_days),
             ("alert_delivery_records_days", self.alert_delivery_records_days),
+            ("auth_sessions_days", self.auth_sessions_days),
+            ("login_rate_limits_days", self.login_rate_limits_days),
+            ("user_invitations_days", self.user_invitations_days),
         ):
             if value < 1:
                 raise ValueError(f"{name} must be at least 1 day")
@@ -140,6 +148,54 @@ class RetentionService:
                 delete(AlertDeliveryRecord).where(
                     AlertDeliveryRecord.sent_at
                     < current_time - timedelta(days=windows.alert_delivery_records_days),
+                ),
+            )
+        )
+        auth_cutoff = current_time - timedelta(days=windows.auth_sessions_days)
+        outcomes.append(
+            await self._purge_table(
+                "auth_sessions",
+                delete(AuthSessionRecord).where(
+                    or_(
+                        AuthSessionRecord.expires_at < auth_cutoff,
+                        and_(
+                            AuthSessionRecord.active.is_(False),
+                            or_(
+                                AuthSessionRecord.revoked_at < auth_cutoff,
+                                AuthSessionRecord.rotated_at < auth_cutoff,
+                            ),
+                        ),
+                    )
+                ),
+            )
+        )
+        rate_limit_cutoff = current_time - timedelta(
+            days=windows.login_rate_limits_days
+        )
+        outcomes.append(
+            await self._purge_table(
+                "login_rate_limits",
+                delete(LoginRateLimitRecord).where(
+                    LoginRateLimitRecord.first_attempt_at < rate_limit_cutoff,
+                    or_(
+                        LoginRateLimitRecord.locked_until.is_(None),
+                        LoginRateLimitRecord.locked_until < current_time,
+                    ),
+                ),
+            )
+        )
+        invitation_cutoff = current_time - timedelta(
+            days=windows.user_invitations_days
+        )
+        outcomes.append(
+            await self._purge_table(
+                "user_invitations",
+                delete(UserInvitationRecord).where(
+                    or_(
+                        UserInvitationRecord.expires_at < invitation_cutoff,
+                        UserInvitationRecord.accepted_at < invitation_cutoff,
+                        UserInvitationRecord.revoked_at < invitation_cutoff,
+                    )
                 ),
             )
         )

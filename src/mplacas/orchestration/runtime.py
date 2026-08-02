@@ -123,6 +123,18 @@ async def run_ledger_backed_daily_pipeline(
             "execution_id": str(execution.id),
             "duration_ms": duration_ms,
             "climate_received": result.climate.received,
+            "performance_calculated": (
+                result.performance.inserted + result.performance.updated
+            ),
+            "performance_skipped": result.performance.skipped,
+            "seasonal_baseline_calculated": (
+                result.seasonal_baseline.inserted + result.seasonal_baseline.updated
+            ),
+            "seasonal_baseline_skipped": result.seasonal_baseline.skipped,
+            "loss_assessments_calculated": (
+                result.loss_taxonomy.inserted + result.loss_taxonomy.updated
+            ),
+            "loss_taxonomy_skipped": result.loss_taxonomy.skipped,
             "alerts_evaluated": result.alerts.metrics.evaluated,
             "alerts_sent": result.alerts.metrics.sent,
             "alerts_failed": result.alerts.metrics.failed,

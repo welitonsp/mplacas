@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import uuid
+from bisect import bisect_left
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from statistics import median
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,16 @@ from mplacas.intelligence.anomaly_engine import (
     DailyPerformanceInput,
     assess_daily_performance,
 )
+
+
+#: How many days *before* the analyzed window are additionally pulled to
+#: seed the local irradiation median. The analyzed window itself (`days`,
+#: typically 7 — see `mplacas.alerts.operations`) is almost always shorter
+#: than `DEFAULT_MINIMUM_IRRADIATION_SAMPLE_DAYS` would need for any day
+#: near its start, which would leave the relative-median threshold unable
+#: to ever excuse a drop as weather in practice. Matches
+#: `mplacas.alerts.production_alert.LOOKBACK_DAYS`.
+IRRADIATION_MEDIAN_LOOKBACK_DAYS = 30
 
 
 class AnomalyDataNotFoundError(LookupError):
@@ -83,12 +95,16 @@ async def analyze_recent_persisted_anomalies(
     if not energy_rows:
         raise AnomalyDataNotFoundError("daily production not found for requested period")
 
+    # The climate query reaches back further than `first_day` purely to seed
+    # the irradiation median (see `IRRADIATION_MEDIAN_LOOKBACK_DAYS`) — the
+    # analyzed window itself (`energy_by_day`) is unaffected.
+    median_history_start = first_day - timedelta(days=IRRADIATION_MEDIAN_LOOKBACK_DAYS)
     climate_rows = list(
         (
             await session.execute(
                 select(DailyClimateObservationRecord).where(
                     DailyClimateObservationRecord.plant_id == plant_id,
-                    DailyClimateObservationRecord.observation_date >= first_day,
+                    DailyClimateObservationRecord.observation_date >= median_history_start,
                     DailyClimateObservationRecord.observation_date <= last_day,
                 )
             )
@@ -100,6 +116,18 @@ async def analyze_recent_persisted_anomalies(
         energy_by_day.setdefault(row.production_date, []).append(row)
     climate_by_day = {row.observation_date: row for row in climate_rows}
 
+    # Sorted (date, irradiation) pairs feed the local median for each day
+    # below without a second per-day query — this single climate query
+    # (widened above) already covers everything needed, so the median is
+    # always computed from days strictly before the one being assessed.
+    irradiation_by_day = sorted(
+        (observation_date, record.irradiation_kwh_m2)
+        for observation_date, record in climate_by_day.items()
+        if record.irradiation_kwh_m2 is not None
+    )
+    irradiation_dates = [observation_date for observation_date, _ in irradiation_by_day]
+    irradiation_values = [value for _, value in irradiation_by_day]
+
     daily: list[DailyPersistedAnomaly] = []
     for current_day in sorted(energy_by_day):
         rows = energy_by_day[current_day]
@@ -107,12 +135,19 @@ async def analyze_recent_persisted_anomalies(
         complete = all(row.status is DataStatus.CONSOLIDATED for row in rows)
         climate = climate_by_day.get(current_day)
         irradiation = climate.irradiation_kwh_m2 if climate is not None else None
+
+        historical_count = bisect_left(irradiation_dates, current_day)
+        historical_values = irradiation_values[:historical_count]
+        irradiation_median = median(historical_values) if historical_values else None
+
         assessment = assess_daily_performance(
             DailyPerformanceInput(
                 actual_production_kwh=actual,
                 expected_production_kwh=expected_daily_production_kwh,
                 irradiation_kwh_m2=irradiation,
                 data_complete=complete,
+                irradiation_median_kwh_m2=irradiation_median,
+                irradiation_sample_days=len(historical_values),
             )
         )
         daily.append(

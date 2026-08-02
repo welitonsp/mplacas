@@ -16,9 +16,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshTokenRef = useRef<string | null>(null)
 
   const logout = useCallback(() => {
+    const refreshToken = refreshTokenRef.current
     TokenStore.clear()
     refreshTokenRef.current = null
     setIsAuthenticated(false)
+
+    if (refreshToken) {
+      void fetch(`${API_URL}/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+        keepalive: true,
+      }).catch(() => undefined)
+    }
   }, [])
 
   const getRefreshToken = useCallback(() => refreshTokenRef.current, [])

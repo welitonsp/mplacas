@@ -8,6 +8,10 @@ import { App } from './App'
 // and the app will fail fast with a clear error message.
 import './env'
 
+// Migração de segurança do dashboard FastAPI removido. Nunca lemos o
+// valor: apenas apagamos a credencial de longa duração deixada por versões antigas.
+window.localStorage.removeItem('mplacas_creds_v1')
+
 const rootElement = document.getElementById('root')
 if (!rootElement) {
   throw new Error('Root element #root not found in DOM')

@@ -1,12 +1,12 @@
-from pathlib import Path
-
 from fastapi import APIRouter
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
+
+from mplacas.core.config import get_settings
 
 router = APIRouter(tags=["dashboard"])
-_ASSET_DIR = Path(__file__).parent / "static"
 
 
 @router.get("/dashboard", include_in_schema=False)
-async def dashboard() -> FileResponse:
-    return FileResponse(_ASSET_DIR / "index.html", media_type="text/html")
+async def dashboard() -> RedirectResponse:
+    """Compatibilidade sem servir o cliente legado nem receber chave operacional."""
+    return RedirectResponse(str(get_settings().dashboard_url), status_code=308)

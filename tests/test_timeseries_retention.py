@@ -11,6 +11,12 @@ from mplacas.climate.db_models import DailyClimateObservationRecord
 from mplacas.db.base import Base
 from mplacas.db.models import DataStatus, Device, DailyEnergy, DailyEnergyVersion, Plant
 from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
+from mplacas.photovoltaic.db_models import (
+    DailyPvLossAssessmentRecord,
+    DailyPvPerformanceRecord,
+    DailySolarModelResultRecord,
+    SeasonalPvBaselineRecord,
+)
 from mplacas.retention.timeseries_service import (
     TimeSeriesRetentionService,
     TimeSeriesRetentionWindows,
@@ -95,6 +101,135 @@ async def _make_climate(
     return record
 
 
+async def _make_solar_result(
+    session: AsyncSession,
+    plant_id: uuid.UUID,
+    observation_date: date,
+) -> DailySolarModelResultRecord:
+    record = DailySolarModelResultRecord(
+        plant_id=plant_id,
+        observation_date=observation_date,
+        climate_source="OPEN_METEO",
+        model_version="TEST_V1",
+        latitude_degrees=-17.744,
+        array_tilt_degrees=20,
+        array_azimuth_degrees=0,
+        module_technology="MONOCRYSTALLINE_SILICON",
+        ghi_kwh_m2=5,
+        poa_irradiation_kwh_m2=6,
+        beam_horizontal_kwh_m2=3,
+        diffuse_horizontal_kwh_m2=2,
+        extraterrestrial_horizontal_kwh_m2=8,
+        ambient_temperature_c=25,
+        cell_temperature_c=40,
+        temperature_coefficient_per_c=-0.004,
+        temperature_factor=0.94,
+        temperature_adjusted_poa_equivalent_kwh_m2=5.64,
+        quality_flags=["TEST"],
+        assumptions_json={"test": "true"},
+    )
+    session.add(record)
+    await session.flush()
+    return record
+
+
+async def _make_performance_result(
+    session: AsyncSession,
+    plant_id: uuid.UUID,
+    observation_date: date,
+) -> DailyPvPerformanceRecord:
+    record = DailyPvPerformanceRecord(
+        plant_id=plant_id,
+        observation_date=observation_date,
+        solar_model_version="TEST_SOLAR_V1",
+        performance_model_version="TEST_PR_V1",
+        climate_source="OPEN_METEO",
+        performance_ratio_nature="TEST_PR",
+        availability_nature="TEST_PROXY",
+        uncertainty_percent=None,
+        uncertainty_nature="NOT_QUANTIFIED",
+        measured_energy_kwh=4,
+        dc_capacity_kwp=1,
+        poa_irradiation_kwh_m2=5,
+        final_yield_kwh_per_kwp=4,
+        reference_yield_hours=5,
+        performance_ratio=0.8,
+        temperature_corrected_performance_ratio=None,
+        reporting_availability_ratio=1,
+        reporting_device_count=1,
+        configured_device_count=1,
+        reporting_capacity_kwp=1,
+        configured_device_capacity_kwp=1,
+        data_quality_status="FINAL",
+        quality_flags=["TEST"],
+        units_json={"performance_ratio": "ratio"},
+        assumptions_json={"test": "true"},
+    )
+    session.add(record)
+    await session.flush()
+    return record
+
+
+async def _make_baseline_result(
+    session: AsyncSession,
+    plant_id: uuid.UUID,
+    observation_date: date,
+) -> SeasonalPvBaselineRecord:
+    record = SeasonalPvBaselineRecord(
+        plant_id=plant_id,
+        observation_date=observation_date,
+        baseline_model_version="TEST_BASELINE_V1",
+        performance_model_version="TEST_PR_V1",
+        metric_nature="TEST_PR",
+        clear_sky_index_nature="TEST_P90",
+        season_key=f"MONTH_{observation_date.month:02d}",
+        reference_start_date=observation_date - timedelta(days=500),
+        reference_end_date=observation_date - timedelta(days=135),
+        baseline_sample_count=12,
+        baseline_excluded_count=1,
+        comparison_start_date=observation_date - timedelta(days=7),
+        comparison_sample_count=7,
+        clear_sky_poa_p90_kwh_m2=6,
+        target_clear_sky_index=0.9,
+        baseline_median_performance_ratio=0.8,
+        baseline_mad=0.01,
+        baseline_q10=0.78,
+        baseline_q90=0.82,
+        comparison_median_performance_ratio=0.76,
+        degradation_percent=-5,
+        annualized_degradation_percent=-4,
+        degradation_status="DEGRADED",
+        quality_flags=["TEST"],
+        assumptions_json={"test": "true"},
+    )
+    session.add(record)
+    await session.flush()
+    return record
+
+
+async def _make_loss_assessment(
+    session: AsyncSession,
+    plant_id: uuid.UUID,
+    observation_date: date,
+) -> DailyPvLossAssessmentRecord:
+    record = DailyPvLossAssessmentRecord(
+        plant_id=plant_id,
+        observation_date=observation_date,
+        category="COMMUNICATION",
+        evidence_level="NOT_DETECTED",
+        taxonomy_model_version="TEST_LOSS_V1",
+        performance_model_version="TEST_PR_V1",
+        baseline_model_version=None,
+        estimated_loss_percent=None,
+        evidence_codes=["TEST"],
+        limitation=None,
+        assumptions_json={"test": "true"},
+    )
+    session.add(record)
+    await session.flush()
+    return record
+
+
 @pytest.mark.asyncio
 async def test_windows_validation() -> None:
     with pytest.raises(ValueError, match="daily_energy_days"):
@@ -138,6 +273,14 @@ async def test_purge_deletes_old_climate_records(session: AsyncSession) -> None:
 
     await _make_climate(session, plant_id, old_date)
     await _make_climate(session, plant_id, recent_date)
+    await _make_solar_result(session, plant_id, old_date)
+    await _make_solar_result(session, plant_id, recent_date)
+    await _make_performance_result(session, plant_id, old_date)
+    await _make_performance_result(session, plant_id, recent_date)
+    await _make_baseline_result(session, plant_id, old_date)
+    await _make_baseline_result(session, plant_id, recent_date)
+    await _make_loss_assessment(session, plant_id, old_date)
+    await _make_loss_assessment(session, plant_id, recent_date)
 
     svc = TimeSeriesRetentionService(session)
     energy_deleted, climate_deleted = await svc.purge(windows=windows, today=today)
@@ -148,6 +291,26 @@ async def test_purge_deletes_old_climate_records(session: AsyncSession) -> None:
     remaining = (await session.execute(select(DailyClimateObservationRecord))).scalars().all()
     assert len(remaining) == 1
     assert remaining[0].observation_date == recent_date
+    solar_remaining = (
+        await session.execute(select(DailySolarModelResultRecord))
+    ).scalars().all()
+    assert len(solar_remaining) == 1
+    assert solar_remaining[0].observation_date == recent_date
+    performance_remaining = (
+        await session.execute(select(DailyPvPerformanceRecord))
+    ).scalars().all()
+    assert len(performance_remaining) == 1
+    assert performance_remaining[0].observation_date == recent_date
+    baseline_remaining = (
+        await session.execute(select(SeasonalPvBaselineRecord))
+    ).scalars().all()
+    assert len(baseline_remaining) == 1
+    assert baseline_remaining[0].observation_date == recent_date
+    loss_remaining = (
+        await session.execute(select(DailyPvLossAssessmentRecord))
+    ).scalars().all()
+    assert len(loss_remaining) == 1
+    assert loss_remaining[0].observation_date == recent_date
 
 
 @pytest.mark.asyncio

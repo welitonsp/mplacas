@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 # Uso: bash infra/gcp/set-secrets.sh <subcomando> [--rotate-jwt]
-# Subcomandos: database-runtime, database-migration, operations-key, jwt, all.
+# Subcomandos: database-runtime, database-migration, operations-key, jwt,
+# telegram-bot-token, nep-account, nep-password, all.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=infra/gcp/lib.sh
@@ -140,6 +141,24 @@ _set_operations_key() {
   _add_secret_version_interactive "$SECRET_OPERATIONS_KEY" "MPLACAS_OPERATIONS_API_KEY"
 }
 
+_set_telegram_bot_token() {
+  _ensure_secret_exists "$SECRET_TELEGRAM_BOT_TOKEN"
+  _grant_runtime_secret_access "$SECRET_TELEGRAM_BOT_TOKEN"
+  _add_secret_version_interactive "$SECRET_TELEGRAM_BOT_TOKEN" "MPLACAS_TELEGRAM_BOT_TOKEN"
+}
+
+_set_nep_account() {
+  _ensure_secret_exists "$SECRET_NEP_ACCOUNT"
+  _grant_runtime_secret_access "$SECRET_NEP_ACCOUNT"
+  _add_secret_version_interactive "$SECRET_NEP_ACCOUNT" "MPLACAS_NEP_ACCOUNT"
+}
+
+_set_nep_password() {
+  _ensure_secret_exists "$SECRET_NEP_PASSWORD"
+  _grant_runtime_secret_access "$SECRET_NEP_PASSWORD"
+  _add_secret_version_interactive "$SECRET_NEP_PASSWORD" "MPLACAS_NEP_PASSWORD"
+}
+
 _set_jwt() {
   local rotate_flag="${1:-}"
   local existing_count
@@ -189,6 +208,9 @@ _set_all() {
   _set_database_migration
   _set_operations_key
   _set_jwt ""
+  _set_telegram_bot_token
+  _set_nep_account
+  _set_nep_password
 }
 
 load_config
@@ -205,9 +227,12 @@ case "$cmd" in
   database-migration) _set_database_migration ;;
   operations-key) _set_operations_key ;;
   jwt) _set_jwt "${2:-}" ;;
+  telegram-bot-token) _set_telegram_bot_token ;;
+  nep-account) _set_nep_account ;;
+  nep-password) _set_nep_password ;;
   all) _set_all ;;
   *)
-    printf 'Uso: %s {database-runtime|database-migration|operations-key|jwt [--rotate-jwt]|all}\n' "$0" >&2
+    printf 'Uso: %s {database-runtime|database-migration|operations-key|jwt [--rotate-jwt]|telegram-bot-token|nep-account|nep-password|all}\n' "$0" >&2
     exit 1
     ;;
 esac

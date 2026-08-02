@@ -22,7 +22,8 @@ operacionais precisam permanecer auditáveis.
 ## Decisão
 
 1. Proteger todo o router `/operations` com `Depends(require_operations_key)`.
-2. Manter `/health`, `/ready` e `/dashboard` públicos.
+2. Manter `/health` e `/ready` públicos; `/dashboard` permanece público apenas como
+   redirecionamento `308` de compatibilidade para a SPA definida pela ADR-052.
 3. No Cloud Run Job diário, confirmar a transação também quando o runtime marca uma execução como
    falha e relança a exceção.
 4. Adicionar migration para os índices:

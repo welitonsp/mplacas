@@ -5,6 +5,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import desc, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.db_models import BillStatus, UtilityBillRecord
@@ -28,11 +29,12 @@ class UtilityBillRepository:
             raise ValueError("plant not found")
         source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
         existing = await self._session.scalar(
-            select(UtilityBillRecord).where(UtilityBillRecord.source_hash == source_hash)
+            select(UtilityBillRecord).where(
+                UtilityBillRecord.plant_id == plant_id,
+                UtilityBillRecord.source_hash == source_hash,
+            )
         )
         if existing is not None:
-            if existing.plant_id != plant_id:
-                raise ValueError("bill source is already associated with another plant")
             return existing
         record = UtilityBillRecord(
             plant_id=plant_id,
@@ -54,9 +56,21 @@ class UtilityBillRepository:
             status=BillStatus.PENDING_REVIEW,
             source_hash=source_hash,
         )
-        self._session.add(record)
-        await self._session.flush()
-        return record
+        try:
+            async with self._session.begin_nested():
+                self._session.add(record)
+                await self._session.flush()
+            return record
+        except IntegrityError:
+            concurrent = await self._session.scalar(
+                select(UtilityBillRecord).where(
+                    UtilityBillRecord.plant_id == plant_id,
+                    UtilityBillRecord.source_hash == source_hash,
+                )
+            )
+            if concurrent is not None:
+                return concurrent
+            raise
 
     async def get(
         self,

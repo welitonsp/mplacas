@@ -12,6 +12,9 @@ tests/
 docs/
 /storage/
 /backups/
+storage/
+backups/
+reports/
 *.db
 *.sqlite3
 *.dump

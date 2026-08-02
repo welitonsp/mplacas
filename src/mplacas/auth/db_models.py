@@ -30,6 +30,7 @@ class AuthSessionRecord(Base):
         nullable=False,
         index=True,
     )
+    family_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
     refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(

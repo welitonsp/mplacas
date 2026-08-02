@@ -1,0 +1,36 @@
+{
+  "displayName": "Mplacas - watchdog operacional sem execução",
+  "combiner": "OR",
+  "enabled": true,
+  "userLabels": {
+    "managed_by": "mplacas",
+    "mplacas_policy_id": "operational_watchdog_absence",
+    "version": "v1"
+  },
+  "documentation": {
+    "mimeType": "text/markdown",
+    "content": "O watchdog horário deixou de publicar uma execução bem-sucedida por 2 horas. Verifique Cloud Scheduler, IAM, Cloud Run Jobs e depois o ledger do pipeline diário."
+  },
+  "alertStrategy": {
+    "autoClose": "604800s"
+  },
+  "conditions": [
+    {
+      "displayName": "Ausência de sucesso do watchdog por 2 horas",
+      "conditionAbsent": {
+        "filter": "resource.type=\"cloud_run_job\" AND resource.labels.location=\"${GCP_REGION}\" AND resource.labels.job_name=\"${GCP_OPERATIONAL_JOB_PREFIX}-operational-watchdog\" AND metric.type=\"run.googleapis.com/job/completed_execution_count\" AND metric.labels.result=\"succeeded\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "3600s",
+            "perSeriesAligner": "ALIGN_DELTA",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ],
+        "duration": "7200s",
+        "trigger": {
+          "count": 1
+        }
+      }
+    }
+  ]
+}

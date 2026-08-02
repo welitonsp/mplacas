@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -10,6 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.auth.db_models import AuthSessionRecord, LoginRateLimitRecord
 from mplacas.core.jwt import JwtClaims, encode_refresh_token
+
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -45,6 +49,7 @@ class AuthSessionService:
                 id=session_id,
                 user_id=user_id,
                 organization_id=organization_id,
+                family_id=session_id,
                 refresh_token_hash=hash_refresh_token(token),
                 active=True,
                 expires_at=expires_at,
@@ -62,38 +67,101 @@ class AuthSessionService:
     ) -> str | None:
         if claims.jti is None:
             return None
-        record = await self._session.get(AuthSessionRecord, claims.jti)
-        if record is None:
-            return None
-        if not record.active:
-            return None
-        if record.user_id != claims.sub or record.organization_id != claims.org_id:
-            return None
-        if record.refresh_token_hash != hash_refresh_token(token):
-            return None
-        if _as_utc(record.expires_at) <= _utc_now():
-            record.active = False
-            record.revoked_at = _utc_now()
-            await self._session.flush()
-            return None
-
-        record.active = False
-        record.rotated_at = _utc_now()
+        now = _utc_now()
+        token_hash = hash_refresh_token(token)
         new_session_id = uuid.uuid4()
         new_token = encode_refresh_token(claims.sub, claims.org_id, jti=new_session_id)
-        record.replaced_by_session_id = new_session_id
+        claimed_family_id = (
+            await self._session.execute(
+                update(AuthSessionRecord)
+                .where(
+                    AuthSessionRecord.id == claims.jti,
+                    AuthSessionRecord.active.is_(True),
+                    AuthSessionRecord.user_id == claims.sub,
+                    AuthSessionRecord.organization_id == claims.org_id,
+                    AuthSessionRecord.refresh_token_hash == token_hash,
+                    AuthSessionRecord.expires_at > now,
+                )
+                .values(active=False, rotated_at=now)
+                .returning(AuthSessionRecord.family_id)
+            )
+        ).scalar_one_or_none()
+
+        if claimed_family_id is None:
+            await self._handle_failed_rotation(
+                session_id=claims.jti,
+                token_hash=token_hash,
+                claims=claims,
+                now=now,
+            )
+            return None
+
         self._session.add(
             AuthSessionRecord(
                 id=new_session_id,
                 user_id=claims.sub,
                 organization_id=claims.org_id,
+                family_id=claimed_family_id,
                 refresh_token_hash=hash_refresh_token(new_token),
                 active=True,
-                expires_at=_utc_now() + timedelta(seconds=ttl_seconds),
+                expires_at=now + timedelta(seconds=ttl_seconds),
             )
         )
         await self._session.flush()
+        await self._session.execute(
+            update(AuthSessionRecord)
+            .where(AuthSessionRecord.id == claims.jti)
+            .values(replaced_by_session_id=new_session_id)
+        )
         return new_token
+
+    async def _handle_failed_rotation(
+        self,
+        *,
+        session_id: uuid.UUID,
+        token_hash: str,
+        claims: JwtClaims,
+        now: datetime,
+    ) -> None:
+        record = await self._session.get(AuthSessionRecord, session_id)
+        if record is None:
+            return
+        token_matches = (
+            record.user_id == claims.sub
+            and record.organization_id == claims.org_id
+            and record.refresh_token_hash == token_hash
+        )
+        if not token_matches:
+            return
+        if record.active and _as_utc(record.expires_at) <= now:
+            record.active = False
+            record.revoked_at = now
+            await self._session.flush()
+            return
+        if record.active:
+            return
+
+        # O token autêntico já foi consumido/revogado: isso é replay. A
+        # família inteira é invalidada para que o sucessor possivelmente
+        # roubado não continue utilizável.
+        await self._session.execute(
+            update(AuthSessionRecord)
+            .where(
+                AuthSessionRecord.family_id == record.family_id,
+                AuthSessionRecord.active.is_(True),
+            )
+            .values(active=False, revoked_at=now)
+        )
+        logger.warning(
+            "refresh_token_replay_detected",
+            extra={
+                "auth_session_id": str(session_id),
+                "auth_session_family_id": str(record.family_id),
+                "user_id": str(record.user_id),
+                "organization_id": str(record.organization_id),
+            },
+        )
+        await self._session.flush()
 
     async def revoke(self, *, session_id: uuid.UUID) -> bool:
         record = await self._session.get(AuthSessionRecord, session_id)

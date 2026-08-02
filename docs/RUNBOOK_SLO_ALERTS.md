@@ -1,155 +1,104 @@
-# Runbook - Alertas de SLO no Google Cloud Monitoring
+# Runbook — alertas operacionais no Google Cloud Monitoring
 
-Este runbook cria as políticas de alerta sobre as métricas definidas no ADR-042. Execute no Google
-Cloud Shell, no mesmo projeto do deploy. As políticas são criadas uma única vez e permanecem fora do
-caminho de deploy.
+## Objetivo
 
-As métricas customizadas OpenTelemetry aparecem no Cloud Monitoring com o prefixo
-`workload.googleapis.com/`:
+Garantir que uma falha dos Cloud Run Jobs obrigatórios ou a interrupção silenciosa do fluxo
+Scheduler → Cloud Run → ledger seja detectada fora da própria aplicação.
 
-- `workload.googleapis.com/mplacas.operation.runs`
-- `workload.googleapis.com/mplacas.operation.duration`
+As políticas são declarativas, versionadas em `infra/gcp/monitoring/` e reconciliadas pelo
+`infra/gcp/provision-operations.sh`. Não crie cópias manualmente no console.
+
+## Contrato monitorado
+
+O provisionamento mantém duas políticas habilitadas:
+
+1. `operational_job_failure`: alerta quando qualquer job operacional termina com resultado diferente
+   de `succeeded` na métrica nativa `run.googleapis.com/job/completed_execution_count`.
+2. `operational_watchdog_absence`: alerta quando não há execução bem-sucedida do watchdog por duas
+   horas.
+
+O watchdog roda aos cinco minutos de cada hora e falha de forma segura quando a planta configurada
+não existe ou é ambígua, não há histórico do pipeline, a última execução falhou, permanece em
+andamento por mais de 30 minutos ou o último sucesso terminou há mais de 26 horas. Ele só lê o banco;
+não cria plantas nem altera dados operacionais.
+
+As duas condições são complementares: a primeira detecta uma execução que falhou; a segunda detecta
+também Scheduler pausado, quebra de IAM ou job que deixou de ser invocado.
 
 ## Pré-requisitos
 
-```bash
-export GCP_PROJECT_ID="<seu-projeto>"
-gcloud config set project "$GCP_PROJECT_ID"
-```
-
-Crie um canal de notificação por e-mail e guarde o nome completo retornado:
+Crie ao menos um canal no Cloud Monitoring e registre seu nome completo em
+`infra/gcp/config.env`:
 
 ```bash
-gcloud beta monitoring channels create \
-  --display-name="Mplacas Operações" \
-  --type=email \
-  --channel-labels=email_address="<seu-email>"
-
-gcloud beta monitoring channels list --format="value(name,displayName)"
-export CHANNEL="projects/$GCP_PROJECT_ID/notificationChannels/<id>"
+GCP_MONITORING_NOTIFICATION_CHANNELS=projects/meu-projeto/notificationChannels/123456
 ```
 
-## SLO 1 - Falha do pipeline diário
+Vários canais podem ser informados separados por vírgula, sem espaços. O provisionador rejeita
+recursos de outro projeto, valores abreviados e entradas vazias.
 
-Qualquer execução com `outcome=failure` nas operações do pipeline dispara alerta.
+## Provisionamento idempotente
 
 ```bash
-cat > /tmp/mplacas-pipeline-failure.json <<'EOF'
-{
-  "displayName": "Mplacas - falha em operação do pipeline diário",
-  "combiner": "OR",
-  "conditions": [
-    {
-      "displayName": "operation.runs failure > 0 (5 min)",
-      "conditionThreshold": {
-        "filter": "metric.type=\"workload.googleapis.com/mplacas.operation.runs\" AND metric.labels.outcome=\"failure\" AND metric.labels.operation=monitoring.regex.full_match(\"daily_pipeline\\\\..*\")",
-        "aggregations": [
-          {
-            "alignmentPeriod": "300s",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "crossSeriesReducer": "REDUCE_SUM"
-          }
-        ],
-        "comparison": "COMPARISON_GT",
-        "thresholdValue": 0,
-        "duration": "0s",
-        "trigger": { "count": 1 }
-      }
-    }
-  ]
-}
-EOF
-gcloud alpha monitoring policies create \
-  --policy-from-file=/tmp/mplacas-pipeline-failure.json \
-  --notification-channels="$CHANNEL"
+bash infra/gcp/provision-operations.sh
 ```
 
-## SLO 2 - Falhas no despacho de alertas
+Cada política possui uma identidade imutável em `userLabels.mplacas_policy_id`. O script lista as
+políticas gerenciadas, interrompe se encontrar identidade duplicada, cria quando ausente e atualiza
+quando existente. O arquivo versionado é a fonte de verdade; o nome gerado pelo Google não é salvo
+no repositório.
+
+## Verificação pós-deploy
 
 ```bash
-cat > /tmp/mplacas-alert-dispatch-failure.json <<'EOF'
-{
-  "displayName": "Mplacas - falha no despacho de alertas",
-  "combiner": "OR",
-  "conditions": [
-    {
-      "displayName": "alert_dispatch failure > 0 (15 min)",
-      "conditionThreshold": {
-        "filter": "metric.type=\"workload.googleapis.com/mplacas.operation.runs\" AND metric.labels.outcome=\"failure\" AND metric.labels.operation=\"daily_pipeline.alert_dispatch\"",
-        "aggregations": [
-          {
-            "alignmentPeriod": "900s",
-            "perSeriesAligner": "ALIGN_DELTA",
-            "crossSeriesReducer": "REDUCE_SUM"
-          }
-        ],
-        "comparison": "COMPARISON_GT",
-        "thresholdValue": 0,
-        "duration": "0s",
-        "trigger": { "count": 1 }
-      }
-    }
-  ]
-}
-EOF
-gcloud alpha monitoring policies create \
-  --policy-from-file=/tmp/mplacas-alert-dispatch-failure.json \
-  --notification-channels="$CHANNEL"
+bash infra/gcp/verify-operations.sh
 ```
 
-## SLO 3 - Latência p95 de operações
+Após a confirmação exata, o verificador exige:
 
-Alerta quando o p95 da duração de qualquer operação ultrapassa 60 segundos por 10 minutos.
+- todos os Cloud Run Jobs obrigatórios;
+- todos os Scheduler jobs em estado `ENABLED`;
+- as duas políticas habilitadas e ligadas aos canais configurados;
+- sucesso do smoke job somente leitura;
+- sucesso do watchdog, que também produz a primeira amostra para a condição de ausência.
+
+A condição de ausência só pode abrir incidente depois que a série temporal tiver uma medição. Por
+isso a primeira execução bem-sucedida do verificador é requisito de ativação, não apenas uma checagem
+opcional.
+
+Registre como evidência de aceite o projeto, região, revisão da imagem, nomes das execuções, horário,
+resultado do verificador e IDs das políticas, sem copiar segredos ou connection strings.
+
+## Teste controlado do incidente
+
+Faça em homologação:
+
+1. execute o verificador e confirme que o watchdog está saudável;
+2. pause apenas a agenda do watchdog;
+3. aguarde a janela de duas horas e confirme abertura e entrega do incidente;
+4. reative a agenda, execute o watchdog e confirme o fechamento;
+5. anexe timestamps e ID do incidente ao registro da mudança.
+
+Não introduza credencial inválida em produção para testar a política de falha.
+
+## Diagnóstico
+
+Para alerta de falha, identifique `resource.labels.job_name`, abra a execução correspondente e siga
+os logs estruturados até a causa. Para ausência, verifique nesta ordem: estado do Scheduler, última
+tentativa, permissão `roles/run.invoker`, existência do job, execução do watchdog e estado do ledger
+do pipeline.
+
+Ausência de histórico, heartbeat ou métrica nunca deve ser interpretada como saúde.
+
+## Rollback seguro
+
+Prefira desabilitar a política, preservando histórico e auditabilidade:
 
 ```bash
-cat > /tmp/mplacas-operation-latency.json <<'EOF'
-{
-  "displayName": "Mplacas - latência p95 de operação acima de 60s",
-  "combiner": "OR",
-  "conditions": [
-    {
-      "displayName": "operation.duration p95 > 60000 ms",
-      "conditionThreshold": {
-        "filter": "metric.type=\"workload.googleapis.com/mplacas.operation.duration\"",
-        "aggregations": [
-          {
-            "alignmentPeriod": "300s",
-            "perSeriesAligner": "ALIGN_PERCENTILE_95",
-            "crossSeriesReducer": "REDUCE_MAX",
-            "groupByFields": ["metric.labels.operation"]
-          }
-        ],
-        "comparison": "COMPARISON_GT",
-        "thresholdValue": 60000,
-        "duration": "600s",
-        "trigger": { "count": 1 }
-      }
-    }
-  ]
-}
-EOF
-gcloud alpha monitoring policies create \
-  --policy-from-file=/tmp/mplacas-operation-latency.json \
-  --notification-channels="$CHANNEL"
+gcloud monitoring policies update POLICY_NAME --no-enabled --project "$GCP_PROJECT_ID"
 ```
 
-## Verificação
-
-1. Liste as políticas criadas:
-
-```bash
-gcloud alpha monitoring policies list --format="value(name,displayName)"
-```
-
-2. Confirme no Metrics Explorer que as métricas `mplacas.operation.runs` e
-   `mplacas.operation.duration` recebem pontos após uma execução do pipeline com
-   `MPLACAS_CLOUD_METRICS_ENABLED=true`.
-
-3. Para testar o alerta de falha sem afetar produção, execute o job diário com uma configuração
-   propositalmente inválida em ambiente de homologação e aguarde o intervalo de exportação.
-
-## Remoção
-
-```bash
-gcloud alpha monitoring policies delete <policy-name> --quiet
-```
+Para rollback de configuração, reverta os JSONs para a versão aprovada e execute novamente o
+provisionador. Se o watchdog estiver gerando ruído por um defeito conhecido, pause somente sua agenda
+e mantenha um incidente aberto até a correção. Excluir políticas é uma ação excepcional e exige
+registro explícito porque remove o vínculo operacional e pode prejudicar a investigação.

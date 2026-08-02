@@ -1,26 +1,30 @@
-# ADR-012 — Dashboard web responsivo servido pela FastAPI
+# ADR-012 — Dashboard web responsivo
 
 ## Status
 
-Aceito.
+Substituído pela ADR-052 em 2026-08-01.
 
 ## Contexto
 
-O Mplacas já possui uma API executiva consolidada e protegida. A próxima etapa exige uma interface visual responsiva sem duplicar regras de negócio no navegador nem introduzir uma cadeia de build frontend antes de existir necessidade comprovada.
+A decisão original servia HTML, CSS e JavaScript pela FastAPI e previa uma chave operacional
+somente em memória. A implementação posterior passou a persistir essa chave em
+`localStorage`, divergindo da ADR e criando um segundo modelo de autenticação ao lado da SPA
+React autenticada por JWT.
 
-## Decisão
+## Decisão vigente
 
-- o dashboard será servido pela própria aplicação FastAPI;
-- a interface usará HTML, CSS e JavaScript nativos;
-- todos os cálculos permanecem no backend determinístico;
-- o navegador apenas consulta e apresenta `GET /energy/executive/latest`;
-- a chave operacional nunca será embutida no HTML, JavaScript ou repositório;
-- a chave será mantida apenas em memória durante a aba atual, sem `localStorage` ou persistência equivalente;
-- o identificador da usina será informado explicitamente pelo operador;
-- o layout será responsivo, acessível por teclado e compatível com preferência de tema escuro;
-- estados de carregamento, erro, ausência de histórico e sucesso serão explícitos;
-- o contrato visual consumirá somente o endpoint executivo, evitando acoplamento a múltiplos endpoints internos.
+- A SPA React hospedada separadamente é a única interface de usuário.
+- A SPA usa JWT; access token e refresh token permanecem somente em memória.
+- Nenhum fluxo de usuário solicita ou persiste `X-API-Key`.
+- `GET /dashboard` existe apenas como redirecionamento permanente para a SPA configurada em
+  `MPLACAS_DASHBOARD_URL`.
+- `/dashboard-assets` e os assets estáticos legados foram removidos.
+- Durante a migração, a SPA apaga `localStorage.mplacas_creds_v1` sem ler ou transmitir o valor.
+- A borda da SPA e a API publicam CSP/headers defensivos compatíveis com suas responsabilidades.
+- Regras e cálculos energéticos continuam exclusivamente no backend determinístico.
 
 ## Consequências
 
-A aplicação ganha um painel operacional de baixo custo e baixa complexidade, adequado para uso imediato. Caso a interface cresça para múltiplas páginas, autenticação de usuários, gráficos avançados ou edição complexa, uma SPA dedicada poderá ser avaliada em ADR posterior sem alterar o contrato executivo existente.
+Existe um único modelo de autenticação para usuários, a superfície de XSS com credencial de
+longa duração é eliminada e clientes antigos continuam chegando ao produto pelo redirecionamento.
+A rota de compatibilidade pode ser removida após o período de migração.

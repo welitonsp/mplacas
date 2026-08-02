@@ -9,6 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mplacas.climate.provider import ClimateProvider
 from mplacas.climate.repository import ClimateObservationRepository, ClimateUpsertSummary
 from mplacas.db.models import Plant
+from mplacas.photovoltaic.service import (
+    SolarProjectionSummary,
+    project_daily_climate_observations,
+)
 
 
 class ClimateCollectionError(ValueError):
@@ -22,6 +26,7 @@ class ClimateCollectionResult:
     end_date: date
     received: int
     persistence: ClimateUpsertSummary
+    solar_projection: SolarProjectionSummary
 
 
 async def collect_and_persist_daily_climate(
@@ -68,10 +73,16 @@ async def collect_and_persist_daily_climate(
         plant_id=plant_id,
         observations=observations,
     )
+    solar_projection = await project_daily_climate_observations(
+        session,
+        plant=plant,
+        observations=observations,
+    )
     return ClimateCollectionResult(
         plant_id=plant_id,
         start_date=start_date,
         end_date=end_date,
         received=len(observations),
         persistence=persistence,
+        solar_projection=solar_projection,
     )

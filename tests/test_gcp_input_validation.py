@@ -1,14 +1,25 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+_BASH = shutil.which("bash") or (
+    r"C:\Program Files\Git\bin\bash.exe"
+    if sys.platform == "win32"
+    else None
+)
+
+if not _BASH or not Path(_BASH).exists():
+    pytest.skip("bash not available", allow_module_level=True)
+
 
 def _bash(script: str, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", "-c", script, "test", *args],
+        [_BASH, "-c", script, "test", *args],
         check=False,
         capture_output=True,
         text=True,

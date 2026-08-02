@@ -47,3 +47,16 @@ async def test_operational_status_reports_stuck_job() -> None:
     alerts = result["alerts"]
     assert isinstance(alerts, list)
     assert alerts[0]["code"] == "JOB_STUCK"
+
+
+@pytest.mark.asyncio
+async def test_operational_status_degrades_without_scheduler_history() -> None:
+    now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
+    result = await build_operational_status(FakeRepository([]), now=now)  # type: ignore[arg-type]
+
+    assert result["status"] == "degraded"
+    assert result["state"] == "no_history"
+    assert result["success_rate_percent"] == "0.0"
+    alerts = result["alerts"]
+    assert isinstance(alerts, list)
+    assert alerts[0]["code"] == "JOB_NO_HISTORY"

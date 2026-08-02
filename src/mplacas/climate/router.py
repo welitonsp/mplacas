@@ -60,6 +60,10 @@ async def collect_climate(
                     "inserted": result.persistence.inserted,
                     "updated": result.persistence.updated,
                     "unchanged": result.persistence.unchanged,
+                    "solar_projected": (
+                        result.solar_projection.inserted + result.solar_projection.updated
+                    ),
+                    "solar_skipped": result.solar_projection.skipped,
                 },
             )
             await session.commit()
@@ -101,6 +105,10 @@ async def collect_climate(
             "inserted": result.persistence.inserted,
             "updated": result.persistence.updated,
             "unchanged": result.persistence.unchanged,
+            "solar_projected": (
+                result.solar_projection.inserted + result.solar_projection.updated
+            ),
+            "solar_skipped": result.solar_projection.skipped,
         },
     )
     return {
@@ -112,6 +120,13 @@ async def collect_climate(
             "inserted": result.persistence.inserted,
             "updated": result.persistence.updated,
             "unchanged": result.persistence.unchanged,
+        },
+        "solar_projection": {
+            "inserted": result.solar_projection.inserted,
+            "updated": result.solar_projection.updated,
+            "unchanged": result.solar_projection.unchanged,
+            "skipped": result.solar_projection.skipped,
+            "skip_reason": result.solar_projection.skip_reason,
         },
         "provider": OpenMeteoHistoricalProvider.SOURCE,
     }

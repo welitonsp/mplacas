@@ -13,6 +13,8 @@ from mplacas.climate.db_models import DailyClimateObservationRecord
 from mplacas.climate.models import DailyClimateObservation
 from mplacas.db.base import Base
 from mplacas.db.models import Plant
+from mplacas.photovoltaic.db_models import DailySolarModelResultRecord
+from mplacas.photovoltaic.poa import MODEL_VERSION
 
 
 class FakeClimateProvider:
@@ -65,6 +67,9 @@ async def test_collects_and_upserts_climate_observations_idempotently() -> None:
             name="Synthetic plant",
             latitude=Decimal("-17.744000"),
             longitude=Decimal("-48.625000"),
+            array_tilt_degrees=Decimal("20"),
+            array_azimuth_degrees=Decimal("0"),
+            module_technology="MONOCRYSTALLINE_SILICON",
         )
         session.add(plant)
         await session.commit()
@@ -82,6 +87,8 @@ async def test_collects_and_upserts_climate_observations_idempotently() -> None:
         assert first.received == 2
         assert first.persistence.inserted == 2
         assert first.persistence.updated == 0
+        assert first.solar_projection.inserted == 2
+        assert first.solar_projection.skipped == 0
 
         second = await collect_and_persist_daily_climate(
             session,
@@ -91,6 +98,7 @@ async def test_collects_and_upserts_climate_observations_idempotently() -> None:
             end_date=date(2026, 7, 13),
         )
         assert second.persistence.unchanged == 2
+        assert second.solar_projection.unchanged == 2
 
         third = await collect_and_persist_daily_climate(
             session,
@@ -101,11 +109,28 @@ async def test_collects_and_upserts_climate_observations_idempotently() -> None:
         )
         await session.commit()
         assert third.persistence.updated == 1
+        assert third.solar_projection.updated == 1
+        assert third.solar_projection.unchanged == 1
 
         count = await session.scalar(
             select(func.count()).select_from(DailyClimateObservationRecord)
         )
         assert count == 2
+        solar_results = (
+            await session.scalars(
+                select(DailySolarModelResultRecord).order_by(
+                    DailySolarModelResultRecord.observation_date
+                )
+            )
+        ).all()
+        assert len(solar_results) == 2
+        assert solar_results[0].model_version == MODEL_VERSION
+        assert solar_results[0].climate_source == "SYNTHETIC_WEATHER"
+        assert solar_results[0].latitude_degrees == Decimal("-17.744000")
+        assert solar_results[0].poa_irradiation_kwh_m2 > solar_results[0].ghi_kwh_m2
+        assert solar_results[0].temperature_adjusted_poa_equivalent_kwh_m2 is None
+        assert solar_results[0].assumptions_json["decomposition"] == "ERBS_DAILY"
+        assert "TEMPERATURE_UNAVAILABLE" in solar_results[0].quality_flags
 
     await engine.dispose()
 
@@ -144,7 +169,7 @@ async def test_persists_and_round_trips_temperature_mean_c() -> None:
                 source="SYNTHETIC_WEATHER",
             ),
         )
-        await collect_and_persist_daily_climate(
+        result = await collect_and_persist_daily_climate(
             session,
             plant_id=plant.id,
             provider=FakeClimateProvider(observations),
@@ -152,6 +177,10 @@ async def test_persists_and_round_trips_temperature_mean_c() -> None:
             end_date=date(2026, 7, 13),
         )
         await session.commit()
+
+        assert result.solar_projection.skipped == 2
+        assert result.solar_projection.skip_reason is not None
+        assert "missing plant configuration" in result.solar_projection.skip_reason
 
         records = (
             await session.scalars(

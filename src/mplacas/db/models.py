@@ -6,6 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -36,6 +37,32 @@ class DataStatus(str, enum.Enum):
 
 class Plant(Base):
     __tablename__ = "plants"
+    __table_args__ = (
+        CheckConstraint(
+            "installed_power_kwp IS NULL OR installed_power_kwp > 0",
+            name="ck_plants_installed_power_positive",
+        ),
+        CheckConstraint(
+            "ac_capacity_kw IS NULL OR ac_capacity_kw > 0",
+            name="ck_plants_ac_capacity_positive",
+        ),
+        CheckConstraint(
+            "array_tilt_degrees IS NULL OR "
+            "(array_tilt_degrees >= 0 AND array_tilt_degrees <= 90)",
+            name="ck_plants_array_tilt_range",
+        ),
+        CheckConstraint(
+            "array_azimuth_degrees IS NULL OR "
+            "(array_azimuth_degrees >= 0 AND array_azimuth_degrees < 360)",
+            name="ck_plants_array_azimuth_range",
+        ),
+        CheckConstraint(
+            "module_technology IS NULL OR module_technology IN "
+            "('MONOCRYSTALLINE_SILICON', 'POLYCRYSTALLINE_SILICON', "
+            "'THIN_FILM', 'OTHER')",
+            name="ck_plants_module_technology",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(
@@ -49,6 +76,15 @@ class Plant(Base):
     installed_power_kwp: Mapped[Decimal | None] = mapped_column(
         Numeric(10, 3), nullable=True
     )
+    ac_capacity_kw: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    array_tilt_degrees: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2), nullable=True
+    )
+    array_azimuth_degrees: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2), nullable=True
+    )
+    module_technology: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    commissioned_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -62,7 +98,17 @@ class Plant(Base):
 
 class Device(Base):
     __tablename__ = "devices"
-    __table_args__ = (UniqueConstraint("provider", "serial_number"),)
+    __table_args__ = (
+        UniqueConstraint("provider", "serial_number"),
+        CheckConstraint(
+            "dc_capacity_kwp IS NULL OR dc_capacity_kwp > 0",
+            name="ck_devices_dc_capacity_positive",
+        ),
+        CheckConstraint(
+            "ac_capacity_kw IS NULL OR ac_capacity_kw > 0",
+            name="ck_devices_ac_capacity_positive",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     plant_id: Mapped[uuid.UUID] = mapped_column(
@@ -72,6 +118,8 @@ class Device(Base):
     provider: Mapped[str] = mapped_column(String(40), default="NEPVIEWER")
     serial_number: Mapped[str] = mapped_column(String(120))
     model_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    dc_capacity_kwp: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    ac_capacity_kw: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

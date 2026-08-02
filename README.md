@@ -75,7 +75,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - `GET /energy/executive/latest`
 - `GET /energy/anomalies/latest`
 - `GET /energy/explanations/latest`
-- `GET /dashboard`
+- `GET /dashboard` (redireciona para a SPA JWT configurada)
 
 ### Relatórios e exportações
 
@@ -116,8 +116,9 @@ e não alteram snapshots.
 - listagem de pendências;
 - confirmação e rejeição de faturas sempre escopadas por usina.
 
-Os endpoints operacionais e administrativos exigem `X-API-Key`, exceto `/health`, `/ready` e a
-página estática `/dashboard`. `MPLACAS_OPERATIONS_API_KEY` tem papel administrativo; a chave opcional
+Os endpoints operacionais e administrativos exigem `X-API-Key`, exceto `/health`, `/ready` e o
+redirecionamento `/dashboard`. Usuários finais acessam somente a SPA com JWT e nunca informam uma
+chave operacional. `MPLACAS_OPERATIONS_API_KEY` tem papel administrativo; a chave opcional
 `MPLACAS_OPERATIONS_READ_API_KEY` permite apenas endpoints de leitura, como relatórios, energia,
 explicações e status operacional. Para restringi-la a usinas específicas, configure
 `MPLACAS_OPERATIONS_READ_PLANT_IDS` com UUIDs separados por vírgula. Quando a lista é definida,
@@ -171,7 +172,7 @@ Acesse:
 - `http://127.0.0.1:8000/health`
 - `http://127.0.0.1:8000/ready`
 - `http://127.0.0.1:8000/docs`
-- `http://127.0.0.1:8000/dashboard`
+- `http://127.0.0.1:8000/dashboard` (redireciona para `MPLACAS_DASHBOARD_URL`)
 
 ## Contêiner e Cloud Run
 

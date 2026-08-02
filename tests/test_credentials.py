@@ -5,7 +5,13 @@ import uuid
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool
 
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import encode_access_token
@@ -22,13 +28,25 @@ from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, Organizatio
 
 PLANT_A = uuid.UUID("00000000-0000-0000-0000-00000000000a")
 PLANT_B = uuid.UUID("00000000-0000-0000-0000-00000000000b")
+_TEST_ENGINES: list[AsyncEngine] = []
+_TEST_CLIENTS: list[TestClient] = []
 
 
 async def _factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    _TEST_ENGINES.append(engine)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     return async_sessionmaker(engine, expire_on_commit=False)
+
+
+@pytest.fixture(autouse=True)
+async def _dispose_test_engines():
+    yield
+    while _TEST_CLIENTS:
+        _TEST_CLIENTS.pop().close()
+    while _TEST_ENGINES:
+        await _TEST_ENGINES.pop().dispose()
 
 
 async def _ensure_default_organization(session: AsyncSession) -> uuid.UUID:
@@ -242,7 +260,11 @@ def test_credential_endpoints_require_admin_and_return_secret_once(
     import mplacas.credentials.router as credentials_router
     from mplacas.main import app
 
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/credentials.db")
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path}/credentials.db",
+        poolclass=NullPool,
+    )
+    _TEST_ENGINES.append(engine)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async def _prepare() -> None:
@@ -264,6 +286,7 @@ def test_credential_endpoints_require_admin_and_return_secret_once(
     assert security is not None
 
     client = TestClient(app)
+    _TEST_CLIENTS.append(client)
 
     unauthorized = client.post(
         "/operations/credentials",
@@ -362,7 +385,7 @@ def _prepare_credential_admin_client(monkeypatch, tmp_path):
     JWTs must now reach ``/operations/credentials``/``/operations/users``,
     which previously only accepted the static platform key)."""
     monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-admin-key")
-    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret")
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
     monkeypatch.setenv(
         "MPLACAS_DATABASE_URL",
         f"sqlite+aiosqlite:///{tmp_path}/credentials-org-admin.db",
@@ -377,8 +400,10 @@ def _prepare_credential_admin_client(monkeypatch, tmp_path):
     from mplacas.main import app
 
     engine = create_async_engine(
-        f"sqlite+aiosqlite:///{tmp_path}/credentials-org-admin.db"
+        f"sqlite+aiosqlite:///{tmp_path}/credentials-org-admin.db",
+        poolclass=NullPool,
     )
+    _TEST_ENGINES.append(engine)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async def _prepare() -> None:
@@ -390,7 +415,9 @@ def _prepare_credential_admin_client(monkeypatch, tmp_path):
     monkeypatch.setattr(db_session, "SessionFactory", factory)
     monkeypatch.setattr(operations_router, "SessionFactory", factory)
 
-    return TestClient(app), factory
+    client = TestClient(app)
+    _TEST_CLIENTS.append(client)
+    return client, factory
 
 
 def _seed_org_with_plant(factory, *, name: str, slug: str, plant_id: uuid.UUID) -> uuid.UUID:

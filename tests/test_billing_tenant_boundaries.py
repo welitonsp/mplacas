@@ -35,7 +35,7 @@ async def _factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False)
+    return async_sessionmaker(engine, expire_on_commit=False), engine
 
 
 async def _seed(factory) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
@@ -84,7 +84,7 @@ def cross_tenant_setup(monkeypatch):
 
     import asyncio
 
-    factory = asyncio.run(_factory())
+    factory, engine = asyncio.run(_factory())
     monkeypatch.setattr(db_session, "SessionFactory", factory)
     monkeypatch.setattr(billing_router, "SessionFactory", factory)
 
@@ -93,6 +93,7 @@ def cross_tenant_setup(monkeypatch):
 
     yield org_a, org_b, bill_id, token_b
 
+    asyncio.run(engine.dispose())
     get_settings.cache_clear()
 
 

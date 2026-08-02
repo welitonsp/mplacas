@@ -40,6 +40,34 @@ if payload.get("status") != expected:
 PY
 }
 
+validate_dashboard_redirect() {
+  local url="$1"
+  local expected_location="$2"
+  local headers_file="$3"
+  local http_status
+
+  http_status="$(
+    curl --silent --show-error \
+      --connect-timeout 5 \
+      --max-time 20 \
+      --output /dev/null \
+      --dump-header "$headers_file" \
+      --write-out '%{http_code}' \
+      "$url"
+  )"
+  [[ "$http_status" == "308" ]] || die "dashboard compatibility route must return 308"
+
+  python3 - "$headers_file" "$expected_location" <<'PY'
+import pathlib
+import sys
+
+headers = pathlib.Path(sys.argv[1]).read_text(encoding="iso-8859-1").splitlines()
+locations = [line.split(":", 1)[1].strip() for line in headers if line.lower().startswith("location:")]
+if locations != [sys.argv[2]]:
+    raise SystemExit("dashboard redirect location does not match MPLACAS_DASHBOARD_URL")
+PY
+}
+
 load_config
 require_gcloud
 require_authenticated_gcloud
@@ -59,7 +87,10 @@ validate_json_status "${TMP_DIR}/health.json" "ok"
 fetch_and_validate "${SERVICE_URL}/ready" "200" "${TMP_DIR}/ready.json"
 validate_json_status "${TMP_DIR}/ready.json" "ready"
 
-fetch_and_validate "${SERVICE_URL}/dashboard" "200" "${TMP_DIR}/dashboard.html"
+validate_dashboard_redirect \
+  "${SERVICE_URL}/dashboard" \
+  "$MPLACAS_DASHBOARD_URL" \
+  "${TMP_DIR}/dashboard.headers"
 validate_cloud_run_limits
 
 log "deployment verification completed"

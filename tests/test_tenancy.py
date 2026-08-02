@@ -31,10 +31,19 @@ from mplacas.db.models import Plant
 from mplacas.organizations.db_models import OrganizationRecord
 
 PLANT_A = uuid.UUID("00000000-0000-0000-0000-0000000000a1")
+_TEST_ENGINES = []
+
+
+@pytest.fixture(autouse=True)
+async def _dispose_test_engines():
+    yield
+    while _TEST_ENGINES:
+        await _TEST_ENGINES.pop().dispose()
 
 
 async def _factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    _TEST_ENGINES.append(engine)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     return async_sessionmaker(engine, expire_on_commit=False)
@@ -61,7 +70,7 @@ async def _seed_org_with_plant(factory) -> uuid.UUID:
 
 @pytest.mark.asyncio
 async def test_jwt_bearer_principal_is_org_restricted(monkeypatch) -> None:
-    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret")
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
     get_settings.cache_clear()
     factory = await _factory()
     monkeypatch.setattr(db_session, "SessionFactory", factory)
@@ -201,7 +210,7 @@ async def test_static_key_principal_is_platform_admin_not_org_admin(monkeypatch)
 async def test_bearer_jwt_principal_is_org_admin_not_platform_admin(monkeypatch) -> None:
     """A bearer JWT ADMIN principal (organization_id set) passes
     require_organization_admin and gets 403 from require_platform_admin."""
-    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret")
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
     get_settings.cache_clear()
     factory = await _factory()
     monkeypatch.setattr(db_session, "SessionFactory", factory)
