@@ -68,7 +68,9 @@ descartável, aplica `alembic upgrade head`, verifica
 tabelas críticas e inicia uma API isolada para validar `/ready`. O artifact contém o dump cifrado
 e um manifest JSON auditável; o dump em claro é eliminado ao final mesmo em caso de falha.
 O cliente 18 vem do repositório oficial PGDG configurado com `signed-by`; o workflow confere a
-impressão digital completa da chave antes de confiar nela e instalar o pacote.
+impressão digital completa da chave antes de confiar nela e instalar o pacote. O diretório
+`/usr/lib/postgresql/18/bin` é priorizado no `PATH` do job para impedir seleção do wrapper 16
+preexistente no runner.
 A origem é validada e normalizada de `postgres://` ou `postgresql+asyncpg://` para a DSN libpq
 `postgresql://`, sem registrar credenciais, e é fornecida explicitamente a `pg_dump --dbname`.
 Isso impede fallback silencioso para o socket PostgreSQL local quando o backup deve ler a origem.
