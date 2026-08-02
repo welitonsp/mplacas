@@ -8,6 +8,8 @@ readonly SECRET_OPERATIONS_KEY="mplacas-operations-api-key"
 readonly SECRET_JWT="mplacas-jwt-secret"
 readonly SECRET_TELEGRAM_BOT_TOKEN="mplacas-telegram-bot-token"
 readonly SECRET_TELEGRAM_WEBHOOK_SECRET="mplacas-telegram-webhook-secret"
+readonly SECRET_NEP_ACCOUNT="mplacas-nep-account"
+readonly SECRET_NEP_PASSWORD="mplacas-nep-password"
 
 # Public arrays consumed by scripts that source this library.
 # shellcheck disable=SC2034
@@ -19,6 +21,7 @@ readonly MPLACAS_REQUIRED_APIS=(
   "iam.googleapis.com"
   "cloudtrace.googleapis.com"
   "monitoring.googleapis.com"
+  "cloudscheduler.googleapis.com"
 )
 # shellcheck disable=SC2034
 readonly MPLACAS_SECRET_NAMES=(
@@ -28,6 +31,8 @@ readonly MPLACAS_SECRET_NAMES=(
   "$SECRET_JWT"
   "$SECRET_TELEGRAM_BOT_TOKEN"
   "$SECRET_TELEGRAM_WEBHOOK_SECRET"
+  "$SECRET_NEP_ACCOUNT"
+  "$SECRET_NEP_PASSWORD"
 )
 
 : "${GCP_PROJECT_ID:=}"
@@ -35,6 +40,9 @@ readonly MPLACAS_SECRET_NAMES=(
 : "${GCP_SERVICE_NAME:=}"
 : "${GCP_MIGRATION_JOB_NAME:=}"
 : "${GCP_RUNTIME_SERVICE_ACCOUNT:=}"
+: "${GCP_SCHEDULER_SERVICE_ACCOUNT:=mplacas-scheduler}"
+: "${GCP_OPERATIONAL_JOB_PREFIX:=mplacas}"
+: "${GCP_MONITORING_NOTIFICATION_CHANNELS:=}"
 : "${GCP_MIN_INSTANCES:=}"
 : "${GCP_MAX_INSTANCES:=}"
 : "${GCP_CPU:=}"
@@ -43,7 +51,11 @@ readonly MPLACAS_SECRET_NAMES=(
 : "${GCP_REQUEST_TIMEOUT:=}"
 : "${MPLACAS_TIMEZONE:=}"
 : "${MPLACAS_CORS_ALLOWED_ORIGINS:=}"
+: "${MPLACAS_DASHBOARD_URL:=https://mplacas-frontend.pages.dev/dashboard}"
 : "${MPLACAS_TELEGRAM_ALERT_CHAT_ID:=}"
+: "${MPLACAS_CLOUD_JOB_PLANT_NAME:=}"
+: "${MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH:=}"
+: "${MPLACAS_CLOUD_JOB_EXPECTED_CYCLE_PRODUCTION_KWH:=}"
 
 log() {
   printf '[mplacas:gcp] %s\n' "$*"
@@ -135,6 +147,12 @@ validate_config() {
   require_resource_name \
     "GCP_RUNTIME_SERVICE_ACCOUNT" \
     "${GCP_RUNTIME_SERVICE_ACCOUNT:-}"
+  require_resource_name \
+    "GCP_SCHEDULER_SERVICE_ACCOUNT" \
+    "${GCP_SCHEDULER_SERVICE_ACCOUNT:-}"
+  require_resource_name \
+    "GCP_OPERATIONAL_JOB_PREFIX" \
+    "${GCP_OPERATIONAL_JOB_PREFIX:-}"
   require_integer "GCP_MIN_INSTANCES" "${GCP_MIN_INSTANCES:-}"
   require_integer "GCP_MAX_INSTANCES" "${GCP_MAX_INSTANCES:-}"
   require_integer "GCP_CPU" "${GCP_CPU:-}"
@@ -148,6 +166,16 @@ validate_config() {
   (( GCP_CONCURRENCY >= 1 && GCP_CONCURRENCY <= 80 )) || die "invalid concurrency"
   (( GCP_REQUEST_TIMEOUT >= 1 && GCP_REQUEST_TIMEOUT <= 300 )) || die "invalid timeout"
   [[ "${MPLACAS_TIMEZONE:-}" == "America/Sao_Paulo" ]] || die "unsupported timezone"
+  python3 - "${MPLACAS_DASHBOARD_URL:-}" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+parsed = urlsplit(sys.argv[1])
+if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+    raise SystemExit("MPLACAS_DASHBOARD_URL must be an absolute credential-free HTTPS URL")
+if parsed.query or parsed.fragment:
+    raise SystemExit("MPLACAS_DASHBOARD_URL cannot contain query or fragment")
+PY
 }
 
 require_value() {
@@ -194,6 +222,29 @@ runtime_service_account_email() {
     "$GCP_PROJECT_ID"
 }
 
+scheduler_service_account_email() {
+  printf '%s@%s.iam.gserviceaccount.com\n' \
+    "$GCP_SCHEDULER_SERVICE_ACCOUNT" \
+    "$GCP_PROJECT_ID"
+}
+
+ensure_scheduler_service_account() {
+  local email
+  email="$(scheduler_service_account_email)"
+
+  if gcloud iam service-accounts describe "$email" \
+    --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
+    log "scheduler service account already exists"
+    return
+  fi
+
+  gcloud iam service-accounts create "$GCP_SCHEDULER_SERVICE_ACCOUNT" \
+    --display-name="Mplacas Cloud Scheduler invoker" \
+    --description="Dedicated identity that invokes Mplacas operational jobs" \
+    --project "$GCP_PROJECT_ID"
+  log "scheduler service account created"
+}
+
 ensure_runtime_service_account() {
   local email
   email="$(runtime_service_account_email)"
@@ -231,6 +282,151 @@ ensure_runtime_metrics_access() {
     --condition=None \
     --quiet >/dev/null
   log "runtime service account can write Cloud Monitoring metrics"
+}
+
+validate_monitoring_notification_channels() {
+  require_value \
+    "GCP_MONITORING_NOTIFICATION_CHANNELS" \
+    "${GCP_MONITORING_NOTIFICATION_CHANNELS:-}"
+  python3 - "$GCP_PROJECT_ID" "$GCP_MONITORING_NOTIFICATION_CHANNELS" <<'PY'
+import re
+import sys
+
+project_id, value = sys.argv[1:]
+channels = value.split(",")
+if any(not channel or channel != channel.strip() for channel in channels):
+    raise SystemExit("notification channels must be a comma-separated list without blanks")
+pattern = re.compile(
+    rf"^projects/{re.escape(project_id)}/notificationChannels/[A-Za-z0-9_-]+$"
+)
+if any(not pattern.fullmatch(channel) for channel in channels):
+    raise SystemExit("notification channel must be a full resource name in this project")
+PY
+}
+
+render_monitoring_policy() {
+  local template_file="$1"
+  local output_file="$2"
+  python3 - \
+    "$template_file" \
+    "$output_file" \
+    "$GCP_REGION" \
+    "$GCP_OPERATIONAL_JOB_PREFIX" <<'PY'
+import json
+import pathlib
+import sys
+
+template_path, output_path, region, prefix = sys.argv[1:]
+payload = json.loads(pathlib.Path(template_path).read_text(encoding="utf-8"))
+replacements = {
+    "${GCP_REGION}": region,
+    "${GCP_OPERATIONAL_JOB_PREFIX}": prefix,
+}
+
+def render(value):
+    if isinstance(value, str):
+        for source, target in replacements.items():
+            value = value.replace(source, target)
+        return value
+    if isinstance(value, list):
+        return [render(item) for item in value]
+    if isinstance(value, dict):
+        return {key: render(item) for key, item in value.items()}
+    return value
+
+pathlib.Path(output_path).write_text(
+    json.dumps(render(payload), ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
+}
+
+find_monitoring_policy() {
+  local policy_id="$1"
+  local list_file
+  list_file="$(mktemp)"
+  gcloud monitoring policies list \
+    --project "$GCP_PROJECT_ID" \
+    --format=json >"$list_file"
+  python3 - "$list_file" "$policy_id" <<'PY'
+import json
+import pathlib
+import sys
+
+path, policy_id = sys.argv[1:]
+policies = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+matches = [
+    policy.get("name", "")
+    for policy in policies
+    if policy.get("userLabels", {}).get("mplacas_policy_id") == policy_id
+]
+if len(matches) > 1:
+    raise SystemExit(f"duplicate managed monitoring policy: {policy_id}")
+if matches:
+    print(matches[0])
+PY
+  rm -f -- "$list_file"
+}
+
+upsert_monitoring_policy() {
+  local policy_id="$1"
+  local template_file="$2"
+  local rendered_file
+  local existing_name
+  rendered_file="$(mktemp)"
+  render_monitoring_policy "$template_file" "$rendered_file"
+  existing_name="$(find_monitoring_policy "$policy_id")"
+  if [[ -n "$existing_name" ]]; then
+    gcloud monitoring policies update "$existing_name" \
+      --project "$GCP_PROJECT_ID" \
+      --policy-from-file "$rendered_file" \
+      --set-notification-channels "$GCP_MONITORING_NOTIFICATION_CHANNELS" \
+      --quiet >/dev/null
+    log "monitoring policy updated: ${policy_id}"
+  else
+    gcloud monitoring policies create \
+      --project "$GCP_PROJECT_ID" \
+      --policy-from-file "$rendered_file" \
+      --notification-channels "$GCP_MONITORING_NOTIFICATION_CHANNELS" \
+      --quiet >/dev/null
+    log "monitoring policy created: ${policy_id}"
+  fi
+  rm -f -- "$rendered_file"
+}
+
+verify_monitoring_policy() {
+  local policy_id="$1"
+  local policy_name
+  local policy_file
+  policy_name="$(find_monitoring_policy "$policy_id")"
+  [[ -n "$policy_name" ]] || die "missing managed monitoring policy: ${policy_id}"
+  policy_file="$(mktemp)"
+  gcloud monitoring policies describe "$policy_name" \
+    --project "$GCP_PROJECT_ID" \
+    --format=json >"$policy_file"
+  python3 - \
+    "$policy_file" \
+    "$policy_id" \
+    "$GCP_MONITORING_NOTIFICATION_CHANNELS" <<'PY'
+import json
+import pathlib
+import sys
+
+path, policy_id, expected_channels_value = sys.argv[1:]
+policy = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+if policy.get("userLabels", {}).get("mplacas_policy_id") != policy_id:
+    raise SystemExit(f"monitoring policy identity mismatch: {policy_id}")
+if policy.get("enabled") is not True:
+    raise SystemExit(f"monitoring policy is disabled: {policy_id}")
+expected_channels = set(expected_channels_value.split(","))
+actual_channels = set(policy.get("notificationChannels", []))
+if not expected_channels.issubset(actual_channels):
+    raise SystemExit(
+        f"monitoring policy channel mismatch: {policy_id}; "
+        f"expected={sorted(expected_channels)!r} actual={sorted(actual_channels)!r}"
+    )
+PY
+  rm -f -- "$policy_file"
 }
 
 api_enabled() {

@@ -2,6 +2,18 @@
 
 Este runbook define o contrato mínimo para backup e teste de restauração do banco de dados do Mplacas em produção.
 
+## Objetivos operacionais e responsabilidade
+
+- **RPO:** no máximo 24 horas, sustentado por snapshot lógico diário e PITR do Neon habilitado.
+- **RTO:** até 4 horas para restaurar, validar e promover um ambiente recuperado.
+- **Retenção:** 35 dias para os snapshots lógicos criptografados e seus manifests; a janela de
+  PITR deve ser conferida mensalmente no plano Neon contratado.
+- **Owner:** responsável definido na variável protegida `MPLACAS_RESTORE_DRILL_OWNER`.
+- **Alerta:** falha do workflow abre ou atualiza a issue `[P1-06] Restore drill failure`.
+
+PITR e snapshot lógico são controles complementares. A existência do recurso de PITR no provedor
+não substitui o restore drill, e um dump sem restauração comprovada não atende este contrato.
+
 ## Objetivo
 
 Garantir que dados energéticos, financeiros, faturas, auditoria, sessões operacionais e históricos possam ser recuperados de forma verificável após falha operacional, perda acidental ou incidente de infraestrutura.
@@ -27,6 +39,29 @@ export BACKUP_DIR="./private-backups"
 ```
 
 `MPLACAS_DATABASE_URL` aponta para a origem. `MPLACAS_RESTORE_DATABASE_URL` aponta para um banco descartável usado somente para validação de restauração.
+
+Na automação, configure o environment protegido `production-restore-drill` com:
+
+- secrets `MPLACAS_BACKUP_SOURCE_URL`, `MPLACAS_RESTORE_DATABASE_URL`,
+  `MPLACAS_RESTORE_CONFIRM_HOST` e `MPLACAS_BACKUP_ENCRYPTION_PASSPHRASE`;
+- variável `MPLACAS_RESTORE_DRILL_OWNER`;
+- aprovação obrigatória do environment para alterações manuais de secrets.
+
+O hostname de confirmação deve ser exatamente o hostname da branch descartável e deve ser
+diferente do hostname de produção. Essa validação fail-closed acontece antes do `pg_restore`.
+
+## Automação diária
+
+O workflow `.github/workflows/restore-drill.yml` executa diariamente:
+
+```bash
+bash infra/backup/run-restore-drill.sh
+```
+
+Ele cria um dump custom, valida sua estrutura, calcula SHA-256, persiste somente a cópia cifrada
+com GPG/AES-256 por 35 dias, restaura no alvo descartável, aplica `alembic upgrade head`, verifica
+tabelas críticas e inicia uma API isolada para validar `/ready`. O artifact contém o dump cifrado
+e um manifest JSON auditável; o dump em claro é eliminado ao final mesmo em caso de falha.
 
 ## Backup lógico
 

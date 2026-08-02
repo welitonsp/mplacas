@@ -7,7 +7,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import Iterator
 
-from opentelemetry import trace
+from opentelemetry.trace import get_current_span
 
 _CLOUD_TRACE_PATTERN = re.compile(
     r"^(?P<trace>[0-9a-fA-F]{32})/(?P<span>[0-9]{1,20})(?:;o=(?P<sampled>[01]))?$"
@@ -101,7 +101,7 @@ def resolve_correlation_context(
 
 
 def active_span_context() -> CorrelationContext | None:
-    span_context = trace.get_current_span().get_span_context()
+    span_context = get_current_span().get_span_context()
     if not span_context.is_valid:
         return None
     return CorrelationContext(

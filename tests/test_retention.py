@@ -8,6 +8,7 @@ from sqlalchemy import func, insert, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from mplacas.alerts.db_models import AlertDeliveryRecord
+from mplacas.auth.db_models import AuthSessionRecord, LoginRateLimitRecord
 from mplacas.collection.db_models import CollectionTaskRecord, CollectionTaskStatus
 from mplacas.db import models as _db_models  # noqa: F401  (registra tabelas base)
 from mplacas.db.base import Base
@@ -18,13 +19,25 @@ from mplacas.orchestration.db_models import (
     PipelineExecutionStatus,
 )
 from mplacas.retention.service import RetentionService, RetentionWindows
+from mplacas.organizations.db_models import OrganizationRecord
+from mplacas.organizations.invitation_db_models import UserInvitationRecord
+from mplacas.credentials.db_models import OperationalUserRecord
 
 NOW = datetime(2026, 7, 20, 12, 0, tzinfo=UTC)
 PLANT_ID = uuid.UUID("00000000-0000-0000-0000-0000000000ee")
+_TEST_ENGINES = []
+
+
+@pytest.fixture(autouse=True)
+async def _dispose_test_engines():
+    yield
+    while _TEST_ENGINES:
+        await _TEST_ENGINES.pop().dispose()
 
 
 async def _factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    _TEST_ENGINES.append(engine)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     return async_sessionmaker(engine, expire_on_commit=False)
@@ -235,3 +248,101 @@ def test_retention_windows_validate_positive() -> None:
         RetentionWindows(job_runs_days=0)
     with pytest.raises(ValueError, match="alert_delivery_records_days"):
         RetentionWindows(alert_delivery_records_days=-1)
+
+
+@pytest.mark.asyncio
+async def test_retention_purges_only_terminal_or_expired_authentication_data() -> None:
+    factory = await _factory()
+    organization_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    old_session_id = uuid.uuid4()
+    valid_session_id = uuid.uuid4()
+    async with factory() as session:
+        session.add(
+            OrganizationRecord(
+                id=organization_id,
+                name="Retention Auth",
+                slug=f"retention-{organization_id.hex}",
+                active=True,
+            )
+        )
+        session.add(
+            OperationalUserRecord(
+                id=user_id,
+                organization_id=organization_id,
+                name=f"retention-{user_id.hex}",
+                role="READ",
+                active=True,
+            )
+        )
+        await session.flush()
+        session.add_all(
+            [
+                AuthSessionRecord(
+                    id=old_session_id,
+                    user_id=user_id,
+                    organization_id=organization_id,
+                    family_id=old_session_id,
+                    refresh_token_hash="a" * 64,
+                    active=False,
+                    expires_at=_old(),
+                    revoked_at=_old(),
+                ),
+                AuthSessionRecord(
+                    id=valid_session_id,
+                    user_id=user_id,
+                    organization_id=organization_id,
+                    family_id=valid_session_id,
+                    refresh_token_hash="b" * 64,
+                    active=True,
+                    expires_at=NOW + timedelta(days=1),
+                ),
+                LoginRateLimitRecord(
+                    key="old-unlocked",
+                    attempt_count=1,
+                    first_attempt_at=_old(),
+                    locked_until=None,
+                ),
+                LoginRateLimitRecord(
+                    key="active-lock",
+                    attempt_count=10,
+                    first_attempt_at=_old(),
+                    locked_until=NOW + timedelta(hours=1),
+                ),
+                UserInvitationRecord(
+                    id=uuid.uuid4(),
+                    organization_id=organization_id,
+                    username="expired@example.invalid",
+                    role="READ",
+                    token_hash="c" * 64,
+                    created_at=_old(),
+                    expires_at=_old(),
+                ),
+                UserInvitationRecord(
+                    id=uuid.uuid4(),
+                    organization_id=organization_id,
+                    username="valid@example.invalid",
+                    role="READ",
+                    token_hash="d" * 64,
+                    created_at=_recent(),
+                    expires_at=NOW + timedelta(days=1),
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with factory() as session:
+        first = await RetentionService(session).purge(now=NOW)
+        await session.commit()
+        second = await RetentionService(session).purge(now=NOW)
+        await session.commit()
+
+    deleted = {outcome.table: outcome.deleted for outcome in first.outcomes}
+    assert deleted["auth_sessions"] == 1
+    assert deleted["login_rate_limits"] == 1
+    assert deleted["user_invitations"] == 1
+    assert second.total_deleted == 0
+    async with factory() as session:
+        assert await _count(session, AuthSessionRecord) == 1
+        assert await _count(session, LoginRateLimitRecord) == 1
+        assert await _count(session, UserInvitationRecord) == 1

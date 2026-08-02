@@ -38,6 +38,11 @@ class UtilityBillRecord(Base):
             "cycle_end",
             name="uq_utility_bills_plant_cycle",
         ),
+        UniqueConstraint(
+            "plant_id",
+            "source_hash",
+            name="uq_utility_bills_plant_source_hash",
+        ),
         Index(
             "ix_utility_bills_plant_status_cycle",
             "plant_id",
@@ -77,6 +82,6 @@ class UtilityBillRecord(Base):
     status: Mapped[BillStatus] = mapped_column(
         Enum(BillStatus), default=BillStatus.PENDING_REVIEW, index=True
     )
-    source_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    source_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

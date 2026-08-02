@@ -35,7 +35,8 @@ implantação criem, por conveniência, recursos de maior custo ou privilégios 
    comando de criação e desabilitar versões anteriores somente após confirmar a nova versão.
 8. Nunca destruir automaticamente versões do Secret Manager.
 9. Executar migrações como Cloud Run Job explícito, separado do startup HTTP.
-10. Validar `/health`, `/ready`, `/dashboard` e os limites reais da revisão após o deploy.
+10. Validar `/health`, `/ready`, o redirecionamento `/dashboard` para a SPA e os limites reais da
+    revisão após o deploy.
 11. Disponibilizar auditoria de custos somente leitura.
 12. Exigir confirmação textual forte para deploy, migração e remoção.
 13. Preservar segredos por padrão na remoção; excluí-los somente com opção explícita.

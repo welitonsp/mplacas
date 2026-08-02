@@ -25,6 +25,7 @@ validate_billing_enabled
 gcloud services enable "${MPLACAS_REQUIRED_APIS[@]}" \
   --project "$GCP_PROJECT_ID"
 ensure_runtime_service_account
+ensure_scheduler_service_account
 ensure_runtime_trace_access
 ensure_runtime_metrics_access
 

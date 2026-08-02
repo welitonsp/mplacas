@@ -50,7 +50,7 @@ Shell, sem Docker ou Google Cloud CLI na estação Windows.
 - [x] Build remoto por `gcloud run deploy --source`.
 - [x] Migração fora do startup HTTP.
 - [x] Migração executada por Cloud Run Job explícito.
-- [x] Verificação de `/health`, `/ready` e `/dashboard`.
+- [x] Verificação de `/health`, `/ready` e do redirecionamento `/dashboard` para a SPA.
 - [x] Validação do JSON real da revisão do Cloud Run.
 - [x] Remoção limitada aos recursos nomeados do Mplacas.
 - [x] Projeto, billing e Artifact Registry preservados.

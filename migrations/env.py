@@ -8,6 +8,7 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from mplacas.alerts import db_models as alert_models  # noqa: F401
+from mplacas.auth import db_models as auth_models  # noqa: F401
 from mplacas.audit import db_models as audit_models  # noqa: F401
 from mplacas.billing import db_models as billing_models  # noqa: F401
 from mplacas.climate import db_models as climate_models  # noqa: F401
@@ -24,6 +25,7 @@ from mplacas.organizations import db_models as organization_models  # noqa: F401
 from mplacas.organizations import (  # noqa: F401
     invitation_db_models as organization_invitation_models,
 )
+from mplacas.photovoltaic import db_models as photovoltaic_models  # noqa: F401
 from mplacas.reports import db_models as report_models  # noqa: F401
 
 config = context.config

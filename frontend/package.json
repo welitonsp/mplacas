@@ -12,16 +12,16 @@
   "dependencies": {
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router": "^7.6.0"
+    "react-router": "^8.3.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "@tailwindcss/vite": "^4.1.0",
     "@vitejs/plugin-react": "^4.4.1",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
-    "wrangler": "^4.20.0"
+    "wrangler": "^4.118.0"
   }
 }

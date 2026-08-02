@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     telegram_allowed_user_id: int | None = None
     telegram_alert_chat_id: str | None = None
     telegram_document_max_bytes: int = 10_000_000
+    telegram_pdf_max_pages: int = 10
+    telegram_pdf_parse_timeout_seconds: float = 5.0
+    telegram_pdf_parse_cpu_seconds: int = 3
+    telegram_pdf_parse_memory_bytes: int = 268_435_456
     bill_text_max_bytes: int = 250_000
     request_timeout_seconds: float = 20.0
     cloud_job_plant_name: str | None = None
@@ -70,12 +74,19 @@ class Settings(BaseSettings):
     retention_outbox_events_days: int = 30
     retention_collection_tasks_days: int = 30
     retention_alert_delivery_records_days: int = 365
+    retention_auth_sessions_days: int = 90
+    retention_login_rate_limits_days: int = 30
+    retention_user_invitations_days: int = 365
     retention_daily_energy_days: int = 1825
     retention_climate_observations_days: int = 1825
     report_export_bucket: str | None = None
     report_export_url_ttl_seconds: int = 900
     jwt_secret: SecretStr | None = None
-    jwt_algorithm: str = "HS256"
+    jwt_algorithm: Literal["HS256"] = "HS256"
+    jwt_audience: str = "mplacas-api"
+    jwt_key_id: str = "v1"
+    jwt_previous_secret: SecretStr | None = None
+    jwt_previous_key_id: str | None = None
     jwt_access_ttl_seconds: int = 900
     jwt_refresh_ttl_seconds: int = 1_209_600
     auth_login_max_attempts: int = 5
@@ -83,6 +94,7 @@ class Settings(BaseSettings):
     auth_login_lockout_seconds: int = 900
     auth_invitation_ttl_seconds: int = 259_200
     cors_allowed_origins: str | None = None
+    dashboard_url: HttpUrl = HttpUrl("https://mplacas-frontend.pages.dev/dashboard")
 
     @property
     def jwt_configured(self) -> bool:
@@ -145,11 +157,28 @@ class Settings(BaseSettings):
             raise ValueError("PORT must be between 1 and 65535")
         return value
 
-    @field_validator("readiness_timeout_seconds", "request_timeout_seconds")
+    @field_validator(
+        "readiness_timeout_seconds",
+        "request_timeout_seconds",
+        "telegram_pdf_parse_timeout_seconds",
+    )
     @classmethod
     def _validate_positive_timeout(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("timeout must be positive")
+        return value
+
+    @field_validator(
+        "telegram_document_max_bytes",
+        "telegram_pdf_max_pages",
+        "telegram_pdf_parse_cpu_seconds",
+        "telegram_pdf_parse_memory_bytes",
+        "bill_text_max_bytes",
+    )
+    @classmethod
+    def _validate_positive_document_limit(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("document processing limits must be positive")
         return value
 
     @field_validator(
@@ -165,6 +194,17 @@ class Settings(BaseSettings):
         if value < 1:
             raise ValueError("authentication timing and limit values must be positive")
         return value
+
+    @field_validator("jwt_audience", "jwt_key_id", "jwt_previous_key_id")
+    @classmethod
+    def _validate_jwt_identifier(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:")
+        if not cleaned or len(cleaned) > 128 or any(char not in allowed for char in cleaned):
+            raise ValueError("JWT audience and key identifiers must be safe non-empty values")
+        return cleaned
 
     @field_validator("trace_sample_rate")
     @classmethod
@@ -249,6 +289,20 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_environment(self) -> Settings:
+        configured_jwt_secrets = [
+            secret
+            for secret in (self.jwt_secret, self.jwt_previous_secret)
+            if secret is not None
+        ]
+        if any(
+            len(secret.get_secret_value().encode("utf-8")) < 32
+            for secret in configured_jwt_secrets
+        ):
+            raise ValueError("JWT secrets must contain at least 32 bytes")
+        if (self.jwt_previous_secret is None) != (self.jwt_previous_key_id is None):
+            raise ValueError("previous JWT secret and key id must be configured together")
+        if self.jwt_previous_key_id == self.jwt_key_id:
+            raise ValueError("current and previous JWT key ids must differ")
         if self.cloud_trace_enabled and self.gcp_project_id is None:
             raise ValueError("Cloud Trace requires MPLACAS_GCP_PROJECT_ID")
         if self.cloud_metrics_enabled and self.gcp_project_id is None:

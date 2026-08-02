@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import encode_access_token
@@ -21,17 +22,32 @@ from mplacas.credentials.service import (
 from mplacas.db.base import Base
 from mplacas.organizations.db_models import OrganizationRecord
 
+_SYNC_TEST_ENGINES = []
+_SYNC_TEST_CLIENTS = []
 
-async def _factory():
+
+@pytest.fixture(autouse=True)
+def _dispose_sync_test_resources():
+    yield
+    while _SYNC_TEST_CLIENTS:
+        _SYNC_TEST_CLIENTS.pop().close()
+    while _SYNC_TEST_ENGINES:
+        asyncio.run(_SYNC_TEST_ENGINES.pop().dispose())
+
+
+@pytest.fixture
+async def user_factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    yield factory
+    await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_expired_credential_does_not_authenticate() -> None:
-    factory = await _factory()
+async def test_expired_credential_does_not_authenticate(user_factory) -> None:
+    factory = user_factory
     async with factory() as session:
         service = CredentialService(session)
         _, valid_secret = await service.create(
@@ -70,8 +86,8 @@ async def test_expired_credential_does_not_authenticate() -> None:
 
 
 @pytest.mark.asyncio
-async def test_deactivating_user_blocks_all_their_credentials() -> None:
-    factory = await _factory()
+async def test_deactivating_user_blocks_all_their_credentials(user_factory) -> None:
+    factory = user_factory
     async with factory() as session:
         user = await UserService(session).create(name="cb-weliton")
         service = CredentialService(session)
@@ -105,8 +121,8 @@ async def test_deactivating_user_blocks_all_their_credentials() -> None:
 
 
 @pytest.mark.asyncio
-async def test_user_domain_rules() -> None:
-    factory = await _factory()
+async def test_user_domain_rules(user_factory) -> None:
+    factory = user_factory
     async with factory() as session:
         users = UserService(session)
         with pytest.raises(CredentialError, match="name is required"):
@@ -136,6 +152,7 @@ async def test_user_domain_rules() -> None:
 @pytest.mark.asyncio
 async def test_user_create_translates_concurrent_duplicate_integrity_error(
     monkeypatch,
+    user_factory,
 ) -> None:
     """Simulates the TOCTOU window between the uniqueness ``SELECT`` and the
     ``INSERT``: two concurrent requests for the same ``name`` can both pass
@@ -143,7 +160,7 @@ async def test_user_create_translates_concurrent_duplicate_integrity_error(
     the same clean ``CredentialError`` its own pre-check would have raised,
     never with a raw, unhandled ``IntegrityError`` from the database.
     """
-    factory = await _factory()
+    factory = user_factory
 
     async with factory() as winner_session:
         await UserService(winner_session).create(name="corrida-toctou")
@@ -187,7 +204,11 @@ def test_user_endpoints_manage_lifecycle(monkeypatch, tmp_path) -> None:
     import mplacas.operations.router as operations_router
     from mplacas.main import app
 
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/users.db")
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path}/users.db",
+        poolclass=NullPool,
+    )
+    _SYNC_TEST_ENGINES.append(engine)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async def _prepare() -> None:
@@ -200,6 +221,7 @@ def test_user_endpoints_manage_lifecycle(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(operations_router, "SessionFactory", factory)
 
     client = TestClient(app)
+    _SYNC_TEST_CLIENTS.append(client)
     admin = {"X-API-Key": "synthetic-admin-key"}
 
     assert client.post("/operations/users", json={"name": "x"}).status_code == 401
@@ -267,7 +289,7 @@ def _prepare_user_admin_client(monkeypatch, tmp_path):
     ``/operations/users``, which previously only accepted the static
     platform key)."""
     monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-admin-key")
-    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret")
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
     monkeypatch.setenv(
         "MPLACAS_DATABASE_URL",
         f"sqlite+aiosqlite:///{tmp_path}/users-org-admin.db",
@@ -279,7 +301,11 @@ def _prepare_user_admin_client(monkeypatch, tmp_path):
     import mplacas.operations.router as operations_router
     from mplacas.main import app
 
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/users-org-admin.db")
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path}/users-org-admin.db",
+        poolclass=NullPool,
+    )
+    _SYNC_TEST_ENGINES.append(engine)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async def _prepare() -> None:
@@ -291,7 +317,9 @@ def _prepare_user_admin_client(monkeypatch, tmp_path):
     monkeypatch.setattr(db_session, "SessionFactory", factory)
     monkeypatch.setattr(operations_router, "SessionFactory", factory)
 
-    return TestClient(app), factory
+    client = TestClient(app)
+    _SYNC_TEST_CLIENTS.append(client)
+    return client, factory
 
 
 def _seed_org(factory, *, name: str, slug: str) -> uuid.UUID:

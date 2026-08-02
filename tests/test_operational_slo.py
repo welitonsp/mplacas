@@ -33,8 +33,29 @@ def test_slo_detects_failure_and_stuck_run() -> None:
     assert result.target_met is False
 
 
-def test_no_completed_runs_do_not_create_false_failure() -> None:
+def test_no_runs_are_never_reported_as_healthy() -> None:
     now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
     result = evaluate_job_slo([], now=now)
-    assert result.success_rate_percent == Decimal("100.0")
-    assert result.target_met is True
+    assert result.success_rate_percent == Decimal("0.0")
+    assert result.state == "no_history"
+    assert result.target_met is False
+
+
+def test_stale_last_run_is_delayed_even_when_it_succeeded() -> None:
+    now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
+    result = evaluate_job_slo(
+        [JobSample("SUCCEEDED", now - timedelta(hours=27), now - timedelta(hours=26))],
+        now=now,
+    )
+    assert result.state == "delayed"
+    assert result.target_met is False
+
+
+def test_fresh_running_job_without_completed_minimum_is_insufficient() -> None:
+    now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
+    result = evaluate_job_slo(
+        [JobSample("RUNNING", now - timedelta(minutes=5), None)],
+        now=now,
+    )
+    assert result.state == "insufficient_history"
+    assert result.target_met is False

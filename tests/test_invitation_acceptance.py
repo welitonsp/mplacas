@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from mplacas.core.config import get_settings
 from mplacas.core.security import OperationsRole
@@ -21,10 +22,12 @@ from mplacas.organizations.invitation_service import (
 )
 
 _VALID_PASSWORD = "correct-horse-battery"
+_TEST_ENGINES = []
+_TEST_CLIENTS = []
 
 
 def _make_client(monkeypatch, tmp_path):
-    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret")
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
     monkeypatch.setenv(
         "MPLACAS_DATABASE_URL",
         f"sqlite+aiosqlite:///{tmp_path}/invitations.db",
@@ -36,7 +39,11 @@ def _make_client(monkeypatch, tmp_path):
     import mplacas.organizations.router as organizations_router
     from mplacas.main import app
 
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/invitations.db")
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path}/invitations.db",
+        poolclass=NullPool,
+    )
+    _TEST_ENGINES.append(engine)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async def _prepare() -> None:
@@ -49,12 +56,18 @@ def _make_client(monkeypatch, tmp_path):
     monkeypatch.setattr(auth_router, "SessionFactory", factory)
     monkeypatch.setattr(db_session, "SessionFactory", factory)
 
-    return TestClient(app), factory
+    client = TestClient(app)
+    _TEST_CLIENTS.append(client)
+    return client, factory
 
 
 @pytest.fixture(autouse=True)
 def _clear_settings_cache():
     yield
+    while _TEST_CLIENTS:
+        _TEST_CLIENTS.pop().close()
+    while _TEST_ENGINES:
+        asyncio.run(_TEST_ENGINES.pop().dispose())
     get_settings.cache_clear()
 
 

@@ -50,6 +50,13 @@ def test_climate_collection_endpoint_returns_persistence_metrics(monkeypatch) ->
             end_date=date(2026, 7, 13),
             received=2,
             persistence=SimpleNamespace(inserted=1, updated=1, unchanged=0),
+            solar_projection=SimpleNamespace(
+                inserted=1,
+                updated=1,
+                unchanged=0,
+                skipped=0,
+                skip_reason=None,
+            ),
         )
 
     monkeypatch.setattr(climate_router, "SessionFactory", lambda: FakeSession())
@@ -80,6 +87,13 @@ def test_climate_collection_endpoint_returns_persistence_metrics(monkeypatch) ->
     assert response.status_code == 200
     assert response.json()["received"] == 2
     assert response.json()["persistence"] == {"inserted": 1, "updated": 1, "unchanged": 0}
+    assert response.json()["solar_projection"] == {
+        "inserted": 1,
+        "updated": 1,
+        "unchanged": 0,
+        "skipped": 0,
+        "skip_reason": None,
+    }
     event = FakeAuditEventRepository.events[-1]
     assert event["action"] == "climate.collect"
     assert event["resource_id"] == str(plant_id)
@@ -92,6 +106,8 @@ def test_climate_collection_endpoint_returns_persistence_metrics(monkeypatch) ->
         "inserted": 1,
         "updated": 1,
         "unchanged": 0,
+        "solar_projected": 2,
+        "solar_skipped": 0,
     }
     get_settings.cache_clear()
 

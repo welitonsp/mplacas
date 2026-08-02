@@ -17,6 +17,18 @@ from mplacas.climate.collection_service import (
 )
 from mplacas.climate.provider import ClimateProvider
 from mplacas.observability.operations import observe_operation
+from mplacas.photovoltaic.performance_service import (
+    PerformanceComputationSummary,
+    calculate_and_persist_daily_performance,
+)
+from mplacas.photovoltaic.loss_taxonomy_service import (
+    LossTaxonomyComputationSummary,
+    classify_and_persist_daily_losses,
+)
+from mplacas.photovoltaic.seasonal_baseline_service import (
+    SeasonalBaselineComputationSummary,
+    calculate_and_persist_seasonal_baseline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +38,9 @@ class DailyEnergyPipelineResult:
     plant_id: uuid.UUID
     target_date: date
     climate: ClimateCollectionResult
+    performance: PerformanceComputationSummary
+    seasonal_baseline: SeasonalBaselineComputationSummary
+    loss_taxonomy: LossTaxonomyComputationSummary
     alerts: AlertPipelineResult
 
 
@@ -79,6 +94,58 @@ async def run_daily_energy_pipeline(
             inserted=climate.persistence.inserted,
             updated=climate.persistence.updated,
             unchanged=climate.persistence.unchanged,
+            solar_projected=(
+                climate.solar_projection.inserted + climate.solar_projection.updated
+            ),
+            solar_skipped=climate.solar_projection.skipped,
+        )
+    with observe_operation(
+        logger,
+        "daily_pipeline.performance_calculation",
+        **operation_fields,
+    ) as performance_operation:
+        performance = await calculate_and_persist_daily_performance(
+            session,
+            plant_id=plant_id,
+            observation_date=target_date,
+        )
+        performance_operation.add_result(
+            inserted=performance.inserted,
+            updated=performance.updated,
+            unchanged=performance.unchanged,
+            skipped=performance.skipped,
+        )
+    with observe_operation(
+        logger,
+        "daily_pipeline.seasonal_baseline_calculation",
+        **operation_fields,
+    ) as baseline_operation:
+        seasonal_baseline = await calculate_and_persist_seasonal_baseline(
+            session,
+            plant_id=plant_id,
+            observation_date=target_date,
+        )
+        baseline_operation.add_result(
+            inserted=seasonal_baseline.inserted,
+            updated=seasonal_baseline.updated,
+            unchanged=seasonal_baseline.unchanged,
+            skipped=seasonal_baseline.skipped,
+        )
+    with observe_operation(
+        logger,
+        "daily_pipeline.loss_taxonomy_classification",
+        **operation_fields,
+    ) as loss_operation:
+        loss_taxonomy = await classify_and_persist_daily_losses(
+            session,
+            plant_id=plant_id,
+            observation_date=target_date,
+        )
+        loss_operation.add_result(
+            inserted=loss_taxonomy.inserted,
+            updated=loss_taxonomy.updated,
+            unchanged=loss_taxonomy.unchanged,
+            skipped=loss_taxonomy.skipped,
         )
     with observe_operation(
         logger,
@@ -108,6 +175,20 @@ async def run_daily_energy_pipeline(
             "plant_id": str(plant_id),
             "target_date": target_date.isoformat(),
             "climate_received": climate.received,
+            "solar_projected": (
+                climate.solar_projection.inserted + climate.solar_projection.updated
+            ),
+            "solar_skipped": climate.solar_projection.skipped,
+            "performance_calculated": performance.inserted + performance.updated,
+            "performance_skipped": performance.skipped,
+            "seasonal_baseline_calculated": (
+                seasonal_baseline.inserted + seasonal_baseline.updated
+            ),
+            "seasonal_baseline_skipped": seasonal_baseline.skipped,
+            "loss_assessments_calculated": (
+                loss_taxonomy.inserted + loss_taxonomy.updated
+            ),
+            "loss_taxonomy_skipped": loss_taxonomy.skipped,
             "alerts_evaluated": alerts.metrics.evaluated,
             "alerts_sent": alerts.metrics.sent,
             "alerts_failed": alerts.metrics.failed,
@@ -117,5 +198,8 @@ async def run_daily_energy_pipeline(
         plant_id=plant_id,
         target_date=target_date,
         climate=climate,
+        performance=performance,
+        seasonal_baseline=seasonal_baseline,
+        loss_taxonomy=loss_taxonomy,
         alerts=alerts,
     )

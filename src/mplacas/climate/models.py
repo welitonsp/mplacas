@@ -11,6 +11,7 @@ class DailyClimateObservation:
     irradiation_kwh_m2: Decimal | None
     cloud_cover_percent: Decimal | None = None
     precipitation_mm: Decimal | None = None
+    temperature_mean_c: Decimal | None = None
     source: str = "UNSPECIFIED"
 
     def validate(self) -> None:
@@ -23,3 +24,8 @@ class DailyClimateObservation:
             raise ValueError("cloud cover must be between 0 and 100 percent")
         if self.precipitation_mm is not None and self.precipitation_mm < 0:
             raise ValueError("precipitation cannot be negative")
+        if (
+            self.temperature_mean_c is not None
+            and not Decimal("-90") <= self.temperature_mean_c <= Decimal("60")
+        ):
+            raise ValueError("temperature must be within plausible Earth surface range")

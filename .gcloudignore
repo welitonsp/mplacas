@@ -15,6 +15,9 @@ infra/gcp/config.env
 tests/
 docs/
 /storage/
+storage/
+backups/
+reports/
 *.db
 *.sqlite3
 *.dump

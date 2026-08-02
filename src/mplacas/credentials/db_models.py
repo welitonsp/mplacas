@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from mplacas.db.base import Base
@@ -52,6 +52,7 @@ class ApiCredentialRecord(Base):
     """
 
     __tablename__ = "api_credentials"
+    __table_args__ = (UniqueConstraint("key_hash", name="uq_api_credentials_key_hash"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -18,6 +18,7 @@ from mplacas.db import models as _db_models  # noqa: F401  (registra tabela plan
 from mplacas.db.base import Base
 from mplacas.db.models import Plant
 from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
+from mplacas.orchestration.db_models import PipelineExecutionStatus
 from mplacas.providers.base import (
     DailyEnergy,
     DeviceOverview,
@@ -26,6 +27,15 @@ from mplacas.providers.base import (
     SolarProvider,
 )
 import mplacas.cloud_jobs as cloud_jobs
+
+_TEST_ENGINES = []
+
+
+@pytest.fixture(autouse=True)
+def _dispose_test_engines():
+    yield
+    while _TEST_ENGINES:
+        cloud_jobs.asyncio.run(_TEST_ENGINES.pop().dispose())
 
 
 class FakeSession:
@@ -48,6 +58,21 @@ class FakeSession:
 def test_migrate_job_returns_zero(monkeypatch) -> None:
     monkeypatch.setenv("MPLACAS_DATABASE_URL", "sqlite+aiosqlite:///./synthetic.db")
     get_settings.cache_clear()
+
+
+def test_smoke_job_executes_read_only_database_probe(monkeypatch) -> None:
+    statements: list[str] = []
+
+    class SmokeSession(FakeSession):
+        async def execute(self, statement) -> None:
+            statements.append(str(statement))
+
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", SmokeSession)
+
+    cloud_jobs.asyncio.run(cloud_jobs.run_smoke_check())
+
+    assert statements == ["SELECT 1"]
+    assert SmokeSession.committed is False
     calls: list[list[str]] = []
 
     def runner(args, env):
@@ -166,6 +191,87 @@ def test_daily_pipeline_help() -> None:
     assert exc.value.code == 0
 
 
+def test_operational_watchdog_accepts_fresh_success(monkeypatch) -> None:
+    plant_id = uuid.uuid4()
+    now = datetime(2026, 8, 2, 12, tzinfo=UTC)
+    monkeypatch.setenv("MPLACAS_CLOUD_JOB_PLANT_NAME", "Usina Watchdog")
+    get_settings.cache_clear()
+
+    async def fake_resolve(_name: str) -> uuid.UUID:
+        return plant_id
+
+    async def fake_latest(*args, **kwargs):
+        return SimpleNamespace(
+            execution_id=uuid.uuid4(),
+            status=PipelineExecutionStatus.SUCCEEDED,
+            started_at=now - timedelta(hours=2),
+            finished_at=now - timedelta(hours=1),
+        )
+
+    monkeypatch.setattr(cloud_jobs, "_find_plant_id", fake_resolve)
+    monkeypatch.setattr(cloud_jobs, "get_latest_pipeline_execution", fake_latest)
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", lambda: FakeSession())
+
+    cloud_jobs.asyncio.run(cloud_jobs.run_operational_watchdog(now=now))
+    get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "snapshot,error",
+    [
+        (None, "no execution history"),
+        (
+            SimpleNamespace(
+                execution_id=uuid.uuid4(),
+                status=PipelineExecutionStatus.FAILED,
+                started_at=datetime(2026, 8, 2, 8, tzinfo=UTC),
+                finished_at=datetime(2026, 8, 2, 9, tzinfo=UTC),
+            ),
+            "execution failed",
+        ),
+        (
+            SimpleNamespace(
+                execution_id=uuid.uuid4(),
+                status=PipelineExecutionStatus.RUNNING,
+                started_at=datetime(2026, 8, 2, 10, tzinfo=UTC),
+                finished_at=None,
+            ),
+            "execution is stuck",
+        ),
+        (
+            SimpleNamespace(
+                execution_id=uuid.uuid4(),
+                status=PipelineExecutionStatus.SUCCEEDED,
+                started_at=datetime(2026, 8, 1, 7, tzinfo=UTC),
+                finished_at=datetime(2026, 8, 1, 8, tzinfo=UTC),
+            ),
+            "delayed beyond 26 hours",
+        ),
+    ],
+)
+def test_operational_watchdog_fails_closed(monkeypatch, snapshot, error: str) -> None:
+    monkeypatch.setenv("MPLACAS_CLOUD_JOB_PLANT_NAME", "Usina Watchdog")
+    get_settings.cache_clear()
+
+    async def fake_resolve(_name: str) -> uuid.UUID:
+        return uuid.uuid4()
+
+    async def fake_latest(*args, **kwargs):
+        return snapshot
+
+    monkeypatch.setattr(cloud_jobs, "_find_plant_id", fake_resolve)
+    monkeypatch.setattr(cloud_jobs, "get_latest_pipeline_execution", fake_latest)
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", lambda: FakeSession())
+
+    with pytest.raises(RuntimeError, match=error):
+        cloud_jobs.asyncio.run(
+            cloud_jobs.run_operational_watchdog(
+                now=datetime(2026, 8, 2, 12, tzinfo=UTC)
+            )
+        )
+    get_settings.cache_clear()
+
+
 def test_outbox_dispatch_uses_configured_retry_policy(monkeypatch) -> None:
     monkeypatch.setenv("MPLACAS_TELEGRAM_BOT_TOKEN", "synthetic-token")
     monkeypatch.setenv("MPLACAS_TELEGRAM_ALERT_CHAT_ID", "synthetic-chat")
@@ -230,6 +336,7 @@ class _FailingSolarProvider(SolarProvider):
 
 async def _sqlite_factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    _TEST_ENGINES.append(engine)
 
     @event.listens_for(engine.sync_engine, "connect")
     def _set_fk_pragma(dbapi_conn, _record):

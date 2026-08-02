@@ -47,7 +47,7 @@ Migrações aplicadas:
 | `0019` | Tabela `organizations` |
 | `0020` | Coluna `organization_id` nullable em `plants`, `operational_users`, `api_credentials` |
 | `0021` | Backfill: um usuário existente sem organização recebe organização padrão; usinas/credenciais órfãs seguem a mesma |
-| `0022` | `ALTER COLUMN organization_id SET NOT NULL` no banco; ORM mantém nullable durante transição de testes |
+| `0022` | `ALTER COLUMN organization_id SET NOT NULL` no banco e no metadata ORM |
 
 Invariante: toda usina, usuário operacional e credencial de API pertence a exatamente uma organização.
 
@@ -57,7 +57,8 @@ Substituir a chave operacional única por autenticação com identidade:
 
 - **`POST /auth/login`**: recebe `username` + `password`, retorna `access_token` (JWT HS256, TTL
   15 min) e `refresh_token` (JWT HS256, TTL 14 dias). Senha verificada com argon2id.
-- **`POST /auth/refresh`**: recebe `refresh_token` no body, emite novo `access_token`.
+- **`POST /auth/refresh`**: recebe `refresh_token` no body e rotaciona access e refresh tokens.
+- **`POST /auth/logout`**: revoga de forma idempotente a sessão do refresh token e responde `204`.
 - **`security.py`**: `require_operations_key` e `require_operations_read` passam a aceitar
   `Authorization: Bearer <token>` além da chave legada, mantendo retrocompatibilidade com
   integrações existentes.
@@ -92,15 +93,19 @@ Redis como o texto original desta seção especulava.
 
 SPA construída com React 19 + TypeScript + Vite + Tailwind CSS 4, publicada no Cloudflare Pages:
 
-- **Auth**: access token em `localStorage` (TTL curto de 15 min); refresh token em memória (perdido
-  ao fechar ou recarregar a aba). `apiFetch` renova automaticamente com retry único no primeiro 401
-  antes de forçar logout.
+- **Auth**: access token e refresh token apenas em memória; o access token tem TTL curto de 15 min.
+  `apiFetch` renova automaticamente com retry único no primeiro 401 antes de forçar logout.
+- **JWT**: somente `HS256`, segredo mínimo de 32 bytes, issuer/audience obrigatórios e `kid` validado.
+  A rotação aceita temporariamente uma chave anterior explicitamente configurada.
+- **Revogação**: reutilizar refresh token revoga toda a família. Access tokens continuam
+  stateless e podem permanecer válidos até o TTL de 15 minutos; essa janela residual é uma decisão
+  consciente e deve ser reavaliada em ADR antes de introduzir consulta de sessão por request.
 - **Roteamento**: `react-router 7` com `ProtectedRoute` que redireciona para `/login` quando não
   autenticado. Nenhum dado sensível em URL.
 - **Deploy**: `wrangler.toml` + CI job `frontend-ci` (type-check + build). Nenhuma credencial
   comprometida no repositório; variáveis de ambiente injetadas pelo Cloudflare Pages dashboard.
-- **CORS**: origem `https://*.pages.dev` e a origem do domínio personalizado são adicionadas a
-  `MPLACAS_CORS_ALLOWED_ORIGINS` no Cloud Run.
+- **CORS**: a origem Pages exata e a origem exata do domínio personalizado são adicionadas a
+  `MPLACAS_CORS_ALLOWED_ORIGINS`; wildcard `*.pages.dev` é proibido.
 
 ## Consequências
 
@@ -125,8 +130,7 @@ SPA construída com React 19 + TypeScript + Vite + Tailwind CSS 4, publicada no 
 - `MPLACAS_JWT_SECRET` precisa ser rotacionado manualmente — rotacionar o secret invalida todos
   os access tokens em circulação de uma vez (não há revogação seletiva de access token). Refresh
   tokens já têm revogação individual via `auth_sessions` (Phase 2b).
-- Não há endpoint de cadastro público nem fluxo de convite — usuários são criados via CLI admin
-  ou migração.
+- Não há cadastro público. Onboarding ocorre por convites de uso único gerenciados pela organização.
 
 ## Próximos passos
 
@@ -134,8 +138,8 @@ Rastreados item a item, com evidência de código, em `docs/CHECKLIST_SAAS_MULTI
 
 1. ~~Extrair `organization_id` do JWT e propagar como contexto de autorização nos routers de
    dados~~ — concluído, ver ADR-053.
-2. Adicionar endpoint de gerenciamento de organizações (`GET/POST /organizations`).
-3. Implementar fluxo de convite/ativação de usuário.
+2. ~~Adicionar endpoint de gerenciamento de organizações (`GET/POST /organizations`).~~ Concluído.
+3. ~~Implementar fluxo de convite/ativação de usuário.~~ Concluído.
 
 ## Referências
 

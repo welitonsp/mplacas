@@ -55,7 +55,37 @@ def test_pipeline_run_endpoint_is_protected_and_returns_sanitized_metrics(monkey
             target_date=date(2026, 7, 13),
             duration_ms=125,
             pipeline=SimpleNamespace(
-                climate=SimpleNamespace(received=1),
+                climate=SimpleNamespace(
+                    received=1,
+                    solar_projection=SimpleNamespace(
+                        inserted=1,
+                        updated=0,
+                        unchanged=0,
+                        skipped=0,
+                        skip_reason=None,
+                    ),
+                ),
+                performance=SimpleNamespace(
+                    inserted=1,
+                    updated=0,
+                    unchanged=0,
+                    skipped=0,
+                    skip_reason=None,
+                ),
+                seasonal_baseline=SimpleNamespace(
+                    inserted=0,
+                    updated=0,
+                    unchanged=0,
+                    skipped=1,
+                    skip_reason="frozen reference year is not complete",
+                ),
+                loss_taxonomy=SimpleNamespace(
+                    inserted=8,
+                    updated=0,
+                    unchanged=0,
+                    skipped=0,
+                    skip_reason=None,
+                ),
                 alerts=SimpleNamespace(
                     metrics=SimpleNamespace(evaluated=2, sent=1, skipped=1, failed=0)
                 ),
@@ -91,6 +121,34 @@ def test_pipeline_run_endpoint_is_protected_and_returns_sanitized_metrics(monkey
     payload = response.json()
     assert payload["plant_id"] == str(plant_id)
     assert payload["duration_ms"] == 125
+    assert payload["solar_projection"] == {
+        "inserted": 1,
+        "updated": 0,
+        "unchanged": 0,
+        "skipped": 0,
+        "skip_reason": None,
+    }
+    assert payload["performance"] == {
+        "inserted": 1,
+        "updated": 0,
+        "unchanged": 0,
+        "skipped": 0,
+        "skip_reason": None,
+    }
+    assert payload["seasonal_baseline"] == {
+        "inserted": 0,
+        "updated": 0,
+        "unchanged": 0,
+        "skipped": 1,
+        "skip_reason": "frozen reference year is not complete",
+    }
+    assert payload["loss_taxonomy"] == {
+        "inserted": 8,
+        "updated": 0,
+        "unchanged": 0,
+        "skipped": 0,
+        "skip_reason": None,
+    }
     assert payload["alerts"] == {"evaluated": 2, "sent": 1, "skipped": 1, "failed": 0}
     assert "synthetic-token" not in response.text
     assert FakeAuditEventRepository.events[-1]["action"] == "pipeline.run"

@@ -11,10 +11,19 @@ from mplacas.db.base import Base
 from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
 
 OTHER_ORG_ID = uuid.UUID("00000000-0000-0000-0000-0000000000d0")
+_TEST_ENGINES = []
+
+
+@pytest.fixture(autouse=True)
+async def _dispose_test_engines():
+    yield
+    while _TEST_ENGINES:
+        await _TEST_ENGINES.pop().dispose()
 
 
 async def _factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    _TEST_ENGINES.append(engine)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     return async_sessionmaker(engine, expire_on_commit=False)

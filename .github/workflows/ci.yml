@@ -12,13 +12,15 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
       - name: Install
-        run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
       - name: Ruff
         run: ruff check .
       - name: Mypy
@@ -30,19 +32,30 @@ jobs:
           cat mypy-report.txt
       - name: Upload Mypy report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mypy-report
           path: mypy-report.txt
           if-no-files-found: error
           retention-days: 7
+      - name: Audit Python dependencies
+        run: pip-audit --format=json --output=pip-audit-report.json
+      - name: Upload Python dependency audit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Tests
         run: |
           set -o pipefail
-          pytest -q 2>&1 | tee pytest-report.txt
+          pytest -q -W 'error::pytest.PytestUnhandledThreadExceptionWarning' \
+            2>&1 | tee pytest-report.txt
       - name: Upload Pytest report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pytest-report
           path: pytest-report.txt
@@ -71,7 +84,7 @@ jobs:
           )
           PY
       - name: Upload report export samples
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: report-export-samples
           path: artifacts/report-samples
@@ -81,7 +94,7 @@ jobs:
   gcp-deployment-contract:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install ShellCheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Bash syntax
@@ -99,12 +112,62 @@ jobs:
           cat shellcheck-report.txt
       - name: Upload ShellCheck report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: shellcheck-report
           path: shellcheck-report.txt
           if-no-files-found: error
           retention-days: 7
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: mplacas_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mplacas_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MPLACAS_ENV: test
+      MPLACAS_DATABASE_URL: postgresql+asyncpg://postgres@localhost:5432/mplacas_test
+      MPLACAS_TEST_POSTGRES_URL: postgresql+asyncpg://postgres@localhost:5432/mplacas_test
+      MPLACAS_JWT_SECRET: postgres-integration-jwt-secret-at-least-32-bytes
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
+      - name: Migrate empty PostgreSQL database
+        run: alembic upgrade head
+      - name: Verify migration metadata is current
+        run: alembic check
+      - name: PostgreSQL migrations, concurrency, queues, outbox, readiness and RLS
+        run: |
+          set -o pipefail
+          pytest -q -m postgres_integration \
+            -W 'error::pytest.PytestUnhandledThreadExceptionWarning' \
+            2>&1 | tee postgres-integration-report.txt
+      - name: Upload PostgreSQL integration report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: postgres-integration-report
+          path: postgres-integration-report.txt
+          if-no-files-found: error
+          retention-days: 30
 
   frontend:
     runs-on: ubuntu-latest
@@ -112,14 +175,24 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install
         run: npm ci
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high --json > npm-audit-report.json
+      - name: Upload frontend dependency audit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: npm-audit-report
+          path: frontend/npm-audit-report.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Type check
         run: npm run type-check
       - name: Build
@@ -131,7 +204,7 @@ jobs:
           VITE_PLANT_ID: 00000000-0000-0000-0000-000000000001
         run: npm run build
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: frontend-dist
           path: frontend/dist
@@ -140,12 +213,16 @@ jobs:
 
   container:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       IMAGE_NAME: mplacas-cloud-run:test
       CONTAINER_NAME: mplacas-cloud-run-smoke
     services:
       postgres:
-        image: postgres:16
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
         env:
           POSTGRES_USER: postgres
           POSTGRES_DB: postgres
@@ -158,9 +235,48 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build container
         run: docker build -t "$IMAGE_NAME" .
+      - name: Materialize image for provenance
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker save --output mplacas-image.tar "$IMAGE_NAME"
+      - name: Attest container build provenance
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: mplacas-image.tar
+      - name: Generate container SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          format: cyclonedx-json
+          output-file: container-sbom.cdx.json
+          upload-artifact: false
+      - name: Upload container SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: container-sbom
+          path: container-sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Scan container image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Upload container vulnerability report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+          if-no-files-found: error
+          retention-days: 30
       - name: Verify image contents and user
         run: |
           docker run --rm -i --entrypoint python "$IMAGE_NAME" - <<'PY'
@@ -183,26 +299,32 @@ jobs:
           fi
       - name: Run container
         run: |
-          docker run -d --rm \
+          docker run -d \
             --name "$CONTAINER_NAME" \
             --network host \
             -e PORT=8080 \
             -e MPLACAS_ENVIRONMENT=production \
             -e MPLACAS_DATABASE_URL=postgresql+asyncpg://postgres@localhost:5432/postgres \
             -e MPLACAS_OPERATIONS_API_KEY=ci-operations-key \
-            -e MPLACAS_JWT_SECRET=ci-jwt-secret \
+            -e MPLACAS_JWT_SECRET=ci-00000000000000000000000000000000 \
             -e MPLACAS_NEP_USERNAME=ci-nep-user \
             -e MPLACAS_NEP_PASSWORD=ci-nep-password \
             "$IMAGE_NAME"
       - name: Smoke test health and readiness
         run: |
+          healthy=false
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080/health; then
+              healthy=true
               break
             fi
             sleep 1
           done
+          if [ "$healthy" != "true" ]; then
+            docker logs "$CONTAINER_NAME"
+            exit 1
+          fi
           curl -fsS http://127.0.0.1:8080/ready
       - name: Stop container
         if: always()
-        run: docker stop "$CONTAINER_NAME" || true
+        run: docker rm --force "$CONTAINER_NAME" || true

@@ -42,7 +42,10 @@ class OpenMeteoHistoricalProvider:
             "longitude": longitude,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
-            "daily": "shortwave_radiation_sum,cloud_cover_mean,precipitation_sum",
+            "daily": (
+                "shortwave_radiation_sum,cloud_cover_mean,precipitation_sum,"
+                "temperature_2m_mean"
+            ),
             "timezone": "auto",
         }
         try:
@@ -74,28 +77,35 @@ class OpenMeteoHistoricalProvider:
             raise OpenMeteoProviderError("weather provider omitted daily data")
         if units.get("shortwave_radiation_sum") != "MJ/m²":
             raise OpenMeteoProviderError("unexpected solar radiation unit")
+        if "temperature_2m_mean" in units and units.get("temperature_2m_mean") != "°C":
+            raise OpenMeteoProviderError("unexpected temperature unit")
 
         dates = daily.get("time")
         radiation = daily.get("shortwave_radiation_sum")
         cloud_cover = daily.get("cloud_cover_mean")
         precipitation = daily.get("precipitation_sum")
+        temperature = daily.get("temperature_2m_mean")
+        if temperature is None:
+            temperature = [None] * (len(dates) if isinstance(dates, list) else 0)
         if (
             not isinstance(dates, list)
             or not isinstance(radiation, list)
             or not isinstance(cloud_cover, list)
             or not isinstance(precipitation, list)
+            or not isinstance(temperature, list)
         ):
             raise OpenMeteoProviderError("weather provider returned incomplete daily arrays")
-        arrays = (dates, radiation, cloud_cover, precipitation)
+        arrays = (dates, radiation, cloud_cover, precipitation, temperature)
         if len({len(item) for item in arrays}) != 1:
             raise OpenMeteoProviderError("weather provider returned misaligned daily arrays")
 
         observations: list[DailyClimateObservation] = []
-        for raw_date, raw_radiation, raw_cloud, raw_precipitation in zip(
+        for raw_date, raw_radiation, raw_cloud, raw_precipitation, raw_temperature in zip(
             dates,
             radiation,
             cloud_cover,
             precipitation,
+            temperature,
             strict=True,
         ):
             try:
@@ -112,6 +122,11 @@ class OpenMeteoHistoricalProvider:
                     precipitation_mm=(
                         Decimal(str(raw_precipitation))
                         if raw_precipitation is not None
+                        else None
+                    ),
+                    temperature_mean_c=(
+                        Decimal(str(raw_temperature))
+                        if raw_temperature is not None
                         else None
                     ),
                     source=self.SOURCE,

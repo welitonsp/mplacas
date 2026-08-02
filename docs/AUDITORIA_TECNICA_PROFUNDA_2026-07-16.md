@@ -1,9 +1,15 @@
 # Auditoria técnica profunda - Mplacas
 
-> **Status de remediação (2026-07-20):** o acompanhamento item a item do roadmap desta auditoria
-> está em `CHECKLIST_REMEDIACAO_AUDITORIA.md`. Todos os P0 e P1 de curto prazo foram concluídos;
-> RBAC (single-tenant) e fila/workers também. Pendentes: particionamento/retention, refatoração de
-> relatórios, cache de dashboard, exportação em lote e `plant_id` obrigatório em faturas.
+> **Documento histórico.** A auditoria corrente está em
+> `AUDITORIA_BIG_TECH_2026-08-01.md`, com execução rastreada em
+> `CHECKLIST_REMEDIACAO_AUDITORIA.md`, ciclo 2026-08-01.
+
+> **Correção retrospectiva:** a afirmação deste documento de que o dashboard não persistia a
+> chave estava incorreta; a implementação legada usava `localStorage` e foi removida no ciclo atual.
+
+> **Status de remediação (2026-07-22):** todos os itens do roadmap desta auditoria estão concluídos.
+> Acompanhamento detalhado em `CHECKLIST_REMEDIACAO_AUDITORIA.md` (todos `[x]`). Validação final:
+> Ruff limpo, Mypy (135+ arquivos) limpo, Pytest 316 passando.
 
 Data: 2026-07-16  
 Base auditada: `main` alinhada a `origin/main` em `8a7e8fc`  
@@ -55,7 +61,8 @@ Aceitável no estágio atual:
 
 - Modular monolith por domínio, sem separação rígida por portas/casos de uso.
 - SQLite em dev/testes, PostgreSQL obrigatório em produção.
-- Dashboard estático público que pede a chave operacional no navegador, sem persistir em localStorage.
+- Achado histórico encerrado em 2026-08-01: o dashboard FastAPI que solicitava chave operacional
+  foi removido; `/dashboard` apenas redireciona para a SPA JWT.
 
 Deve ser refatorado:
 

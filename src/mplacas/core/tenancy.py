@@ -213,7 +213,17 @@ async def resolve_admin_plant_path(
     return await resolve_admin_plant_scope(principal, plant_id)
 
 
+async def resolve_read_plant_path(
+    principal: Annotated[OperationsPrincipal, Depends(_read_principal)],
+    plant_id: uuid.UUID = Path(...),
+) -> ScopedPlant:
+    """Resolve a read-only plant path without disclosing cross-tenant rows."""
+    principal.require_plant_access(plant_id)
+    return ScopedPlant(plant_id=plant_id, principal=principal)
+
+
 ReadPlant = Annotated[ScopedPlant, Depends(resolve_read_plant)]
+ReadPlantPath = Annotated[ScopedPlant, Depends(resolve_read_plant_path)]
 AdminPlant = Annotated[ScopedPlant, Depends(resolve_admin_plant)]
 AdminPlantPath = Annotated[ScopedPlant, Depends(resolve_admin_plant_path)]
 AdminPrincipal = Annotated[OperationsPrincipal, Depends(_admin_principal)]

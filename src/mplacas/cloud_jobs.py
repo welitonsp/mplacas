@@ -11,9 +11,11 @@ import uuid
 from urllib.parse import urlsplit, urlunsplit
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
+
+from sqlalchemy import select, text
 
 from mplacas.alerts.job import AlertJobSummary
 from mplacas.alerts.models import AlertSeverity
@@ -24,6 +26,7 @@ from mplacas.collection.drain import drain_collection_queue
 from mplacas.reports.drain import drain_report_exports
 from mplacas.collection.job import run_solar_collection
 from mplacas.core.config import get_settings
+from mplacas.db.models import Plant
 from mplacas.db.repositories.plant import PlantRepository
 from mplacas.db.session import SessionFactory
 from mplacas.db.session import engine as database_engine
@@ -40,6 +43,8 @@ from mplacas.observability.context import (
 from mplacas.observability.tracing import configure_observability, traced_operation
 from opentelemetry.trace import Status, StatusCode
 from mplacas.orchestration.runtime import run_ledger_backed_daily_pipeline
+from mplacas.orchestration.db_models import PipelineExecutionStatus
+from mplacas.orchestration.status_service import get_latest_pipeline_execution
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +106,12 @@ def _build_parser() -> argparse.ArgumentParser:
     migrate = subparsers.add_parser("migrate", help="run Alembic migrations")
     migrate.set_defaults(handler=_handle_migrate)
 
+    smoke = subparsers.add_parser(
+        "smoke",
+        help="validate production configuration and database connectivity without mutations",
+    )
+    smoke.set_defaults(handler=_handle_smoke)
+
     daily = subparsers.add_parser("daily-pipeline", help="run the daily operational pipeline")
     daily.add_argument("--target-date", default=None, help="YYYY-MM-DD; defaults to yesterday")
     daily.set_defaults(handler=_handle_daily_pipeline)
@@ -148,11 +159,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     digest.add_argument("--target-date", default=None, help="YYYY-MM-DD; defaults to yesterday")
     digest.set_defaults(handler=_handle_daily_digest)
+
+    watchdog = subparsers.add_parser(
+        "operational-watchdog",
+        help="fail when the daily pipeline ledger is absent, delayed, stuck or failed",
+    )
+    watchdog.set_defaults(handler=_handle_operational_watchdog)
     return parser
 
 
 def _handle_migrate(_args: argparse.Namespace) -> int:
     return run_migrations()
+
+
+def _handle_smoke(_args: argparse.Namespace) -> int:
+    asyncio.run(run_smoke_check())
+    return 0
 
 
 def _handle_daily_pipeline(args: argparse.Namespace) -> int:
@@ -189,6 +211,54 @@ def _handle_retention(_args: argparse.Namespace) -> int:
 def _handle_daily_digest(args: argparse.Namespace) -> int:
     asyncio.run(run_daily_digest(target_date=args.target_date))
     return 0
+
+
+def _handle_operational_watchdog(_args: argparse.Namespace) -> int:
+    asyncio.run(run_operational_watchdog())
+    return 0
+
+
+async def run_operational_watchdog(*, now: datetime | None = None) -> None:
+    """Fail closed when the daily pipeline heartbeat is unhealthy."""
+    settings = get_settings()
+    plant_name = settings.cloud_job_plant_name
+    if plant_name is None or not plant_name.strip():
+        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
+    plant_id = await _find_plant_id(plant_name)
+    current_time = now or datetime.now(UTC)
+    async with SessionFactory() as session:
+        latest = await get_latest_pipeline_execution(session, plant_id=plant_id)
+    if latest is None:
+        raise RuntimeError("daily pipeline has no execution history")
+    if latest.status == PipelineExecutionStatus.FAILED:
+        raise RuntimeError("latest daily pipeline execution failed")
+    if latest.status == PipelineExecutionStatus.RUNNING:
+        started_at = latest.started_at
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=UTC)
+        if current_time - started_at > timedelta(minutes=30):
+            raise RuntimeError("latest daily pipeline execution is stuck")
+        logger.info(
+            "cloud_job_operational_watchdog_running_pipeline",
+            extra={"plant_id": str(plant_id), "execution_id": str(latest.execution_id)},
+        )
+        return
+    finished_at = latest.finished_at
+    if finished_at is None:
+        raise RuntimeError("successful daily pipeline execution has no finish timestamp")
+    if finished_at.tzinfo is None:
+        finished_at = finished_at.replace(tzinfo=UTC)
+    age = current_time - finished_at
+    if age > timedelta(hours=26):
+        raise RuntimeError("latest daily pipeline execution is delayed beyond 26 hours")
+    logger.info(
+        "cloud_job_operational_watchdog_healthy",
+        extra={
+            "plant_id": str(plant_id),
+            "execution_id": str(latest.execution_id),
+            "pipeline_age_seconds": max(0, int(age.total_seconds())),
+        },
+    )
 
 
 async def run_collection(
@@ -229,6 +299,9 @@ async def run_retention() -> None:
         outbox_events_days=settings.retention_outbox_events_days,
         collection_tasks_days=settings.retention_collection_tasks_days,
         alert_delivery_records_days=settings.retention_alert_delivery_records_days,
+        auth_sessions_days=settings.retention_auth_sessions_days,
+        login_rate_limits_days=settings.retention_login_rate_limits_days,
+        user_invitations_days=settings.retention_user_invitations_days,
     )
     ts_windows = TimeSeriesRetentionWindows(
         daily_energy_days=settings.retention_daily_energy_days,
@@ -252,6 +325,14 @@ async def run_retention() -> None:
             },
         },
     )
+
+
+async def run_smoke_check() -> None:
+    """Fail fast when a deployed job cannot reach the configured database."""
+
+    async with SessionFactory() as session:
+        await session.execute(text("SELECT 1"))
+    logger.info("cloud_job_smoke_completed")
 
 
 async def run_report_export_drain(*, batch_size: int = 10) -> None:
@@ -483,6 +564,19 @@ async def _resolve_plant_id(plant_name: str) -> uuid.UUID:
         plant_id = plant.id
         await session.commit()
     return plant_id
+
+
+async def _find_plant_id(plant_name: str) -> uuid.UUID:
+    """Resolve an existing plant without mutating state from the watchdog."""
+    async with SessionFactory() as session:
+        plant_ids = tuple(
+            await session.scalars(select(Plant.id).where(Plant.name == plant_name))
+        )
+    if not plant_ids:
+        raise RuntimeError("configured cloud job plant was not found")
+    if len(plant_ids) > 1:
+        raise RuntimeError("configured cloud job plant name is ambiguous")
+    return plant_ids[0]
 
 
 def _required_decimal(value: Decimal | None, env_name: str) -> Decimal:

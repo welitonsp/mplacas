@@ -7,6 +7,10 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+pip-audit-*.json
+npm-audit-*.json
+npm-outdated-*.json
+pytest-*.txt
 dist/
 build/
 *.egg-info/

@@ -48,7 +48,7 @@ async def _factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False)
+    return async_sessionmaker(engine, expire_on_commit=False), engine
 
 
 async def _seed(factory) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
@@ -109,7 +109,7 @@ def webhook_setup(monkeypatch):
     monkeypatch.delenv("MPLACAS_TELEGRAM_ALLOWED_USER_ID", raising=False)
     get_settings.cache_clear()
 
-    factory = asyncio.run(_factory())
+    factory, engine = asyncio.run(_factory())
     monkeypatch.setattr(db_session, "SessionFactory", factory)
     monkeypatch.setattr(telegram_router, "SessionFactory", factory)
     monkeypatch.setattr(telegram_router, "TelegramClient", _StubTelegramClient)
@@ -125,6 +125,7 @@ def webhook_setup(monkeypatch):
 
     yield org_a, org_b, org_c
 
+    asyncio.run(engine.dispose())
     get_settings.cache_clear()
 
 

@@ -1,12 +1,10 @@
 import asyncio
 import logging
-from pathlib import Path
 from time import monotonic
 from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from mplacas import __version__
@@ -109,6 +107,14 @@ async def request_id_middleware(request: Request, call_next):
         duration_ms = max(0, round((monotonic() - started) * 1000))
         response.headers[_REQUEST_ID_HEADER] = request_id
         response.headers[_TRACE_ID_HEADER] = correlation.trace_id
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=(), payment=()"
+        )
+        if _settings_for_startup.env == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         principal = getattr(request.state, "operations_principal", None)
         audit_fields: dict[str, object] = {}
         if principal is not None:
@@ -152,11 +158,6 @@ app.include_router(organizations_router)
 app.include_router(plants_router)
 app.include_router(reports_router)
 app.include_router(web_router)
-app.mount(
-    "/dashboard-assets",
-    StaticFiles(directory=Path(__file__).parent / "web" / "static"),
-    name="dashboard-assets",
-)
 
 
 @app.get("/health", tags=["operational"])

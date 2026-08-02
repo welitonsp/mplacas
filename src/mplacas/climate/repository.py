@@ -77,6 +77,7 @@ class ClimateObservationRepository:
                 observation.irradiation_kwh_m2,
                 observation.cloud_cover_percent,
                 observation.precipitation_mm,
+                observation.temperature_mean_c,
             )
             existing = existing_map.get((observation.observation_date, source))
             if existing is None:
@@ -87,6 +88,7 @@ class ClimateObservationRepository:
                         irradiation_kwh_m2=new_values[0],
                         cloud_cover_percent=new_values[1],
                         precipitation_mm=new_values[2],
+                        temperature_mean_c=new_values[3],
                         source=source,
                     )
                 )
@@ -97,6 +99,7 @@ class ClimateObservationRepository:
                 existing.irradiation_kwh_m2,
                 existing.cloud_cover_percent,
                 existing.precipitation_mm,
+                existing.temperature_mean_c,
             )
             if current_values == new_values:
                 unchanged += 1
@@ -104,6 +107,7 @@ class ClimateObservationRepository:
             existing.irradiation_kwh_m2 = new_values[0]
             existing.cloud_cover_percent = new_values[1]
             existing.precipitation_mm = new_values[2]
+            existing.temperature_mean_c = new_values[3]
             updated += 1
 
         await self._session.flush()

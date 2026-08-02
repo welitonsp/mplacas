@@ -11,7 +11,7 @@ PostgreSQL gerenciado. Este documento não cria recursos automaticamente.
 ```text
 Usuário HTTPS
     -> Cloud Run service
-    -> Mplacas FastAPI e dashboard
+    -> Mplacas FastAPI (API; `/dashboard` apenas redireciona para a SPA)
     -> Neon PostgreSQL
 
 Cloud Scheduler
@@ -230,6 +230,28 @@ para tarefas administrativas.
 
 A prevenção de sobreposição usa o lock persistente por `plant_id` e `target_date` já
 existente no pipeline.
+
+O provisionamento versionado cria ou atualiza idempotentemente os jobs `collect`,
+`daily-pipeline`, `dispatch-outbox`, `drain-collection`, `drain-report-exports`,
+`daily-digest`, `operational-watchdog` e `retention`, seus schedules, o vínculo
+`roles/run.invoker` de uma identidade dedicada e duas políticas de alerta versionadas. Antes da
+primeira execução, configure os segredos NEP e Telegram pelo helper, crie o canal de notificação
+e preencha os parâmetros operacionais não secretos em `infra/gcp/config.env`:
+
+```bash
+bash infra/gcp/set-secrets.sh telegram-bot-token
+bash infra/gcp/set-secrets.sh nep-account
+bash infra/gcp/set-secrets.sh nep-password
+bash infra/gcp/provision-operations.sh
+bash infra/gcp/verify-operations.sh
+```
+
+O verificador falha se qualquer job estiver ausente, schedule não estiver habilitado ou policy não
+estiver habilitada e ligada ao canal configurado. Após confirmação forte, executa
+`mplacas-smoke` e `mplacas-operational-watchdog`. Ambos são somente leitura: comprovam configuração,
+acesso aos secrets, inicialização do contêiner, conectividade e saúde do ledger sem coletar, enviar
+mensagens ou purgar dados. O contrato completo e o teste controlado estão em
+`docs/RUNBOOK_SLO_ALERTS.md`.
 
 ## Rollback
 

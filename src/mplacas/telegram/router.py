@@ -20,7 +20,7 @@ from mplacas.telegram.document_processing import (
     TelegramDocumentProcessingError,
     process_pdf_bill,
 )
-from mplacas.telegram.pdf import PdfTextExtractionError, extract_pdf_text
+from mplacas.telegram.pdf import PdfTextExtractionError, extract_pdf_text_isolated
 from mplacas.telegram.service import (
     TelegramUpdateError,
     extract_chat_id,
@@ -216,7 +216,14 @@ async def telegram_webhook(
             message.document.file_id,
             max_bytes=settings.telegram_document_max_bytes,
         )
-        source_text = extract_pdf_text(downloaded.content)
+        source_text = await extract_pdf_text_isolated(
+            downloaded.content,
+            max_pages=settings.telegram_pdf_max_pages,
+            max_text_bytes=settings.bill_text_max_bytes,
+            timeout_seconds=settings.telegram_pdf_parse_timeout_seconds,
+            cpu_seconds=settings.telegram_pdf_parse_cpu_seconds,
+            memory_bytes=settings.telegram_pdf_parse_memory_bytes,
+        )
         processed = process_pdf_bill(
             downloaded.content,
             extract_text=lambda _: source_text,

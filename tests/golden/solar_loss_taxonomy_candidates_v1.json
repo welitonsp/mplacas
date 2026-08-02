@@ -1,0 +1,133 @@
+{
+  "schema_version": "MPLACAS_SOLAR_GOLDEN_V1",
+  "dataset_id": "solar-loss-taxonomy-synthetic-candidates-v1",
+  "description": "Synthetic regression candidates; not field evidence and not expert approved.",
+  "expert_review": {
+    "status": "PENDING",
+    "reviewer_role": null,
+    "reviewed_at": null,
+    "evidence_ref": null
+  },
+  "cases": [
+    {
+      "case_id": "synthetic-communication-gap-001",
+      "source_kind": "SYNTHETIC_REGRESSION",
+      "inputs": {
+        "performance_ratio": "0.4000",
+        "temperature_corrected_performance_ratio": null,
+        "reporting_availability_ratio": "0.5000",
+        "data_quality_status": "INCOMPLETE",
+        "measured_energy_kwh": "20",
+        "poa_irradiation_kwh_m2": "6",
+        "dc_capacity_kwp": "10",
+        "ac_capacity_kw": "8",
+        "baseline_median_performance_ratio": "0.8000",
+        "baseline_degradation_status": "STABLE",
+        "baseline_degradation_percent": "0",
+        "target_clear_sky_index": "0.95",
+        "precipitation_sample_days": 30,
+        "dry_days": 0
+      },
+      "expected_labels": {
+        "COMMUNICATION": "POSITIVE",
+        "UNAVAILABILITY": "NEGATIVE",
+        "CLIPPING": "POSITIVE",
+        "SOILING": "NEGATIVE",
+        "SHADING": "NOT_ASSESSABLE",
+        "TEMPERATURE": "NOT_ASSESSABLE",
+        "DEGRADATION": "NEGATIVE",
+        "UNEXPLAINED": "NEGATIVE"
+      }
+    },
+    {
+      "case_id": "synthetic-zero-energy-complete-reporting-002",
+      "source_kind": "SYNTHETIC_REGRESSION",
+      "inputs": {
+        "performance_ratio": "0",
+        "temperature_corrected_performance_ratio": null,
+        "reporting_availability_ratio": "1",
+        "data_quality_status": "FINAL",
+        "measured_energy_kwh": "0",
+        "poa_irradiation_kwh_m2": "6",
+        "dc_capacity_kwp": "10",
+        "ac_capacity_kw": "10",
+        "baseline_median_performance_ratio": "0.8000",
+        "baseline_degradation_status": "STABLE",
+        "baseline_degradation_percent": "0",
+        "target_clear_sky_index": "0.95",
+        "precipitation_sample_days": 30,
+        "dry_days": 0
+      },
+      "expected_labels": {
+        "COMMUNICATION": "NEGATIVE",
+        "UNAVAILABILITY": "POSITIVE",
+        "CLIPPING": "NEGATIVE",
+        "SOILING": "NEGATIVE",
+        "SHADING": "NOT_ASSESSABLE",
+        "TEMPERATURE": "NOT_ASSESSABLE",
+        "DEGRADATION": "NEGATIVE",
+        "UNEXPLAINED": "NEGATIVE"
+      }
+    },
+    {
+      "case_id": "synthetic-multifactor-loss-003",
+      "source_kind": "SYNTHETIC_REGRESSION",
+      "inputs": {
+        "performance_ratio": "0.7200",
+        "temperature_corrected_performance_ratio": "0.8000",
+        "reporting_availability_ratio": "1",
+        "data_quality_status": "FINAL",
+        "measured_energy_kwh": "40",
+        "poa_irradiation_kwh_m2": "6",
+        "dc_capacity_kwp": "10",
+        "ac_capacity_kw": "8",
+        "baseline_median_performance_ratio": "0.8500",
+        "baseline_degradation_status": "DEGRADED",
+        "baseline_degradation_percent": "-5.50",
+        "target_clear_sky_index": "0.95",
+        "precipitation_sample_days": 30,
+        "dry_days": 25
+      },
+      "expected_labels": {
+        "COMMUNICATION": "NEGATIVE",
+        "UNAVAILABILITY": "NEGATIVE",
+        "CLIPPING": "POSITIVE",
+        "SOILING": "POSITIVE",
+        "SHADING": "NOT_ASSESSABLE",
+        "TEMPERATURE": "POSITIVE",
+        "DEGRADATION": "POSITIVE",
+        "UNEXPLAINED": "NEGATIVE"
+      }
+    },
+    {
+      "case_id": "synthetic-insufficient-telemetry-004",
+      "source_kind": "SYNTHETIC_REGRESSION",
+      "inputs": {
+        "performance_ratio": "0.8000",
+        "temperature_corrected_performance_ratio": null,
+        "reporting_availability_ratio": null,
+        "data_quality_status": "FINAL",
+        "measured_energy_kwh": "40",
+        "poa_irradiation_kwh_m2": "5",
+        "dc_capacity_kwp": "10",
+        "ac_capacity_kw": null,
+        "baseline_median_performance_ratio": null,
+        "baseline_degradation_status": null,
+        "baseline_degradation_percent": null,
+        "target_clear_sky_index": null,
+        "precipitation_sample_days": 0,
+        "dry_days": 0
+      },
+      "expected_labels": {
+        "COMMUNICATION": "NOT_ASSESSABLE",
+        "UNAVAILABILITY": "NEGATIVE",
+        "CLIPPING": "NOT_ASSESSABLE",
+        "SOILING": "NOT_ASSESSABLE",
+        "SHADING": "NOT_ASSESSABLE",
+        "TEMPERATURE": "NOT_ASSESSABLE",
+        "DEGRADATION": "NOT_ASSESSABLE",
+        "UNEXPLAINED": "NOT_ASSESSABLE"
+      }
+    }
+  ]
+}
