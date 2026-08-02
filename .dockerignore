@@ -14,7 +14,7 @@ docs/
 /backups/
 storage/
 backups/
-reports/
+/reports/
 *.db
 *.sqlite3
 *.dump

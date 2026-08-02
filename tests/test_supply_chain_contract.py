@@ -58,6 +58,14 @@ def test_container_smoke_uses_valid_configuration_and_preserves_failure_logs() -
     assert 'docker rm --force "$CONTAINER_NAME"' in ci
 
 
+def test_ignore_files_do_not_exclude_python_reports_package() -> None:
+    for name in (".dockerignore", ".gcloudignore"):
+        entries = (ROOT / name).read_text(encoding="utf-8").splitlines()
+
+        assert "/reports/" in entries
+        assert "reports/" not in entries
+
+
 def test_gitleaks_exceptions_are_exact_fingerprints() -> None:
     entries = [
         line for line in (ROOT / ".gitleaksignore").read_text(encoding="utf-8").splitlines() if line

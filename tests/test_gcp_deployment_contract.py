@@ -58,7 +58,7 @@ def test_gcloudignore_excludes_local_and_sensitive_artifacts() -> None:
         "tests/",
         "docs/",
         "storage/",
-        "reports/",
+        "/reports/",
         "*.db",
         "*.sqlite3",
         "*.dump",
