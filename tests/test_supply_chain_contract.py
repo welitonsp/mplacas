@@ -39,9 +39,7 @@ def test_images_and_actions_are_immutable() -> None:
 
 def test_automated_updates_scans_and_provenance_are_versioned() -> None:
     dependabot = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
-    security = (ROOT / ".github" / "workflows" / "security.yml").read_text(
-        encoding="utf-8"
-    )
+    security = (ROOT / ".github" / "workflows" / "security.yml").read_text(encoding="utf-8")
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     for ecosystem in ("pip", "npm", "github-actions", "docker"):
@@ -52,11 +50,17 @@ def test_automated_updates_scans_and_provenance_are_versioned() -> None:
     assert "attestations: write" in ci
 
 
+def test_container_smoke_uses_valid_configuration_and_preserves_failure_logs() -> None:
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "MPLACAS_JWT_SECRET=ci-00000000000000000000000000000000" in ci
+    assert 'docker logs "$CONTAINER_NAME"' in ci
+    assert 'docker rm --force "$CONTAINER_NAME"' in ci
+
+
 def test_gitleaks_exceptions_are_exact_fingerprints() -> None:
     entries = [
-        line
-        for line in (ROOT / ".gitleaksignore").read_text(encoding="utf-8").splitlines()
-        if line
+        line for line in (ROOT / ".gitleaksignore").read_text(encoding="utf-8").splitlines() if line
     ]
 
     assert len(entries) == 9

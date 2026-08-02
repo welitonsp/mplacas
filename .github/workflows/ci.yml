@@ -299,26 +299,32 @@ jobs:
           fi
       - name: Run container
         run: |
-          docker run -d --rm \
+          docker run -d \
             --name "$CONTAINER_NAME" \
             --network host \
             -e PORT=8080 \
             -e MPLACAS_ENVIRONMENT=production \
             -e MPLACAS_DATABASE_URL=postgresql+asyncpg://postgres@localhost:5432/postgres \
             -e MPLACAS_OPERATIONS_API_KEY=ci-operations-key \
-            -e MPLACAS_JWT_SECRET=ci-jwt-secret \
+            -e MPLACAS_JWT_SECRET=ci-00000000000000000000000000000000 \
             -e MPLACAS_NEP_USERNAME=ci-nep-user \
             -e MPLACAS_NEP_PASSWORD=ci-nep-password \
             "$IMAGE_NAME"
       - name: Smoke test health and readiness
         run: |
+          healthy=false
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080/health; then
+              healthy=true
               break
             fi
             sleep 1
           done
+          if [ "$healthy" != "true" ]; then
+            docker logs "$CONTAINER_NAME"
+            exit 1
+          fi
           curl -fsS http://127.0.0.1:8080/ready
       - name: Stop container
         if: always()
-        run: docker stop "$CONTAINER_NAME" || true
+        run: docker rm --force "$CONTAINER_NAME" || true

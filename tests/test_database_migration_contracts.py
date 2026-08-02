@@ -5,19 +5,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_utility_bill_initial_unique_constraint_is_named_for_batch_migrations() -> None:
-    migration = (
-        ROOT / "migrations" / "versions" / "20260712_0003_utility_bills.py"
-    ).read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "versions" / "20260712_0003_utility_bills.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "uq_utility_bills_cycle" in migration
 
 
 def test_utility_bill_plant_scope_migration_reflects_sqlite_constraint_names() -> None:
     migration = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260713_0005_scope_utility_bills_by_plant.py"
+        ROOT / "migrations" / "versions" / "20260713_0005_scope_utility_bills_by_plant.py"
     ).read_text(encoding="utf-8")
 
     assert "_BILL_NAMING_CONVENTION" in migration
@@ -26,10 +23,7 @@ def test_utility_bill_plant_scope_migration_reflects_sqlite_constraint_names() -
 
 def test_operational_scale_indexes_migration_is_present() -> None:
     migration = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260716_0008_add_operational_scale_indexes.py"
+        ROOT / "migrations" / "versions" / "20260716_0008_add_operational_scale_indexes.py"
     ).read_text(encoding="utf-8")
 
     assert 'down_revision = "20260713_0007"' in migration
@@ -40,9 +34,9 @@ def test_operational_scale_indexes_migration_is_present() -> None:
 
 
 def test_audit_events_migration_is_present() -> None:
-    migration = (
-        ROOT / "migrations" / "versions" / "20260716_0009_add_audit_events.py"
-    ).read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "versions" / "20260716_0009_add_audit_events.py").read_text(
+        encoding="utf-8"
+    )
 
     assert 'down_revision = "20260716_0008"' in migration
     assert '"audit_events"' in migration
@@ -54,10 +48,7 @@ def test_audit_events_migration_is_present() -> None:
 
 def test_utility_bill_plant_scope_migration_is_present() -> None:
     migration = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260716_0010_require_utility_bill_plant.py"
+        ROOT / "migrations" / "versions" / "20260716_0010_require_utility_bill_plant.py"
     ).read_text(encoding="utf-8")
 
     assert 'down_revision = "20260716_0009"' in migration
@@ -69,10 +60,7 @@ def test_utility_bill_plant_scope_migration_is_present() -> None:
 
 def test_monthly_report_snapshot_migration_is_present() -> None:
     migration = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260719_0011_add_monthly_report_snapshots.py"
+        ROOT / "migrations" / "versions" / "20260719_0011_add_monthly_report_snapshots.py"
     ).read_text(encoding="utf-8")
 
     assert 'down_revision = "20260716_0010"' in migration
@@ -85,10 +73,7 @@ def test_monthly_report_snapshot_migration_is_present() -> None:
 
 def test_transactional_outbox_migration_is_present() -> None:
     migration = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260719_0012_add_transactional_outbox.py"
+        ROOT / "migrations" / "versions" / "20260719_0012_add_transactional_outbox.py"
     ).read_text(encoding="utf-8")
 
     assert 'down_revision = "20260719_0011"' in migration
@@ -102,12 +87,9 @@ def test_transactional_outbox_migration_is_present() -> None:
 
 
 def test_api_credentials_migration_is_present() -> None:
-    source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260719_0013_add_api_credentials.py"
-    ).read_text(encoding="utf-8")
+    source = (ROOT / "migrations" / "versions" / "20260719_0013_add_api_credentials.py").read_text(
+        encoding="utf-8"
+    )
 
     assert 'revision = "20260719_0013"' in source
     assert 'down_revision = "20260719_0012"' in source
@@ -119,10 +101,7 @@ def test_api_credentials_migration_is_present() -> None:
 
 def test_operational_users_migration_is_present() -> None:
     source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260719_0014_add_operational_users.py"
+        ROOT / "migrations" / "versions" / "20260719_0014_add_operational_users.py"
     ).read_text(encoding="utf-8")
 
     assert 'revision = "20260719_0014"' in source
@@ -136,10 +115,7 @@ def test_operational_users_migration_is_present() -> None:
 
 def test_collection_task_queue_migration_is_present() -> None:
     source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260719_0015_add_collection_task_queue.py"
+        ROOT / "migrations" / "versions" / "20260719_0015_add_collection_task_queue.py"
     ).read_text(encoding="utf-8")
 
     assert 'revision = "20260719_0015"' in source
@@ -153,10 +129,7 @@ def test_collection_task_queue_migration_is_present() -> None:
 
 def test_auth_sessions_rate_limits_and_roles_migration_is_present() -> None:
     source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260726_0024_auth_sessions_rate_limits_roles.py"
+        ROOT / "migrations" / "versions" / "20260726_0024_auth_sessions_rate_limits_roles.py"
     ).read_text(encoding="utf-8")
 
     assert 'revision = "20260726_0024"' in source
@@ -169,10 +142,7 @@ def test_auth_sessions_rate_limits_and_roles_migration_is_present() -> None:
 
 def test_auth_session_family_migration_is_present() -> None:
     source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260801_0030_add_auth_session_families.py"
+        ROOT / "migrations" / "versions" / "20260801_0030_add_auth_session_families.py"
     ).read_text(encoding="utf-8")
 
     assert 'revision = "20260801_0030"' in source
@@ -184,10 +154,7 @@ def test_auth_session_family_migration_is_present() -> None:
 
 def test_bill_tariff_fields_migration_is_present() -> None:
     source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260801_0028_add_bill_tariff_fields.py"
+        ROOT / "migrations" / "versions" / "20260801_0028_add_bill_tariff_fields.py"
     ).read_text(encoding="utf-8")
 
     assert 'revision = "20260801_0028"' in source
@@ -214,10 +181,7 @@ def test_bill_tariff_fields_migration_is_present() -> None:
 
 def test_climate_temperature_mean_migration_is_present() -> None:
     source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260801_0029_add_climate_temperature_mean.py"
+        ROOT / "migrations" / "versions" / "20260801_0029_add_climate_temperature_mean.py"
     ).read_text(encoding="utf-8")
 
     assert 'revision = "20260801_0029"' in source
@@ -256,10 +220,7 @@ def test_bill_source_hash_is_scoped_by_plant_with_safe_rollback() -> None:
     from mplacas.billing.db_models import UtilityBillRecord
 
     migration = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260801_0031_scope_bill_source_hash_by_plant.py"
+        ROOT / "migrations" / "versions" / "20260801_0031_scope_bill_source_hash_by_plant.py"
     ).read_text(encoding="utf-8")
     table_constraints = {
         constraint.name: tuple(column.name for column in constraint.columns)
@@ -282,10 +243,7 @@ def test_plant_technical_configuration_migration_matches_orm() -> None:
     from mplacas.db.models import Device, Plant
 
     source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260802_0032_add_plant_technical_configuration.py"
+        ROOT / "migrations" / "versions" / "20260802_0032_add_plant_technical_configuration.py"
     ).read_text(encoding="utf-8")
     plant_columns = Plant.__table__.c
     device_columns = Device.__table__.c
@@ -313,7 +271,7 @@ def test_plant_technical_configuration_migration_matches_orm() -> None:
     assert "ck_plants_module_technology" in plant_checks
     assert "ck_devices_dc_capacity_positive" in device_checks
     assert "ck_devices_ac_capacity_positive" in device_checks
-    assert "batch.drop_column(\"commissioned_on\")" in source
+    assert 'batch.drop_column("commissioned_on")' in source
 
 
 def test_daily_solar_model_result_migration_is_versioned_and_reversible() -> None:
@@ -322,10 +280,7 @@ def test_daily_solar_model_result_migration_is_versioned_and_reversible() -> Non
     from mplacas.photovoltaic.db_models import DailySolarModelResultRecord
 
     source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260802_0033_add_daily_solar_model_results.py"
+        ROOT / "migrations" / "versions" / "20260802_0033_add_daily_solar_model_results.py"
     ).read_text(encoding="utf-8")
     unique_constraints = {
         constraint.name: tuple(column.name for column in constraint.columns)
@@ -354,10 +309,7 @@ def test_daily_pv_performance_migration_preserves_metric_semantics() -> None:
     from mplacas.photovoltaic.db_models import DailyPvPerformanceRecord
 
     source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260802_0034_add_daily_pv_performance.py"
+        ROOT / "migrations" / "versions" / "20260802_0034_add_daily_pv_performance.py"
     ).read_text(encoding="utf-8")
     unique_constraints = {
         constraint.name: tuple(column.name for column in constraint.columns)
@@ -388,10 +340,7 @@ def test_seasonal_baseline_migration_is_versioned_and_contamination_auditable() 
     from mplacas.photovoltaic.db_models import SeasonalPvBaselineRecord
 
     source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260802_0035_add_seasonal_pv_baselines.py"
+        ROOT / "migrations" / "versions" / "20260802_0035_add_seasonal_pv_baselines.py"
     ).read_text(encoding="utf-8")
     unique_constraints = {
         constraint.name: tuple(column.name for column in constraint.columns)
@@ -420,10 +369,7 @@ def test_loss_taxonomy_migration_preserves_category_level_evidence() -> None:
     from mplacas.photovoltaic.db_models import DailyPvLossAssessmentRecord
 
     source = (
-        ROOT
-        / "migrations"
-        / "versions"
-        / "20260802_0036_add_daily_pv_loss_assessments.py"
+        ROOT / "migrations" / "versions" / "20260802_0036_add_daily_pv_loss_assessments.py"
     ).read_text(encoding="utf-8")
     unique_constraints = {
         constraint.name: tuple(column.name for column in constraint.columns)
@@ -447,9 +393,7 @@ def test_loss_taxonomy_migration_preserves_category_level_evidence() -> None:
 
 
 def test_postgres_ci_covers_migrations_locks_outbox_queue_and_readiness() -> None:
-    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     integration = (ROOT / "tests" / "test_postgres_operational_contracts.py").read_text(
         encoding="utf-8"
     )
@@ -463,4 +407,17 @@ def test_postgres_ci_covers_migrations_locks_outbox_queue_and_readiness() -> Non
     assert "OutboxRepository(first).claim" in integration
     assert "asyncio.wait_for" in integration
     assert "main_module.ready" in integration
-    assert 'SELECT version_num FROM alembic_version' in integration
+    assert "SELECT version_num FROM alembic_version" in integration
+
+
+def test_auth_timestamp_migration_rejects_nulls_before_enforcement() -> None:
+    source = (
+        ROOT / "migrations" / "versions" / "20260802_0037_enforce_auth_timestamp_not_null.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision = "20260802_0037"' in source
+    assert 'down_revision = "20260802_0036"' in source
+    assert '_assert_no_nulls("auth_sessions", "created_at")' in source
+    assert '_assert_no_nulls("login_rate_limits", "first_attempt_at")' in source
+    assert source.count("nullable=False") == 2
+    assert source.count("nullable=True") == 2

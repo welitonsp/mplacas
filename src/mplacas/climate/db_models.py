@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from mplacas.db.base import Base
@@ -12,7 +12,14 @@ from mplacas.db.base import Base
 
 class DailyClimateObservationRecord(Base):
     __tablename__ = "daily_climate_observations"
-    __table_args__ = (UniqueConstraint("plant_id", "observation_date", "source"),)
+    __table_args__ = (
+        UniqueConstraint("plant_id", "observation_date", "source"),
+        Index(
+            "ix_daily_climate_observations_plant_date",
+            "plant_id",
+            "observation_date",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     plant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("plants.id", ondelete="CASCADE"))
