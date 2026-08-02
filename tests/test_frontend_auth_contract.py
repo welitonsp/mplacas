@@ -51,6 +51,9 @@ def test_canonical_contract_and_cloudflare_headers_are_complete() -> None:
         "X-Frame-Options: DENY",
         "Referrer-Policy: no-referrer",
         "Permissions-Policy:",
+        "Cross-Origin-Opener-Policy: same-origin",
+        "Cross-Origin-Resource-Policy: same-origin",
+        "X-Permitted-Cross-Domain-Policies: none",
     }
 
     header_lines = [line.strip() for line in headers.splitlines()]
@@ -58,5 +61,12 @@ def test_canonical_contract_and_cloudflare_headers_are_complete() -> None:
         any(line.startswith(required) for line in header_lines)
         for required in required_headers
     )
+    assert "connect-src 'self' https:;" not in headers
+    assert (
+        "connect-src 'self' https://mplacas-api-104231254500.us-central1.run.app;"
+        in headers
+    )
+    assert "/assets/*" in headers
+    assert "Cache-Control: public, max-age=31536000, immutable" in headers
     for term in ("somente em memória", "POST /auth/logout", "redirecionamento `308`", "Wildcard"):
         assert term in contract

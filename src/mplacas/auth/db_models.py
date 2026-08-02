@@ -49,6 +49,7 @@ class AuthSessionRecord(Base):
     replaced_by_session_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("auth_sessions.id", ondelete="SET NULL"),
         nullable=True,
+        index=True,
     )
 
 

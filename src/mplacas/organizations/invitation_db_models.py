@@ -34,6 +34,7 @@ class UserInvitationRecord(Base):
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("operational_users.id"),
         nullable=True,
+        index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -47,6 +48,7 @@ class UserInvitationRecord(Base):
     accepted_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("operational_users.id"),
         nullable=True,
+        index=True,
     )
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
