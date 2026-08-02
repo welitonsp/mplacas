@@ -26,26 +26,37 @@ ARTIFACT_DIR="${MPLACAS_RESTORE_ARTIFACT_DIR:-artifacts/restore-drill}"
 mkdir -p "$ARTIFACT_DIR"
 chmod 700 "$ARTIFACT_DIR"
 
-TARGET_HOST="$({ python - \
+mapfile -d '' -t VALIDATED_CONNECTIONS < <(python - \
   "$MPLACAS_BACKUP_SOURCE_URL" \
   "$MPLACAS_RESTORE_DATABASE_URL" \
   "$MPLACAS_RESTORE_CONFIRM_HOST" <<'PY'
 import sys
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 source, target, confirmation = sys.argv[1:]
 source_url = urlsplit(source)
 target_url = urlsplit(target)
-for label, parsed in (("source", source_url), ("target", target_url)):
-    if parsed.scheme not in {"postgres", "postgresql"} or not parsed.hostname:
-        raise SystemExit(f"{label} must be a PostgreSQL URL")
+if source_url.scheme not in {"postgres", "postgresql", "postgresql+asyncpg"}:
+    raise SystemExit("source must be a PostgreSQL URL")
+if not source_url.hostname:
+    raise SystemExit("source must be a PostgreSQL URL")
+if target_url.scheme not in {"postgres", "postgresql"} or not target_url.hostname:
+    raise SystemExit("target must be a PostgreSQL URL")
 if source_url.hostname == target_url.hostname:
     raise SystemExit("restore target must use a different host/branch than production")
 if target_url.hostname != confirmation:
     raise SystemExit("MPLACAS_RESTORE_CONFIRM_HOST does not match the discardable target")
-print(target_url.hostname)
+source_url = source_url._replace(scheme="postgresql")
+values = (urlunsplit(source_url), target_url.hostname)
+sys.stdout.buffer.write(b"\0".join(value.encode() for value in values) + b"\0")
 PY
-} )"
+)
+[[ "${#VALIDATED_CONNECTIONS[@]}" -eq 2 ]] || {
+  printf 'error: source/target URL validation did not return a connection\n' >&2
+  exit 1
+}
+SOURCE_DSN="${VALIDATED_CONNECTIONS[0]}"
+TARGET_HOST="${VALIDATED_CONNECTIONS[1]}"
 
 mapfile -d '' -t RESTORE_CONNECTION < <(python - "$MPLACAS_RESTORE_DATABASE_URL" <<'PY'
 import sys
@@ -87,7 +98,8 @@ DUMP_FILE="${WORK_DIR}/mplacas-${TIMESTAMP}.dump"
 ENCRYPTED_FILE="${ARTIFACT_DIR}/mplacas-${TIMESTAMP}.dump.gpg"
 MANIFEST_FILE="${ARTIFACT_DIR}/restore-drill-${TIMESTAMP}.json"
 
-PGDATABASE="$MPLACAS_BACKUP_SOURCE_URL" pg_dump \
+pg_dump \
+  --dbname "$SOURCE_DSN" \
   --format=custom \
   --no-owner \
   --no-acl \

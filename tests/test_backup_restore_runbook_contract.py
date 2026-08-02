@@ -55,6 +55,10 @@ def test_restore_drill_is_automated_and_fail_closed() -> None:
         "--cipher-algo AES256",
     }
     assert all(term in script for term in required_script_terms)
+    assert '--dbname "$SOURCE_DSN"' in script
+    assert 'PGDATABASE="$MPLACAS_BACKUP_SOURCE_URL"' not in script
+    assert '"postgresql+asyncpg"' in script
+    assert 'source_url._replace(scheme="postgresql")' in script
     assert '--dbname "$MPLACAS_RESTORE_DATABASE_URL"' not in script
     assert 'PGPASSWORD="${RESTORE_CONNECTION[3]}"' in script
     assert 'cron: "0 5 * * *"' in workflow
