@@ -1,9 +1,9 @@
 # Checklist de remediação — Auditorias técnicas Mplacas
 
-Última atualização: 2026-08-02 (CI/Security remotos aprovados; primeira execução GCP pendente)
+Última atualização: 2026-08-02 (PR #68 integrado e provenance atestada; primeira execução GCP pendente)
 
-Base do novo ciclo: `HEAD b73e97e`. Implementação publicada na branch
-`agent/auditoria-big-tech-remediacoes`, PR draft
+Base do novo ciclo: `HEAD b73e97e`. Implementação integrada em `main` pelo merge commit
+`b888b4b3c91244a6c2fd87b7d77c9a11ed367186`, via
 [#68](https://github.com/welitonsp/mplacas/pull/68).
 
 Relatório atual: `AUDITORIA_BIG_TECH_2026-08-01.md`.
@@ -350,7 +350,7 @@ Baseline de validação deste ciclo:
     [postgres-integration](https://github.com/welitonsp/mplacas/actions/runs/30753841013/job/91512481640),
     incluindo a migration 0031 e todas as revisões posteriores até 0037.
 
-- [~] **P2-03 — tornar builds Python reproduzíveis e reforçar supply chain.**
+- [x] **P2-03 — tornar builds Python reproduzíveis e reforçar supply chain.**
   - Adotar lock com hashes, pin de imagem por digest e Actions por SHA.
   - Adicionar atualização automatizada, secret scan, SAST e política de proveniência/SBOM.
   - Critério de aceite: rebuild da mesma revisão resolve as mesmas dependências verificadas.
@@ -359,8 +359,13 @@ Baseline de validação deste ciclo:
     commit e PostgreSQL por digest. Dependabot, CodeQL, Gitleaks e attestation de proveniência foram
     versionados, preservando SBOM/Trivy/auditorias existentes. Instalação seca dos locks e contratos
     locais passaram. Linux/Python 3.12, build por digest, SBOM, Trivy, CodeQL e Gitleaks foram
-    aprovados nas execuções remotas 30753841013 e 30753841032. Falta somente a attestation real,
-    condicionada a push/merge em `main` pelo workflow.
+    aprovados nas execuções remotas 30753841013 e 30753841032.
+  - Concluído em 2026-08-02: após o merge do PR #68, a execução
+    [CI 30754471086](https://github.com/welitonsp/mplacas/actions/runs/30754471086) em `main` aprovou
+    novamente os cinco jobs e publicou a
+    [attestation 38431381](https://github.com/welitonsp/mplacas/attestations/38431381), assinada via
+    Sigstore e registrada no Rekor para `mplacas-image.tar` com digest
+    `sha256:0fd6b604fe68eb6bf1e20e577026a06c8286aca5bbe3c77a31c3cf83d3c4390a`.
 
 - [x] **P2-04 — consolidar frontend e documentação.**
   - Remover contratos conflitantes entre dashboard FastAPI e SPA Cloudflare.
@@ -476,14 +481,14 @@ Baseline de validação deste ciclo:
 |---|---:|---:|---:|
 | P0 | 5 | 1 | 0 |
 | P1 | 5 | 2 | 0 |
-| P2 arquitetura/supply chain | 3 | 2 | 0 |
+| P2 arquitetura/supply chain | 4 | 1 | 0 |
 | Evolução solar | 5 | 1 | 0 |
-| **Total novo** | **18** | **6** | **0** |
+| **Total novo** | **19** | **5** | **0** |
 
-Próxima ação recomendada: revisar e integrar o PR #68 para gerar a attestation de **P2-03** em `main`;
-depois, validar jobs/schedules no GCP e o incidente controlado de ausência para **P1-05**, e configurar
-o environment `production-restore-drill` para colher o primeiro manifest aprovado de **P1-06**. Depois
-do deploy validado, coordenar consumidores e rotação para fechar **P0-04**.
+Próxima ação recomendada: validar jobs/schedules no GCP e o incidente controlado de ausência para
+**P1-05**, e configurar o environment `production-restore-drill` para colher o primeiro manifest
+aprovado de **P1-06**. Depois do deploy validado, coordenar consumidores e rotação para fechar
+**P0-04**.
 Na implementação local, a próxima ação é concluir **SOL-06** com dados de campo autorizados e revisão
 real de especialista, seguindo `RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O fechamento de **P2-01** permanece
-condicionado ao rollout de RLS, e **P2-03** à attestation em `main`.
+condicionado ao rollout de RLS.
