@@ -32,7 +32,7 @@ jobs:
           cat mypy-report.txt
       - name: Upload Mypy report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mypy-report
           path: mypy-report.txt
@@ -42,7 +42,7 @@ jobs:
         run: pip-audit --format=json --output=pip-audit-report.json
       - name: Upload Python dependency audit
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pip-audit-report
           path: pip-audit-report.json
@@ -55,7 +55,7 @@ jobs:
             2>&1 | tee pytest-report.txt
       - name: Upload Pytest report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pytest-report
           path: pytest-report.txt
@@ -84,7 +84,7 @@ jobs:
           )
           PY
       - name: Upload report export samples
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: report-export-samples
           path: artifacts/report-samples
@@ -112,7 +112,7 @@ jobs:
           cat shellcheck-report.txt
       - name: Upload ShellCheck report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: shellcheck-report
           path: shellcheck-report.txt
@@ -162,7 +162,7 @@ jobs:
             2>&1 | tee postgres-integration-report.txt
       - name: Upload PostgreSQL integration report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: postgres-integration-report
           path: postgres-integration-report.txt
@@ -187,7 +187,7 @@ jobs:
         run: npm audit --audit-level=high --json > npm-audit-report.json
       - name: Upload frontend dependency audit
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: npm-audit-report
           path: frontend/npm-audit-report.json
@@ -204,7 +204,7 @@ jobs:
           VITE_PLANT_ID: 00000000-0000-0000-0000-000000000001
         run: npm run build
       - name: Upload build artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: frontend-dist
           path: frontend/dist
@@ -254,7 +254,7 @@ jobs:
           output-file: container-sbom.cdx.json
           upload-artifact: false
       - name: Upload container SBOM
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: container-sbom
           path: container-sbom.cdx.json
@@ -271,7 +271,7 @@ jobs:
           exit-code: "1"
       - name: Upload container vulnerability report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: trivy-results
           path: trivy-results.sarif
