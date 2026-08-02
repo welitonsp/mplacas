@@ -30,7 +30,19 @@ escopo e forma de atualização sem copiar o segredo para tickets ou logs.
 
 ## Execução
 
-No Cloud Shell, a partir do repositório validado:
+No Cloud Shell, a partir do repositório validado, use a automação fail-closed:
+
+```bash
+bash infra/gcp/rotate-operations-key.sh
+```
+
+O comando exige confirmação exata, gera 384 bits de entropia sem imprimir a chave, cria uma nova
+versão, atualiza somente o secret da revisão Cloud Run e valida `/health`, `/ready`, autenticação
+da chave nova, rejeição da anterior, smoke e watchdog. Se um gate falhar, restaura a versão
+anterior na API e desabilita de forma reversível a versão nova. Neon e Cloudflare não fazem parte
+desta operação.
+
+Fluxo manual de referência:
 
 ```bash
 set -Eeuo pipefail
@@ -60,7 +72,10 @@ new_version="$(
 rm -f "$key_file"
 test -n "$new_version"
 
-bash infra/gcp/deploy-service.sh
+gcloud run services update "$GCP_SERVICE_NAME" \
+  --project "$GCP_PROJECT_ID" \
+  --region "$GCP_REGION" \
+  --update-secrets="MPLACAS_OPERATIONS_API_KEY=mplacas-operations-api-key:latest"
 bash infra/gcp/verify-deployment.sh
 ```
 
@@ -83,3 +98,13 @@ bash infra/gcp/verify-deployment.sh
 
 Não destruir versões durante a janela de observação. Depois da validação e do prazo acordado,
 desabilitar a versão anterior; destruição permanente exige uma mudança separada e auditada.
+
+## Evidência da rotação de 2026-08-02
+
+- Inventário encontrou zero chamadas a `/operations/*` em 90 dias e nenhum secret READ separado.
+- Somente `mplacas-runtime@mplacas.iam.gserviceaccount.com` possui `secretAccessor` no secret.
+- API e 11 jobs apontavam para `mplacas-operations-api-key:latest`.
+- A versão 2 foi criada sem exposição e a revisão `mplacas-api-00013-5g6` recebeu 100% do tráfego.
+- `/health`, `/ready` e a chave nova retornaram HTTP 200; a versão anterior foi rejeitada com 401.
+- `mplacas-smoke-hq4xr` e `mplacas-operational-watchdog-pm2j5` concluíram com sucesso.
+- A versão 1 permanece habilitada temporariamente para rollback, mas não é aceita pela API.
