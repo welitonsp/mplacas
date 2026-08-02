@@ -80,8 +80,11 @@ def test_restore_drill_is_automated_and_fail_closed() -> None:
     assert "MPLACAS_RESTORE_CONFIRM_HOST: localhost" in workflow
     assert "secrets.MPLACAS_RESTORE_DATABASE_URL" not in workflow
     assert "secrets.MPLACAS_RESTORE_CONFIRM_HOST" not in workflow
-    assert 'host not in {"localhost", "127.0.0.1", "::1"}' in script
+    assert 'loopback_hosts = {"localhost", "127.0.0.1", "::1"}' in script
     assert "remote restore URL must contain a password" in script
+    assert 'default_sslmode = "disable" if host in loopback_hosts else "require"' in script
+    assert 'sslmode not in {"require", "verify-ca", "verify-full"}' in script
+    assert "remote restore URL must require TLS" in script
     assert "Open deduplicated restore incident" in workflow
 
 

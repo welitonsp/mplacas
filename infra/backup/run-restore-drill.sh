@@ -65,18 +65,23 @@ from urllib.parse import parse_qs, unquote, urlsplit
 parsed = urlsplit(sys.argv[1])
 host = parsed.hostname or ""
 password = unquote(parsed.password or "")
+loopback_hosts = {"localhost", "127.0.0.1", "::1"}
+default_sslmode = "disable" if host in loopback_hosts else "require"
+sslmode = parse_qs(parsed.query).get("sslmode", [default_sslmode])[0]
 values = (
     host,
     str(parsed.port or 5432),
     unquote(parsed.username or ""),
     password,
     unquote(parsed.path.lstrip("/")),
-    parse_qs(parsed.query).get("sslmode", ["require"])[0],
+    sslmode,
 )
 if not all((values[0], values[1], values[2], values[4])):
     raise SystemExit("restore URL must contain host, port/default, user and database")
-if not password and host not in {"localhost", "127.0.0.1", "::1"}:
+if not password and host not in loopback_hosts:
     raise SystemExit("remote restore URL must contain a password")
+if host not in loopback_hosts and sslmode not in {"require", "verify-ca", "verify-full"}:
+    raise SystemExit("remote restore URL must require TLS")
 sys.stdout.buffer.write(b"\0".join(value.encode() for value in values) + b"\0")
 PY
 )

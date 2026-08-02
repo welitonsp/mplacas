@@ -52,6 +52,8 @@ O workflow cria um PostgreSQL 18 efêmero dentro do runner e fixa
 confirmação deve ser exatamente o hostname do alvo descartável e diferente do hostname de produção.
 Essa validação fail-closed acontece antes do `pg_restore`. Execuções locais podem usar uma branch
 Neon descartável, mas o workflow não depende de infraestrutura externa para o destino.
+Destinos loopback usam `sslmode=disable`, pois o serviço efêmero não expõe TLS; qualquer destino
+remoto continua obrigado a usar `require`, `verify-ca` ou `verify-full` e senha.
 
 ## Automação diária
 
