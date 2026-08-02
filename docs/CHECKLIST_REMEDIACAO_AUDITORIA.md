@@ -1,6 +1,6 @@
 # Checklist de remediação — Auditorias técnicas Mplacas
 
-Última atualização: 2026-08-02 (P0-04 rotacionado e validado; rollback preservado)
+Última atualização: 2026-08-02 (P0-04 encerrado; versões antigas desativadas e deploy padrão validado)
 
 Base do novo ciclo: `HEAD b73e97e`. Implementação integrada em `main` pelo merge commit
 `b888b4b3c91244a6c2fd87b7d77c9a11ed367186`, via
@@ -187,9 +187,13 @@ Baseline de validação deste ciclo:
     separada. A versão 2 foi criada sem exposição e ativada na revisão
     `mplacas-api-00013-5g6`, com 100% do tráfego. `/health`, `/ready` e autenticação nova retornaram
     200, enquanto a chave anterior retornou 401. `mplacas-smoke-hq4xr` e
-    `mplacas-operational-watchdog-pm2j5` concluíram com sucesso. A versão 1 permanece habilitada
-    temporariamente como rollback, embora não seja aceita pela API. O procedimento repetível está
-    em `infra/gcp/rotate-operations-key.sh` e no `RUNBOOK_ROTACAO_CREDENCIAL_OPERACIONAL.md`.
+    `mplacas-operational-watchdog-pm2j5` concluíram com sucesso. Após a janela de validação, a
+    versão 1 foi desativada de forma reversível e a versão 2 permaneceu como a única habilitada.
+    O deploy padrão subsequente passou pelo preflight de versão única, publicou
+    `mplacas-api-00014-f9p` com 100% do tráfego e confirmou `/health` e `/ready` com HTTP 200;
+    `mplacas-smoke-9x4bn` e `mplacas-operational-watchdog-pwqv8` também foram aprovados. O
+    procedimento repetível está em `infra/gcp/rotate-operations-key.sh` e no
+    `RUNBOOK_ROTACAO_CREDENCIAL_OPERACIONAL.md`.
     Validação: 18 testes do contrato GCP e suíte global com **609 passed**, **4 skipped**;
     Mypy aprovado em 180 arquivos, Ruff limpo, frontend type-check e build aprovados.
 
@@ -354,6 +358,11 @@ Baseline de validação deste ciclo:
     manifest auditável: `pg_restore=passed`, `migrations=passed`, `critical_invariants=passed`,
     `ready_endpoint=passed`, `decision=approved`. O incidente deduplicado
     [#81](https://github.com/welitonsp/mplacas/issues/81) foi encerrado com essa evidência.
+  - Manutenção operacional em 2026-08-02: a versão 1 inválida de
+    `mplacas-migration-database-url` foi desativada de forma reversível; a versão 2 válida ficou
+    como única habilitada e `mplacas-migrate-5rpnl` concluiu com sucesso contra a conexão direta.
+    O deploy padrão também passou pelo preflight de secrets. Essa evidência confirma a credencial
+    de migração, mas não comprova nem altera a retenção PITR contratada no Neon.
   - Permanece parcial somente até confirmar e registrar a janela PITR efetiva do plano Neon
     contratado; não reabrir a automação do restore drill sem evidência de regressão.
 
