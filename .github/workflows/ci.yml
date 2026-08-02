@@ -243,7 +243,7 @@ jobs:
         run: docker save --output mplacas-image.tar "$IMAGE_NAME"
       - name: Attest container build provenance
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: mplacas-image.tar
       - name: Generate container SBOM
