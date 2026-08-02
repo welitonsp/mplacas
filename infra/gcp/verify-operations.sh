@@ -35,6 +35,43 @@ for command_name in "${REQUIRED_COMMANDS[@]}"; do
     "Scheduler job is not enabled: ${name} (${scheduler_state:-unknown})"
 done
 
+scheduler_list_file="$(mktemp)"
+trap 'rm -f -- "$scheduler_list_file"' EXIT
+gcloud scheduler jobs list \
+  --location "$GCP_REGION" \
+  --project "$GCP_PROJECT_ID" \
+  --format=json >"$scheduler_list_file"
+python3 - \
+  "$scheduler_list_file" \
+  "$GCP_PROJECT_ID" \
+  "$GCP_REGION" \
+  "$GCP_OPERATIONAL_JOB_PREFIX" \
+  "${REQUIRED_COMMANDS[@]}" <<'PY'
+import json
+import pathlib
+import sys
+
+path, project_id, region, prefix, *commands = sys.argv[1:]
+schedules = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+for command in commands:
+    expected_name = f"{prefix}-{command}"
+    expected_uri = (
+        f"https://{region}-run.googleapis.com/apis/run.googleapis.com/v1/"
+        f"namespaces/{project_id}/jobs/{expected_name}:run"
+    )
+    enabled_triggers = sorted(
+        schedule.get("name", "").rsplit("/", 1)[-1]
+        for schedule in schedules
+        if schedule.get("state") == "ENABLED"
+        and schedule.get("httpTarget", {}).get("uri") == expected_uri
+    )
+    if enabled_triggers != [expected_name]:
+        raise SystemExit(
+            f"operational job must have exactly one canonical enabled Scheduler trigger: "
+            f"{expected_name}; actual={enabled_triggers!r}"
+        )
+PY
+
 verify_monitoring_policy "operational_job_failure"
 verify_monitoring_policy "operational_watchdog_absence"
 

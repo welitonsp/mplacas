@@ -1,6 +1,6 @@
 # Checklist de remediação — Auditorias técnicas Mplacas
 
-Última atualização: 2026-08-02 (PR #68 integrado e provenance atestada; primeira execução GCP pendente)
+Última atualização: 2026-08-02 (P1-05 provisionado/verificado no GCP; incidente controlado pendente)
 
 Base do novo ciclo: `HEAD b73e97e`. Implementação integrada em `main` pelo merge commit
 `b888b4b3c91244a6c2fd87b7d77c9a11ed367186`, via
@@ -304,6 +304,23 @@ Baseline de validação deste ciclo:
     [gcp-deployment-contract](https://github.com/welitonsp/mplacas/actions/runs/30753841013/job/91512481601)
     aprovou sintaxe Bash, ShellCheck e contratos do provisionador. Isso valida o artefato de deploy,
     mas não substitui o provisionamento e o incidente controlado no projeto GCP.
+  - Provisionado e verificado no projeto `mplacas`, região `us-central1`, em 2026-08-02. A revisão
+    `mplacas-api-00011-h5w` serve 100% do tráfego com a imagem digest `sha256:face3830...789072`;
+    `/health` e `/ready` responderam `200`. A migration executou com sucesso em
+    `mplacas-migrate-88n8r`. Oito jobs e oito schedules canônicos ficaram habilitados, ligados à
+    identidade `mplacas-scheduler`; o trigger legado duplicado `mplacas-daily-digest-schedule` foi
+    pausado de forma reversível. As policies `10276572730635623905` (falha) e
+    `5164561916173011069` (ausência) estão habilitadas no canal
+    `8771600232734038494`.
+  - A ativação real criou histórico por `mplacas-collect-wbjcf` e
+    `mplacas-daily-pipeline-hx85l`; depois, `mplacas-smoke-2vr7t` e
+    `mplacas-operational-watchdog-wzw87` concluíram com sucesso. A primeira tentativa do watchdog
+    falhou corretamente com `daily pipeline has no execution history`, comprovando comportamento
+    fail-closed antes da inicialização do ledger. O PR
+    [#78](https://github.com/welitonsp/mplacas/pull/78) corrigiu o contexto de source deploy que
+    excluía `src/mplacas/reports` e foi integrado após todos os checks verdes.
+  - Permanece parcial somente porque o teste de abertura/entrega/fechamento após duas horas deve ser
+    feito em homologação. Não pausar o watchdog de produção para produzir essa evidência.
 
 - [~] **P1-06 — automatizar backup/PITR e restore drill.**
   - Definir RPO/RTO, retenção, criptografia, ownership e alerta de falha.
@@ -485,10 +502,9 @@ Baseline de validação deste ciclo:
 | Evolução solar | 5 | 1 | 0 |
 | **Total novo** | **19** | **5** | **0** |
 
-Próxima ação recomendada: validar jobs/schedules no GCP e o incidente controlado de ausência para
-**P1-05**, e configurar o environment `production-restore-drill` para colher o primeiro manifest
-aprovado de **P1-06**. Depois do deploy validado, coordenar consumidores e rotação para fechar
-**P0-04**.
+Próxima ação recomendada: preparar uma homologação isolada para o incidente controlado de ausência
+de **P1-05** e configurar o environment `production-restore-drill` para colher o primeiro manifest
+aprovado de **P1-06**. Depois, coordenar consumidores e rotação para fechar **P0-04**.
 Na implementação local, a próxima ação é concluir **SOL-06** com dados de campo autorizados e revisão
 real de especialista, seguindo `RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O fechamento de **P2-01** permanece
 condicionado ao rollout de RLS.
