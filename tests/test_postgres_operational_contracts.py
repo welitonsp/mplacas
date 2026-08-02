@@ -49,6 +49,7 @@ async def _seed_plant(
                 active=True,
             )
         )
+        await session.flush()
         session.add(
             Plant(
                 id=plant_id,
@@ -146,7 +147,7 @@ async def test_migrated_schema_serves_real_readiness_contract(
         )
         revision = await session.scalar(text("SELECT version_num FROM alembic_version"))
 
-    assert revision == "20260802_0036"
+    assert revision == "20260802_0037"
     assert {
         "auth_sessions",
         "collection_tasks",

@@ -47,6 +47,7 @@ async def test_concurrent_refresh_rotation_has_one_winner_and_revokes_replayed_f
                     active=True,
                 )
             )
+            await session.flush()
             session.add(
                 OperationalUserRecord(
                     id=user_id,
