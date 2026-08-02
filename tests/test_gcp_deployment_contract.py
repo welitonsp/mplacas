@@ -13,6 +13,7 @@ SCRIPT_NAMES = {
     "destroy-resources.sh",
     "lib.sh",
     "provision-operations.sh",
+    "rotate-operations-key.sh",
     "run-migrations.sh",
     "set-secrets.sh",
     "verify-operations.sh",
@@ -91,6 +92,31 @@ def test_secret_rotation_captures_created_version_without_racy_sort() -> None:
     assert "--sort-by='~createTime'" not in script
     assert "versions destroy" not in script
     assert '[[ "$new_version" =~ ^[0-9]+$ ]]' in script
+
+
+def test_operations_key_rotation_is_fail_closed_and_auditable() -> None:
+    script = read("infra/gcp/rotate-operations-key.sh")
+
+    required = {
+        "confirm_exact",
+        "secrets.token_urlsafe(48)",
+        "gcloud secrets versions add",
+        "--data-file=-",
+        "MPLACAS_OPERATIONS_API_KEY=${SECRET_OPERATIONS_KEY}:latest",
+        '[[ "$new_key_status" == "200" ]]',
+        '[[ "$previous_key_status" == "401" ]]',
+        "-smoke",
+        "-operational-watchdog",
+        "--wait",
+    }
+    assert all(term in script for term in required)
+    assert "gcloud secrets versions disable" in script
+    assert "gcloud secrets versions destroy" not in script
+    logged_lines = "\n".join(
+        line for line in script.splitlines() if line.startswith("log ")
+    )
+    assert "${previous_key}" not in logged_lines
+    assert "${new_key}" not in logged_lines
 
 
 def test_secret_access_is_scoped_to_each_secret() -> None:

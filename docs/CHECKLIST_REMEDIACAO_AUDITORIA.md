@@ -1,6 +1,6 @@
 # Checklist de remediação — Auditorias técnicas Mplacas
 
-Última atualização: 2026-08-02 (P1-06 com primeiro restore drill aprovado; confirmação PITR pendente)
+Última atualização: 2026-08-02 (P0-04 rotacionado e validado; rollback preservado)
 
 Base do novo ciclo: `HEAD b73e97e`. Implementação integrada em `main` pelo merge commit
 `b888b4b3c91244a6c2fd87b7d77c9a11ed367186`, via
@@ -176,15 +176,22 @@ Baseline de validação deste ciclo:
     frontend apenas remove a chave legada sem lê-la, ADR/README corrigidos e headers CSP/HSTS,
     anti-frame, `nosniff`, referrer e permissions policy publicados.
 
-- [~] **P0-04 — rotacionar credenciais potencialmente persistidas pelo dashboard.**
+- [x] **P0-04 — rotacionar credenciais potencialmente persistidas pelo dashboard.**
   - Confirmar em logs/métricas se a página legada foi usada em produção.
   - Rotacionar `MPLACAS_OPERATIONS_API_KEY` e chaves READ potencialmente expostas.
   - Validar que consumidores legítimos migraram para JWT ou credencial persistida escopada.
   - Critério de aceite: evidência operacional sem registrar o segredo; plano de rollback documentado.
-  - Parcial em 2026-08-01: consulta somente leitura encontrou zero acessos a `/dashboard` em 90 dias
-    e uma versão habilitada do segredo. Procedimento, consumidores e rollback documentados em
-    `RUNBOOK_ROTACAO_CREDENCIAL_OPERACIONAL.md`. Falta confirmar consumidores, implantar a remoção
-    e executar a rotação coordenada; nenhum segredo foi lido ou registrado.
+  - Concluído em 2026-08-02: inventário somente leitura encontrou zero acessos a `/dashboard` e
+    zero chamadas a `/operations/*` em 90 dias. Somente a service account `mplacas-runtime` possui
+    `secretAccessor`; API e 11 jobs eram os consumidores configurados e não existe chave READ
+    separada. A versão 2 foi criada sem exposição e ativada na revisão
+    `mplacas-api-00013-5g6`, com 100% do tráfego. `/health`, `/ready` e autenticação nova retornaram
+    200, enquanto a chave anterior retornou 401. `mplacas-smoke-hq4xr` e
+    `mplacas-operational-watchdog-pm2j5` concluíram com sucesso. A versão 1 permanece habilitada
+    temporariamente como rollback, embora não seja aceita pela API. O procedimento repetível está
+    em `infra/gcp/rotate-operations-key.sh` e no `RUNBOOK_ROTACAO_CREDENCIAL_OPERACIONAL.md`.
+    Validação: 18 testes do contrato GCP e suíte global com **609 passed**, **4 skipped**;
+    Mypy aprovado em 180 arquivos, Ruff limpo, frontend type-check e build aprovados.
 
 - [x] **P0-05 — restaurar baseline de testes totalmente verde.**
   - Corrigir o drift de `.dockerignore`, `.gcloudignore` e `infra/gcp/lib.sh`/respectivo contrato.
@@ -514,15 +521,14 @@ Baseline de validação deste ciclo:
 
 | Categoria | Concluídos | Parciais | Pendentes |
 |---|---:|---:|---:|
-| P0 | 5 | 1 | 0 |
+| P0 | 6 | 0 | 0 |
 | P1 | 5 | 2 | 0 |
 | P2 arquitetura/supply chain | 4 | 1 | 0 |
 | Evolução solar | 5 | 1 | 0 |
-| **Total novo** | **19** | **5** | **0** |
+| **Total novo** | **20** | **4** | **0** |
 
 Próxima ação recomendada: preparar uma homologação isolada para o incidente controlado de ausência
 de **P1-05** e confirmar/documentar a janela PITR efetiva do plano Neon para fechar **P1-06**.
-Depois, coordenar consumidores e rotação para fechar **P0-04**.
 Na implementação local, a próxima ação é concluir **SOL-06** com dados de campo autorizados e revisão
 real de especialista, seguindo `RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O fechamento de **P2-01** permanece
 condicionado ao rollout de RLS.
