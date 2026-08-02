@@ -16,11 +16,15 @@ def test_python_locks_pin_every_requirement_with_hashes() -> None:
         assert requirements
         assert "--hash=sha256:" in content
 
+    dev_lock = (ROOT / "requirements-dev.lock").read_text(encoding="utf-8")
+    assert "editables==0.5" in dev_lock
+
 
 def test_images_and_actions_are_immutable() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert re.search(r"^FROM python:3\.12-slim-bookworm@sha256:[0-9a-f]{64}$", dockerfile, re.M)
     assert "--require-hashes -r requirements.lock" in dockerfile
+    assert "python -m pip uninstall --yes pip setuptools" in dockerfile
 
     workflow_text = "\n".join(
         path.read_text(encoding="utf-8")
@@ -46,3 +50,21 @@ def test_automated_updates_scans_and_provenance_are_versioned() -> None:
     assert "gitleaks/gitleaks-action@" in security
     assert "actions/attest-build-provenance@" in ci
     assert "attestations: write" in ci
+
+
+def test_gitleaks_exceptions_are_exact_fingerprints() -> None:
+    entries = [
+        line
+        for line in (ROOT / ".gitleaksignore").read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+
+    assert len(entries) == 9
+    assert all(
+        re.fullmatch(
+            r"[0-9a-f]{40}:[^:]+:generic-api-key:[0-9]+",
+            entry,
+        )
+        for entry in entries
+    )
+    assert all("*" not in entry for entry in entries)

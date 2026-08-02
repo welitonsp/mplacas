@@ -10,6 +10,11 @@
 - Dependabot propõe atualizações semanais para pip, npm, Actions e Docker.
 - CodeQL, Gitleaks, auditorias, SBOM, Trivy e proveniência são bloqueantes conforme o workflow.
 
+Exceções do Gitleaks devem usar apenas fingerprints completos em `.gitleaksignore`, vinculando
+commit, arquivo, regra e linha. Não são permitidas exclusões amplas por diretório. As exceções atuais
+correspondem exclusivamente aos valores sintéticos de JWT usados pelos testes e ao campo vazio do
+arquivo de exemplo, todos revisados no PR da auditoria BIG TECH.
+
 ## Atualização dos locks
 
 Execute com Python 3.12, a mesma versão do CI e da imagem:

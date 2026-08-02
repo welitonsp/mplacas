@@ -13,7 +13,8 @@ COPY requirements.lock pyproject.toml README.md alembic.ini ./
 COPY src ./src
 COPY migrations ./migrations
 
-RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock
+RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock \
+    && python -m pip uninstall --yes pip setuptools
 
 USER mplacas
 
