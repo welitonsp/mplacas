@@ -40,15 +40,18 @@ export BACKUP_DIR="./private-backups"
 
 `MPLACAS_DATABASE_URL` aponta para a origem. `MPLACAS_RESTORE_DATABASE_URL` aponta para um banco descartável usado somente para validação de restauração.
 
-Na automação, configure o environment protegido `production-restore-drill` com:
+Na automação, configure o environment `production-restore-drill` com:
 
-- secrets `MPLACAS_BACKUP_SOURCE_URL`, `MPLACAS_RESTORE_DATABASE_URL`,
-  `MPLACAS_RESTORE_CONFIRM_HOST` e `MPLACAS_BACKUP_ENCRYPTION_PASSPHRASE`;
+- secrets `MPLACAS_BACKUP_SOURCE_URL` e `MPLACAS_BACKUP_ENCRYPTION_PASSPHRASE`;
 - variável `MPLACAS_RESTORE_DRILL_OWNER`;
-- aprovação obrigatória do environment para alterações manuais de secrets.
+- acesso administrativo restrito para alterações manuais de secrets.
 
-O hostname de confirmação deve ser exatamente o hostname da branch descartável e deve ser
-diferente do hostname de produção. Essa validação fail-closed acontece antes do `pg_restore`.
+O workflow cria um PostgreSQL 16 efêmero dentro do runner e fixa
+`MPLACAS_RESTORE_DATABASE_URL=postgresql://postgres@localhost:5432/mplacas_restore_check` e
+`MPLACAS_RESTORE_CONFIRM_HOST=localhost`; o serviço é destruído com o runner. O hostname de
+confirmação deve ser exatamente o hostname do alvo descartável e diferente do hostname de produção.
+Essa validação fail-closed acontece antes do `pg_restore`. Execuções locais podem usar uma branch
+Neon descartável, mas o workflow não depende de infraestrutura externa para o destino.
 
 ## Automação diária
 
@@ -58,8 +61,9 @@ O workflow `.github/workflows/restore-drill.yml` executa diariamente:
 bash infra/backup/run-restore-drill.sh
 ```
 
-Ele cria um dump custom, valida sua estrutura, calcula SHA-256, persiste somente a cópia cifrada
-com GPG/AES-256 por 35 dias, restaura no alvo descartável, aplica `alembic upgrade head`, verifica
+Ele cria um PostgreSQL 16 efêmero no runner, gera um dump custom da origem, valida sua estrutura,
+calcula SHA-256, persiste somente a cópia cifrada com GPG/AES-256 por 35 dias, restaura no alvo
+descartável, aplica `alembic upgrade head`, verifica
 tabelas críticas e inicia uma API isolada para validar `/ready`. O artifact contém o dump cifrado
 e um manifest JSON auditável; o dump em claro é eliminado ao final mesmo em caso de falha.
 

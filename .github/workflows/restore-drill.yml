@@ -17,10 +17,24 @@ jobs:
   restore-drill:
     runs-on: ubuntu-latest
     environment: production-restore-drill
+    services:
+      postgres:
+        image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: mplacas_restore_check
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mplacas_restore_check"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       MPLACAS_BACKUP_SOURCE_URL: ${{ secrets.MPLACAS_BACKUP_SOURCE_URL }}
-      MPLACAS_RESTORE_DATABASE_URL: ${{ secrets.MPLACAS_RESTORE_DATABASE_URL }}
-      MPLACAS_RESTORE_CONFIRM_HOST: ${{ secrets.MPLACAS_RESTORE_CONFIRM_HOST }}
+      MPLACAS_RESTORE_DATABASE_URL: postgresql://postgres@localhost:5432/mplacas_restore_check
+      MPLACAS_RESTORE_CONFIRM_HOST: localhost
       MPLACAS_BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.MPLACAS_BACKUP_ENCRYPTION_PASSPHRASE }}
       MPLACAS_RESTORE_DRILL_OWNER: ${{ vars.MPLACAS_RESTORE_DRILL_OWNER }}
     steps:
