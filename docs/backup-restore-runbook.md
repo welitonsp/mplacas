@@ -14,6 +14,15 @@ Este runbook define o contrato mínimo para backup e teste de restauração do b
 PITR e snapshot lógico são controles complementares. A existência do recurso de PITR no provedor
 não substitui o restore drill, e um dump sem restauração comprovada não atende este contrato.
 
+## Evidência de manutenção da conexão direta em 2026-08-02
+
+- A versão 1 inválida de `mplacas-migration-database-url` foi desativada de forma reversível, sem
+  destruir histórico; a versão 2 válida permaneceu como única versão habilitada.
+- A execução `mplacas-migrate-5rpnl` concluiu com sucesso e o deploy padrão passou pelo preflight
+  que exige exatamente uma versão habilitada para cada secret crítico.
+- Essa evidência valida a credencial direta usada pelas migrations. Ela não comprova a janela de
+  retenção PITR do plano Neon, que continua exigindo confirmação no Console ou na API do provedor.
+
 ## Objetivo
 
 Garantir que dados energéticos, financeiros, faturas, auditoria, sessões operacionais e históricos possam ser recuperados de forma verificável após falha operacional, perda acidental ou incidente de infraestrutura.

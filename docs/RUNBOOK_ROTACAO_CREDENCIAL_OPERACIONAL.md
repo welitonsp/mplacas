@@ -107,4 +107,8 @@ desabilitar a versão anterior; destruição permanente exige uma mudança separ
 - A versão 2 foi criada sem exposição e a revisão `mplacas-api-00013-5g6` recebeu 100% do tráfego.
 - `/health`, `/ready` e a chave nova retornaram HTTP 200; a versão anterior foi rejeitada com 401.
 - `mplacas-smoke-hq4xr` e `mplacas-operational-watchdog-pm2j5` concluíram com sucesso.
-- A versão 1 permanece habilitada temporariamente para rollback, mas não é aceita pela API.
+- Encerrada a janela de validação, a versão 1 foi desativada de forma reversível e a versão 2
+  permaneceu como única versão habilitada; nenhuma versão foi destruída.
+- O deploy padrão subsequente passou pelo preflight de versão única e publicou a revisão
+  `mplacas-api-00014-f9p` com 100% do tráfego. `/health` e `/ready` retornaram HTTP 200;
+  `mplacas-smoke-9x4bn` e `mplacas-operational-watchdog-pwqv8` concluíram com sucesso.
