@@ -1,6 +1,6 @@
 # Checklist de remediação — Auditorias técnicas Mplacas
 
-Última atualização: 2026-08-02 (P1-05 provisionado/verificado no GCP; incidente controlado pendente)
+Última atualização: 2026-08-02 (P1-06 com primeiro restore drill aprovado; confirmação PITR pendente)
 
 Base do novo ciclo: `HEAD b73e97e`. Implementação integrada em `main` pelo merge commit
 `b888b4b3c91244a6c2fd87b7d77c9a11ed367186`, via
@@ -14,8 +14,8 @@ Legenda: `[x]` concluído, `[~]` parcial, `[ ]` pendente.
 
 ## Handoff obrigatório para a próxima IA
 
-1. Executar `git status --short` e `git diff` antes de editar. O worktree contém alterações do
-   usuário e arquivos ainda não versionados; não usar reset/checkout para descartá-los.
+1. Executar `git status --short` e `git diff` antes de editar. Preservar qualquer alteração do
+   usuário ou arquivo ainda não versionado; não usar reset/checkout para descartá-los.
 2. Ler por inteiro `AUDITORIA_BIG_TECH_2026-08-01.md` e este checklist.
 3. Trabalhar na ordem P0 → P1 → P2, preferencialmente um item ou conjunto atômico por PR/commit.
 4. Antes de marcar `[x]`, registrar abaixo do item: arquivos alterados, migration/ADR quando houver,
@@ -326,11 +326,29 @@ Baseline de validação deste ciclo:
   - Definir RPO/RTO, retenção, criptografia, ownership e alerta de falha.
   - Restaurar periodicamente em banco descartável, aplicar migrations e validar `/ready`/invariantes.
   - Critério de aceite: último restore drill aprovado e auditável, não apenas backup existente.
-  - Parcial em 2026-08-01: workflow diário versionado gera snapshot lógico criptografado com
+  - Parcial em 2026-08-02: workflow diário versionado gera snapshot lógico criptografado com
     retenção de 35 dias, restaura apenas em hostname descartável confirmado, aplica migrations,
     valida invariantes e `/ready`, publica manifest e abre incidente deduplicado em falha. RPO de
-    24h, RTO de 4h e ownership estão documentados. Falta configurar o environment protegido,
-    confirmar a janela PITR do plano Neon e anexar o primeiro manifest aprovado.
+    24h, RTO de 4h e ownership estão documentados. O environment protegido
+    `production-restore-drill` foi configurado com secrets e owner; o destino é PostgreSQL 18
+    efêmero, isolado no runner, e a imagem oficial está fixada por digest. Os PRs
+    [#80](https://github.com/welitonsp/mplacas/pull/80),
+    [#82](https://github.com/welitonsp/mplacas/pull/82),
+    [#83](https://github.com/welitonsp/mplacas/pull/83),
+    [#84](https://github.com/welitonsp/mplacas/pull/84),
+    [#85](https://github.com/welitonsp/mplacas/pull/85),
+    [#86](https://github.com/welitonsp/mplacas/pull/86) e
+    [#87](https://github.com/welitonsp/mplacas/pull/87) endureceram isolamento, DSNs, versões,
+    supply chain, TLS e conexões explícitas.
+  - Evidência operacional: a execução
+    [#30765972320](https://github.com/welitonsp/mplacas/actions/runs/30765972320), no commit
+    `b7b167b7716667a548fcdcdf075e0e4a316408fd`, foi aprovada em 2026-08-02. O artifact
+    `8838949236` (`restore-drill-30765972320`) fica retido até 2026-09-06 e contém dump cifrado e
+    manifest auditável: `pg_restore=passed`, `migrations=passed`, `critical_invariants=passed`,
+    `ready_endpoint=passed`, `decision=approved`. O incidente deduplicado
+    [#81](https://github.com/welitonsp/mplacas/issues/81) foi encerrado com essa evidência.
+  - Permanece parcial somente até confirmar e registrar a janela PITR efetiva do plano Neon
+    contratado; não reabrir a automação do restore drill sem evidência de regressão.
 
 - [x] **P1-07 — adicionar retenção de autenticação e convites.**
   - Cobrir `auth_sessions`, `login_rate_limits` e `user_invitations` expirados/terminais.
@@ -503,8 +521,8 @@ Baseline de validação deste ciclo:
 | **Total novo** | **19** | **5** | **0** |
 
 Próxima ação recomendada: preparar uma homologação isolada para o incidente controlado de ausência
-de **P1-05** e configurar o environment `production-restore-drill` para colher o primeiro manifest
-aprovado de **P1-06**. Depois, coordenar consumidores e rotação para fechar **P0-04**.
+de **P1-05** e confirmar/documentar a janela PITR efetiva do plano Neon para fechar **P1-06**.
+Depois, coordenar consumidores e rotação para fechar **P0-04**.
 Na implementação local, a próxima ação é concluir **SOL-06** com dados de campo autorizados e revisão
 real de especialista, seguindo `RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O fechamento de **P2-01** permanece
 condicionado ao rollout de RLS.
