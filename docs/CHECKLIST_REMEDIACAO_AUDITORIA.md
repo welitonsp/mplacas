@@ -1,8 +1,10 @@
 # Checklist de remediação — Auditorias técnicas Mplacas
 
-Última atualização: 2026-08-02 (P1-05 ampliado; primeira execução GCP pendente)
+Última atualização: 2026-08-02 (CI/Security remotos aprovados; primeira execução GCP pendente)
 
-Base do novo ciclo: `HEAD b73e97e` mais alterações locais não commitadas.
+Base do novo ciclo: `HEAD b73e97e`. Implementação publicada na branch
+`agent/auditoria-big-tech-remediacoes`, PR draft
+[#68](https://github.com/welitonsp/mplacas/pull/68).
 
 Relatório atual: `AUDITORIA_BIG_TECH_2026-08-01.md`.
 
@@ -203,28 +205,37 @@ Baseline de validação deste ciclo:
     `PytestUnhandledThreadExceptionWarning`; Ruff aprovado, Mypy aprovado em 176 arquivos e Alembic
     com head único `20260802_0034`.
 
-- [~] **P0-06 — incorporar segurança de dependências ao CI.**
+- [x] **P0-06 — incorporar segurança de dependências ao CI.**
   - Executar `pip-audit`, `npm audit`, scan da imagem e geração de SBOM.
   - Atualizar React Router/Wrangler e classificar advisories não aplicáveis com justificativa
     versionada e prazo de revisão; não usar exclusão genérica.
   - Critério de aceite: CI bloqueia vulnerabilidade runtime high/critical aplicável e publica os
     relatórios como artifacts.
-  - Parcial em 2026-08-01: `pip-audit` e `npm audit` bloqueantes com artifacts, SBOM CycloneDX e
+  - Implementado em 2026-08-01: `pip-audit` e `npm audit` bloqueantes com artifacts, SBOM CycloneDX e
     Trivy high/critical adicionados ao workflow. React Router, Wrangler, pytest e pytest-asyncio
-    atualizados; scans locais Python e Node retornaram zero vulnerabilidades. Falta a primeira
-    execução remota do workflow para comprovar SBOM/scan da imagem e artifacts.
+    atualizados; scans locais Python e Node retornaram zero vulnerabilidades.
+  - Concluído em 2026-08-02: a execução remota
+    [CI 30753841013](https://github.com/welitonsp/mplacas/actions/runs/30753841013) aprovou os cinco
+    jobs e publicou `pip-audit-report` (artifact 8835306601), `npm-audit-report` (8835300272),
+    `container-sbom` (8835306852) e `trivy-results` (8835309543). A execução
+    [Security 30753841032](https://github.com/welitonsp/mplacas/actions/runs/30753841032) aprovou
+    CodeQL e Gitleaks, com SARIF do Gitleaks no artifact 8835299439.
 
 ### P1 — segurança, banco e operação
 
-- [~] **P1-01 — tornar refresh-token rotation atômica e detectar replay.**
+- [x] **P1-01 — tornar refresh-token rotation atômica e detectar replay.**
   - Implementar compare-and-swap/`UPDATE ... WHERE active=true RETURNING` ou lock equivalente.
   - Definir família de sessão e revogá-la ao detectar reutilização.
   - Adicionar teste concorrente em PostgreSQL com duas rotações simultâneas do mesmo token.
   - Critério de aceite: exatamente uma rotação vence; nenhuma sessão órfã permanece ativa.
-  - Parcial em 2026-08-01: rotação convertida para compare-and-swap atômico com `RETURNING`,
+  - Implementado em 2026-08-01: rotação convertida para compare-and-swap atômico com `RETURNING`,
     família persistida por migration e revogação da família inteira em replay. Testes locais de
-    contrato e replay passaram; o teste concorrente PostgreSQL está versionado e será executado
-    pelo novo job do CI, mas a primeira execução remota ainda precisa ser comprovada.
+    contrato e replay passaram.
+  - Concluído em 2026-08-02: o job
+    [postgres-integration](https://github.com/welitonsp/mplacas/actions/runs/30753841013/job/91512481640)
+    executou duas rotações simultâneas no PostgreSQL 16 e comprovou exatamente um vencedor, com
+    revogação integral da família após replay. Relatório preservado no artifact
+    `postgres-integration-report` 8835307257 por 30 dias.
 
 - [x] **P1-02 — endurecer contrato JWT.**
   - Fixar allowlist de algoritmo; exigir segredo com no mínimo 32 bytes; adicionar `aud`.
@@ -246,7 +257,7 @@ Baseline de validação deste ciclo:
     ao cálculo e ao status operacional. Ausência de histórico, atraso, execução presa, falha e
     histórico insuficiente degradam explicitamente o serviço e emitem códigos de alerta testados.
 
-- [~] **P1-04 — criar pipeline de integração PostgreSQL/migrations no CI.**
+- [x] **P1-04 — criar pipeline de integração PostgreSQL/migrations no CI.**
   - Executar `alembic upgrade head` em banco PostgreSQL vazio e `alembic check`.
   - Testar locks/`SKIP LOCKED`, outbox, filas e refresh concorrente.
   - Corrigir a promessa de migrations SQLite ou torná-las portáveis conscientemente.
@@ -261,8 +272,12 @@ Baseline de validação deste ciclo:
     aceite. Contratos locais passaram e a suíte global encerrou com **597 passed**, **4 skipped** — os
     dois novos skips são explicitamente PostgreSQL por ausência de `MPLACAS_TEST_POSTGRES_URL` — e zero
     `PytestUnhandledThreadExceptionWarning`; Ruff e Mypy aprovados em 181 arquivos.
-  - Falta executar o workflow remoto e anexar o artifact aprovado da mesma execução que cobre
-    migrations/check, refresh concorrente, RLS, fila, outbox e readiness.
+  - Concluído em 2026-08-02: após alinhar constraints/índices do metadata e aplicar a migration
+    `20260802_0037_enforce_auth_timestamp_not_null.py`, o job remoto
+    [postgres-integration](https://github.com/welitonsp/mplacas/actions/runs/30753841013/job/91512481640)
+    aprovou `alembic upgrade head`, `alembic check`, schema na revisão `20260802_0037`, refresh
+    concorrente, locks/`SKIP LOCKED`, fila, outbox, `/ready` e PoC de RLS. Artifact auditável:
+    `postgres-integration-report` 8835307257, retenção de 30 dias.
 
 - [~] **P1-05 — automatizar componentes operacionais obrigatórios.**
   - Provisionar Cloud Run Jobs, Scheduler, IAM mínimo, policies de alerta e verificação pós-deploy.
@@ -285,6 +300,10 @@ Baseline de validação deste ciclo:
     desta estação confirmou `gcloud` autenticado e projeto/região configurados, mas bloqueou a
     execução porque `GCP_MONITORING_NOTIFICATION_CHANNELS`, `MPLACAS_CLOUD_JOB_PLANT_NAME` e
     `MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH` ainda estão vazios em `config.env`.
+  - Evidência adicional em 2026-08-02: o job remoto
+    [gcp-deployment-contract](https://github.com/welitonsp/mplacas/actions/runs/30753841013/job/91512481601)
+    aprovou sintaxe Bash, ShellCheck e contratos do provisionador. Isso valida o artefato de deploy,
+    mas não substitui o provisionamento e o incidente controlado no projeto GCP.
 
 - [~] **P1-06 — automatizar backup/PITR e restore drill.**
   - Definir RPO/RTO, retenção, criptografia, ownership e alerta de falha.
@@ -312,10 +331,12 @@ Baseline de validação deste ciclo:
   - Parcial em 2026-08-01: ADR-056 define contrato e gates; helper usa `set_config(..., true)`
     transacional e limpa bypass ao vincular tenant. A prova PostgreSQL real demonstra zero linhas
     sem contexto, bloqueio de leitura/escrita cross-tenant e bypass que exige configuração explícita
-    mais membership em role de plataforma. Falta a primeira execução remota e o rollout gradual nas
-    tabelas reais após separar roles runtime/migration e contextualizar todas as transações.
+    mais membership em role de plataforma. A PoC foi aprovada no job PostgreSQL remoto da execução
+    [CI 30753841013](https://github.com/welitonsp/mplacas/actions/runs/30753841013). Falta o rollout
+    gradual nas tabelas reais após separar roles runtime/migration e contextualizar todas as
+    transações.
 
-- [~] **P2-02 — escopar idempotência de faturas por usina/tenant.**
+- [x] **P2-02 — escopar idempotência de faturas por usina/tenant.**
   - Substituir unicidade global de `source_hash` por constraint composta apropriada.
   - Criar migration segura, incluindo análise de duplicatas existentes e rollback.
   - Critério de aceite: o mesmo conteúdo pode existir em usinas diferentes sem colisão.
@@ -323,8 +344,11 @@ Baseline de validação deste ciclo:
     `(plant_id, source_hash)`; a consulta idempotente inclui a usina e a inserção concorrente usa
     savepoint para recuperar o vencedor sem abortar a transação externa. A migration 0031 analisa
     duplicatas antes do upgrade e bloqueia downgrade inseguro quando hashes cross-plant já existem.
-    Testes locais comprovam reuso na mesma usina e coexistência em usinas distintas; falta aplicar
-    upgrade/check no PostgreSQL remoto.
+    Testes locais comprovam reuso na mesma usina e coexistência em usinas distintas.
+  - Concluído em 2026-08-02: `alembic upgrade head` e `alembic check` foram aprovados sobre banco
+    PostgreSQL 16 vazio no job
+    [postgres-integration](https://github.com/welitonsp/mplacas/actions/runs/30753841013/job/91512481640),
+    incluindo a migration 0031 e todas as revisões posteriores até 0037.
 
 - [~] **P2-03 — tornar builds Python reproduzíveis e reforçar supply chain.**
   - Adotar lock com hashes, pin de imagem por digest e Actions por SHA.
@@ -334,7 +358,9 @@ Baseline de validação deste ciclo:
     Docker usa base Python por digest e instala com `--require-hashes`; Actions foram fixadas por
     commit e PostgreSQL por digest. Dependabot, CodeQL, Gitleaks e attestation de proveniência foram
     versionados, preservando SBOM/Trivy/auditorias existentes. Instalação seca dos locks e contratos
-    locais passaram. Falta a primeira execução Linux/Python 3.12 e a attestation real em `main`.
+    locais passaram. Linux/Python 3.12, build por digest, SBOM, Trivy, CodeQL e Gitleaks foram
+    aprovados nas execuções remotas 30753841013 e 30753841032. Falta somente a attestation real,
+    condicionada a push/merge em `main` pelo workflow.
 
 - [x] **P2-04 — consolidar frontend e documentação.**
   - Remover contratos conflitantes entre dashboard FastAPI e SPA Cloudflare.
@@ -448,16 +474,16 @@ Baseline de validação deste ciclo:
 
 | Categoria | Concluídos | Parciais | Pendentes |
 |---|---:|---:|---:|
-| P0 | 4 | 2 | 0 |
-| P1 | 3 | 4 | 0 |
-| P2 arquitetura/supply chain | 2 | 3 | 0 |
+| P0 | 5 | 1 | 0 |
+| P1 | 5 | 2 | 0 |
+| P2 arquitetura/supply chain | 3 | 2 | 0 |
 | Evolução solar | 5 | 1 | 0 |
-| **Total novo** | **14** | **10** | **0** |
+| **Total novo** | **18** | **6** | **0** |
 
-Próxima ação recomendada: executar o workflow remoto para colher evidência de **P0-06**,
-**P1-01**, **P1-04** e **P1-05**; no mesmo ciclo, validar jobs/schedules no GCP e configurar o environment
-`production-restore-drill` para colher o primeiro manifest aprovado de **P1-06**. Depois do deploy validado,
-coordenar consumidores e rotação para fechar **P0-04**.
+Próxima ação recomendada: revisar e integrar o PR #68 para gerar a attestation de **P2-03** em `main`;
+depois, validar jobs/schedules no GCP e o incidente controlado de ausência para **P1-05**, e configurar
+o environment `production-restore-drill` para colher o primeiro manifest aprovado de **P1-06**. Depois
+do deploy validado, coordenar consumidores e rotação para fechar **P0-04**.
 Na implementação local, a próxima ação é concluir **SOL-06** com dados de campo autorizados e revisão
-real de especialista, seguindo `RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O fechamento de **P2-01**, **P2-02** e
-**P2-03** permanece condicionado aos respectivos gates/evidências remotas.
+real de especialista, seguindo `RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O fechamento de **P2-01** permanece
+condicionado ao rollout de RLS, e **P2-03** à attestation em `main`.
