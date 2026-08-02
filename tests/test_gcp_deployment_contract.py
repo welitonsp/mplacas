@@ -241,6 +241,9 @@ def test_operational_jobs_and_schedulers_are_provisioned_idempotently() -> None:
     assert "SMOKE_JOB_NAME" in verify
     assert "WATCHDOG_JOB_NAME" in verify
     assert '[[ "$scheduler_state" == "ENABLED" ]]' in verify
+    assert "operational job must have exactly one canonical enabled Scheduler trigger" in verify
+    assert 'schedule.get("state") == "ENABLED"' in verify
+    assert "enabled_triggers != [expected_name]" in verify
     assert "--wait" in verify
 
 
