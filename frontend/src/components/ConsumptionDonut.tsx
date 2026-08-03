@@ -23,7 +23,7 @@ export function ConsumptionDonut({
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Origem do consumo
         </p>
-        <p className="mt-4 text-sm text-gray-400">Dados insuficientes para o gráfico.</p>
+        <p className="mt-4 text-sm text-gray-500">Dados insuficientes para o gráfico.</p>
       </div>
     )
   }
@@ -97,13 +97,13 @@ export function ConsumptionDonut({
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--color-brand-primary)]" />
             <span className="flex-1">Autoconsumo</span>
             <span className="font-medium text-gray-900">{formatNumber(selfConsumption_)} kWh</span>
-            <span className="text-xs text-gray-400">({formatNumber(selfConsumptionPercent, 0)}%)</span>
+            <span className="text-xs text-gray-500">({formatNumber(selfConsumptionPercent, 0)}%)</span>
           </li>
           <li className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-gray-300" />
             <span className="flex-1">Importada da concessionária</span>
             <span className="font-medium text-gray-900">{formatNumber(imported_)} kWh</span>
-            <span className="text-xs text-gray-400">({formatNumber(importedPercent, 0)}%)</span>
+            <span className="text-xs text-gray-500">({formatNumber(importedPercent, 0)}%)</span>
           </li>
         </ul>
       </div>

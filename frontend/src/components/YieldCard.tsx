@@ -19,7 +19,7 @@ export function YieldCard({ daily }: { daily: AnomalyDailyPoint[] }) {
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
         Rendimento do período
       </p>
-      <p className="mt-1 text-[11px] text-gray-400">kWh gerados por kWh/m² de sol recebido</p>
+      <p className="mt-1 text-[11px] text-gray-500">kWh gerados por kWh/m² de sol recebido</p>
       <p className="mt-2 text-2xl font-semibold text-[var(--color-data-secondary)]">
         {formatNumber(periodYield, 2)}
         <span className="ml-1 text-sm font-normal text-gray-500">kWh/kWh·m²</span>
@@ -45,7 +45,7 @@ export function YieldCard({ daily }: { daily: AnomalyDailyPoint[] }) {
               </li>
             ))}
           </ul>
-          <p className="mt-3 text-[11px] text-gray-400">
+          <p className="mt-3 text-[11px] text-gray-500">
             Rendimento bem abaixo da média com sol disponível costuma indicar problema real na
             usina; bem acima costuma indicar dia de céu limpo apesar de pouca produção esperada.
           </p>

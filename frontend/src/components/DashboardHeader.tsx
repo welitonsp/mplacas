@@ -5,7 +5,7 @@ export function DashboardHeader({ onLogout }: { onLogout: () => void }) {
         <h1 className="text-lg font-semibold text-gray-900">Mplacas — Dashboard</h1>
         <button
           onClick={onLogout}
-          className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          className="rounded text-sm text-gray-500 hover:text-gray-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
         >
           Sair
         </button>

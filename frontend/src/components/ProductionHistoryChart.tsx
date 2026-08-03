@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import type { AnomalyDailyPoint } from '../lib/dashboard/contracts'
 import { clampPercent, formatNumber, formatShortDate, toNumber } from '../lib/format'
 import {
@@ -19,7 +19,11 @@ export function ProductionHistoryChart({
   daily: AnomalyDailyPoint[]
   currentStreakDays: number
 }) {
-  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+  // Dia selecionado. `null` = último dia (padrão inicial). Uma vez que o
+  // usuário selecione um dia explicitamente (mouse, teclado), o painel de
+  // detalhe permanece nele — não reseta em `mouseleave`/`blur`, que fazia o
+  // painel parecer instável ao passar o mouse pelo gráfico.
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
 
   if (daily.length === 0) {
     return (
@@ -27,7 +31,7 @@ export function ProductionHistoryChart({
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Histórico de produção diária
         </p>
-        <p className="mt-4 text-sm text-gray-400">
+        <p className="mt-4 text-sm text-gray-500">
           Ainda não há dados diários suficientes para este gráfico.
         </p>
       </div>
@@ -51,8 +55,30 @@ export function ProductionHistoryChart({
   const totalExpected = daily.reduce((sum, d) => sum + (toNumber(d.expected_production_kwh) ?? 0), 0)
   const performancePercent = totalExpected > 0 ? (totalActual / totalExpected) * 100 : null
 
-  const activeDay = activeIndex != null ? daily[activeIndex] : daily[daily.length - 1]
+  const activeIndex = selectedIndex ?? daily.length - 1
+  const activeDay = daily[activeIndex]
   const activeSeverity = levelSeverity(activeDay.level)
+
+  function moveSelection(delta: number) {
+    const next = Math.min(daily.length - 1, Math.max(0, activeIndex + delta))
+    setSelectedIndex(next)
+  }
+
+  function handleChartKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      moveSelection(1)
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      moveSelection(-1)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      setSelectedIndex(0)
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      setSelectedIndex(daily.length - 1)
+    }
+  }
 
   // Irradiância só vem preenchida quando a usina tem coordenadas configuradas
   // (coleta Open-Meteo ativa). Overlay e legenda somem por completo quando o
@@ -155,7 +181,25 @@ export function ProductionHistoryChart({
               </svg>
             </>
           )}
-          <div className="flex items-end gap-[2px]" style={{ height: '160px' }}>
+          {/* Único tab stop para todo o gráfico — navegação entre dias é por
+              seta esquerda/direita (ver `handleChartKeyDown`), não por Tab
+              atravessando até 90 barras. */}
+          <div
+            className="flex items-end gap-[2px] rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+            style={{ height: '160px' }}
+            tabIndex={0}
+            role="slider"
+            aria-label="Histórico de produção diária. Use as setas esquerda e direita para navegar entre os dias."
+            aria-valuemin={0}
+            aria-valuemax={daily.length - 1}
+            aria-valuenow={activeIndex}
+            aria-valuetext={`${formatShortDate(activeDay.date)}: ${formatNumber(
+              toNumber(activeDay.actual_production_kwh) ?? 0
+            )} kWh produzidos de ${formatNumber(
+              toNumber(activeDay.expected_production_kwh) ?? 0
+            )} kWh esperados. Nível: ${LEVEL_LABEL[activeDay.level]}.`}
+            onKeyDown={handleChartKeyDown}
+          >
           {daily.map((d, i) => {
             const actual = toNumber(d.actual_production_kwh) ?? 0
             const expected = toNumber(d.expected_production_kwh) ?? 0
@@ -165,18 +209,12 @@ export function ProductionHistoryChart({
             const isActive = activeIndex === i
 
             return (
-              <button
+              <div
                 key={d.date}
-                type="button"
-                className="relative flex h-full flex-1 items-end rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+                className="relative flex h-full flex-1 items-end rounded-sm"
                 style={{ minWidth: '6px' }}
-                onMouseEnter={() => setActiveIndex(i)}
-                onFocus={() => setActiveIndex(i)}
-                onMouseLeave={() => setActiveIndex(null)}
-                onBlur={() => setActiveIndex(null)}
-                aria-label={`${formatShortDate(d.date)}: ${formatNumber(actual)} kWh produzidos de ${formatNumber(
-                  expected
-                )} kWh esperados. Nível: ${LEVEL_LABEL[d.level]}.`}
+                onMouseEnter={() => setSelectedIndex(i)}
+                onClick={() => setSelectedIndex(i)}
               >
                 <span
                   className="absolute right-0 left-0 border-t border-dashed border-gray-400"
@@ -188,20 +226,23 @@ export function ProductionHistoryChart({
                   }`}
                   style={{ height: `${Math.max(barHeightPercent, 2)}%` }}
                 />
-              </button>
+              </div>
             )
           })}
           </div>
         </div>
       </div>
 
-      <div className="mt-1 flex justify-between text-[10px] text-gray-400">
+      <div className="mt-1 flex justify-between text-[10px] text-gray-500">
         <span>{formatShortDate(daily[0].date)}</span>
         <span>{formatShortDate(daily[Math.floor(daily.length / 2)].date)}</span>
         <span>{formatShortDate(daily[daily.length - 1].date)}</span>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600">
+      <div
+        className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600"
+        aria-live="polite"
+      >
         <span className="font-medium text-gray-900">{formatShortDate(activeDay.date)}</span>
         <span>
           Real: <strong className="text-gray-900">{formatNumber(activeDay.actual_production_kwh)} kWh</strong>
@@ -233,7 +274,7 @@ export function ProductionHistoryChart({
             <strong className="text-[var(--color-data-secondary)]">
               {formatNumber(activeYieldInfo.yieldValue, 2)} kWh por kWh/m²
             </strong>{' '}
-            <span className="text-gray-400">
+            <span className="text-gray-500">
               ({activeYieldInfo.deviationPercent > 0 ? '+' : ''}
               {formatNumber(activeYieldInfo.deviationPercent, 0)}% vs. média do período)
             </span>

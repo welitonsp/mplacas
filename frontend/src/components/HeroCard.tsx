@@ -43,7 +43,14 @@ export function HeroCard({
               {formatNumber(score, 0)}/100
             </span>
           </div>
-          <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+          <div
+            className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-gray-100"
+            role="progressbar"
+            aria-valuenow={clampPercent(score)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Saúde da usina"
+          >
             <div
               className={`h-full rounded-full ${SEVERITY_BAR[meta.severity]}`}
               style={{ width: `${clampPercent(score)}%` }}

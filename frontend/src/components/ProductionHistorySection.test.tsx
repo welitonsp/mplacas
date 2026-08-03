@@ -97,7 +97,9 @@ describe('ProductionHistorySection', () => {
     expect(
       screen.getByText('Não foi possível carregar o histórico de produção diária. Tente novamente.')
     ).toBeInTheDocument()
-    screen.getByText('Tentar novamente').click()
+    const retryButton = screen.getByText('Tentar novamente')
+    expect(retryButton.className).toMatch(/focus-visible:ring/)
+    retryButton.click()
     expect(onRetry).toHaveBeenCalledOnce()
   })
 })

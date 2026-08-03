@@ -159,7 +159,7 @@ export function DashboardPage() {
                 void fetchExpectedProduction()
               }}
               disabled={loading}
-              className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors"
+              className="rounded text-xs text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] disabled:opacity-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
             >
               {loading ? 'Atualizando...' : 'Atualizar'}
             </button>

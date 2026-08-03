@@ -75,7 +75,7 @@ export function ProductionHistorySection({
           <button
             type="button"
             onClick={onRetry}
-            className="mt-3 text-xs font-medium text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] transition-colors"
+            className="mt-3 rounded text-xs font-medium text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
           >
             Tentar novamente
           </button>
@@ -90,7 +90,7 @@ export function ProductionHistorySection({
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Histórico de produção diária
         </p>
-        <p className="mt-4 text-sm text-gray-400">
+        <p className="mt-4 text-sm text-gray-500">
           Não foi possível carregar o histórico de produção diária no momento.
         </p>
       </div>

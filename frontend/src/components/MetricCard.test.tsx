@@ -23,4 +23,19 @@ describe('MetricCard', () => {
 
     expect(screen.getByText('Parcial')).toBeInTheDocument()
   })
+
+  it('expõe a barra de progresso com semântica ARIA quando barPercent é informado', () => {
+    render(<MetricCard label="Autossuficiência" value={70} unit="%" barPercent={70} />)
+
+    const progressbar = screen.getByRole('progressbar')
+    expect(progressbar).toHaveAttribute('aria-valuenow', '70')
+    expect(progressbar).toHaveAttribute('aria-valuemin', '0')
+    expect(progressbar).toHaveAttribute('aria-valuemax', '100')
+  })
+
+  it('não renderiza barra de progresso quando barPercent não é informado', () => {
+    render(<MetricCard label="Produção" value={10} />)
+
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
 })

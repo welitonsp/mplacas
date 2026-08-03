@@ -28,7 +28,7 @@ export function TrendMetricItem({
           {formatNumber(absolute)} {unit}
         </span>
         {percent != null && (
-          <span className="text-xs font-normal text-gray-400">
+          <span className="text-xs font-normal text-gray-500">
             ({percent > 0 ? '+' : ''}
             {formatNumber(percent, 1)}% · {DIRECTION_TEXT[metric.direction]})
           </span>

@@ -19,10 +19,17 @@ export function ProductionSplitCard({
         Composição da produção
       </p>
       {!hasData ? (
-        <p className="mt-4 text-sm text-gray-400">Dados insuficientes para o gráfico.</p>
+        <p className="mt-4 text-sm text-gray-500">Dados insuficientes para o gráfico.</p>
       ) : (
         <>
-          <div className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-gray-100">
+          <div
+            className="mt-4 flex h-3 w-full overflow-hidden rounded-full bg-gray-100"
+            role="progressbar"
+            aria-valuenow={Math.round(((sc as number) / total) * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Composição da produção: percentual de autoconsumo"
+          >
             <div
               className="h-full bg-[var(--color-brand-primary)]"
               style={{ width: `${((sc as number) / total) * 100}%` }}
@@ -34,7 +41,7 @@ export function ProductionSplitCard({
               <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-brand-primary)]" />
               Autoconsumo:
               <span className="font-medium text-gray-900">{formatNumber(sc)} kWh</span>
-              <span className="text-gray-400">
+              <span className="text-gray-500">
                 ({formatNumber(((sc as number) / total) * 100, 0)}%)
               </span>
             </p>
@@ -42,7 +49,7 @@ export function ProductionSplitCard({
               <span className="h-2 w-2 shrink-0 rounded-full bg-gray-300" />
               Injetada na rede:
               <span className="font-medium text-gray-900">{formatNumber(inj)} kWh</span>
-              <span className="text-gray-400">
+              <span className="text-gray-500">
                 ({formatNumber(((inj as number) / total) * 100, 0)}%)
               </span>
             </p>

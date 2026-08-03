@@ -16,7 +16,7 @@ export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
         Comparação com o ciclo anterior
       </p>
-      <p className="mt-1 text-xs text-gray-400">
+      <p className="mt-1 text-xs text-gray-500">
         {trend.previous_reference_month} → {trend.current_reference_month}
       </p>
       <div className="mt-2 divide-y divide-gray-100">

@@ -28,7 +28,7 @@ export function EnergyFlowDiagram({
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Fluxo de energia no ciclo
         </p>
-        <p className="mt-4 text-sm text-gray-400">Dados insuficientes para o diagrama.</p>
+        <p className="mt-4 text-sm text-gray-500">Dados insuficientes para o diagrama.</p>
       </div>
     )
   }
@@ -55,7 +55,14 @@ export function EnergyFlowDiagram({
         <div className="sm:col-start-1 sm:row-start-1 sm:row-span-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Produção</p>
           <p className="mt-1 text-xl font-semibold text-gray-900">{formatNumber(production_)} kWh</p>
-          <div className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-gray-100">
+          <div
+            className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-gray-100"
+            role="progressbar"
+            aria-valuenow={Math.round(clampPercent(prodAutoPercent))}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Produção: percentual autoconsumido"
+          >
             <div
               className="h-full bg-[var(--color-brand-primary)]"
               style={{ width: `${clampPercent(prodAutoPercent)}%` }}
@@ -91,7 +98,7 @@ export function EnergyFlowDiagram({
 
         {/* Nó: Rede (exportada entra, importada sai) */}
         <div className="rounded-lg border border-dashed border-gray-200 bg-white p-3 text-center sm:col-start-2 sm:row-start-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Rede</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Rede</p>
           <p className="mt-1 text-xs text-gray-600">
             <span aria-hidden="true">←</span> Exportada: <span className="font-medium text-gray-900">{formatNumber(injected_)} kWh</span>
           </p>
@@ -104,7 +111,14 @@ export function EnergyFlowDiagram({
         <div className="sm:col-start-3 sm:row-start-1 sm:row-span-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Consumo</p>
           <p className="mt-1 text-xl font-semibold text-gray-900">{formatNumber(consumption_)} kWh</p>
-          <div className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-gray-100">
+          <div
+            className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-gray-100"
+            role="progressbar"
+            aria-valuenow={Math.round(clampPercent(consAutoPercent))}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Consumo: percentual autossuprido"
+          >
             <div
               className="h-full bg-[var(--color-brand-primary)]"
               style={{ width: `${clampPercent(consAutoPercent)}%` }}
