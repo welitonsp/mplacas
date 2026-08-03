@@ -1,4 +1,5 @@
 import type { AnomalyLevel, DiagnosticSeverity, Severity, TrendDirection } from './contracts'
+import type { EvidenceLevel, LossCategory } from './photovoltaic-contracts'
 
 // Status é calculado no backend (ver intelligence/executive_service.py) — o front
 // apenas mapeia o mesmo vocabulário para rótulo pt-BR e cor de severidade, sem
@@ -118,3 +119,28 @@ export const ANOMALY_LEGEND: { level: AnomalyLevel; label: string }[] = [
 // severidade (bom/ruim) — por isso não usamos success/warning/danger aqui,
 // ver skill dataviz.
 export const GRID_HEX = '#d1d5db'
+
+// Nomes em pt-BR para as oito categorias da taxonomia de perdas fotovoltaicas
+// (`photovoltaic/loss_taxonomy.py::LossCategory`, ver ADR-065 seção 4).
+export const LOSS_CATEGORY_LABEL: Record<LossCategory, string> = {
+  COMMUNICATION: 'Comunicação (dados ausentes)',
+  UNAVAILABILITY: 'Indisponibilidade',
+  CLIPPING: 'Clipping (limite do inversor)',
+  SOILING: 'Sujeira (soiling)',
+  SHADING: 'Sombreamento',
+  TEMPERATURE: 'Temperatura',
+  DEGRADATION: 'Degradação',
+  UNEXPLAINED: 'Não explicada',
+}
+
+// `evidence_level` é a ressalva epistêmica de cada categoria (ADR-065 seção 3):
+// LIKELY = evidência de que a causa está presente (mais preocupante), POSSIBLE
+// = evidência parcial, NOT_DETECTED = evidência de que a causa NÃO está
+// presente (bom sinal), NOT_ASSESSABLE = não foi possível avaliar (neutro, não
+// é nem bom nem ruim). Cor sempre acompanhada do rótulo textual.
+export const EVIDENCE_LEVEL_META: Record<EvidenceLevel, { label: string; severity: Severity }> = {
+  LIKELY: { label: 'Evidência de causa', severity: 'danger' },
+  POSSIBLE: { label: 'Possível causa', severity: 'warning' },
+  NOT_DETECTED: { label: 'Não detectada', severity: 'success' },
+  NOT_ASSESSABLE: { label: 'Não avaliável', severity: 'neutral' },
+}

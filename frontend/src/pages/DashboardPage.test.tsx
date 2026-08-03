@@ -46,13 +46,34 @@ const executivePayload = {
 
 const photovoltaicSummaryPayload = {
   plant_id: 'plant-1',
-  performance: { dc_capacity_kwp: '10.000' },
+  performance: {
+    dc_capacity_kwp: '10.000',
+    performance_ratio: '0.8200',
+    temperature_corrected_performance_ratio: '0.8500',
+    final_yield_kwh_per_kwp: '4.400',
+    reporting_availability_ratio: '0.9800',
+  },
+  performance_unavailable_reason: null,
   baseline: {
     baseline_median_performance_ratio: '0.8000',
     clear_sky_poa_p90_kwh_m2: '5.500',
+    degradation_percent: '-1.20',
+    annualized_degradation_percent: '-0.60',
+    degradation_status: 'STABLE',
   },
   baseline_unavailable_reason: null,
   reference_complete_on: null,
+  losses: [
+    { category: 'COMMUNICATION', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
+    { category: 'UNAVAILABILITY', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
+    { category: 'CLIPPING', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
+    { category: 'SOILING', evidence_level: 'POSSIBLE', estimated_loss_percent: '1.50', evidence_codes: ['SOILING_TREND'], limitation: null },
+    { category: 'SHADING', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
+    { category: 'TEMPERATURE', evidence_level: 'LIKELY', estimated_loss_percent: '2.30', evidence_codes: ['HIGH_CELL_TEMP'], limitation: null },
+    { category: 'DEGRADATION', evidence_level: 'NOT_ASSESSABLE', estimated_loss_percent: null, evidence_codes: [], limitation: 'Baseline insuficiente para isolar degradação.' },
+    { category: 'UNEXPLAINED', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
+  ],
+  losses_unavailable_reason: null,
 }
 
 const anomalyPayload = {

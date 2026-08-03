@@ -2,22 +2,47 @@ import { describe, expect, it } from 'vitest'
 import {
   baselineUnavailableMessage,
   deriveExpectedDailyProduction,
+  lossesUnavailableMessage,
   parsePhotovoltaicSummary,
+  performanceUnavailableMessage,
+  ratioToPercent,
 } from './photovoltaic-contracts'
+
+function buildLossItems() {
+  return [
+    { category: 'COMMUNICATION', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
+    { category: 'UNAVAILABILITY', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
+    { category: 'CLIPPING', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
+    { category: 'SOILING', evidence_level: 'POSSIBLE', estimated_loss_percent: '1.50', evidence_codes: ['SOILING_TREND'], limitation: null },
+    { category: 'SHADING', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
+    { category: 'TEMPERATURE', evidence_level: 'LIKELY', estimated_loss_percent: '2.30', evidence_codes: ['HIGH_CELL_TEMP'], limitation: null },
+    { category: 'DEGRADATION', evidence_level: 'NOT_ASSESSABLE', estimated_loss_percent: null, evidence_codes: [], limitation: 'Baseline insuficiente.' },
+    { category: 'UNEXPLAINED', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
+  ]
+}
 
 function buildSummaryPayload(overrides: Record<string, unknown> = {}) {
   return {
     plant_id: '11111111-1111-1111-1111-111111111111',
-    performance: { dc_capacity_kwp: '10.000' },
+    performance: {
+      dc_capacity_kwp: '10.000',
+      performance_ratio: '0.8200',
+      temperature_corrected_performance_ratio: '0.8500',
+      final_yield_kwh_per_kwp: '4.400',
+      reporting_availability_ratio: '0.9800',
+    },
     performance_unavailable_reason: null,
     baseline: {
       baseline_median_performance_ratio: '0.8000',
       clear_sky_poa_p90_kwh_m2: '5.500',
+      degradation_percent: '-1.20',
+      annualized_degradation_percent: '-0.60',
+      degradation_status: 'STABLE',
     },
     baseline_unavailable_reason: null,
     reference_complete_on: null,
-    losses: null,
-    losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
+    losses: buildLossItems(),
+    losses_unavailable_reason: null,
     ...overrides,
   }
 }
@@ -52,6 +77,95 @@ describe('parsePhotovoltaicSummary', () => {
     const payload = buildSummaryPayload()
     delete (payload as Record<string, unknown>).plant_id
     expect(() => parsePhotovoltaicSummary(payload)).toThrow(/plant_id/)
+  })
+
+  it('faz parse de todos os campos técnicos quando todos os blocos estão presentes', () => {
+    const summary = parsePhotovoltaicSummary(buildSummaryPayload())
+
+    expect(summary.performance).toEqual({
+      dc_capacity_kwp: '10.000',
+      performance_ratio: '0.8200',
+      temperature_corrected_performance_ratio: '0.8500',
+      final_yield_kwh_per_kwp: '4.400',
+      reporting_availability_ratio: '0.9800',
+    })
+    expect(summary.performance_unavailable_reason).toBeNull()
+
+    expect(summary.baseline).toEqual({
+      baseline_median_performance_ratio: '0.8000',
+      clear_sky_poa_p90_kwh_m2: '5.500',
+      degradation_percent: '-1.20',
+      annualized_degradation_percent: '-0.60',
+      degradation_status: 'STABLE',
+    })
+
+    expect(summary.losses).toHaveLength(8)
+    expect(summary.losses?.map((item) => item.category)).toEqual([
+      'COMMUNICATION',
+      'UNAVAILABILITY',
+      'CLIPPING',
+      'SOILING',
+      'SHADING',
+      'TEMPERATURE',
+      'DEGRADATION',
+      'UNEXPLAINED',
+    ])
+    const soiling = summary.losses?.find((item) => item.category === 'SOILING')
+    expect(soiling).toEqual({
+      category: 'SOILING',
+      evidence_level: 'POSSIBLE',
+      estimated_loss_percent: '1.50',
+      evidence_codes: ['SOILING_TREND'],
+      limitation: null,
+    })
+    const degradation = summary.losses?.find((item) => item.category === 'DEGRADATION')
+    expect(degradation?.evidence_level).toBe('NOT_ASSESSABLE')
+    expect(degradation?.estimated_loss_percent).toBeNull()
+    expect(degradation?.limitation).toBe('Baseline insuficiente.')
+    expect(summary.losses_unavailable_reason).toBeNull()
+  })
+
+  it('não lança exceção quando performance vem null — produz estado indisponível tipado', () => {
+    const summary = parsePhotovoltaicSummary(
+      buildSummaryPayload({ performance: null, performance_unavailable_reason: 'NO_PERFORMANCE_RESULTS' })
+    )
+    expect(summary.performance).toBeNull()
+    expect(summary.performance_unavailable_reason).toBe('NO_PERFORMANCE_RESULTS')
+  })
+
+  it('não lança exceção quando losses vem null — produz estado indisponível tipado', () => {
+    const summary = parsePhotovoltaicSummary(
+      buildSummaryPayload({ losses: null, losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS' })
+    )
+    expect(summary.losses).toBeNull()
+    expect(summary.losses_unavailable_reason).toBe('NO_LOSS_ASSESSMENTS')
+  })
+
+  it('lança erro quando um item de losses tem categoria inválida', () => {
+    const payload = buildSummaryPayload({
+      losses: [{ category: 'NOT_A_CATEGORY', evidence_level: 'LIKELY', estimated_loss_percent: '1.0', evidence_codes: [], limitation: null }],
+    })
+    expect(() => parsePhotovoltaicSummary(payload)).toThrow(/category/)
+  })
+})
+
+describe('ratioToPercent', () => {
+  it('converte razão 0–1 para percentual', () => {
+    expect(ratioToPercent('0.8200')).toBeCloseTo(82, 6)
+  })
+
+  it('retorna null para valor null', () => {
+    expect(ratioToPercent(null)).toBeNull()
+  })
+})
+
+describe('performanceUnavailableMessage / lossesUnavailableMessage', () => {
+  it('produz mensagem específica quando performance está indisponível', () => {
+    expect(performanceUnavailableMessage('NO_PERFORMANCE_RESULTS')).toContain('Desempenho técnico')
+  })
+
+  it('produz mensagem específica quando losses está indisponível', () => {
+    expect(lossesUnavailableMessage('NO_LOSS_ASSESSMENTS')).toContain('causas de perda')
   })
 })
 

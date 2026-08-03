@@ -10,7 +10,7 @@ import {
   parseAnomalyDashboard,
   parseExecutiveDashboard,
 } from '../lib/dashboard/contracts'
-import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-contracts'
+import type { ExpectedDailyProduction, PhotovoltaicSummaryResponse } from '../lib/dashboard/photovoltaic-contracts'
 import { deriveExpectedDailyProduction, parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
 import { toNumber } from '../lib/format'
 import { SectionTitle } from '../components/SectionTitle'
@@ -27,6 +27,22 @@ import { EnergyProductionSection, hasIncompleteDailyProduction } from '../compon
 import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
 import { ProductionHistorySection } from '../components/ProductionHistorySection'
+import { TechnicalPerformanceSection } from '../components/TechnicalPerformanceSection'
+
+// Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
+// 401): a seção de desempenho técnico mostra as mensagens de indisponibilidade
+// por bloco em vez de ficar carregando indefinidamente — mesmo princípio de
+// `expectedProduction` acima, aplicado a todos os blocos do resumo.
+const FALLBACK_PV_SUMMARY: PhotovoltaicSummaryResponse = {
+  plant_id: PLANT_ID,
+  performance: null,
+  performance_unavailable_reason: 'NO_PERFORMANCE_RESULTS',
+  baseline: null,
+  baseline_unavailable_reason: 'NO_PERFORMANCE_HISTORY',
+  reference_complete_on: null,
+  losses: null,
+  losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
+}
 
 export function DashboardPage() {
   const { logout } = useAuth()
@@ -46,6 +62,10 @@ export function DashboardPage() {
   // `intelligence/router.py`), então só disparamos essa busca depois de saber se
   // a usina tem baseline defensável — nunca inventamos um número de preenchimento.
   const [expectedProduction, setExpectedProduction] = useState<ExpectedDailyProduction | null>(null)
+  // `null` = ainda carregando `/photovoltaic/summary` (mesma requisição de
+  // `fetchExpectedProduction` — guardamos o resumo inteiro aqui para alimentar
+  // `TechnicalPerformanceSection` sem uma segunda chamada de rede).
+  const [pvSummary, setPvSummary] = useState<PhotovoltaicSummaryResponse | null>(null)
 
   const fetchData = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }))
@@ -70,28 +90,33 @@ export function DashboardPage() {
 
   const fetchExpectedProduction = useCallback(async () => {
     setExpectedProduction(null)
+    setPvSummary(null)
     try {
       const response = await fetchPhotovoltaicSummary(PLANT_ID)
       if (!response.ok) {
         if (response.status === 401) return
         // Sessão expirada à parte, um erro aqui não deve travar o resto do
-        // dashboard — o histórico de produção passa a mostrar o motivo de
-        // indisponibilidade específico assim que souber que não há dado.
+        // dashboard — o histórico de produção e a seção de desempenho técnico
+        // passam a mostrar o motivo de indisponibilidade específico assim que
+        // souberem que não há dado, em vez de ficar carregando para sempre.
         setExpectedProduction({
           available: false,
           reason: 'NO_PERFORMANCE_HISTORY',
           referenceCompleteOn: null,
         })
+        setPvSummary(FALLBACK_PV_SUMMARY)
         return
       }
       const summary = parsePhotovoltaicSummary(await response.json())
       setExpectedProduction(deriveExpectedDailyProduction(summary))
+      setPvSummary(summary)
     } catch {
       setExpectedProduction({
         available: false,
         reason: 'NO_PERFORMANCE_HISTORY',
         referenceCompleteOn: null,
       })
+      setPvSummary(FALLBACK_PV_SUMMARY)
     }
   }, [])
 
@@ -219,6 +244,19 @@ export function DashboardPage() {
                 <TrendCard trend={data.trend} />
               </div>
             )}
+
+            {/* Bloco próprio — "Como está o desempenho técnico?": PR, PR
+                corrigido por temperatura, yield específico, disponibilidade de
+                reporte, degradação anualizada e atribuição de causa de perda.
+                Responde "está indo bem?" com granularidade técnica maior que o
+                Bloco 1 acima — por isso vira seção own em vez de subseção
+                dentro dele (ver Etapa 6), posicionada logo depois porque ainda
+                é sobre "produção/desempenho", antes do Bloco 2 mudar o foco
+                para "para onde foi a energia". */}
+            <div className="mt-8">
+              <SectionTitle>Desempenho técnico</SectionTitle>
+              <TechnicalPerformanceSection summary={pvSummary} />
+            </div>
 
             {/* Bloco 2 — "Para onde foi a energia?": um único diagrama de
                 fluxo (autoconsumo/injetada/importada não se repetem em mais
