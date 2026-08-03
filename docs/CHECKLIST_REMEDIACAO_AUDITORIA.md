@@ -1,6 +1,6 @@
 # Checklist de remediação — Auditorias técnicas Mplacas
 
-Última atualização: 2026-08-02 (Neon e Cloudflare endurecidos; rollout RLS ainda parcial)
+Última atualização: 2026-08-03 (RLS fail-closed ativo no Neon; rollout produtivo aprovado)
 
 Base do novo ciclo: `HEAD b73e97e`. Implementação integrada em `main` pelo merge commit
 `b888b4b3c91244a6c2fd87b7d77c9a11ed367186`, via
@@ -383,7 +383,7 @@ Baseline de validação deste ciclo:
 
 ### P2 — arquitetura, tenancy e supply chain
 
-- [~] **P2-01 — elaborar ADR e prova de conceito de PostgreSQL RLS.**
+- [x] **P2-01 — elaborar ADR e prova de conceito de PostgreSQL RLS.**
   - Usar tenant context transacional, política fail-closed e bypass explícito apenas para plataforma.
   - Critério de aceite: query sem tenant não retorna dados; teste cross-tenant direto no banco.
   - Parcial em 2026-08-01: ADR-056 define contrato e gates; helper usa `set_config(..., true)`
@@ -435,6 +435,16 @@ Baseline de validação deste ciclo:
     validação estrita de estrutura. O canário `d28bd7cc` passou usando exatamente os sentinelas:
     24/24/2, CRUD e isolamento, rollback 0/0/0, re-upgrade 24/24/2; database efêmero removido. O
     item continua parcial até integrar a 0041, repetir a ativação e fechar os smokes pós-RLS.
+  - Concluído em produção em 2026-08-03: o PR
+    [#96](https://github.com/welitonsp/mplacas/pull/96) foi aprovado por quality, PostgreSQL,
+    frontend, container, contrato GCP, CodeQL e secret scan. `mplacas-migrate-jwh8r` avançou o head
+    para `20260803_0041` e a variável de aprovação foi removida. O catálogo confirmou 24/24/2.
+  - A prova runtime confirmou fail-closed sem contexto, helper válido para UUID legado, tenant vendo
+    exatamente 1 organização, 1/1 planta, 2/2 dispositivos e 186/186 energias, e bypass mínimo vendo
+    2/2 organizações. `mplacas-api-rls-fix-591b551` recebeu 100% do tráfego com health, ready e
+    operations status 200. Smoke `tjgkw`, watchdog `g6f6z`, outbox `95s7b` e digest `n2d8f`
+    concluíram; Telegram `getMe/getChat` respondeu 200. A janela observada teve zero HTTP 5xx e zero
+    logs `ERROR`. O rollback ensaiado para 0039 permanece documentado e executável.
 
 - [x] **P2-02 — escopar idempotência de faturas por usina/tenant.**
   - Substituir unicidade global de `source_hash` por constraint composta apropriada.
@@ -583,12 +593,12 @@ Baseline de validação deste ciclo:
 |---|---:|---:|---:|
 | P0 | 6 | 0 | 0 |
 | P1 | 5 | 2 | 0 |
-| P2 arquitetura/supply chain | 4 | 1 | 0 |
+| P2 arquitetura/supply chain | 5 | 0 | 0 |
 | Evolução solar | 5 | 1 | 0 |
-| **Total novo** | **20** | **4** | **0** |
+| **Total novo** | **21** | **3** | **0** |
 
 Próxima ação recomendada: preparar uma homologação isolada para o incidente controlado de ausência
 de **P1-05** e confirmar/documentar a janela PITR efetiva do plano Neon para fechar **P1-06**.
 Na implementação local, a próxima ação é concluir **SOL-06** com dados de campo autorizados e revisão
-real de especialista, seguindo `RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O fechamento de **P2-01** permanece
-condicionado ao rollout de RLS.
+real de especialista, seguindo `RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O **P2-01** está concluído com
+RLS ativo, canário, rollback ensaiado e evidência produtiva.

@@ -1,6 +1,6 @@
 # Runbook de rollout PostgreSQL RLS
 
-Data: 2026-08-02. Estado: policies aprovadas em canário; **não ativadas em produção**.
+Data: 2026-08-03. Estado: **RLS ativo e aprovado em produção no head 0041**.
 
 ## Controles implementados
 
@@ -45,7 +45,7 @@ canary_database_dropped=...
 ```
 
 `--full-history-cycle` também testa downgrade até `base`; é diagnóstico de migrations antigas e
-não substitui o rollback obrigatório 0040 -> 0039.
+não substitui o rollback obrigatório 0041 -> 0039.
 
 ## Pré-condições para produção
 
@@ -70,7 +70,7 @@ O job normal não recebe a variável de aprovação e deve falhar fechado na 004
 
 1. Atualize temporariamente `mplacas-migrate` com
    `MPLACAS_RLS_ACTIVATION_APPROVED=ENABLE-RLS-20260802`.
-2. Execute o job uma vez e confirme Alembic head `20260802_0040`.
+2. Execute o job uma vez e confirme Alembic head `20260803_0041`.
 3. Remova imediatamente a variável de aprovação do job.
 4. Confirme no catálogo: 24 tabelas com `relrowsecurity` e `relforcerowsecurity`, 24 policies e duas
    funções auxiliares.
@@ -87,6 +87,18 @@ restringia UUIDs às versões RFC 1–5 e as organizações produtivas usam IDs 
 versão `0`. O fail-closed retornou zero linhas, exatamente como projetado, mas também para o tenant
 válido. A migration 0041 relaxa somente o nibble de versão, preserva formato canônico estrito e o
 canário passou a usar os IDs sentinela. Não reativar produção sem head 0041 e essa prova verde.
+
+### Ativação aprovada — 2026-08-03
+
+- Migration final: `mplacas-migrate-jwh8r`; head `20260803_0041`; aprovação temporária removida.
+- Serviço: `mplacas-api-rls-fix-591b551`, 100% do tráfego, health/ready/operations status 200.
+- Catálogo: 24 tabelas habilitadas/forçadas, 24 policies, duas funções.
+- Runtime: sem contexto 0 organizações; tenant legado 1 organização e cadeias planta/dispositivo/
+  energia completas; bypass autorizado 2 organizações.
+- Jobs pós-RLS: smoke `tjgkw`, watchdog `g6f6z`, outbox `95s7b`, digest `n2d8f`.
+- Telegram: credencial e destino privado confirmados por `getMe/getChat` HTTP 200. O digest retornou
+  `sent=false` por ausência de dados, portanto nenhuma mensagem artificial foi enviada.
+- Observação inicial: zero HTTP 5xx e zero logs `ERROR` na revisão corrigida.
 
 ## Rollback
 

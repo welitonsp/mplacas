@@ -1,7 +1,7 @@
 # ADR-056 — PostgreSQL Row-Level Security fail-closed
 
 **Data:** 2026-08-01
-**Status:** Aceito para prova de conceito; rollout produtivo condicionado aos gates abaixo
+**Status:** Implementado em produção em 2026-08-03
 
 ## Contexto
 
@@ -61,9 +61,8 @@ evitando rollout parcial inseguro.
   produção permaneceu com zero tabelas RLS. A criação pelo painel de uma branch Neon separada não
   foi possível sem sessão autenticada, por isso o ensaio usou database isolado no endpoint direto.
 
-Até os gates restantes serem atendidos, filtros de aplicação continuam sendo o controle produtivo
-e o item permanece parcial no checklist. Não habilitar policies nas tabelas reais antes do canário
-em branch descartável, da modelagem tenant de auditoria e da autorização mínima de plataforma.
+Todos os gates foram atendidos em 2026-08-03. Os filtros da aplicação permanecem como defesa em
+profundidade, enquanto RLS `ENABLE/FORCE` é a barreira efetiva no PostgreSQL produtivo.
 
 ## Evidência da fundação de rollout — 2026-08-02
 
@@ -105,3 +104,19 @@ legítimo. A ativação foi revertida para 0039 antes do aceite.
 A 0041 mantém os 36 caracteres canônicos e posições de hífen, mas não restringe a versão/variante.
 O teste PostgreSQL usa `00000000-0000-0000-0000-000000000001/2`, impedindo que um futuro canário
 volte a validar apenas UUIDv4 novos. O rollback operacional continua sendo 0041/0040 → 0039.
+
+## Evidência produtiva final — 2026-08-03
+
+- A migration `mplacas-migrate-jwh8r` avançou produção para `20260803_0041`; a aprovação temporária
+  foi removida do job imediatamente após a execução.
+- O catálogo confirmou 24 tabelas com `ENABLE/FORCE`, 24 policies e duas funções auxiliares.
+- A conexão `mplacas_runtime` sem contexto viu zero organização. Com o UUID legado, viu exatamente
+  1 organização, 1/1 planta, 2/2 dispositivos e 186/186 energias; o bypass autorizado viu 2/2
+  organizações.
+- A revisão `mplacas-api-rls-fix-591b551`, digest `sha256:bc90c623...e44ff5a`, recebeu 100% do
+  tráfego com `/health`, `/ready` e `/operations/status` em HTTP 200.
+- Smoke `mplacas-smoke-tjgkw`, watchdog `mplacas-operational-watchdog-g6f6z`, outbox
+  `mplacas-dispatch-outbox-95s7b` e digest `mplacas-daily-digest-n2d8f` concluíram. O digest não
+  enviou mensagem porque não havia dados para a data-alvo; `getMe/getChat` confirmaram bot e chat
+  privado com HTTP 200 sem criar mensagem artificial.
+- Na janela observada, a revisão registrou zero HTTP 5xx e zero logs com severidade `ERROR`.
