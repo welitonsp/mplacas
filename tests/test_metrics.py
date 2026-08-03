@@ -4,7 +4,13 @@ import logging
 from typing import Iterator
 
 import pytest
-from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+from opentelemetry.sdk.metrics.export import (
+    InMemoryMetricReader,
+    MetricExporter,
+    MetricExportResult,
+    MetricsData,
+    PeriodicExportingMetricReader,
+)
 
 from mplacas.core.config import Settings
 from mplacas.observability.metrics import (
@@ -111,6 +117,56 @@ def test_metric_attributes_stay_low_cardinality(
     points = _collect_points(metric_reader)
     for point in points["mplacas.operation.runs"]:
         assert set(point.attributes) == {"operation", "outcome"}
+
+
+class _CountingMetricExporter(MetricExporter):
+    """Exportador fake que conta quantas vezes ``export`` foi chamado.
+
+    Usado para provar que ``MetricsRuntime.shutdown()`` não exporta o mesmo
+    lote de métricas duas vezes: o SDK do OpenTelemetry já faz uma última
+    coleta/exportação por conta própria durante o shutdown do
+    ``PeriodicExportingMetricReader``, então um ``force_flush()`` explícito
+    antes do ``shutdown()`` causaria uma exportação duplicada.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.export_calls = 0
+
+    def export(
+        self,
+        metrics_data: MetricsData,
+        timeout_millis: float = 10_000,
+        **kwargs: object,
+    ) -> MetricExportResult:
+        self.export_calls += 1
+        return MetricExportResult.SUCCESS
+
+    def shutdown(self, timeout_millis: float = 30_000, **kwargs: object) -> None:
+        pass
+
+    def force_flush(self, timeout_millis: float = 10_000) -> bool:
+        return True
+
+
+def test_metrics_runtime_shutdown_exports_exactly_once() -> None:
+    reset_metrics_state_for_tests()
+    exporter = _CountingMetricExporter()
+    reader = PeriodicExportingMetricReader(
+        exporter,
+        # Intervalo bem longo para garantir que nenhuma exportação
+        # periódica ocorra durante o teste: a única exportação esperada é a
+        # coleta final feita pelo próprio SDK durante o shutdown.
+        export_interval_millis=60_000,
+    )
+    settings = Settings(_env_file=None)
+    runtime = configure_metrics(settings=settings, service_name="mplacas-test", reader=reader)
+    record_operation(operation="unit.shutdown", outcome=OUTCOME_SUCCESS, duration_ms=10)
+
+    runtime.shutdown()
+
+    assert exporter.export_calls == 1
+    reset_metrics_state_for_tests()
 
 
 def test_metrics_disabled_keeps_recording_a_noop() -> None:

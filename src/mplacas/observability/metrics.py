@@ -28,8 +28,14 @@ class MetricsRuntime:
 
     def shutdown(self) -> None:
         if self.provider is not None:
-            self.provider.force_flush(timeout_millis=5000)
-            self.provider.shutdown()
+            # Não chamar force_flush() aqui: PeriodicExportingMetricReader já
+            # executa uma última coleta/exportação por design durante o seu
+            # próprio shutdown (ver `_ticker`/`shutdown` no pacote
+            # opentelemetry-sdk). Um force_flush() explícito antes disso
+            # duplica a exportação do mesmo lote de métricas em sequência
+            # quase simultânea, e o Cloud Monitoring rejeita a segunda
+            # gravação por violar o intervalo mínimo de amostragem.
+            self.provider.shutdown(timeout_millis=5000)
 
 
 def configure_metrics(

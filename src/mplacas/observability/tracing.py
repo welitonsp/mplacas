@@ -39,7 +39,14 @@ class ObservabilityRuntime:
 
     def shutdown(self) -> None:
         if self.provider is not None:
-            self.provider.force_flush(timeout_millis=5000)
+            # Não chamar force_flush() aqui: o worker thread do
+            # BatchSpanProcessor (BatchProcessor._shared_internal) já
+            # executa uma última exportação de todos os spans pendentes ao
+            # sair do loop quando shutdown() é chamado. Um force_flush()
+            # explícito antes disso duplica a exportação do mesmo lote de
+            # spans em sequência quase simultânea, o mesmo padrão que causa
+            # `INVALID_ARGUMENT` no exportador de métricas do Cloud
+            # Monitoring.
             self.provider.shutdown()
         if self.metrics is not None:
             self.metrics.shutdown()
