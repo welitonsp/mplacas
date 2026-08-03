@@ -424,6 +424,17 @@ Baseline de validação deste ciclo:
     sessões reutilizadas. Validação local: **630 passed**, **5 skipped**, Ruff e Mypy
     aprovados. O item permanece parcial somente até criar/conceder a role `mplacas_platform`, abrir
     janela produtiva, executar a 0040 e aprovar smoke/watchdog conforme `RUNBOOK_RLS_ROLLOUT.md`.
+  - Primeira janela produtiva em 2026-08-03: a revisão `mplacas-api-rls-stage-05b8ae6` entrou com
+    100% do tráfego após a migration compatível 0039 e health/ready/smoke/watchdog aprovados. A
+    marker role mínima foi criada sem login, grants de tabela, `INHERIT`, `SET` ou `ADMIN`. A 0040
+    ativou 24/24/2, mas a prova runtime revelou que o helper rejeitava os UUIDs canônicos legados
+    `000...001/2` por terem nibble de versão `0`; tenant válido recebia zero linhas. O rollback
+    planejado `mplacas-migrate-rb5jp` restaurou imediatamente head 0039 e catálogo 0/0/0, com API
+    200/200 e sem perda de dados.
+  - A correção versionada 0041 aceita qualquer versão no formato UUID canônico, preservando a
+    validação estrita de estrutura. O canário `d28bd7cc` passou usando exatamente os sentinelas:
+    24/24/2, CRUD e isolamento, rollback 0/0/0, re-upgrade 24/24/2; database efêmero removido. O
+    item continua parcial até integrar a 0041, repetir a ativação e fechar os smokes pós-RLS.
 
 - [x] **P2-02 — escopar idempotência de faturas por usina/tenant.**
   - Substituir unicidade global de `source_hash` por constraint composta apropriada.

@@ -94,3 +94,14 @@ em branch descartável, da modelagem tenant de auditoria e da autorização mín
 - O database e todas as roles efêmeras foram removidos. Produção continuou com zero RLS ativo.
 - O ciclo opcional de toda a história até `base` encontrou oscilação de conexão durante migrations
   antigas; ele permanece disponível por `--full-history-cycle`, mas não integra o gate da 0040.
+
+## UUIDs legados e rollback preventivo — 2026-08-03
+
+A primeira ativação produtiva demonstrou uma premissa ausente no canário original: organizações
+legadas usam UUIDs canônicos sentinela com nibble de versão `0`. O helper da 0040 aceitava apenas
+versões 1–5 e, corretamente em modo fail-closed, devolvia `NULL`; isso também ocultava o tenant
+legítimo. A ativação foi revertida para 0039 antes do aceite.
+
+A 0041 mantém os 36 caracteres canônicos e posições de hífen, mas não restringe a versão/variante.
+O teste PostgreSQL usa `00000000-0000-0000-0000-000000000001/2`, impedindo que um futuro canário
+volte a validar apenas UUIDv4 novos. O rollback operacional continua sendo 0041/0040 → 0039.

@@ -13,6 +13,9 @@ ROOT = Path(__file__).parents[1]
 MIGRATION_PATH = (
     ROOT / "migrations" / "versions" / "20260802_0040_enable_postgresql_rls.py"
 )
+LEGACY_UUID_MIGRATION_PATH = (
+    ROOT / "migrations" / "versions" / "20260803_0041_allow_legacy_tenant_uuids.py"
+)
 
 
 def _load_migration() -> ModuleType:
@@ -55,3 +58,15 @@ def test_rls_migration_rejects_missing_activation_approval(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="RLS activation requires"):
         migration.upgrade()
+
+
+def test_rls_tenant_helper_accepts_canonical_legacy_uuids() -> None:
+    source = LEGACY_UUID_MIGRATION_PATH.read_text(encoding="utf-8")
+
+    assert 'revision = "20260803_0041"' in source
+    assert 'down_revision = "20260802_0040"' in source
+    assert (
+        "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        in source
+    )
+    assert "[1-5][0-9a-f]{3}" not in source.split("def downgrade", maxsplit=1)[0]

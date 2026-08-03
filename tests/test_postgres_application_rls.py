@@ -27,7 +27,9 @@ async def test_application_rls_enforces_crud_and_every_ownership_chain() -> None
     tenant_role = f"mplacas_rls_tenant_{suffix}"
     platform_role = f"mplacas_rls_platform_{suffix}"
     platform_marker = "mplacas_platform"
-    org_a, org_b = uuid.uuid4(), uuid.uuid4()
+    # Production contains canonical legacy sentinel UUIDs whose version nibble is 0.
+    # Keep them in the integration gate so the tenant helper cannot reject valid legacy IDs.
+    org_a, org_b = uuid.UUID(int=1), uuid.UUID(int=2)
     plant_a, plant_b = uuid.uuid4(), uuid.uuid4()
     device_a, device_b = uuid.uuid4(), uuid.uuid4()
     energy_a, energy_b = uuid.uuid4(), uuid.uuid4()
