@@ -74,6 +74,21 @@ gcloud run deploy "$GCP_SERVICE_NAME" \
   --allow-unauthenticated \
   --quiet
 
+# A canary/rollout controlado (ex: RUNBOOK_RLS_ROLLOUT.md) pode ter fixado o
+# tráfego numa revisão nomeada manualmente (spec.traffic com revisionName em
+# vez de latestRevision=true). Se isso não for revertido, todo `gcloud run
+# deploy` seguinte cria uma revisão nova que nunca recebe tráfego, e o deploy
+# fica um no-op silencioso - foi exatamente o que aconteceu em 2026-08-03
+# apos o rollout do RLS. Forçar --to-latest aqui garante que este script
+# sempre publica o que acabou de implantar, mesmo que um pin anterior tenha
+# ficado esquecido.
+gcloud run services update-traffic "$GCP_SERVICE_NAME" \
+  --region "$GCP_REGION" \
+  --project "$GCP_PROJECT_ID" \
+  --to-latest \
+  --quiet
+
 validate_cloud_run_limits
 log "service deployed with guardrails enforced"
+log "traffic routed to latest revision (canary/pin state, if any, cleared)"
 log "service URL: $(cloud_run_service_url)"
