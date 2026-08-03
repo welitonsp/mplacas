@@ -337,7 +337,7 @@ Baseline de validação deste ciclo:
   - Permanece parcial somente porque o teste de abertura/entrega/fechamento após duas horas deve ser
     feito em homologação. Não pausar o watchdog de produção para produzir essa evidência.
 
-- [~] **P1-06 — automatizar backup/PITR e restore drill.**
+- [x] **P1-06 — automatizar backup/PITR e restore drill.**
   - Definir RPO/RTO, retenção, criptografia, ownership e alerta de falha.
   - Restaurar periodicamente em banco descartável, aplicar migrations e validar `/ready`/invariantes.
   - Critério de aceite: último restore drill aprovado e auditável, não apenas backup existente.
@@ -370,8 +370,22 @@ Baseline de validação deste ciclo:
     confirma credencial e schema, mas não comprova nem altera a retenção PITR contratada no Neon.
     Implementação e CI PostgreSQL no PR
     [#91](https://github.com/welitonsp/mplacas/pull/91).
-  - Permanece parcial somente até confirmar e registrar a janela PITR efetiva do plano Neon
-    contratado; não reabrir a automação do restore drill sem evidência de regressão.
+  - **Confirmado em 2026-08-03: o plano contratado é o Neon Free.** Janela nativa de
+    Point-in-Time Restore do Neon nesse plano é de **6 horas**, capada em **1 GB** de histórico de
+    mudanças, sem custo adicional (fonte oficial:
+    [Neon Docs — Point-in-Time Restore Windows](https://neon.com/docs/introduction/restore-window)).
+    Planos pagos (Launch/Scale) chegam a 7/30 dias — não contratado aqui.
+    **Implicação para RPO/RTO:** a janela nativa do Neon (6h) é bem menor que o RPO de 24h
+    documentado acima para o workflow de snapshot lógico diário. Ou seja, a proteção de RPO=24h do
+    projeto **não depende do PITR nativo do Neon** — depende inteiramente do snapshot lógico
+    versionado e criptografado (retenção de 35 dias, já validado por restore drill real,
+    execução [#30765972320](https://github.com/welitonsp/mplacas/actions/runs/30765972320)). O
+    PITR nativo do Neon serve apenas como rede de segurança adicional para os últimos 60-360
+    minutos (ex.: erro operacional detectado rapidamente), não como mecanismo primário de
+    recuperação. Isso é aceitável para o RPO declarado, mas precisa ficar explícito: se o RPO
+    real exigido no futuro for menor que 24h, a resposta é reduzir o intervalo do snapshot
+    lógico, não upgrade do plano Neon só por causa do PITR nativo.
+  - Item fechado. Não reabrir a automação do restore drill sem evidência de regressão.
 
 - [x] **P1-07 — adicionar retenção de autenticação e convites.**
   - Cobrir `auth_sessions`, `login_rate_limits` e `user_invitations` expirados/terminais.
@@ -592,13 +606,15 @@ Baseline de validação deste ciclo:
 | Categoria | Concluídos | Parciais | Pendentes |
 |---|---:|---:|---:|
 | P0 | 6 | 0 | 0 |
-| P1 | 5 | 2 | 0 |
+| P1 | 6 | 1 | 0 |
 | P2 arquitetura/supply chain | 5 | 0 | 0 |
 | Evolução solar | 5 | 1 | 0 |
-| **Total novo** | **21** | **3** | **0** |
+| **Total novo** | **22** | **2** | **0** |
 
-Próxima ação recomendada: preparar uma homologação isolada para o incidente controlado de ausência
-de **P1-05** e confirmar/documentar a janela PITR efetiva do plano Neon para fechar **P1-06**.
-Na implementação local, a próxima ação é concluir **SOL-06** com dados de campo autorizados e revisão
-real de especialista, seguindo `RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O **P2-01** está concluído com
-RLS ativo, canário, rollback ensaiado e evidência produtiva.
+**P1-06 fechado em 2026-08-03:** janela PITR do Neon Free confirmada (6h/1GB) e documentada; RPO=24h
+do projeto comprovadamente independe do PITR nativo, cobre-se pelo snapshot lógico diário já
+validado por restore drill real. Próxima ação recomendada: preparar uma homologação isolada para o
+incidente controlado de ausência de **P1-05**. Na implementação local, a próxima ação é concluir
+**SOL-06** com dados de campo autorizados e revisão real de especialista, seguindo
+`RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O **P2-01** está concluído com RLS ativo, canário, rollback
+ensaiado e evidência produtiva.
