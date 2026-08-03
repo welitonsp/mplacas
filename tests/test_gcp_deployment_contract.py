@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GCP_DIR = ROOT / "infra" / "gcp"
+DRILL_DIR = GCP_DIR / "drill"
 SCRIPT_NAMES = {
     "audit-costs.sh",
     "bootstrap.sh",
@@ -20,6 +21,10 @@ SCRIPT_NAMES = {
     "verify-operations.sh",
     "verify-deployment.sh",
 }
+DRILL_SCRIPT_NAMES = {
+    "provision-watchdog-drill.sh",
+    "teardown-watchdog-drill.sh",
+}
 
 
 def read(relative_path: str) -> str:
@@ -33,6 +38,40 @@ def test_expected_gcp_scripts_exist_and_use_strict_bash() -> None:
     for script_name in sorted(SCRIPT_NAMES):
         content = read(f"infra/gcp/{script_name}")
         assert content.startswith("#!/usr/bin/env bash\nset -Eeuo pipefail\n")
+
+
+def test_expected_watchdog_drill_scripts_exist_and_use_strict_bash() -> None:
+    scripts = {path.name for path in DRILL_DIR.glob("*.sh")}
+    assert scripts == DRILL_SCRIPT_NAMES
+
+    for script_name in sorted(DRILL_SCRIPT_NAMES):
+        content = read(f"infra/gcp/drill/{script_name}")
+        assert content.startswith("#!/usr/bin/env bash\n") or "\nset -Eeuo pipefail\n" in content
+        assert "set -Eeuo pipefail" in content
+
+
+def test_watchdog_drill_scripts_only_run_against_real_production_project() -> None:
+    provision = read("infra/gcp/drill/provision-watchdog-drill.sh")
+    teardown = read("infra/gcp/drill/teardown-watchdog-drill.sh")
+
+    for script in (provision, teardown):
+        assert 'require_production_project' in script
+        assert '[[ "${GCP_PROJECT_ID:-}" == "mplacas" ]]' in script
+        assert "source \"${SCRIPT_DIR}/../lib.sh\"" in script
+        assert "confirm_exact" in script
+
+    assert "mplacas-watchdog-drill" in provision
+    assert "upsert_monitoring_policy" in provision
+    assert "operational-watchdog-absence-drill.json" in provision
+    assert "@sha256:" in provision
+    assert "gcloud monitoring policies delete" in teardown
+    assert "find_monitoring_policy" in teardown
+    assert "MPLACAS_EXPECTED_SCHEDULER_JOBS" in teardown
+
+    library = read("infra/gcp/lib.sh")
+    assert "mplacas-watchdog-drill" in _quoted_array(
+        library, "MPLACAS_EXPECTED_SCHEDULER_JOBS"
+    )
 
 
 def test_config_locks_initial_cost_guardrails() -> None:
@@ -222,7 +261,7 @@ def test_destroy_preserves_high_scope_resources() -> None:
 
 def test_no_prohibited_privilege_or_failure_masking_patterns() -> None:
     combined = "\n".join(
-        path.read_text(encoding="utf-8") for path in sorted(GCP_DIR.glob("*.sh"))
+        path.read_text(encoding="utf-8") for path in sorted(GCP_DIR.rglob("*.sh"))
     ).lower()
     prohibited = (
         "roles/owner",
@@ -241,10 +280,14 @@ def test_no_prohibited_privilege_or_failure_masking_patterns() -> None:
 
     scheduler_mutators = [
         path.name
-        for path in sorted(GCP_DIR.glob("*.sh"))
+        for path in sorted(GCP_DIR.rglob("*.sh"))
         if "scheduler jobs create" in path.read_text(encoding="utf-8").lower()
     ]
-    assert scheduler_mutators == ["provision-cost-audit.sh", "provision-operations.sh"]
+    assert scheduler_mutators == [
+        "provision-watchdog-drill.sh",
+        "provision-cost-audit.sh",
+        "provision-operations.sh",
+    ]
 
 
 def test_ci_validates_bash_contract() -> None:
@@ -254,6 +297,7 @@ def test_ci_validates_bash_contract() -> None:
     assert "bash -n" in workflow
     assert "ShellCheck" in workflow
     assert "shellcheck infra/gcp/*.sh" in workflow
+    assert "infra/gcp/drill/*.sh" in workflow
 
 
 def test_operational_jobs_and_schedulers_are_provisioned_idempotently() -> None:
@@ -298,6 +342,7 @@ def test_monitoring_policies_are_versioned_and_upserted_with_stable_cli() -> Non
     assert set(policies) == {
         "operational-job-failure.json",
         "operational-watchdog-absence.json",
+        "operational-watchdog-absence-drill.json",
     }
     policy_ids = {
         policy["userLabels"]["mplacas_policy_id"] for policy in policies.values()
@@ -305,6 +350,7 @@ def test_monitoring_policies_are_versioned_and_upserted_with_stable_cli() -> Non
     assert policy_ids == {
         "operational_job_failure",
         "operational_watchdog_absence",
+        "operational_watchdog_absence_drill",
     }
     assert all(policy["enabled"] is True for policy in policies.values())
     assert (
@@ -321,10 +367,44 @@ def test_monitoring_policies_are_versioned_and_upserted_with_stable_cli() -> Non
     absence = policies["operational-watchdog-absence.json"]["conditions"][0][
         "conditionAbsent"
     ]
+    drill_absence = policies["operational-watchdog-absence-drill.json"]["conditions"][0][
+        "conditionAbsent"
+    ]
     assert "run.googleapis.com/job/completed_execution_count" in failure_filter
     assert 'metric.labels.result!="succeeded"' in failure_filter
     assert absence["duration"] == "7200s"
     assert 'metric.labels.result="succeeded"' in absence["filter"]
+
+    # The drill policy is a fork of the real absence policy — the timing
+    # parameters it validates must stay identical to the real one; only the
+    # monitored job_name, displayName/documentation and policy identity are
+    # allowed to differ. See
+    # infra/gcp/monitoring/operational-watchdog-absence-drill.md.
+    assert drill_absence["duration"] == absence["duration"]
+    assert (
+        drill_absence["aggregations"][0]["alignmentPeriod"]
+        == absence["aggregations"][0]["alignmentPeriod"]
+    )
+    assert (
+        drill_absence["aggregations"][0]["perSeriesAligner"]
+        == absence["aggregations"][0]["perSeriesAligner"]
+    )
+    assert (
+        drill_absence["aggregations"][0]["crossSeriesReducer"]
+        == absence["aggregations"][0]["crossSeriesReducer"]
+    )
+    assert drill_absence["trigger"] == absence["trigger"]
+    assert (
+        policies["operational-watchdog-absence-drill.json"]["alertStrategy"]
+        == policies["operational-watchdog-absence.json"]["alertStrategy"]
+    )
+    assert 'metric.labels.result="succeeded"' in drill_absence["filter"]
+    assert 'job_name="${GCP_OPERATIONAL_JOB_PREFIX}-watchdog-drill"' in drill_absence["filter"]
+    assert (
+        policies["operational-watchdog-absence-drill.json"]["displayName"].startswith(
+            "[DRILL]"
+        )
+    )
 
     assert "gcloud monitoring policies create" in library
     assert "gcloud monitoring policies update" in library

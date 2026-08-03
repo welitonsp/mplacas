@@ -51,6 +51,13 @@ readonly MPLACAS_EXPECTED_SCHEDULER_JOBS=(
   "mplacas-operational-watchdog"
   "mplacas-retention"
   "mplacas-cost-audit"
+  # TEMPORARY — added for the operational-watchdog absence drill, see
+  # docs/RUNBOOK_WATCHDOG_DRILL.md and infra/gcp/drill/. Remove this entry
+  # once infra/gcp/drill/teardown-watchdog-drill.sh has been run and the
+  # drill Scheduler job/Cloud Run Job/alert policy no longer exist — leaving
+  # it here after teardown would let a stale resource silently pass
+  # audit-costs.sh's guardrail.
+  "mplacas-watchdog-drill"
 )
 
 : "${GCP_PROJECT_ID:=}"
