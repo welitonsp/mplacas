@@ -8,10 +8,13 @@ import { YieldCard } from './YieldCard'
 export function ProductionHistorySection({
   anomalyState,
   expectedProduction,
+  onRetry,
 }: {
   anomalyState: AnomalyFetchState
   // `null` = baseline sazonal ainda carregando.
   expectedProduction: ExpectedDailyProduction | null
+  // Só relevante para o estado `SERVER_ERROR` — reexecuta a busca do histórico.
+  onRetry?: () => void
 }) {
   const loadingExpected = expectedProduction === null
   const loadingHistory = expectedProduction?.available === true && anomalyState.loading && !anomalyState.data
@@ -38,6 +41,45 @@ export function ProductionHistorySection({
         <p className="mt-4 text-sm text-gray-500">
           {baselineUnavailableMessage(expectedProduction.reason, expectedProduction.referenceCompleteOn)}
         </p>
+      </div>
+    )
+  }
+
+  // 404: ainda não há dado diário coletado para este período — estado esperado
+  // (usina nova, backfill pendente), não é uma falha do sistema.
+  if (anomalyState.error === 'NOT_FOUND') {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          Histórico de produção diária
+        </p>
+        <p className="mt-4 text-sm text-[var(--color-text-secondary)]">
+          Ainda não há dado de produção diária coletado para este período.
+        </p>
+      </div>
+    )
+  }
+
+  // 5xx ou falha de rede: algo quebrou de fato — mensagem diferente e opção de
+  // tentar novamente, em vez de misturar com o caso acima.
+  if (anomalyState.error === 'SERVER_ERROR') {
+    return (
+      <div className="rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger-light)] p-5 shadow-sm">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          Histórico de produção diária
+        </p>
+        <p className="mt-4 text-sm text-[var(--color-danger)]">
+          Não foi possível carregar o histórico de produção diária. Tente novamente.
+        </p>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-3 text-xs font-medium text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] transition-colors"
+          >
+            Tentar novamente
+          </button>
+        )}
       </div>
     )
   }

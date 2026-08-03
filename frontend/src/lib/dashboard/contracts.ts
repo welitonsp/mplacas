@@ -91,9 +91,36 @@ export interface FetchState {
   lastUpdated: Date | null
 }
 
+// `NOT_FOUND` = ainda não há dado diário coletado para o período pedido (404 —
+// não é uma falha do sistema, é um estado esperado para usina nova/sem backfill).
+// `SERVER_ERROR` = 5xx ou falha de rede — aí sim algo quebrou e vale oferecer retry.
+export type AnomalyFetchError = 'NOT_FOUND' | 'SERVER_ERROR'
+
 export interface AnomalyFetchState {
   data: AnomalyDashboardResponse | null
   loading: boolean
+  error: AnomalyFetchError | null
+}
+
+// Classifica o status HTTP de `/energy/anomalies/latest` em uma mensagem de estado
+// distinta — nunca trata 404 (sem dado ainda) e 5xx/rede (algo quebrou) como a
+// mesma coisa. 401 retorna `null` porque `apiFetch` já tentou refresh e, se ainda
+// assim falhou, o usuário está sendo deslogado (não é um estado a comunicar aqui).
+export function classifyAnomalyErrorStatus(status: number): AnomalyFetchError | null {
+  if (status === 401) return null
+  if (status === 404) return 'NOT_FOUND'
+  return 'SERVER_ERROR'
+}
+
+// Data (ISO `YYYY-MM-DD`) do último dia com produção diária realmente coletada
+// (`actual_production_kwh` não nulo) no payload de anomalias — usado para mostrar
+// o frescor real do dado em vez da hora em que o navegador fez o fetch. `daily`
+// vem em ordem cronológica ascendente (ver `intelligence/anomaly_service.py`).
+export function latestNonNullProductionDate(daily: readonly AnomalyDailyPoint[]): string | null {
+  for (let i = daily.length - 1; i >= 0; i -= 1) {
+    if (daily[i].actual_production_kwh != null) return daily[i].date
+  }
+  return null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

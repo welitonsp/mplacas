@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ProductionHistorySection } from './ProductionHistorySection'
 import type { AnomalyDailyPoint, AnomalyFetchState } from '../lib/dashboard/contracts'
@@ -22,6 +22,7 @@ describe('ProductionHistorySection', () => {
   it('mostra o percentual de desempenho e a legenda "Esperado" quando a produção esperada está disponível', () => {
     const anomalyState: AnomalyFetchState = {
       loading: false,
+      error: null,
       data: {
         plant_id: 'p1',
         days_analyzed: 1,
@@ -44,7 +45,7 @@ describe('ProductionHistorySection', () => {
   ])(
     'mostra a mensagem específica para %s e não renderiza percentual nem linha tracejada',
     (reason, referenceCompleteOn, expectedMessage) => {
-      const anomalyState: AnomalyFetchState = { loading: false, data: null }
+      const anomalyState: AnomalyFetchState = { loading: false, data: null, error: null }
       const expectedProduction: ExpectedDailyProduction = {
         available: false,
         reason,
@@ -62,11 +63,41 @@ describe('ProductionHistorySection', () => {
   )
 
   it('mostra o esqueleto de carregamento enquanto a produção esperada ainda não chegou', () => {
-    const anomalyState: AnomalyFetchState = { loading: true, data: null }
+    const anomalyState: AnomalyFetchState = { loading: true, data: null, error: null }
     const { container } = render(
       <ProductionHistorySection anomalyState={anomalyState} expectedProduction={null} />
     )
     expect(container.querySelector('.animate-pulse')).toBeInTheDocument()
     expect(screen.queryByText(/Desempenho:/)).not.toBeInTheDocument()
+  })
+
+  it('mostra mensagem de "sem dado ainda" (não de erro) quando o histórico responde 404', () => {
+    const anomalyState: AnomalyFetchState = { loading: false, data: null, error: 'NOT_FOUND' }
+
+    render(<ProductionHistorySection anomalyState={anomalyState} expectedProduction={AVAILABLE} />)
+
+    expect(
+      screen.getByText('Ainda não há dado de produção diária coletado para este período.')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Tentar novamente')).not.toBeInTheDocument()
+  })
+
+  it('mostra mensagem de falha do sistema com opção de retry quando o histórico responde 500', () => {
+    const anomalyState: AnomalyFetchState = { loading: false, data: null, error: 'SERVER_ERROR' }
+    const onRetry = vi.fn()
+
+    render(
+      <ProductionHistorySection
+        anomalyState={anomalyState}
+        expectedProduction={AVAILABLE}
+        onRetry={onRetry}
+      />
+    )
+
+    expect(
+      screen.getByText('Não foi possível carregar o histórico de produção diária. Tente novamente.')
+    ).toBeInTheDocument()
+    screen.getByText('Tentar novamente').click()
+    expect(onRetry).toHaveBeenCalledOnce()
   })
 })

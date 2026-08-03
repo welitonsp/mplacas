@@ -3,20 +3,26 @@ import { useAuth } from '../contexts/AuthContext'
 import { apiFetch, fetchPhotovoltaicSummary } from '../lib/api'
 import { PLANT_ID } from '../env'
 import type { AnomalyFetchState, FetchState } from '../lib/dashboard/contracts'
-import { parseAnomalyDashboard, parseExecutiveDashboard } from '../lib/dashboard/contracts'
+import {
+  classifyAnomalyErrorStatus,
+  latestNonNullProductionDate,
+  parseAnomalyDashboard,
+  parseExecutiveDashboard,
+} from '../lib/dashboard/contracts'
 import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-contracts'
 import { deriveExpectedDailyProduction, parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
 import { toNumber } from '../lib/format'
 import { SectionTitle } from '../components/SectionTitle'
-import { MetricCard } from '../components/MetricCard'
 import { CurrencyCard } from '../components/CurrencyCard'
 import { HeroCard } from '../components/HeroCard'
 import { QualityBanner } from '../components/QualityBanner'
 import { TrendCard } from '../components/TrendCard'
-import { ProductionSplitCard } from '../components/ProductionSplitCard'
 import { EnergyFlowDiagram } from '../components/EnergyFlowDiagram'
 import { ConsumptionDonut } from '../components/ConsumptionDonut'
 import { DashboardHeader } from '../components/DashboardHeader'
+import { DataFreshness } from '../components/DataFreshness'
+import { EnergyProductionSection } from '../components/EnergyProductionSection'
+import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
 import { PriorityActionsCard } from '../components/PriorityActionsCard'
 import { ProductionHistorySection } from '../components/ProductionHistorySection'
@@ -29,7 +35,11 @@ export function DashboardPage() {
     error: null,
     lastUpdated: null,
   })
-  const [anomalyState, setAnomalyState] = useState<AnomalyFetchState>({ data: null, loading: true })
+  const [anomalyState, setAnomalyState] = useState<AnomalyFetchState>({
+    data: null,
+    loading: true,
+    error: null,
+  })
   // `null` = ainda carregando o baseline sazonal. `/energy/anomalies/latest`
   // exige um `expected_daily_production_kwh` numérico positivo (ver
   // `intelligence/router.py`), então só disparamos essa busca depois de saber se
@@ -92,15 +102,18 @@ export function DashboardPage() {
           `&expected_daily_production_kwh=${expectedDailyProductionKwh}&days=90`
       )
       if (!response.ok) {
-        // Sem dado diário suficiente (404) ou sessão expirada: não é um erro que
-        // deva bloquear o resto do dashboard, então falha silenciosamente aqui.
-        setAnomalyState({ data: null, loading: false })
+        // 404 (sem dado diário ainda) e 5xx (algo quebrou) recebem mensagens
+        // diferentes em `ProductionHistorySection` — ver `classifyAnomalyErrorStatus`.
+        // 401 continua silencioso: `apiFetch` já tentou refresh, e se falhou o
+        // usuário está sendo deslogado, não há nada a comunicar aqui.
+        setAnomalyState({ data: null, loading: false, error: classifyAnomalyErrorStatus(response.status) })
         return
       }
       const data = parseAnomalyDashboard(await response.json())
-      setAnomalyState({ data, loading: false })
+      setAnomalyState({ data, loading: false, error: null })
     } catch {
-      setAnomalyState({ data: null, loading: false })
+      // Falha de rede: mesma categoria de "algo quebrou" que um 5xx.
+      setAnomalyState({ data: null, loading: false, error: 'SERVER_ERROR' })
     }
   }, [])
 
@@ -117,16 +130,18 @@ export function DashboardPage() {
     if (expectedProduction.available) {
       void fetchAnomalies(expectedProduction.kwh)
     } else {
-      setAnomalyState({ data: null, loading: false })
+      setAnomalyState({ data: null, loading: false, error: null })
     }
+  }, [expectedProduction, fetchAnomalies])
+
+  const retryAnomalies = useCallback(() => {
+    if (expectedProduction?.available) void fetchAnomalies(expectedProduction.kwh)
   }, [expectedProduction, fetchAnomalies])
 
   const { data, loading, error, lastUpdated } = state
   const indicators = data?.current_cycle.indicators
   const quality = data?.current_cycle.quality
-  const hasPartialData =
-    !!quality &&
-    quality.missing_days + quality.provisional_days + quality.incomplete_days + quality.unavailable_days > 0
+  const latestDataDate = anomalyState.data ? latestNonNullProductionDate(anomalyState.data.daily) : null
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -136,16 +151,7 @@ export function DashboardPage() {
         <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-sm font-medium text-gray-600">Dashboard executivo</h2>
           <div className="flex items-center gap-3">
-            {lastUpdated && (
-              <span className="text-xs text-gray-400">
-                Atualizado:{' '}
-                {lastUpdated.toLocaleTimeString('pt-BR', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                })}
-              </span>
-            )}
+            <DataFreshness latestDataDate={latestDataDate} lastSyncedAt={lastUpdated} />
             <button
               onClick={() => {
                 void fetchData()
@@ -191,42 +197,7 @@ export function DashboardPage() {
 
             <div className="mt-8">
               <SectionTitle>Energia e produção</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <MetricCard
-                  label="Produção no ciclo"
-                  value={indicators.cycle_production_kwh}
-                  unit="kWh"
-                  partial={hasPartialData}
-                />
-                <MetricCard
-                  label="Energia importada"
-                  value={indicators.imported_kwh}
-                  unit="kWh"
-                  partial={hasPartialData}
-                />
-                <MetricCard
-                  label="Energia injetada"
-                  value={indicators.injected_kwh}
-                  unit="kWh"
-                  partial={hasPartialData}
-                />
-                <MetricCard
-                  label="Autoconsumo estimado"
-                  value={indicators.estimated_self_consumption_kwh}
-                  unit="kWh"
-                  partial={hasPartialData}
-                />
-                <MetricCard
-                  label="Consumo total estimado"
-                  value={indicators.estimated_total_consumption_kwh}
-                  unit="kWh"
-                  partial={hasPartialData}
-                />
-                <ProductionSplitCard
-                  selfConsumption={indicators.estimated_self_consumption_kwh}
-                  injected={indicators.injected_kwh}
-                />
-              </div>
+              <EnergyProductionSection indicators={indicators} quality={quality} />
             </div>
 
             <div className="mt-8">
@@ -248,7 +219,11 @@ export function DashboardPage() {
 
             <div className="mt-8">
               <SectionTitle>Histórico de produção</SectionTitle>
-              <ProductionHistorySection anomalyState={anomalyState} expectedProduction={expectedProduction} />
+              <ProductionHistorySection
+                anomalyState={anomalyState}
+                expectedProduction={expectedProduction}
+                onRetry={retryAnomalies}
+              />
             </div>
 
             <div className="mt-8">

@@ -11,10 +11,11 @@ describe('MetricCard', () => {
     expect(screen.getByText(/123,46/)).toBeInTheDocument()
   })
 
-  it('mostra o traço quando o valor é nulo', () => {
+  it('mostra o traço quando o valor é nulo, mas mantém a unidade visível', () => {
     render(<MetricCard label="Energia importada" value={null} unit="kWh" />)
 
     expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('kWh')).toBeInTheDocument()
   })
 
   it('exibe o selo de "Parcial" quando partial=true', () => {

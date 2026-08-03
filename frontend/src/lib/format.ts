@@ -8,7 +8,7 @@ export function formatNumber(value: MetricValue, maximumFractionDigits = 2): str
 }
 
 export function formatCurrency(value: MetricValue): string {
-  if (value == null) return '—'
+  if (value == null) return 'R$ —'
   const numeric = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(numeric)) return String(value)
   return numeric.toLocaleString('pt-BR', {
@@ -32,4 +32,10 @@ export function formatShortDate(isoDate: string): string {
   const [, month, day] = isoDate.split('-')
   if (!month || !day) return isoDate
   return `${day}/${month}`
+}
+
+export function formatFullDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-')
+  if (!year || !month || !day) return isoDate
+  return `${day}/${month}/${year}`
 }

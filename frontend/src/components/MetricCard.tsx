@@ -28,9 +28,7 @@ export function MetricCard({
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
       <p className="mt-2 text-2xl font-semibold text-gray-900">
         {formatNumber(value)}
-        {value != null && unit && (
-          <span className="ml-1 text-sm font-normal text-gray-500">{unit}</span>
-        )}
+        {unit && <span className="ml-1 text-sm font-normal text-gray-500">{unit}</span>}
       </p>
       {barPercent != null && (
         <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
