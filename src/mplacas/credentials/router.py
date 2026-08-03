@@ -168,6 +168,7 @@ async def create_credential(
             ) from exc
         await AuditEventRepository(session).record(
             request,
+            organization_id=organization_id,
             action="credentials.create",
             resource_type="api_credential",
             resource_id=str(record.id),
@@ -223,6 +224,7 @@ async def revoke_credential(
             ) from exc
         await AuditEventRepository(session).record(
             request,
+            organization_id=organization_id,
             action="credentials.revoke",
             resource_type="api_credential",
             resource_id=str(record.id),
@@ -261,6 +263,7 @@ async def create_user(
             ) from exc
         await AuditEventRepository(session).record(
             request,
+            organization_id=organization_id,
             action="users.create",
             resource_type="operational_user",
             resource_id=str(record.id),
@@ -306,6 +309,7 @@ async def deactivate_user(
             ) from exc
         await AuditEventRepository(session).record(
             request,
+            organization_id=organization_id,
             action="users.deactivate",
             resource_type="operational_user",
             resource_id=str(record.id),

@@ -39,8 +39,8 @@ RLS_TABLES: dict[str, RlsTable] = {
     "utility_bills": RlsTable(RlsScope.PLANT, "plant_id"),
     "daily_energy": RlsTable(RlsScope.DEVICE, "device_id"),
     "daily_energy_versions": RlsTable(RlsScope.DAILY_ENERGY, "daily_energy_id"),
-    "alert_delivery_records": RlsTable(RlsScope.PLATFORM),
-    "audit_events": RlsTable(RlsScope.PLATFORM),
+    "alert_delivery_records": RlsTable(RlsScope.PLANT, "plant_id"),
+    "audit_events": RlsTable(RlsScope.ORGANIZATION, "organization_id"),
     "job_runs": RlsTable(RlsScope.PLATFORM),
     "login_rate_limits": RlsTable(RlsScope.PLATFORM),
 }

@@ -414,6 +414,16 @@ Baseline de validação deste ciclo:
     `mplacas-operational-watchdog-xqndh` concluíram. A inspeção Neon confirmou
     `mplacas_runtime` sem superuser, `CREATEDB`, `CREATEROLE` ou `BYPASSRLS`, nenhuma tabela com
     RLS habilitado/forçado e ausência intencional da futura role `mplacas_platform`.
+  - Policies e canário concluídos em 2026-08-02, sem ativação produtiva: migrations 0039/0040
+    adicionam tenant nullable à auditoria, escopo/deduplicação de alertas por planta e policies
+    fail-closed `USING`/`WITH CHECK` com
+    `ENABLE/FORCE` nas 24 tabelas. O canário Neon descartável `a051b1a5` aprovou catálogo 24/24/2,
+    CRUD cross-tenant, rollback para 0/0/0, re-upgrade para 24/24/2 e repetição dos testes; database
+    e roles efêmeras foram removidos. A migration exige aprovação literal por variável, impedindo
+    execução produtiva acidental. O listener transacional reaplica o contexto após `commit()` em
+    sessões reutilizadas. Validação local: **630 passed**, **5 skipped**, Ruff e Mypy
+    aprovados. O item permanece parcial somente até criar/conceder a role `mplacas_platform`, abrir
+    janela produtiva, executar a 0040 e aprovar smoke/watchdog conforme `RUNBOOK_RLS_ROLLOUT.md`.
 
 - [x] **P2-02 — escopar idempotência de faturas por usina/tenant.**
   - Substituir unicidade global de `source_hash` por constraint composta apropriada.

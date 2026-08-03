@@ -140,6 +140,7 @@ jobs:
       MPLACAS_DATABASE_URL: postgresql+asyncpg://postgres@localhost:5432/mplacas_test
       MPLACAS_TEST_POSTGRES_URL: postgresql+asyncpg://postgres@localhost:5432/mplacas_test
       MPLACAS_JWT_SECRET: postgres-integration-jwt-secret-at-least-32-bytes
+      MPLACAS_RLS_ACTIVATION_APPROVED: ENABLE-RLS-20260802
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5

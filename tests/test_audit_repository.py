@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -19,12 +20,14 @@ async def test_audit_event_records_actor_fingerprint_without_secret() -> None:
         await connection.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
+    organization_id = uuid.uuid4()
     request = SimpleNamespace(
         state=SimpleNamespace(
             request_id="audit-request-1",
             operations_principal=OperationsPrincipal(
                 role=OperationsRole.ADMIN,
                 credential_id="operations:admin:abc123",
+                organization_id=organization_id,
             ),
         )
     )
@@ -41,6 +44,7 @@ async def test_audit_event_records_actor_fingerprint_without_secret() -> None:
 
         event = (await session.execute(select(AuditEventRecord))).scalar_one()
         assert event.action == "billing.confirm"
+        assert event.organization_id == organization_id
         assert event.actor_role == "ADMIN"
         assert event.actor_credential_id == "operations:admin:abc123"
         assert event.request_id == "audit-request-1"

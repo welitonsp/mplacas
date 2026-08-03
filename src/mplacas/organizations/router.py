@@ -180,6 +180,7 @@ async def create_organization(
 
         await AuditEventRepository(session).record(
             request,
+            organization_id=organization.id,
             action="organizations.create",
             resource_type="organization",
             resource_id=str(organization.id),
@@ -247,6 +248,7 @@ async def create_invitation(
 
         await AuditEventRepository(session).record(
             request,
+            organization_id=organization_id,
             action="invitations.create",
             resource_type="user_invitation",
             resource_id=str(invitation.id),
@@ -305,6 +307,7 @@ async def revoke_invitation(
 
         await AuditEventRepository(session).record(
             request,
+            organization_id=organization_id,
             action="invitations.revoke",
             resource_type="user_invitation",
             resource_id=str(invitation_id),
@@ -381,6 +384,7 @@ async def update_organization(
 
         await AuditEventRepository(session).record(
             request,
+            organization_id=record.id,
             action="organizations.update",
             resource_type="organization",
             resource_id=str(record.id),
@@ -417,6 +421,7 @@ async def deactivate_organization(
 
         await AuditEventRepository(session).record(
             request,
+            organization_id=organization_id,
             action="organizations.deactivate",
             resource_type="organization",
             resource_id=str(record.id),

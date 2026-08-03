@@ -40,8 +40,6 @@ def test_rls_ownership_columns_exist_and_platform_tables_are_explicit() -> None:
         for table_name, policy in RLS_TABLES.items()
         if policy.scope is RlsScope.PLATFORM
     } == {
-        "alert_delivery_records",
-        "audit_events",
         "job_runs",
         "login_rate_limits",
     }

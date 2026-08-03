@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 
 import pytest
@@ -43,6 +44,7 @@ async def test_sql_ledger_persists_confirmed_delivery_and_deduplicates() -> None
     async with session_factory() as session:
         ledger = SqlAlertDeliveryLedger(
             session,
+            plant_id=uuid.uuid4(),
             provider="TELEGRAM",
             destination_ref="test-destination",
         )
@@ -77,7 +79,12 @@ async def test_job_reports_sent_skipped_and_failed_counts() -> None:
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
-        ledger = SqlAlertDeliveryLedger(session, provider="TELEGRAM", destination_ref="test")
+        ledger = SqlAlertDeliveryLedger(
+            session,
+            plant_id=uuid.uuid4(),
+            provider="TELEGRAM",
+            destination_ref="test",
+        )
         summary = await run_alert_dispatch_job(
             [
                 _alert("info", AlertSeverity.INFO),
@@ -92,4 +99,41 @@ async def test_job_reports_sent_skipped_and_failed_counts() -> None:
     assert summary.sent == 1
     assert summary.skipped == 1
     assert summary.failed == 1
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_delivery_fingerprint_is_deduplicated_per_plant() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    provider = RecordingProvider()
+    async with session_factory() as session:
+        first_plant = SqlAlertDeliveryLedger(
+            session,
+            plant_id=uuid.uuid4(),
+            provider="TELEGRAM",
+            destination_ref="test",
+        )
+        second_plant = SqlAlertDeliveryLedger(
+            session,
+            plant_id=uuid.uuid4(),
+            provider="TELEGRAM",
+            destination_ref="test",
+        )
+        first = await run_alert_dispatch_job(
+            [_alert("shared-fingerprint", AlertSeverity.WARNING)],
+            provider=provider,
+            ledger=first_plant,
+        )
+        second = await run_alert_dispatch_job(
+            [_alert("shared-fingerprint", AlertSeverity.WARNING)],
+            provider=provider,
+            ledger=second_plant,
+        )
+
+    assert first.sent == second.sent == 1
+    assert provider.fingerprints == ["shared-fingerprint", "shared-fingerprint"]
     await engine.dispose()

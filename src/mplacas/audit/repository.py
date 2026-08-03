@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from fastapi import Request
@@ -20,6 +21,12 @@ def _actor(request: Request) -> tuple[str, str]:
     return principal.role.value, principal.credential_id
 
 
+def _organization_id(request: Request) -> uuid.UUID | None:
+    principal = getattr(request.state, "operations_principal", None)
+    value = getattr(principal, "organization_id", None)
+    return value if isinstance(value, uuid.UUID) else None
+
+
 class AuditEventRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -33,9 +40,11 @@ class AuditEventRepository:
         resource_id: str | None,
         outcome: str,
         details: dict[str, Any] | None = None,
+        organization_id: uuid.UUID | None = None,
     ) -> AuditEventRecord:
         actor_role, actor_credential_id = _actor(request)
         event = AuditEventRecord(
+            organization_id=organization_id or _organization_id(request),
             action=action,
             resource_type=resource_type,
             resource_id=resource_id,

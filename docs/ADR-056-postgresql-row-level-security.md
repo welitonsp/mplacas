@@ -53,9 +53,13 @@ evitando rollout parcial inseguro.
 - roles runtime/migration separadas no Neon e verificadas por teste — **concluído em produção em
   2026-08-02**: `mplacas_runtime` está sem ownership e `BYPASSRLS`, enquanto `neondb_owner` ficou
   restrito ao endpoint direto de migrations;
-- migrations com policies `USING` e `WITH CHECK`, `ENABLE` e `FORCE RLS`;
-- testes PostgreSQL de leitura, inserção, atualização e exclusão cross-tenant;
-- canário em branch Neon descartável, métricas de violações e rollback ensaiado.
+- migrations com policies `USING` e `WITH CHECK`, `ENABLE` e `FORCE RLS` — **concluído em
+  2026-08-02** nas revisões 0039/0040, com trava de aprovação explícita;
+- testes PostgreSQL de leitura, inserção, atualização e exclusão cross-tenant — **concluído em
+  2026-08-02** para ownership direto, planta, dispositivo, energia diária, auditoria e plataforma;
+- canário isolado e rollback ensaiado — **concluído em banco Neon descartável em 2026-08-02**;
+  produção permaneceu com zero tabelas RLS. A criação pelo painel de uma branch Neon separada não
+  foi possível sem sessão autenticada, por isso o ensaio usou database isolado no endpoint direto.
 
 Até os gates restantes serem atendidos, filtros de aplicação continuam sendo o controle produtivo
 e o item permanece parcial no checklist. Não habilitar policies nas tabelas reais antes do canário
@@ -73,3 +77,20 @@ em branch descartável, da modelagem tenant de auditoria e da autorização mín
 - O PR #93 foi integrado e implantado na revisão `mplacas-api-00017-vst`; `/health`, `/ready`,
   smoke e watchdog foram aprovados. A inspeção posterior confirmou zero tabelas com RLS
   habilitado/forçado e a role runtime ainda sem `BYPASSRLS`.
+
+## Evidência do canário de policies — 2026-08-02
+
+- `audit_events` ganhou `organization_id` nullable e `alert_delivery_records` ganhou `plant_id`
+  nullable com deduplicação por planta, preservando registros históricos de plataforma.
+- O contexto gravado em `session.info` é reaplicado automaticamente após cada novo `BEGIN`,
+  cobrindo serviços que fazem `commit()` e reutilizam a mesma sessão.
+- A migration 0040 cobre exatamente as 24 tabelas do inventário e exige a aprovação literal
+  `MPLACAS_RLS_ACTIVATION_APPROVED=ENABLE-RLS-20260802`.
+- O canário final `mplacas_rls_canary_20260803_a051b1a5` confirmou 24 tabelas com
+  `ENABLE/FORCE`, 24
+  policies e duas funções auxiliares; os testes PostgreSQL cross-tenant passaram.
+- O downgrade para 0039 confirmou zero tabela protegida, zero policy e zero função; o re-upgrade
+  restaurou 24/24/2 e os testes passaram novamente.
+- O database e todas as roles efêmeras foram removidos. Produção continuou com zero RLS ativo.
+- O ciclo opcional de toda a história até `base` encontrou oscilação de conexão durante migrations
+  antigas; ele permanece disponível por `--full-history-cycle`, mas não integra o gate da 0040.
