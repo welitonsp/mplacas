@@ -11,6 +11,8 @@ Data: 2026-08-02. Estado: policies aprovadas em canário; **não ativadas em pro
 - `alert_delivery_records.plant_id` é nullable para preservar histórico; novos registros são
   isolados e deduplicados por planta.
 - O contexto é restaurado automaticamente em cada transação após `commit()`.
+- O helper aceita UUID canônico de qualquer versão, inclusive IDs legados sentinela com nibble de
+  versão `0`; o teste PostgreSQL usa explicitamente `00000000-0000-0000-0000-000000000001/2`.
 - A migration 0040 recusa upgrade sem
   `MPLACAS_RLS_ACTIVATION_APPROVED=ENABLE-RLS-20260802`.
 - `scripts/validate-rls-canary.py` cria e remove um database descartável com nome protegido.
@@ -77,6 +79,14 @@ O job normal não recebe a variável de aprovação e deve falhar fechado na 004
 6. Monitore erros de policy, HTTP 5xx e latência por pelo menos uma janela operacional definida.
 
 Não habilite a variável no serviço web e não a salve em Secret Manager.
+
+### Incidente preventivo do primeiro rollout — 2026-08-03
+
+A primeira execução da 0040 foi revertida para 0039 antes do aceite porque o helper original
+restringia UUIDs às versões RFC 1–5 e as organizações produtivas usam IDs canônicos legados com
+versão `0`. O fail-closed retornou zero linhas, exatamente como projetado, mas também para o tenant
+válido. A migration 0041 relaxa somente o nibble de versão, preserva formato canônico estrito e o
+canário passou a usar os IDs sentinela. Não reativar produção sem head 0041 e essa prova verde.
 
 ## Rollback
 
