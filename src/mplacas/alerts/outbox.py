@@ -211,6 +211,7 @@ async def _dispatch_event(
 
     ledger = SqlAlertDeliveryLedger(
         session,
+        plant_id=event.plant_id,
         provider="telegram",
         destination_ref=destination_ref,
     )

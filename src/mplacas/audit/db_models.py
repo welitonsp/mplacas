@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, JSON, String, func
+from sqlalchemy import DateTime, ForeignKey, Index, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from mplacas.db.base import Base
@@ -18,6 +18,11 @@ class AuditEventRecord(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     action: Mapped[str] = mapped_column(String(80), index=True)
     resource_type: Mapped[str] = mapped_column(String(80), index=True)
     resource_id: Mapped[str | None] = mapped_column(String(128), nullable=True)

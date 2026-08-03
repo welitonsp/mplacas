@@ -16,6 +16,7 @@ from mplacas.db.tenant_context import (
 async def test_tenant_context_is_transaction_local_and_disables_bypass() -> None:
     session = AsyncMock(spec=AsyncSession)
     session.get_bind.return_value = None
+    session.in_transaction.return_value = True
     session.info = {}
     organization_id = uuid.uuid4()
 
@@ -27,29 +28,38 @@ async def test_tenant_context_is_transaction_local_and_disables_bypass() -> None
         first.args[0]
     )
     assert first.args[1] == {"organization_id": str(organization_id)}
-    assert "set_config('mplacas.platform_bypass', 'off', true)" in str(second.args[0])
+    assert "set_config('mplacas.platform_bypass', :platform_bypass, true)" in str(
+        second.args[0]
+    )
+    assert second.args[1] == {"platform_bypass": "off"}
 
 
 async def test_platform_context_is_explicit_and_clears_tenant() -> None:
     session = AsyncMock(spec=AsyncSession)
     session.get_bind.return_value = None
+    session.in_transaction.return_value = True
     session.info = {}
 
     await set_platform_context(session)
 
     statements = [str(call.args[0]) for call in session.execute.await_args_list]
     assert statements == [
-        "SELECT set_config('mplacas.organization_id', '', true)",
-        "SELECT set_config('mplacas.platform_bypass', 'on', true)",
+        "SELECT set_config('mplacas.organization_id', :organization_id, true)",
+        "SELECT set_config('mplacas.platform_bypass', :platform_bypass, true)",
     ]
+    first, second = session.execute.await_args_list
+    assert first.args[1] == {"organization_id": ""}
+    assert second.args[1] == {"platform_bypass": "on"}
 
 
 async def test_principal_context_selects_tenant_or_platform() -> None:
     tenant_session = AsyncMock(spec=AsyncSession)
     tenant_session.get_bind.return_value = None
+    tenant_session.in_transaction.return_value = True
     tenant_session.info = {}
     platform_session = AsyncMock(spec=AsyncSession)
     platform_session.get_bind.return_value = None
+    platform_session.in_transaction.return_value = True
     platform_session.info = {}
     organization_id = uuid.uuid4()
 

@@ -17,12 +17,14 @@ class SqlAlertDeliveryLedger:
         self,
         session: AsyncSession,
         *,
+        plant_id: uuid.UUID,
         provider: str,
         destination_ref: str,
     ) -> None:
         if not provider.strip() or not destination_ref.strip():
             raise ValueError("provider and destination_ref cannot be blank")
         self._session = session
+        self._plant_id = plant_id
         self._provider = provider.strip()
         self._destination_ref = destination_ref.strip()
 
@@ -31,7 +33,8 @@ class SqlAlertDeliveryLedger:
             raise ValueError("fingerprint cannot be blank")
         result = await self._session.execute(
             select(AlertDeliveryRecord.id).where(
-                AlertDeliveryRecord.fingerprint == fingerprint
+                AlertDeliveryRecord.plant_id == self._plant_id,
+                AlertDeliveryRecord.fingerprint == fingerprint,
             )
         )
         return result.scalar_one_or_none() is not None
@@ -41,6 +44,7 @@ class SqlAlertDeliveryLedger:
             raise ValueError("fingerprint cannot be blank")
         values = {
             "id": uuid.uuid4(),
+            "plant_id": self._plant_id,
             "fingerprint": fingerprint,
             "provider": self._provider,
             "destination_ref": self._destination_ref,
@@ -50,13 +54,13 @@ class SqlAlertDeliveryLedger:
             await self._session.execute(
                 postgresql_insert(AlertDeliveryRecord)
                 .values(**values)
-                .on_conflict_do_nothing(index_elements=["fingerprint"])
+                .on_conflict_do_nothing(index_elements=["plant_id", "fingerprint"])
             )
         elif dialect == "sqlite":
             await self._session.execute(
                 sqlite_insert(AlertDeliveryRecord)
                 .values(**values)
-                .on_conflict_do_nothing(index_elements=["fingerprint"])
+                .on_conflict_do_nothing(index_elements=["plant_id", "fingerprint"])
             )
         else:
             raise RuntimeError("alert delivery ledger requires PostgreSQL or SQLite")

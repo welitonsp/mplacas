@@ -51,6 +51,12 @@ async def test_rls_is_fail_closed_and_platform_bypass_is_role_gated() -> None:
             await connection.execute(text(f"CREATE ROLE {marker_role} NOLOGIN"))
             await connection.execute(text(f"CREATE ROLE {tenant_role} NOLOGIN"))
             await connection.execute(text(f"CREATE ROLE {platform_role} NOLOGIN"))
+            await connection.execute(
+                text(
+                    f"GRANT {tenant_role}, {platform_role} "
+                    "TO CURRENT_USER WITH SET TRUE"
+                )
+            )
             await connection.execute(text(f"GRANT {marker_role} TO {platform_role}"))
             await connection.execute(
                 text(
@@ -95,6 +101,8 @@ async def test_rls_is_fail_closed_and_platform_bypass_is_role_gated() -> None:
     finally:
         async with engine.begin() as connection:
             await connection.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
+            await connection.execute(text(f"DROP OWNED BY {platform_role}"))
+            await connection.execute(text(f"DROP OWNED BY {tenant_role}"))
             await connection.execute(text(f"DROP ROLE IF EXISTS {platform_role}"))
             await connection.execute(text(f"DROP ROLE IF EXISTS {tenant_role}"))
             await connection.execute(text(f"DROP ROLE IF EXISTS {marker_role}"))

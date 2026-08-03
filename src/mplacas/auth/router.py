@@ -396,6 +396,7 @@ async def accept_invitation(
 
     await AuditEventRepository(session).record(
         request,
+        organization_id=invitation.organization_id,
         action="invitations.accept",
         resource_type="user_invitation",
         resource_id=str(invitation.id),
