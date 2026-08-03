@@ -17,7 +17,7 @@ def test_python_locks_pin_every_requirement_with_hashes() -> None:
         assert "--hash=sha256:" in content
 
     dev_lock = (ROOT / "requirements-dev.lock").read_text(encoding="utf-8")
-    assert "editables==0.5" in dev_lock
+    assert "editables==0.6" in dev_lock
 
 
 def test_images_and_actions_are_immutable() -> None:

@@ -20,23 +20,28 @@ Legenda: `[x]` concluído, `[~]` parcial, `[ ]` pendente.
   fonte de verdade para o build. Este checklist (sessão 1, 2026-07-30) estava desatualizado sobre
   isso; reconciliado nesta sessão.
 
-- [ ] **Dependabot do grupo `python-runtime` bumpa `pyproject.toml`, não o lockfile — merge sem
-  efeito real no build.** Confirmado ao mesclar o PR #76 (`chore(deps): bump the python-runtime
-  group with 5 updates`, 2026-08-03): o diff tocou só `pyproject.toml` (5 ranges alterados —
-  reportlab, argon2-cffi, google-cloud-storage, editables, mypy). `requirements.lock` e
-  `requirements-dev.lock` continuam pinados nas versões antigas (`reportlab==4.5.1`,
-  `argon2-cffi==23.1.0`, `google-cloud-storage==2.19.0`, `mypy==1.20.2`, `editables==0.5`) — como
-  o build instala com `--require-hashes` a partir do lockfile, essas 5 dependências **não foram
-  atualizadas de fato** em runtime nem em CI, apesar do PR aparecer como mesclado e verde.
-  Diferente do grupo `frontend` (PR #75), cujo Dependabot regenerou `package-lock.json`
-  automaticamente (3122 linhas alteradas) — o ecossistema npm faz isso nativamente, o pip-compile
-  não. Ação: após qualquer merge do grupo `python-runtime`, regenerar os lockfiles com os comandos
-  já documentados em `SUPPLY_CHAIN_POLICY.md:24-27`
-  (`pip-compile pyproject.toml --generate-hashes --strip-extras --allow-unsafe
-  --output-file=requirements.lock`, idem com `--extra dev` para o dev-lock), rodar o
-  `--dry-run --require-hashes` de verificação, e só então considerar a dependência de fato
-  atualizada. Vale considerar automatizar esse passo (hook de CI que falha se o lockfile ficar
-  atrás do `pyproject.toml` após um merge do Dependabot) para não repetir este gap.
+- [x] **Dependabot do grupo `python-runtime` bumpa `pyproject.toml`, não o lockfile — gap
+  detectado e corrigido nesta sessão (2026-08-03).** Ao mesclar o PR #76 (`chore(deps): bump the
+  python-runtime group with 5 updates`), o diff tocou só `pyproject.toml`; `requirements.lock` e
+  `requirements-dev.lock` continuaram pinados nas versões antigas
+  (`reportlab==4.5.1`, `argon2-cffi==23.1.0`, `google-cloud-storage==2.19.0`, `mypy==1.20.2`,
+  `editables==0.5`), então as 5 dependências não tinham sido atualizadas de fato em runtime/CI
+  apesar do PR aparecer mesclado e verde. Regenerado com
+  `pip-compile pyproject.toml --generate-hashes --strip-extras --allow-unsafe
+  --upgrade-package <nome> --output-file=requirements.lock` (idem com `--extra dev` +
+  `mypy`/`editables` para o dev-lock) — usar `--upgrade-package` por nome é necessário porque o
+  pip-compile, por padrão, preserva os pins existentes que ainda satisfazem o range e não teria
+  de fato bumpado nada. Resultado: `argon2-cffi==25.1.0`, `google-cloud-storage==3.13.0`,
+  `reportlab==5.0.0`, `mypy==2.3.0`, `editables==0.6` (mais a transitiva nova `ast-serialize`
+  trazida pelo mypy 2.3.0). Um teste de contrato (`test_supply_chain_contract.py:20`) tinha
+  `editables==0.5` hardcoded e precisou ser atualizado junto. Validado com
+  `pip install --dry-run --require-hashes` (hashes batem) e suíte completa: ruff limpo, mypy
+  limpo (181 arquivos, já sob o próprio mypy 2.3.0), 631 testes passando/5 skipped — sem regressão
+  do salto maior de mypy nem do reportlab (usado no exportador de PDF).
+  **Risco residual, não automatizado:** nada no CI hoje detecta esse gap sozinho — se a próxima
+  IA/sessão mesclar um PR do grupo `python-runtime` sem regenerar o lockfile em seguida, o mesmo
+  problema se repete silenciosamente. Vale um hook de CI que falhe se o lockfile ficar atrás do
+  `pyproject.toml` após merge do Dependabot.
 
 ## P2 — Automação de guardrail de custo/infra
 
@@ -53,14 +58,14 @@ Legenda: `[x]` concluído, `[~]` parcial, `[ ]` pendente.
 
 | Categoria | Concluídos | Parciais | Pendentes |
 |---|---:|---:|---:|
-| P1 (build reprodutível) | 1 | 0 | 1 |
+| P1 (build reprodutível) | 2 | 0 | 0 |
 | P2 (automação de guardrail) | 0 | 0 | 1 |
 
-Nenhum item pendente é uma falha de segurança ativa (diferente do gap de `organization_id` em
-`CHECKLIST_SAAS_MULTITENANCY.md`, que é P0). O item de lockfile-desatualizado-pelo-Dependabot é
-importante mas não urgente: as versões antigas continuam hash-pinadas e instaláveis normalmente,
-só não recebem os bumps que os PRs aparentam entregar. São lacunas de maturidade operacional —
-vale planejar, não tratar como incidente.
+O único item pendente (`audit-costs.sh` manual) não é falha de segurança ativa (diferente do gap
+de `organization_id` em `CHECKLIST_SAAS_MULTITENANCY.md`, que é P0) — é lacuna de maturidade
+operacional, vale planejar, não tratar como incidente. O risco residual de automação do lockfile
+(ver item acima) também não é urgente pelo mesmo motivo: sem o hook de CI, o gap só se repete se
+alguém mesclar o próximo bump do grupo `python-runtime` sem regenerar o lockfile em seguida.
 
 ## PR #70 (Docker Python 3.12 → 3.14) — mantido em aberto deliberadamente
 
