@@ -35,12 +35,31 @@ readonly MPLACAS_SECRET_NAMES=(
   "$SECRET_NEP_PASSWORD"
 )
 
+# Single source of truth for every Cloud Scheduler job this project is
+# expected to own. audit-costs.sh treats anything named `~mplacas` that is
+# NOT in this list as a prohibited/unexpected resource. Keep this in sync
+# with provision-operations.sh (OPERATIONAL_COMMANDS) and
+# provision-cost-audit.sh whenever a job is added or removed.
+# shellcheck disable=SC2034
+readonly MPLACAS_EXPECTED_SCHEDULER_JOBS=(
+  "mplacas-collect"
+  "mplacas-daily-pipeline"
+  "mplacas-dispatch-outbox"
+  "mplacas-drain-collection"
+  "mplacas-drain-report-exports"
+  "mplacas-daily-digest"
+  "mplacas-operational-watchdog"
+  "mplacas-retention"
+  "mplacas-cost-audit"
+)
+
 : "${GCP_PROJECT_ID:=}"
 : "${GCP_REGION:=}"
 : "${GCP_SERVICE_NAME:=}"
 : "${GCP_MIGRATION_JOB_NAME:=}"
 : "${GCP_RUNTIME_SERVICE_ACCOUNT:=}"
 : "${GCP_SCHEDULER_SERVICE_ACCOUNT:=mplacas-scheduler}"
+: "${MPLACAS_AUDITOR_SERVICE_ACCOUNT:=mplacas-auditor}"
 : "${GCP_OPERATIONAL_JOB_PREFIX:=mplacas}"
 : "${GCP_MONITORING_NOTIFICATION_CHANNELS:=}"
 : "${GCP_MIN_INSTANCES:=}"
@@ -85,8 +104,18 @@ config_file() {
 load_config() {
   local file
   file="$(config_file)"
-  [[ -f "$file" ]] || die \
-    "config file not found; copy infra/gcp/config.example.env to infra/gcp/config.env"
+
+  if [[ ! -f "$file" ]]; then
+    # Scheduled/automated runs (e.g. the Cloud Run Job container for
+    # audit-costs.sh) have no config.env on disk — config.env is
+    # deliberately never committed. MPLACAS_CONFIG_FROM_ENV=1 opts into
+    # sourcing configuration straight from the process environment instead;
+    # validate_config() below still enforces the same rules either way.
+    [[ "${MPLACAS_CONFIG_FROM_ENV:-}" == "1" ]] || die \
+      "config file not found; copy infra/gcp/config.example.env to infra/gcp/config.env"
+    validate_config
+    return
+  fi
 
   # shellcheck source=/dev/null
   source "$file"
@@ -136,6 +165,15 @@ validate_billing_enabled() {
       --format='value(billingEnabled)'
   )"
   [[ "$enabled" == "True" ]] || die "billing must be enabled before deployment"
+}
+
+scheduler_job_is_expected() {
+  local job_name="$1"
+  local expected
+  for expected in "${MPLACAS_EXPECTED_SCHEDULER_JOBS[@]}"; do
+    [[ "$job_name" == "$expected" ]] && return 0
+  done
+  return 1
 }
 
 validate_config() {
@@ -228,6 +266,12 @@ scheduler_service_account_email() {
     "$GCP_PROJECT_ID"
 }
 
+auditor_service_account_email() {
+  printf '%s@%s.iam.gserviceaccount.com\n' \
+    "$MPLACAS_AUDITOR_SERVICE_ACCOUNT" \
+    "$GCP_PROJECT_ID"
+}
+
 ensure_scheduler_service_account() {
   local email
   email="$(scheduler_service_account_email)"
@@ -260,6 +304,23 @@ ensure_runtime_service_account() {
     --description="Least-privilege runtime identity for Mplacas Cloud Run" \
     --project "$GCP_PROJECT_ID"
   log "runtime service account created"
+}
+
+ensure_auditor_service_account() {
+  local email
+  email="$(auditor_service_account_email)"
+
+  if gcloud iam service-accounts describe "$email" \
+    --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
+    log "auditor service account already exists"
+    return
+  fi
+
+  gcloud iam service-accounts create "$MPLACAS_AUDITOR_SERVICE_ACCOUNT" \
+    --display-name="Mplacas cost-audit read-only identity" \
+    --description="Least-privilege identity for the automated audit-costs.sh Cloud Run Job; never holds secretAccessor or billing.viewer" \
+    --project "$GCP_PROJECT_ID"
+  log "auditor service account created"
 }
 
 ensure_runtime_trace_access() {

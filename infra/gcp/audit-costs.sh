@@ -15,6 +15,28 @@ fail_if_output() {
   fi
 }
 
+audit_scheduler_jobs() {
+  local job_name
+  local unexpected=()
+
+  while IFS= read -r job_name; do
+    [[ -n "$job_name" ]] || continue
+    scheduler_job_is_expected "$job_name" || unexpected+=("$job_name")
+  done < <(
+    gcloud scheduler jobs list \
+      --location "$GCP_REGION" \
+      --project "$GCP_PROJECT_ID" \
+      --filter='name~mplacas' \
+      --format='value(name.basename())'
+  )
+
+  if ((${#unexpected[@]} > 0)); then
+    printf '%s\n' "${unexpected[@]}" >&2
+    die "prohibited resource detected: Cloud Scheduler"
+  fi
+  log "Cloud Scheduler jobs match the allowlist"
+}
+
 audit_secret_versions() {
   local secret_name
   local enabled_count
@@ -38,7 +60,17 @@ require_gcloud
 require_authenticated_gcloud
 require_python
 configure_gcloud_project
-validate_billing_enabled
+
+# Billing scope (roles/billing.viewer) lives outside the project's IAM
+# policy. The automated Cloud Run Job (mplacas-cost-audit) runs under a
+# project-scoped service account that deliberately does not hold it, so the
+# scheduled job opts out of this single check via MPLACAS_AUDIT_SKIP_BILLING.
+# Every other guardrail in this script still runs unconditionally.
+if [[ "${MPLACAS_AUDIT_SKIP_BILLING:-}" == "1" ]]; then
+  warn "skipping billing check (MPLACAS_AUDIT_SKIP_BILLING=1)"
+else
+  validate_billing_enabled
+fi
 
 if gcloud run services describe "$GCP_SERVICE_NAME" \
   --region "$GCP_REGION" \
@@ -99,13 +131,7 @@ if api_enabled "vpcaccess.googleapis.com"; then
 fi
 
 if api_enabled "cloudscheduler.googleapis.com"; then
-  fail_if_output "Cloud Scheduler" "$(
-    gcloud scheduler jobs list \
-      --location "$GCP_REGION" \
-      --project "$GCP_PROJECT_ID" \
-      --filter='name~mplacas' \
-      --format='value(name)'
-  )"
+  audit_scheduler_jobs
 fi
 
 log "cost audit completed in read-only mode"

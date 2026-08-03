@@ -5,7 +5,7 @@
   "userLabels": {
     "managed_by": "mplacas",
     "mplacas_policy_id": "operational_job_failure",
-    "version": "v1"
+    "version": "v2"
   },
   "documentation": {
     "mimeType": "text/markdown",
@@ -18,7 +18,7 @@
     {
       "displayName": "Execução operacional concluída com falha",
       "conditionThreshold": {
-        "filter": "resource.type=\"cloud_run_job\" AND resource.labels.location=\"${GCP_REGION}\" AND resource.labels.job_name=monitoring.regex.full_match(\"${GCP_OPERATIONAL_JOB_PREFIX}-(collect|daily-pipeline|dispatch-outbox|drain-collection|drain-report-exports|daily-digest|retention|operational-watchdog)\") AND metric.type=\"run.googleapis.com/job/completed_execution_count\" AND metric.labels.result!=\"succeeded\"",
+        "filter": "resource.type=\"cloud_run_job\" AND resource.labels.location=\"${GCP_REGION}\" AND resource.labels.job_name=monitoring.regex.full_match(\"${GCP_OPERATIONAL_JOB_PREFIX}-(collect|daily-pipeline|dispatch-outbox|drain-collection|drain-report-exports|daily-digest|retention|operational-watchdog|cost-audit)\") AND metric.type=\"run.googleapis.com/job/completed_execution_count\" AND metric.labels.result!=\"succeeded\"",
         "aggregations": [
           {
             "alignmentPeriod": "300s",

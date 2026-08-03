@@ -12,6 +12,7 @@ SCRIPT_NAMES = {
     "deploy-service.sh",
     "destroy-resources.sh",
     "lib.sh",
+    "provision-cost-audit.sh",
     "provision-operations.sh",
     "rotate-operations-key.sh",
     "run-migrations.sh",
@@ -243,7 +244,7 @@ def test_no_prohibited_privilege_or_failure_masking_patterns() -> None:
         for path in sorted(GCP_DIR.glob("*.sh"))
         if "scheduler jobs create" in path.read_text(encoding="utf-8").lower()
     ]
-    assert scheduler_mutators == ["provision-operations.sh"]
+    assert scheduler_mutators == ["provision-cost-audit.sh", "provision-operations.sh"]
 
 
 def test_ci_validates_bash_contract() -> None:
@@ -306,7 +307,12 @@ def test_monitoring_policies_are_versioned_and_upserted_with_stable_cli() -> Non
         "operational_watchdog_absence",
     }
     assert all(policy["enabled"] is True for policy in policies.values())
-    assert all(policy["userLabels"]["version"] == "v1" for policy in policies.values())
+    assert (
+        policies["operational-job-failure.json"]["userLabels"]["version"] == "v2"
+    )
+    assert (
+        policies["operational-watchdog-absence.json"]["userLabels"]["version"] == "v1"
+    )
     assert all("name" not in policy for policy in policies.values())
 
     failure_filter = policies["operational-job-failure.json"]["conditions"][0][

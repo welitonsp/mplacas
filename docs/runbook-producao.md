@@ -306,6 +306,54 @@ Confirme:
 - nenhum segredo em logs, commits ou capturas;
 - orçamento e alertas de custo ativos.
 
+## 17. Automatizar `audit-costs.sh` (Cloud Scheduler + Cloud Run Job)
+
+Além da execução manual acima, o guardrail roda automaticamente todo dia às `04:00`
+(`MPLACAS_TIMEZONE`) através de um Cloud Run Job dedicado (`mplacas-cost-audit`) disparado por
+Cloud Scheduler, sob uma identidade só-leitura (`mplacas-auditor`) que nunca recebe
+`roles/secretmanager.secretAccessor` nem `roles/billing.viewer` (esse último está fora do escopo
+do projeto; o job pula esse check específico via `MPLACAS_AUDIT_SKIP_BILLING=1`, mantendo todas as
+outras verificações ativas). Provisionar/atualizar com:
+
+```bash
+bash infra/gcp/provision-cost-audit.sh
+```
+
+Este script constrói a imagem a partir de `infra/gcp/Dockerfile.audit` (não a imagem principal da
+aplicação — não contém código-fonte nem segredos), cria/atualiza a service account
+`mplacas-auditor`, o Cloud Run Job `mplacas-cost-audit` e o schedule diário. É idempotente e exige
+confirmação explícita (`PROVISION-COST-AUDIT-<project-id>`).
+
+### Achado corrigido nesta automação: falso-positivo no allowlist do Cloud Scheduler
+
+Antes desta automação, `audit-costs.sh` falhava (`fail_if_output`) para **qualquer** Cloud
+Scheduler job com nome `~mplacas` — incluindo os 8 schedulers legítimos já criados por
+`infra/gcp/provision-operations.sh` (`mplacas-collect`, `mplacas-daily-pipeline`, etc.). Rodar o
+guardrail em modo agendado teria disparado alerta de "recurso proibido" a cada execução, contra a
+própria infraestrutura operacional do projeto. Corrigido trocando a regra "qualquer scheduler
+`~mplacas` falha" por uma allowlist (`MPLACAS_EXPECTED_SCHEDULER_JOBS` em `infra/gcp/lib.sh`, fonte
+única de verdade também consultada por `provision-operations.sh` e `provision-cost-audit.sh`): só
+falha um scheduler `~mplacas` que **não** esteja nessa lista conhecida.
+
+### Como responder ao alerta `Mplacas - falha em Cloud Run Job operacional`
+
+O job `mplacas-cost-audit` está incluído na mesma política de monitoramento usada pelos demais
+jobs operacionais (`infra/gcp/monitoring/operational-job-failure.json`). Se o alerta disparar com
+`resource.labels.job_name="mplacas-cost-audit"`:
+
+1. Abra os logs da execução mais recente do job no Cloud Run.
+2. Se a falha for `prohibited resource detected: ...`, há um recurso `~mplacas` real fora do
+   allowlist (Cloud SQL, Compute Engine, Load Balancer, VPC Connector ou Cloud Scheduler não
+   provisionado por `provision-operations.sh`/`provision-cost-audit.sh`) — investigue e remova o
+   recurso, ou, se for legítimo e esperado, adicione-o a `MPLACAS_EXPECTED_SCHEDULER_JOBS` (ou
+   ajuste o guardrail correspondente) em um PR revisado.
+3. Se a falha for de permissão (`PERMISSION_DENIED`), confirme que `mplacas-auditor` ainda possui
+   os papéis listados em `infra/gcp/provision-cost-audit.sh` (`AUDITOR_ROLES`) — nunca conceda
+   `roles/secretmanager.secretAccessor` ou `roles/billing.viewer` a essa identidade.
+4. Depois de corrigir, rode `bash infra/gcp/audit-costs.sh` manualmente (com `MPLACAS_CONFIG_FROM_ENV`
+   não setado, usando `config.env` local) para confirmar que o guardrail passa antes de aguardar a
+   próxima execução agendada.
+
 ## Atualizações futuras
 
 ```bash

@@ -70,6 +70,20 @@ job_name() {
   printf '%s-%s\n' "$GCP_OPERATIONAL_JOB_PREFIX" "$1"
 }
 
+# Keeps this script's job list in sync with the guardrail allowlist that
+# audit-costs.sh enforces (infra/gcp/lib.sh:MPLACAS_EXPECTED_SCHEDULER_JOBS).
+# A command deployed here but missing from the allowlist would make the next
+# audit-costs.sh run falsely flag it as a prohibited resource.
+require_operational_commands_are_allowlisted() {
+  local command_name
+  local name
+  for command_name in "${OPERATIONAL_COMMANDS[@]}"; do
+    name="$(job_name "$command_name")"
+    scheduler_job_is_expected "$name" || die \
+      "operational command missing from MPLACAS_EXPECTED_SCHEDULER_JOBS: ${name}"
+  done
+}
+
 deploy_job() {
   local command_name="$1"
   local name
@@ -144,6 +158,7 @@ require_authenticated_gcloud
 require_python
 configure_gcloud_project
 validate_billing_enabled
+require_operational_commands_are_allowlisted
 require_operational_config
 ensure_runtime_service_account
 ensure_scheduler_service_account

@@ -15,6 +15,17 @@ def test_dockerfile_uses_cloud_run_entrypoint_and_non_root_user() -> None:
     assert "mypy" not in dockerfile
 
 
+def test_audit_dockerfile_uses_non_root_user_and_isolated_entrypoint() -> None:
+    dockerfile = Path("infra/gcp/Dockerfile.audit").read_text(encoding="utf-8")
+
+    assert "USER mplacas" in dockerfile
+    assert 'ENTRYPOINT ["bash", "infra/gcp/audit-costs.sh"]' in dockerfile
+    assert "COPY infra/gcp/audit-costs.sh infra/gcp/lib.sh ./infra/gcp/" in dockerfile
+    assert "pytest" not in dockerfile
+    assert "ruff" not in dockerfile
+    assert "mypy" not in dockerfile
+
+
 def test_dockerignore_excludes_local_state_and_sensitive_artifacts() -> None:
     patterns = set(Path(".dockerignore").read_text(encoding="utf-8").splitlines())
 
