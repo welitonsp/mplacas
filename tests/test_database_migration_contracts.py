@@ -152,6 +152,28 @@ def test_auth_session_family_migration_is_present() -> None:
     assert 'batch.create_index("ix_auth_sessions_family_id"' in source
 
 
+def test_nullable_foreign_keys_have_indexes_in_migration_and_orm() -> None:
+    from mplacas.auth.db_models import AuthSessionRecord
+    from mplacas.organizations.invitation_db_models import UserInvitationRecord
+
+    source = (
+        ROOT / "migrations" / "versions" / "20260802_0038_add_foreign_key_indexes.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision = "20260802_0038"' in source
+    assert 'down_revision = "20260802_0037"' in source
+    for index_name in (
+        "ix_auth_sessions_replaced_by_session_id",
+        "ix_user_invitations_created_by_user_id",
+        "ix_user_invitations_accepted_user_id",
+    ):
+        assert index_name in source
+
+    assert AuthSessionRecord.__table__.c.replaced_by_session_id.index is True
+    assert UserInvitationRecord.__table__.c.created_by_user_id.index is True
+    assert UserInvitationRecord.__table__.c.accepted_user_id.index is True
+
+
 def test_bill_tariff_fields_migration_is_present() -> None:
     source = (
         ROOT / "migrations" / "versions" / "20260801_0028_add_bill_tariff_fields.py"
