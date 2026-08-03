@@ -308,10 +308,19 @@ async def test_application_rls_enforces_crud_and_every_ownership_chain() -> None
             await _set_local_role(session, platform_role)
             await set_platform_context(session)
             assert (
-                await session.execute(text("SELECT count(*) FROM organizations"))
+                await session.execute(
+                    text(
+                        "SELECT count(*) FROM organizations "
+                        "WHERE id IN (:org_a, :org_b)"
+                    ),
+                    {"org_a": org_a, "org_b": org_b},
+                )
             ).scalar_one() == 2
             assert (
-                await session.execute(text("SELECT count(*) FROM job_runs"))
+                await session.execute(
+                    text("SELECT count(*) FROM job_runs WHERE id = :id"),
+                    {"id": job_run_id},
+                )
             ).scalar_one() == 1
     finally:
         async with engine.begin() as connection:
