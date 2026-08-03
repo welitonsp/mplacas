@@ -590,26 +590,7 @@ PY
 validate_database_endpoint_file() {
   local file="$1"
   local expected="$2"
-  python3 - "$file" "$expected" <<'PY'
-import pathlib
-import sys
-from urllib.parse import urlsplit
-
-path = pathlib.Path(sys.argv[1])
-expected = sys.argv[2]
-value = path.read_text(encoding="utf-8").strip()
-parsed = urlsplit(value)
-if parsed.scheme not in {"postgres", "postgresql", "postgresql+asyncpg"}:
-    raise SystemExit("a connection string deve ser PostgreSQL")
-if not parsed.hostname:
-    raise SystemExit("a connection string não contém hostname")
-host = parsed.hostname.lower()
-if not (host == "neon.tech" or host.endswith(".neon.tech")):
-    raise SystemExit("o endpoint deve pertencer ao Neon")
-is_pooler = "-pooler." in host
-if expected == "runtime" and not is_pooler:
-    raise SystemExit("database-runtime exige endpoint pooled (-pooler)")
-if expected == "migration" and is_pooler:
-    raise SystemExit("database-migration exige endpoint direto, sem -pooler")
-PY
+  local library_dir
+  library_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  python3 "${library_dir}/validate_database_url.py" "$file" "$expected"
 }

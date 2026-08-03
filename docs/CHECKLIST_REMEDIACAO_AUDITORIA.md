@@ -1,6 +1,6 @@
 # Checklist de remediação — Auditorias técnicas Mplacas
 
-Última atualização: 2026-08-02 (P0-04 encerrado; versões antigas desativadas e deploy padrão validado)
+Última atualização: 2026-08-02 (Neon e Cloudflare endurecidos; rollout RLS ainda parcial)
 
 Base do novo ciclo: `HEAD b73e97e`. Implementação integrada em `main` pelo merge commit
 `b888b4b3c91244a6c2fd87b7d77c9a11ed367186`, via
@@ -175,6 +175,10 @@ Baseline de validação deste ciclo:
   - Concluído em 2026-08-01: assets FastAPI removidos, `/dashboard` responde `308` para a SPA JWT,
     frontend apenas remove a chave legada sem lê-la, ADR/README corrigidos e headers CSP/HSTS,
     anti-frame, `nosniff`, referrer e permissions policy publicados.
+  - Hardening adicional em 2026-08-02: CSP restringido ao backend canônico, COOP/CORP publicados e
+    cache imutável limitado aos assets Vite com hash. O workflow Cloudflare
+    [30774178800](https://github.com/welitonsp/mplacas/actions/runs/30774178800) foi aprovado; HTML
+    permaneceu com revalidação e a borda real confirmou todos os headers.
 
 - [x] **P0-04 — rotacionar credenciais potencialmente persistidas pelo dashboard.**
   - Confirmar em logs/métricas se a página legada foi usada em produção.
@@ -358,11 +362,14 @@ Baseline de validação deste ciclo:
     manifest auditável: `pg_restore=passed`, `migrations=passed`, `critical_invariants=passed`,
     `ready_endpoint=passed`, `decision=approved`. O incidente deduplicado
     [#81](https://github.com/welitonsp/mplacas/issues/81) foi encerrado com essa evidência.
-  - Manutenção operacional em 2026-08-02: a versão 1 inválida de
-    `mplacas-migration-database-url` foi desativada de forma reversível; a versão 2 válida ficou
-    como única habilitada e `mplacas-migrate-5rpnl` concluiu com sucesso contra a conexão direta.
-    O deploy padrão também passou pelo preflight de secrets. Essa evidência confirma a credencial
-    de migração, mas não comprova nem altera a retenção PITR contratada no Neon.
+  - Manutenção operacional em 2026-08-02: a conexão direta foi saneada e, após rotação do
+    `neondb_owner`, `mplacas-migration-database-url@3` ficou como única versão habilitada.
+    `mplacas-migrate-5rpnl`, `mplacas-migrate-d6h9r` e `mplacas-migrate-9x5ht` concluíram com
+    sucesso. A migration `20260802_0038` criou três índices de FK; auditoria posterior confirmou
+    os três válidos, zero índices inválidos e nenhuma FK restante sem índice. Essa evidência
+    confirma credencial e schema, mas não comprova nem altera a retenção PITR contratada no Neon.
+    Implementação e CI PostgreSQL no PR
+    [#91](https://github.com/welitonsp/mplacas/pull/91).
   - Permanece parcial somente até confirmar e registrar a janela PITR efetiva do plano Neon
     contratado; não reabrir a automação do restore drill sem evidência de regressão.
 
@@ -383,9 +390,14 @@ Baseline de validação deste ciclo:
     transacional e limpa bypass ao vincular tenant. A prova PostgreSQL real demonstra zero linhas
     sem contexto, bloqueio de leitura/escrita cross-tenant e bypass que exige configuração explícita
     mais membership em role de plataforma. A PoC foi aprovada no job PostgreSQL remoto da execução
-    [CI 30753841013](https://github.com/welitonsp/mplacas/actions/runs/30753841013). Falta o rollout
-    gradual nas tabelas reais após separar roles runtime/migration e contextualizar todas as
-    transações.
+    [CI 30753841013](https://github.com/welitonsp/mplacas/actions/runs/30753841013).
+  - Avanço produtivo em 2026-08-02: roles separadas. A revisão `mplacas-api-00016-wm8` usa
+    `mplacas_runtime`, sem ownership ou `BYPASSRLS`, com timeouts defensivos; `neondb_owner` ficou
+    restrito à conexão direta de migrations e teve a senha rotacionada. `/health`, `/ready`,
+    `mplacas-smoke-4fz8w` e `mplacas-operational-watchdog-94tls` foram aprovados. Falta
+    contextualizar integralmente requests/jobs, criar policies nas tabelas reais e validar o
+    rollout/rollback em branch Neon descartável antes de ativar RLS em produção. Validação local
+    consolidada desta fase: **622 passed**, **4 skipped**, Ruff e Mypy aprovados.
 
 - [x] **P2-02 — escopar idempotência de faturas por usina/tenant.**
   - Substituir unicidade global de `source_hash` por constraint composta apropriada.
@@ -399,7 +411,9 @@ Baseline de validação deste ciclo:
   - Concluído em 2026-08-02: `alembic upgrade head` e `alembic check` foram aprovados sobre banco
     PostgreSQL 16 vazio no job
     [postgres-integration](https://github.com/welitonsp/mplacas/actions/runs/30753841013/job/91512481640),
-    incluindo a migration 0031 e todas as revisões posteriores até 0037.
+    incluindo a migration 0031 e todas as revisões posteriores. O PR
+    [#91](https://github.com/welitonsp/mplacas/pull/91) avançou o head para 0038 e repetiu o gate
+    PostgreSQL real com sucesso.
 
 - [x] **P2-03 — tornar builds Python reproduzíveis e reforçar supply chain.**
   - Adotar lock com hashes, pin de imagem por digest e Actions por SHA.

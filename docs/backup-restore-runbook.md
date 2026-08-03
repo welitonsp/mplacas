@@ -16,9 +16,11 @@ não substitui o restore drill, e um dump sem restauração comprovada não aten
 
 ## Evidência de manutenção da conexão direta em 2026-08-02
 
-- A versão 1 inválida de `mplacas-migration-database-url` foi desativada de forma reversível, sem
-  destruir histórico; a versão 2 válida permaneceu como única versão habilitada.
-- A execução `mplacas-migrate-5rpnl` concluiu com sucesso e o deploy padrão passou pelo preflight
+- As versões 1 e 2 antigas de `mplacas-migration-database-url` foram desativadas de forma
+  reversível, sem destruir histórico; após a rotação do `neondb_owner`, a versão 3 canônica
+  permaneceu como única habilitada.
+- `mplacas-migrate-5rpnl`, `mplacas-migrate-d6h9r` e, após a rotação final,
+  `mplacas-migrate-9x5ht` concluíram com sucesso. O deploy padrão voltou a passar pelo preflight
   que exige exatamente uma versão habilitada para cada secret crítico.
 - Essa evidência valida a credencial direta usada pelas migrations. Ela não comprova a janela de
   retenção PITR do plano Neon, que continua exigindo confirmação no Console ou na API do provedor.

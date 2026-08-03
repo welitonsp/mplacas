@@ -29,10 +29,14 @@ Access tokens já emitidos continuam válidos até o TTL, conforme decisão expl
 
 ## Headers e origens
 
-Cloudflare Pages aplica `_headers`: CSP, HSTS, `nosniff`, `DENY`, `no-referrer` e Permissions-Policy.
-O backend aplica seus headers defensivos e CORS com lista exata de origens HTTPS. Wildcard
-`*.pages.dev` não é aceito. A CSP atual permite conexão HTTPS porque o hostname do Cloud Run é
-configurado por ambiente; CORS no backend continua sendo a barreira de origem exata.
+Cloudflare Pages aplica `_headers`: CSP, HSTS, `nosniff`, `DENY`, `no-referrer`,
+Permissions-Policy, COOP e CORP. O `connect-src` permite somente a própria origem e o hostname
+canônico do backend Cloud Run; `https:` genérico é proibido. O backend aplica seus headers
+defensivos e CORS com lista exata de origens HTTPS. Wildcard `*.pages.dev` não é aceito.
+
+O HTML conserva o padrão Pages `max-age=0, must-revalidate`. Somente `/assets/*`, cujos nomes
+incluem hash de conteúdo gerado pelo Vite, recebe `max-age=31536000, immutable`; não criar regra
+global de cache que possa servir HTML obsoleto após deploy.
 
 Qualquer mudança de armazenamento, TTL, refresh, logout, CSP ou CORS exige atualização deste
 contrato, ADR aplicável e testes antes do deploy.
