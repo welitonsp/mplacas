@@ -6,6 +6,10 @@ FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:slim@sha256:70f3244ccf80a83
 
 ENV MPLACAS_CONFIG_FROM_ENV=1
 ENV MPLACAS_AUDIT_SKIP_BILLING=1
+# useradd --system creates no home directory; gcloud needs a writable $HOME
+# to create its config store (~/.config/gcloud) even for read-only commands
+# on Cloud Run's metadata-server auth path.
+ENV HOME=/app
 
 # repo_root()/config_file() in lib.sh derive paths from the script's own
 # location two directories up, so the infra/gcp/ layout must be preserved
