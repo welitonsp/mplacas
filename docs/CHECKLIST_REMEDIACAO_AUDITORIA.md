@@ -334,8 +334,16 @@ Baseline de validação deste ciclo:
     fail-closed antes da inicialização do ledger. O PR
     [#78](https://github.com/welitonsp/mplacas/pull/78) corrigiu o contexto de source deploy que
     excluía `src/mplacas/reports` e foi integrado após todos os checks verdes.
-  - Permanece parcial somente porque o teste de abertura/entrega/fechamento após duas horas deve ser
-    feito em homologação. Não pausar o watchdog de produção para produzir essa evidência.
+  - **Drill em andamento em 2026-08-03 (Plano B — gêmeo isolado, sem tocar o watchdog real).** Em vez
+    de projeto de staging separado, foi provisionado um gêmeo `mplacas-watchdog-drill` no mesmo
+    projeto `mplacas` (job trivial sem secrets, mesma cadência, policy forkada só nos campos de nome —
+    `duration`/`alignmentPeriod`/`autoClose` idênticos ao original, travado por teste de contrato),
+    reusando o canal de notificação real. Decisão registrada: prova entrega ponta-a-ponta no canal
+    real e fica coberto pelo `audit-costs.sh`, ao custo de gerar um e-mail de incidente `[DRILL]` real
+    (aceito) e de uma entrada temporária em `MPLACAS_EXPECTED_SCHEDULER_JOBS` (remover no teardown).
+    Sequência: primed com execução manual bem-sucedida, **T0 (pausado) = 2026-08-03T18:25:50Z**.
+    Aguardando confirmação de abertura do incidente (janela mínima T0+3h, esperado até T0+3h30).
+  - Watchdog de produção real (`mplacas-operational-watchdog`) não foi tocado em nenhum momento.
 
 - [x] **P1-06 — automatizar backup/PITR e restore drill.**
   - Definir RPO/RTO, retenção, criptografia, ownership e alerta de falha.
