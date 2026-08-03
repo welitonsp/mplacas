@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mplacas.core.authorization import PlantScope
 from mplacas.core.principal import OperationsPrincipal
 from mplacas.db.models import Plant
+from mplacas.db.tenant_context import set_organization_context, set_tenant_context
 
 
 async def plant_scope_for_organization_in_session(
@@ -49,6 +50,7 @@ async def plant_scope_for_organization(organization_id: uuid.UUID) -> PlantScope
     from mplacas.db.session import SessionFactory
 
     async with SessionFactory() as session:
+        await set_tenant_context(session, organization_id)
         return await plant_scope_for_organization_in_session(session, organization_id)
 
 
@@ -158,6 +160,7 @@ async def _infer_single_plant_for_organization(
     from mplacas.db.session import SessionFactory
 
     async with SessionFactory() as session:
+        await set_organization_context(session, organization_id)
         return await _infer_single_plant_for_organization_in_session(
             session, organization_id
         )

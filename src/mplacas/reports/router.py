@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from mplacas.core.security import OperationsPrincipal, require_operations_read
 from mplacas.core.tenancy import ReadPlant
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_principal_context
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError
 from mplacas.reports.export_service import InvalidExportFormat, ReportExportService
 from mplacas.reports.exporters import (
@@ -43,6 +44,7 @@ async def _build_report(
     # Legacy tuning parameters are intentionally ignored: snapshots use canonical assumptions.
     del expected_production_kwh, stable_tolerance_percent
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         try:
             snapshot = await get_or_materialize_latest_monthly_report_snapshot(
                 session,
@@ -178,6 +180,7 @@ async def enqueue_monthly_export(
 ) -> dict[str, object]:
     """Enqueue an async export task. Poll GET /monthly/exports/{task_id} for status."""
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         try:
             task = await ReportExportService(session).enqueue(
                 plant_id=scoped.plant_id,
@@ -203,6 +206,7 @@ async def get_export_task(
 ) -> dict[str, object]:
     """Poll the status of an async export task."""
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         task = await ReportExportService(session).get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="export task not found")
@@ -234,6 +238,7 @@ async def download_export_artifact(
 ) -> Response:
     """Stream the artifact bytes for a completed export task."""
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         task = await ReportExportService(session).get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="export task not found")

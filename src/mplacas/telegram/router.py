@@ -14,6 +14,7 @@ from mplacas.billing.repository import UtilityBillRepository
 from mplacas.core.config import get_settings
 from mplacas.core.tenancy import _infer_single_plant_for_organization_in_session
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_platform_context, set_tenant_context
 from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.telegram.client import TelegramClient, TelegramClientError
 from mplacas.telegram.document_processing import (
@@ -132,7 +133,9 @@ async def telegram_webhook(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     async with SessionFactory() as session:
+        await set_platform_context(session)
         organization_id = await _resolve_telegram_organization(session, chat_id)
+        await set_tenant_context(session, organization_id)
         allowed_user_id = await _resolve_telegram_allowed_user_id(session, organization_id)
 
     if allowed_user_id is None:
@@ -194,6 +197,7 @@ async def telegram_webhook(
         try:
             bill = parse_equatorial_bill_text(message.text)
             async with SessionFactory() as session:
+                await set_tenant_context(session, organization_id)
                 plant_id = await _resolve_telegram_plant_scope(session, organization_id)
                 record = await UtilityBillRepository(session).create_pending(
                     bill,
@@ -230,6 +234,7 @@ async def telegram_webhook(
             max_text_bytes=settings.bill_text_max_bytes,
         )
         async with SessionFactory() as session:
+            await set_tenant_context(session, organization_id)
             plant_id = await _resolve_telegram_plant_scope(session, organization_id)
             record = await UtilityBillRepository(session).create_pending(
                 processed.bill,

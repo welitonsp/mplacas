@@ -395,9 +395,17 @@ Baseline de validação deste ciclo:
     `mplacas_runtime`, sem ownership ou `BYPASSRLS`, com timeouts defensivos; `neondb_owner` ficou
     restrito à conexão direta de migrations e teve a senha rotacionada. `/health`, `/ready`,
     `mplacas-smoke-4fz8w` e `mplacas-operational-watchdog-94tls` foram aprovados. Falta
-    contextualizar integralmente requests/jobs, criar policies nas tabelas reais e validar o
-    rollout/rollback em branch Neon descartável antes de ativar RLS em produção. Validação local
-    consolidada desta fase: **622 passed**, **4 skipped**, Ruff e Mypy aprovados.
+    criar policies nas tabelas reais e validar o rollout/rollback em branch Neon descartável antes
+    de ativar RLS em produção.
+  - Fundação de rollout concluída em 2026-08-02: inventário executável classifica as **24 tabelas**
+    ORM por ownership direto, planta, dispositivo, energia diária ou plataforma e é comparado com
+    todo `Base.metadata` na CI. Todos os consumidores diretos de `SessionFactory()` na aplicação
+    agora definem tenant ou plataforma como primeira operação; um teste AST impede novas sessões
+    sem contexto. Rotas de tenant usam o principal autenticado, webhook Telegram troca descoberta
+    global por tenant resolvido e workers globais declaram bypass de plataforma. RLS continua
+    desativado. Restam modelar tenant em `audit_events`, criar/testar policies reais, autorizar a
+    role de plataforma mínima e executar canário/rollback em branch Neon descartável. Validação
+    consolidada: **626 passed**, **4 skipped**, Ruff e Mypy aprovados.
 
 - [x] **P2-02 — escopar idempotência de faturas por usina/tenant.**
   - Substituir unicidade global de `source_hash` por constraint composta apropriada.

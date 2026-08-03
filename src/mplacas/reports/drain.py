@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_platform_context
 from mplacas.reports.export_service import ReportExportService
 from mplacas.reports.exporters import (
     PDF_MEDIA_TYPE,
@@ -54,6 +55,7 @@ async def drain_report_exports(*, batch_size: int = 10) -> ExportDrainResult:
 
 async def _claim_batch(batch_size: int) -> list[uuid.UUID]:
     async with SessionFactory() as session:
+        await set_platform_context(session)
         service = ReportExportService(session)
         ids = await service.pending_ids(limit=batch_size)
         for task_id in ids:
@@ -64,6 +66,7 @@ async def _claim_batch(batch_size: int) -> list[uuid.UUID]:
 
 async def _process_task(task_id: uuid.UUID) -> None:
     async with SessionFactory() as session:
+        await set_platform_context(session)
         service = ReportExportService(session)
         task = await service.get(task_id)
         if task is None or task.status != "processing":
@@ -73,6 +76,7 @@ async def _process_task(task_id: uuid.UUID) -> None:
         await session.commit()
 
     async with SessionFactory() as session:
+        await set_platform_context(session)
         snapshot = await get_or_materialize_latest_monthly_report_snapshot(
             session,
             plant_id=plant_id,
@@ -101,6 +105,7 @@ async def _process_task(task_id: uuid.UUID) -> None:
         stored_bytes = None
 
     async with SessionFactory() as session:
+        await set_platform_context(session)
         await ReportExportService(session).mark_completed(
             task_id,
             artifact_bytes=stored_bytes,
@@ -113,6 +118,7 @@ async def _process_task(task_id: uuid.UUID) -> None:
 async def _fail_task(task_id: uuid.UUID, *, error_message: str) -> None:
     try:
         async with SessionFactory() as session:
+            await set_platform_context(session)
             await ReportExportService(session).mark_failed(
                 task_id,
                 error_message=error_message,

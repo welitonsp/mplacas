@@ -6,6 +6,7 @@ from datetime import date
 from mplacas.collection.queue import CollectionQueueRepository
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_platform_context
 from mplacas.providers.base import ProviderError
 from mplacas.providers.nepviewer.factory import build_resilient_nepviewer
 from mplacas.services.collection import CollectionResult, SolarCollectionService
@@ -40,6 +41,7 @@ async def run_solar_collection(
     )
     try:
         async with SessionFactory() as session:
+            await set_platform_context(session)
             service = SolarCollectionService(session, provider)
             result = await service.collect(
                 plant_name=plant_name,
@@ -75,6 +77,7 @@ async def run_solar_collection(
 
 async def _enqueue_retry(*, plant_id, target_date: date) -> None:
     async with SessionFactory() as session:
+        await set_platform_context(session)
         await CollectionQueueRepository(session).enqueue(
             plant_id=plant_id,
             task_type=COLLECTION_TASK_TYPE,

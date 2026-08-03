@@ -22,6 +22,7 @@ from mplacas.core.security import OperationsRole
 from mplacas.credentials.db_models import OperationalUserRecord
 from mplacas.credentials.service import CredentialError, UserService
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_platform_context
 from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.organizations.invitation_service import (
     InvitationConsumeError,
@@ -78,6 +79,7 @@ class AccessTokenResponse(BaseModel):
 
 async def _get_session():
     async with SessionFactory() as session:
+        await set_platform_context(session)
         yield session
 
 

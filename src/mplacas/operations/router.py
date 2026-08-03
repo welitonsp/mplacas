@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from mplacas.core.security import OperationsPrincipal, require_operations_read
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_platform_context
 from mplacas.operations.repository import JobRunRepository
 from mplacas.operations.status import build_operational_status
 
@@ -22,6 +23,7 @@ async def recent_jobs(
 ) -> dict[str, object]:
     principal.require_unrestricted_access()
     async with SessionFactory() as session:
+        await set_platform_context(session)
         runs = await JobRunRepository(session).list_recent(limit)
     return {
         "count": len(runs),
@@ -50,5 +52,6 @@ async def operational_status(
 ) -> dict[str, object]:
     principal.require_unrestricted_access()
     async with SessionFactory() as session:
+        await set_platform_context(session)
         repository = JobRunRepository(session)
         return await build_operational_status(repository, limit=limit)

@@ -14,6 +14,7 @@ from mplacas.climate.open_meteo import OpenMeteoHistoricalProvider, OpenMeteoPro
 from mplacas.core.config import get_settings
 from mplacas.core.tenancy import AdminPlant
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_principal_context
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ async def collect_climate(
     )
     try:
         async with SessionFactory() as session:
+            await set_principal_context(session, scoped.principal)
             result = await collect_and_persist_daily_climate(
                 session,
                 plant_id=plant_id,

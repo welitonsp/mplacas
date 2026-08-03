@@ -15,6 +15,7 @@ from mplacas.core.config import get_settings
 from mplacas.core.principal import OperationsRole
 from mplacas.core.tenancy import AdminPrincipal, OrgAdminPrincipal, PlatformPrincipal
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_principal_context
 from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.organizations.invitation_db_models import UserInvitationRecord
 from mplacas.organizations.invitation_service import InvitationError, InvitationService
@@ -142,6 +143,7 @@ async def create_organization(
 ) -> dict[str, object]:
     settings = get_settings()
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         existing = await session.scalar(
             select(OrganizationRecord).where(OrganizationRecord.slug == payload.slug)
         )
@@ -201,6 +203,7 @@ async def create_organization(
 @router.get("")
 async def list_organizations(principal: AdminPrincipal) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         statement = select(OrganizationRecord).order_by(OrganizationRecord.created_at)
         if principal.organization_id is not None:
             statement = statement.where(
@@ -227,6 +230,7 @@ async def create_invitation(
 
     settings = get_settings()
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         try:
             invitation, token = await InvitationService(session).create(
                 organization_id=organization_id,
@@ -263,6 +267,7 @@ async def list_invitations(principal: OrgAdminPrincipal) -> dict[str, object]:
     assert organization_id is not None
 
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         records = await InvitationService(session).list(organization_id=organization_id)
     return {
         "count": len(records),
@@ -280,6 +285,7 @@ async def revoke_invitation(
     assert organization_id is not None
 
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         revoked = await InvitationService(session).revoke(
             invitation_id=invitation_id,
             organization_id=organization_id,
@@ -327,6 +333,7 @@ async def get_organization(
     principal: AdminPrincipal,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         record = await _get_own_or_404(
             session, organization_id, principal.organization_id
         )
@@ -352,6 +359,7 @@ async def update_organization(
     """
     fields_set = payload.model_fields_set
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         record = await _get_own_or_404(
             session, organization_id, principal.organization_id
         )
@@ -391,6 +399,7 @@ async def deactivate_organization(
     principal: PlatformPrincipal,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         record = await session.get(OrganizationRecord, organization_id)
         if record is None:
             raise HTTPException(
