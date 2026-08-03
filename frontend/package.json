@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "react": "^19.2.8",
@@ -16,12 +18,16 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^6.0.5",
+    "jsdom": "^25.0.1",
     "tailwindcss": "^4.1.0",
     "typescript": "^7.0.2",
     "vite": "^8.2.0",
+    "vitest": "^4.1.10",
     "wrangler": "^4.118.0"
   }
 }

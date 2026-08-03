@@ -1,0 +1,112 @@
+import type { AnomalyLevel, Severity, TrendDirection } from './contracts'
+
+// Status é calculado no backend (ver intelligence/executive_service.py) — o front
+// apenas mapeia o mesmo vocabulário para rótulo pt-BR e cor de severidade, sem
+// reimplementar os limiares de health_score.
+const STATUS_META: Record<string, { label: string; severity: Severity }> = {
+  HEALTHY: { label: 'Saudável', severity: 'success' },
+  ATTENTION: { label: 'Atenção', severity: 'warning' },
+  CRITICAL: { label: 'Crítico', severity: 'danger' },
+}
+
+export function statusMeta(status: string): { label: string; severity: Severity } {
+  return STATUS_META[status] ?? { label: status, severity: 'neutral' }
+}
+
+export const SEVERITY_TEXT: Record<Severity, string> = {
+  success: 'text-[var(--color-success)]',
+  warning: 'text-[var(--color-warning)]',
+  danger: 'text-[var(--color-danger)]',
+  neutral: 'text-gray-600',
+}
+
+export const SEVERITY_BG: Record<Severity, string> = {
+  success: 'bg-[var(--color-success-light)]',
+  warning: 'bg-[var(--color-warning-light)]',
+  danger: 'bg-[var(--color-danger-light)]',
+  neutral: 'bg-gray-100',
+}
+
+export const SEVERITY_BORDER_L: Record<Severity, string> = {
+  success: 'border-l-[var(--color-success)]',
+  warning: 'border-l-[var(--color-warning)]',
+  danger: 'border-l-[var(--color-danger)]',
+  neutral: 'border-l-gray-300',
+}
+
+export const SEVERITY_BAR: Record<Severity, string> = {
+  success: 'bg-[var(--color-success)]',
+  warning: 'bg-[var(--color-warning)]',
+  danger: 'bg-[var(--color-danger)]',
+  neutral: 'bg-gray-400',
+}
+
+export const SEVERITY_DOT: Record<Severity, string> = {
+  success: 'bg-[var(--color-success)]',
+  warning: 'bg-[var(--color-warning)]',
+  danger: 'bg-[var(--color-danger)]',
+  neutral: 'bg-gray-400',
+}
+
+export const LEVEL_LABEL: Record<AnomalyLevel, string> = {
+  NORMAL: 'Normal',
+  ATTENTION: 'Atenção',
+  ANOMALY: 'Anomalia',
+  CRITICAL: 'Crítico',
+}
+
+// Mesmos limiares usados em intelligence/energy_engine.py para o desvio do ciclo
+// vs. produção esperada: < 70% = PRODUCTION_WELL_BELOW_EXPECTED (CRITICAL/danger),
+// < 85% = PRODUCTION_BELOW_EXPECTED (WARNING), >= 85% = dentro do esperado (success).
+// Não inventar um limiar novo aqui — reaproveita o mesmo vocabulário do backend.
+export function performanceSeverity(percent: number): Severity {
+  if (percent < 70) return 'danger'
+  if (percent < 85) return 'warning'
+  return 'success'
+}
+
+// NORMAL = produção dentro do esperado (bom). ATTENTION = desvio leve.
+// ANOMALY/CRITICAL = desvio relevante — mesma cor de alerta para os dois,
+// diferenciados pelo rótulo textual (ver LEVEL_LABEL), sem inventar um quinto tom.
+export function levelSeverity(level: AnomalyLevel): Severity {
+  if (level === 'NORMAL') return 'success'
+  if (level === 'ATTENTION') return 'warning'
+  return 'danger'
+}
+
+export type TrendMetricKey = 'production' | 'total_consumption' | 'imported_energy'
+
+// O sentido de "bom"/"ruim" depende da métrica: produção subir é bom, energia
+// importada subir é ruim, e consumo total não tem um sentido óbvio de bom/ruim
+// (não pintamos essa métrica). Não usar DOWN=vermelho/UP=verde de forma cega.
+const GOOD_DIRECTION: Record<TrendMetricKey, TrendDirection | null> = {
+  production: 'UP',
+  imported_energy: 'DOWN',
+  total_consumption: null,
+}
+
+export function trendSeverity(metricKey: TrendMetricKey, direction: TrendDirection): Severity {
+  const good = GOOD_DIRECTION[metricKey]
+  if (good === null || direction === 'STABLE') return 'neutral'
+  return direction === good ? 'success' : 'danger'
+}
+
+export const DIRECTION_SYMBOL: Record<TrendDirection, string> = { UP: '▲', DOWN: '▼', STABLE: '▬' }
+export const DIRECTION_TEXT: Record<TrendDirection, string> = {
+  UP: 'aumentou',
+  DOWN: 'diminuiu',
+  STABLE: 'estável',
+}
+
+export const ANOMALY_LEGEND: { level: AnomalyLevel; label: string }[] = [
+  { level: 'NORMAL', label: 'Normal' },
+  { level: 'ATTENTION', label: 'Atenção' },
+  { level: 'ANOMALY', label: 'Anomalia/crítico' },
+]
+
+// Cor "grid" reutilizada em todo o diagrama de fluxo e no donut: mesmo cinza
+// (gray-300, hex #d1d5db) já usado em ProductionSplitCard para "injetada na
+// rede". Autoconsumo = brand-primary em todos os pontos. Composição não é
+// severidade (bom/ruim) — por isso não usamos success/warning/danger aqui,
+// ver skill dataviz.
+export const GRID_HEX = '#d1d5db'
