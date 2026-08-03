@@ -1,12 +1,11 @@
 import type { AnomalyDailyPoint } from './contracts'
 import { toNumber } from '../format'
 
-// Produção diária esperada usada como referência para o cálculo de anomalias
-// (GET /energy/anomalies/latest). Baseada no orçamento de geração de 562 kWh/mês
-// do relatório SolarView desta usina (562/30 ≈ 18,7 kWh/dia) — ainda não é
-// configurável por usina na tela; quando o backend expuser esse dado por
-// planta, substituir por um valor vindo da API em vez desta constante fixa.
-export const EXPECTED_DAILY_PRODUCTION_KWH = 18.7
+// A produção diária esperada usada como referência para o cálculo de anomalias
+// (GET /energy/anomalies/latest) deixou de ser uma constante fixa: vem do baseline
+// sazonal real da usina (`installed_power_kwp × baseline`), calculado no backend e
+// lido via `GET /photovoltaic/summary` — ver
+// `lib/dashboard/photovoltaic-contracts.ts::deriveExpectedDailyProduction`.
 
 // Rendimento = produção real (kWh) / irradiância (kWh/m²) — kWh gerados por
 // cada kWh/m² de sol recebido. É a métrica que separa "problema na usina" de

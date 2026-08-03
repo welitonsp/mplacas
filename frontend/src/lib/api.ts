@@ -54,3 +54,13 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   retryHeaders.set('Content-Type', 'application/json')
   return fetch(`${API_URL}${path}`, { ...init, headers: retryHeaders })
 }
+
+// Leitura composta da modelagem fotovoltaica (performance + baseline sazonal +
+// perdas) para uma usina, em uma única requisição (ver ADR-065, seção 4,
+// `GET /photovoltaic/summary`). Sempre 200 quando a usina está no escopo do
+// principal — blocos ausentes vêm como `null` acompanhados de um motivo, nunca
+// como erro HTTP, então não há tratamento de status especial além do 401 já
+// coberto por `apiFetch`.
+export async function fetchPhotovoltaicSummary(plantId: string): Promise<Response> {
+  return apiFetch(`/photovoltaic/summary?plant_id=${encodeURIComponent(plantId)}`)
+}

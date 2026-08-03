@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { apiFetch } from '../lib/api'
+import { apiFetch, fetchPhotovoltaicSummary } from '../lib/api'
 import { PLANT_ID } from '../env'
 import type { AnomalyFetchState, FetchState } from '../lib/dashboard/contracts'
 import { parseAnomalyDashboard, parseExecutiveDashboard } from '../lib/dashboard/contracts'
-import { EXPECTED_DAILY_PRODUCTION_KWH } from '../lib/dashboard/yield'
+import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-contracts'
+import { deriveExpectedDailyProduction, parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
 import { toNumber } from '../lib/format'
 import { SectionTitle } from '../components/SectionTitle'
 import { MetricCard } from '../components/MetricCard'
@@ -29,6 +30,11 @@ export function DashboardPage() {
     lastUpdated: null,
   })
   const [anomalyState, setAnomalyState] = useState<AnomalyFetchState>({ data: null, loading: true })
+  // `null` = ainda carregando o baseline sazonal. `/energy/anomalies/latest`
+  // exige um `expected_daily_production_kwh` numérico positivo (ver
+  // `intelligence/router.py`), então só disparamos essa busca depois de saber se
+  // a usina tem baseline defensável — nunca inventamos um número de preenchimento.
+  const [expectedProduction, setExpectedProduction] = useState<ExpectedDailyProduction | null>(null)
 
   const fetchData = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }))
@@ -51,12 +57,39 @@ export function DashboardPage() {
     }
   }, [])
 
-  const fetchAnomalies = useCallback(async () => {
+  const fetchExpectedProduction = useCallback(async () => {
+    setExpectedProduction(null)
+    try {
+      const response = await fetchPhotovoltaicSummary(PLANT_ID)
+      if (!response.ok) {
+        if (response.status === 401) return
+        // Sessão expirada à parte, um erro aqui não deve travar o resto do
+        // dashboard — o histórico de produção passa a mostrar o motivo de
+        // indisponibilidade específico assim que souber que não há dado.
+        setExpectedProduction({
+          available: false,
+          reason: 'NO_PERFORMANCE_HISTORY',
+          referenceCompleteOn: null,
+        })
+        return
+      }
+      const summary = parsePhotovoltaicSummary(await response.json())
+      setExpectedProduction(deriveExpectedDailyProduction(summary))
+    } catch {
+      setExpectedProduction({
+        available: false,
+        reason: 'NO_PERFORMANCE_HISTORY',
+        referenceCompleteOn: null,
+      })
+    }
+  }, [])
+
+  const fetchAnomalies = useCallback(async (expectedDailyProductionKwh: number) => {
     setAnomalyState((prev) => ({ ...prev, loading: true }))
     try {
       const response = await apiFetch(
         `/energy/anomalies/latest?plant_id=${encodeURIComponent(PLANT_ID)}` +
-          `&expected_daily_production_kwh=${EXPECTED_DAILY_PRODUCTION_KWH}&days=90`
+          `&expected_daily_production_kwh=${expectedDailyProductionKwh}&days=90`
       )
       if (!response.ok) {
         // Sem dado diário suficiente (404) ou sessão expirada: não é um erro que
@@ -73,8 +106,20 @@ export function DashboardPage() {
 
   useEffect(() => {
     void fetchData()
-    void fetchAnomalies()
-  }, [fetchData, fetchAnomalies])
+    void fetchExpectedProduction()
+  }, [fetchData, fetchExpectedProduction])
+
+  // O histórico de produção/anomalias só é buscado depois que sabemos a produção
+  // esperada real da usina — sem ela o endpoint de anomalias não tem contra o que
+  // comparar o dia (ver `fetchAnomalies` acima).
+  useEffect(() => {
+    if (expectedProduction === null) return
+    if (expectedProduction.available) {
+      void fetchAnomalies(expectedProduction.kwh)
+    } else {
+      setAnomalyState({ data: null, loading: false })
+    }
+  }, [expectedProduction, fetchAnomalies])
 
   const { data, loading, error, lastUpdated } = state
   const indicators = data?.current_cycle.indicators
@@ -104,7 +149,7 @@ export function DashboardPage() {
             <button
               onClick={() => {
                 void fetchData()
-                void fetchAnomalies()
+                void fetchExpectedProduction()
               }}
               disabled={loading}
               className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors"
@@ -203,7 +248,7 @@ export function DashboardPage() {
 
             <div className="mt-8">
               <SectionTitle>Histórico de produção</SectionTitle>
-              <ProductionHistorySection anomalyState={anomalyState} />
+              <ProductionHistorySection anomalyState={anomalyState} expectedProduction={expectedProduction} />
             </div>
 
             <div className="mt-8">
