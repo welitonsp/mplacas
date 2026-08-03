@@ -17,18 +17,27 @@ arquivo de exemplo, todos revisados no PR da auditoria BIG TECH.
 
 ## Atualização dos locks
 
-Execute com Python 3.12, a mesma versão do CI e da imagem:
+Execute `scripts/compile-locks.sh`, que roda o `pip-compile` dentro de um container baseado
+exatamente na mesma imagem pinada por digest usada em `Dockerfile:1` (Python 3.12), com
+`pip-tools==7.6.0` (mesma versão pinada no extra `dev` de `pyproject.toml`). Rodar dentro do
+mesmo container do build evita divergência entre o ambiente de resolução e o runtime real —
+tanto de versão do Python quanto de plataforma (`sys_platform`, markers condicionais):
 
 ```bash
-python -m pip install 'pip-tools==7.6.0'
-pip-compile pyproject.toml --generate-hashes --strip-extras --allow-unsafe --output-file=requirements.lock
-pip-compile pyproject.toml --extra dev --generate-hashes --strip-extras --allow-unsafe --output-file=requirements-dev.lock
+scripts/compile-locks.sh
 python -m pip install --dry-run --ignore-installed --require-hashes -r requirements.lock
 python -m pip install --dry-run --ignore-installed --require-hashes -r requirements-dev.lock
 ```
 
-Mudanças no `pyproject.toml` sem atualização dos dois locks devem falhar na revisão. Não editar
-versões ou hashes manualmente.
+Para atualizar (bump) um pacote específico, repasse `--upgrade-package <nome>` — sem isso o
+`pip-compile` preserva os pins existentes que ainda satisfazem o range do `pyproject.toml`:
+
+```bash
+scripts/compile-locks.sh --upgrade-package <nome>
+```
+
+Requer Docker disponível localmente ou em CI. Mudanças no `pyproject.toml` sem atualização dos
+dois locks devem falhar na revisão. Não editar versões ou hashes manualmente.
 
 ## Atualização de Actions e imagens
 

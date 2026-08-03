@@ -1,0 +1,58 @@
+name: Weekly dependency lock freshness
+
+# Detects when newer releases become available within the ranges already
+# allowed by pyproject.toml (e.g. after Dependabot widens an upper bound —
+# the PR #76 incident) even though nothing forces an immediate re-pin. This
+# is informative/detective only: it never blocks a PR, it just opens/updates
+# a tracking issue so the locks get refreshed deliberately via
+# scripts/compile-locks.sh --upgrade.
+
+on:
+  schedule:
+    - cron: "11 6 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  lock-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Recompile locks against the latest releases allowed by pyproject.toml
+        run: scripts/compile-locks.sh --upgrade
+      - name: Check for drift against the newest allowed releases
+        id: diff
+        run: |
+          if git diff --exit-code -- requirements.lock requirements-dev.lock > lock-freshness.diff; then
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload freshness diff
+        if: steps.diff.outputs.stale == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lock-freshness-diff-${{ github.run_id }}
+          path: lock-freshness.diff
+          if-no-files-found: error
+          retention-days: 30
+      - name: Open deduplicated lock freshness issue
+        if: steps.diff.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="[deps] requirements.lock is behind the latest PyPI releases"
+          existing="$(gh issue list --state open --search "${title} in:title" --json number --jq '.[0].number // empty')"
+          body="Newer releases are now available within the ranges already \
+allowed by pyproject.toml. Regenerate the locks deliberately with \
+\`scripts/compile-locks.sh --upgrade\` (or --upgrade-package for a single \
+dependency), review the diff, and commit it. Workflow run: \
+${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [[ -z "$existing" ]]; then
+            gh issue create --title "$title" --body "$body"
+          else
+            gh issue comment "$existing" --body "$body"
+          fi

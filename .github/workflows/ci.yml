@@ -9,6 +9,16 @@ permissions:
   contents: read
 
 jobs:
+  dependency-lock-drift:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check lockfiles are updated alongside dependency changes
+        run: python scripts/check_lock_drift.py --base-ref ${{ github.event.pull_request.base.sha }}
+
   quality:
     runs-on: ubuntu-latest
     steps:
