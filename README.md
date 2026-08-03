@@ -118,13 +118,12 @@ e não alteram snapshots.
 
 Os endpoints operacionais e administrativos exigem `X-API-Key`, exceto `/health`, `/ready` e o
 redirecionamento `/dashboard`. Usuários finais acessam somente a SPA com JWT e nunca informam uma
-chave operacional. `MPLACAS_OPERATIONS_API_KEY` tem papel administrativo; a chave opcional
-`MPLACAS_OPERATIONS_READ_API_KEY` permite apenas endpoints de leitura, como relatórios, energia,
-explicações e status operacional. Para restringi-la a usinas específicas, configure
-`MPLACAS_OPERATIONS_READ_PLANT_IDS` com UUIDs separados por vírgula. Quando a lista é definida,
-recursos de outras usinas retornam `404` e as visões operacionais globais retornam `403`. Quando a
-lista é omitida, o comportamento global anterior é preservado. A chave administrativa permanece
-global nesta fase.
+chave operacional. `MPLACAS_OPERATIONS_API_KEY` tem papel administrativo e continua global nesta
+fase. Consumidores somente leitura, incluindo os restritos a usinas específicas, autenticam com uma
+credencial operacional persistida (papel `READ`), emitida via `/operations/credentials` — não há
+mais uma chave estática de leitura configurada por variável de ambiente. Quando o escopo de usina da
+credencial é restrito, recursos de outras usinas retornam `404` e as visões operacionais globais
+retornam `403`.
 
 ## Ciclo diário recomendado
 

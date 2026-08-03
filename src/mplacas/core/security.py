@@ -3,11 +3,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
-import uuid
 
 from fastapi import Header, HTTPException, Request, status
 
-from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import JwtError, decode_token
 from mplacas.core.principal import OperationsPrincipal, OperationsRole
@@ -57,13 +55,13 @@ def _warn_static_key_used(
     http_method: str | None,
     http_path: str | None,
 ) -> None:
-    """Emit a deprecation-tracking warning for the static operations API keys.
+    """Emit a deprecation-tracking warning for the static operations API key.
 
-    The static ``OPERATIONS_API_KEY`` / ``OPERATIONS_READ_API_KEY`` bypass any
-    organization-level isolation (they authenticate with ``organization_id``
-    unset). This does not change authentication behavior in any way — it only
-    records usage so a safe deprecation timeline can be defined later. Never
-    log the credential value itself, only its non-reversible fingerprint id.
+    The static ``OPERATIONS_API_KEY`` bypasses any organization-level
+    isolation (it authenticates with ``organization_id`` unset). This does
+    not change authentication behavior in any way — it only records usage so
+    a safe deprecation timeline can be defined later. Never log the
+    credential value itself, only its non-reversible fingerprint id.
     """
     logger.warning(
         "operations_static_key_auth_used",
@@ -85,18 +83,21 @@ def authenticate_operations_key(
     provided: str | None,
     *,
     admin_key: str | None,
-    read_key: str | None = None,
-    read_plant_ids: frozenset[uuid.UUID] | None = None,
     require_admin: bool = False,
     http_method: str | None = None,
     http_path: str | None = None,
 ) -> OperationsPrincipal:
-    if not admin_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="operational authentication is not configured",
-        )
-    if provided is not None and hmac.compare_digest(provided, admin_key):
+    """Authenticate against the static admin operations API key.
+
+    ``admin_key`` being unset only means this particular authentication
+    method is unavailable — it is not, by itself, a reason to fail closed
+    with ``503``. Callers (``_authenticate_with_fallback``) still have the
+    persisted-credential store to fall back to, so an unmatched or missing
+    static key surfaces as a plain ``401`` here, exactly like a wrong key
+    would. ``require_admin`` is accepted for signature symmetry with the
+    fallback dependency wiring; only the ``ADMIN`` role static key exists.
+    """
+    if admin_key and provided is not None and hmac.compare_digest(provided, admin_key):
         credential_id = _credential_id(role=OperationsRole.ADMIN, secret=admin_key)
         _warn_static_key_used(
             role=OperationsRole.ADMIN,
@@ -107,28 +108,6 @@ def authenticate_operations_key(
         return OperationsPrincipal(
             role=OperationsRole.ADMIN,
             credential_id=credential_id,
-        )
-    if (
-        not require_admin
-        and read_key
-        and provided is not None
-        and hmac.compare_digest(provided, read_key)
-    ):
-        credential_id = _credential_id(role=OperationsRole.READ, secret=read_key)
-        _warn_static_key_used(
-            role=OperationsRole.READ,
-            credential_id=credential_id,
-            http_method=http_method,
-            http_path=http_path,
-        )
-        return OperationsPrincipal(
-            role=OperationsRole.READ,
-            credential_id=credential_id,
-            plant_scope=(
-                PlantScope.restricted(read_plant_ids)
-                if read_plant_ids is not None
-                else UNRESTRICTED_PLANT_SCOPE
-            ),
         )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -204,14 +183,6 @@ async def _authenticate_with_fallback(
         return authenticate_operations_key(
             provided,
             admin_key=_secret_value(settings.operations_api_key),
-            read_key=(
-                None
-                if require_admin
-                else _secret_value(settings.operations_read_api_key)
-            ),
-            read_plant_ids=(
-                None if require_admin else settings.operations_read_plant_id_set
-            ),
             require_admin=require_admin,
             http_method=http_method,
             http_path=http_path,

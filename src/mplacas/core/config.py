@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import uuid
 from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
@@ -51,9 +50,7 @@ class Settings(BaseSettings):
     explanation_model: str | None = None
     explanation_timeout_seconds: float = 15.0
     operations_api_key: SecretStr | None = None
-    operations_read_api_key: SecretStr | None = None
     credential_pepper: SecretStr | None = None
-    operations_read_plant_ids: str | None = None
     telegram_bot_token: SecretStr | None = None
     telegram_webhook_secret: SecretStr | None = None
     telegram_allowed_user_id: int | None = None
@@ -139,15 +136,6 @@ class Settings(BaseSettings):
             host.strip().lower()
             for host in self.external_http_allowed_hosts.split(",")
             if host.strip()
-        )
-
-    @property
-    def operations_read_plant_id_set(self) -> frozenset[uuid.UUID] | None:
-        if self.operations_read_plant_ids is None:
-            return None
-        return frozenset(
-            uuid.UUID(value.strip())
-            for value in self.operations_read_plant_ids.split(",")
         )
 
     @field_validator("port")
@@ -273,20 +261,6 @@ class Settings(BaseSettings):
             value = urlunsplit(parts._replace(query=query))
         return value
 
-    @field_validator("operations_read_plant_ids")
-    @classmethod
-    def _validate_operations_read_plant_ids(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        raw_values = [item.strip() for item in value.split(",") if item.strip()]
-        if not raw_values:
-            raise ValueError("read credential plant scope must contain at least one UUID")
-        try:
-            normalized = tuple(dict.fromkeys(str(uuid.UUID(item)) for item in raw_values))
-        except ValueError as exc:
-            raise ValueError("read credential plant scope contains an invalid UUID") from exc
-        return ",".join(normalized)
-
     @model_validator(mode="after")
     def _validate_environment(self) -> Settings:
         configured_jwt_secrets = [
@@ -307,11 +281,6 @@ class Settings(BaseSettings):
             raise ValueError("Cloud Trace requires MPLACAS_GCP_PROJECT_ID")
         if self.cloud_metrics_enabled and self.gcp_project_id is None:
             raise ValueError("Cloud Monitoring requires MPLACAS_GCP_PROJECT_ID")
-        if self.operations_read_plant_ids is not None and (
-            self.operations_read_api_key is None
-            or not self.operations_read_api_key.get_secret_value().strip()
-        ):
-            raise ValueError("read credential plant scope requires an operational read API key")
         if self.env != "production":
             return self
         database_url = self.database_url.strip().lower()
@@ -351,11 +320,6 @@ class Settings(BaseSettings):
         return self
 
     def safe_summary(self) -> dict[str, object]:
-        read_scope = "not_configured"
-        if self.operations_read_api_key is not None:
-            read_scope = (
-                "restricted" if self.operations_read_plant_ids is not None else "unrestricted"
-            )
         return {
             "environment": self.env,
             "database_backend": _database_backend(self.database_url),
@@ -367,9 +331,6 @@ class Settings(BaseSettings):
             "cloud_metrics_enabled": self.cloud_metrics_enabled,
             "metrics_export_interval_seconds": self.metrics_export_interval_seconds,
             "operational_auth_configured": self.operations_api_key is not None,
-            "operational_read_auth_configured": self.operations_read_api_key is not None,
-            "operational_read_plant_scope": read_scope,
-            "operational_read_plant_count": len(self.operations_read_plant_id_set or ()),
             "jwt_auth_configured": self.jwt_configured,
             "auth_login_max_attempts": self.auth_login_max_attempts,
             "external_http_allowed_host_count": len(self.external_http_allowed_host_set),

@@ -219,12 +219,58 @@ async def test_monthly_report_projects_the_existing_deterministic_dashboard(monk
     assert "token" not in exported.casefold()
 
 
-def test_monthly_report_endpoints_are_protected_and_export_csv(monkeypatch) -> None:
+def test_monthly_report_endpoints_are_protected_and_export_csv(monkeypatch, tmp_path) -> None:
+    """Read access is now granted exclusively by a persisted READ credential
+    (there is no more static ``MPLACAS_OPERATIONS_READ_API_KEY``), so this
+    test seeds one, restricted to ``plant_id``, in a real sqlite database."""
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from mplacas.core.security import OperationsRole
+    from mplacas.credentials.service import CredentialService
+    from mplacas.db.base import Base
+    from mplacas.db.models import Plant
+    from mplacas.organizations.db_models import OrganizationRecord
+
     plant_id = uuid.UUID("00000000-0000-0000-0000-000000000033")
     monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-admin-key")
-    monkeypatch.setenv("MPLACAS_OPERATIONS_READ_API_KEY", "synthetic-read-key")
-    monkeypatch.setenv("MPLACAS_OPERATIONS_READ_PLANT_IDS", str(plant_id))
+    monkeypatch.setenv(
+        "MPLACAS_DATABASE_URL",
+        f"sqlite+aiosqlite:///{tmp_path}/monthly-reports.db",
+    )
     get_settings.cache_clear()
+
+    import mplacas.db.session as db_session
+
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path}/monthly-reports.db",
+        poolclass=NullPool,
+    )
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _prepare() -> str:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        async with factory() as session:
+            org = OrganizationRecord(name="Org Relatorio", slug="org-relatorio", active=True)
+            session.add(org)
+            await session.flush()
+            session.add(Plant(id=plant_id, organization_id=org.id, name="Usina Relatorio"))
+            await session.flush()
+            _, secret = await CredentialService(session).create(
+                name="cred-read-relatorio",
+                role=OperationsRole.READ,
+                organization_id=org.id,
+                plant_ids=frozenset({plant_id}),
+            )
+            await session.commit()
+            return secret
+
+    secret = asyncio.run(_prepare())
+    monkeypatch.setattr(db_session, "SessionFactory", factory)
+
     report = _report(plant_id)
     snapshot = _snapshot(report)
 
@@ -246,7 +292,7 @@ def test_monthly_report_endpoints_are_protected_and_export_csv(monkeypatch) -> N
 
     response = client.get(
         "/reports/monthly/latest",
-        headers={"X-API-Key": "synthetic-read-key"},
+        headers={"X-API-Key": secret},
         params={"plant_id": str(plant_id)},
     )
     assert response.status_code == 200
@@ -259,7 +305,7 @@ def test_monthly_report_endpoints_are_protected_and_export_csv(monkeypatch) -> N
 
     csv_response = client.get(
         "/reports/monthly/latest.csv",
-        headers={"X-API-Key": "synthetic-read-key"},
+        headers={"X-API-Key": secret},
         params={"plant_id": str(plant_id)},
     )
     assert csv_response.status_code == 200
@@ -269,4 +315,6 @@ def test_monthly_report_endpoints_are_protected_and_export_csv(monkeypatch) -> N
     assert "mplacas-monthly-2026-06" in csv_response.headers["content-disposition"]
     assert csv_response.content.startswith(b"\xef\xbb\xbf")
     assert "cycle_production_kwh" in csv_response.text
+
     get_settings.cache_clear()
+    asyncio.run(engine.dispose())

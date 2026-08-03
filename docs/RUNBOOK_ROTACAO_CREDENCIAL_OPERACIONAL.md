@@ -23,7 +23,6 @@ deixaram de usar a chave. Confirmar os consumidores antes da mudança.
 - Scripts de operação manuais.
 - Monitores externos e automações que chamam `/operations/*`.
 - Integrações de relatório ainda baseadas em `X-API-Key`.
-- `MPLACAS_OPERATIONS_READ_API_KEY`, se distribuída separadamente.
 
 Usuários finais devem usar JWT. Para cada consumidor legítimo restante, registrar proprietário,
 escopo e forma de atualização sem copiar o segredo para tickets ou logs.

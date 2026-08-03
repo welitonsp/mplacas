@@ -5,7 +5,10 @@ import pytest
 from fastapi import HTTPException
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
+import mplacas.core.security as security
+from mplacas.core.authorization import PlantScope
 from mplacas.core.config import Settings
+from mplacas.core.principal import OperationsPrincipal
 from mplacas.core.security import (
     OperationsRole,
     authenticate_operations_key,
@@ -38,7 +41,6 @@ def test_operations_auth_returns_admin_principal_for_admin_key() -> None:
     principal = authenticate_operations_key(
         "admin-key",
         admin_key="admin-key",
-        read_key="read-key",
     )
 
     assert principal.role is OperationsRole.ADMIN
@@ -48,60 +50,11 @@ def test_operations_auth_returns_admin_principal_for_admin_key() -> None:
     assert "admin-key" not in principal.credential_id
 
 
-def test_operations_auth_returns_read_principal_for_read_key() -> None:
-    plant_id = uuid.UUID("00000000-0000-0000-0000-000000000040")
-    principal = authenticate_operations_key(
-        "read-key",
-        admin_key="admin-key",
-        read_key="read-key",
-        read_plant_ids=frozenset({plant_id}),
-    )
+def test_operations_auth_rejects_wrong_key_when_admin_key_configured() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        authenticate_operations_key("wrong-key", admin_key="admin-key")
 
-    assert principal.role is OperationsRole.READ
-    assert principal.can_admin() is False
-    assert principal.can_read() is True
-    assert principal.credential_id.startswith("operations:read:")
-    assert "read-key" not in principal.credential_id
-    assert principal.plant_scope.is_restricted is True
-    assert principal.plant_scope.allows(plant_id) is True
-
-
-def test_restricted_principal_hides_out_of_scope_plant_and_denies_global_access() -> None:
-    allowed_plant_id = uuid.UUID("00000000-0000-0000-0000-000000000040")
-    denied_plant_id = uuid.UUID("00000000-0000-0000-0000-000000000041")
-    principal = authenticate_operations_key(
-        "read-key",
-        admin_key="admin-key",
-        read_key="read-key",
-        read_plant_ids=frozenset({allowed_plant_id}),
-    )
-
-    principal.require_plant_access(allowed_plant_id)
-    with pytest.raises(HTTPException) as plant_error:
-        principal.require_plant_access(denied_plant_id)
-    with pytest.raises(HTTPException) as global_error:
-        principal.require_unrestricted_access()
-
-    assert plant_error.value.status_code == 404
-    assert global_error.value.status_code == 403
-
-
-def test_admin_principal_remains_unrestricted_when_read_scope_is_configured() -> None:
-    principal = authenticate_operations_key(
-        "admin-key",
-        admin_key="admin-key",
-        read_key="read-key",
-        read_plant_ids=frozenset(
-            {uuid.UUID("00000000-0000-0000-0000-000000000040")}
-        ),
-    )
-
-    assert principal.role is OperationsRole.ADMIN
-    assert principal.plant_scope.is_restricted is False
-    principal.require_plant_access(
-        uuid.UUID("00000000-0000-0000-0000-000000000041")
-    )
-    principal.require_unrestricted_access()
+    assert exc_info.value.status_code == 401
 
 
 def test_operations_auth_logs_warning_when_static_admin_key_used(
@@ -111,7 +64,6 @@ def test_operations_auth_logs_warning_when_static_admin_key_used(
         authenticate_operations_key(
             "admin-key",
             admin_key="admin-key",
-            read_key="read-key",
             http_method="GET",
             http_path="/operations/plants",
         )
@@ -128,34 +80,12 @@ def test_operations_auth_logs_warning_when_static_admin_key_used(
     assert "admin-key" not in record.credential_id
 
 
-def test_operations_auth_logs_warning_when_static_read_key_used(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    with caplog.at_level(logging.WARNING, logger="mplacas.core.security"):
-        authenticate_operations_key(
-            "read-key",
-            admin_key="admin-key",
-            read_key="read-key",
-        )
-
-    warnings = [
-        record for record in caplog.records if record.levelno == logging.WARNING
-    ]
-    assert len(warnings) == 1
-    assert warnings[0].operations_role == "READ"
-    assert "read-key" not in warnings[0].credential_id
-
-
-def test_operations_auth_does_not_warn_when_bearer_would_be_used_instead(
+def test_operations_auth_does_not_warn_when_key_is_wrong(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     with caplog.at_level(logging.WARNING, logger="mplacas.core.security"):
         with pytest.raises(HTTPException):
-            authenticate_operations_key(
-                "wrong-key",
-                admin_key="admin-key",
-                read_key="read-key",
-            )
+            authenticate_operations_key("wrong-key", admin_key="admin-key")
 
     assert not any(
         record.message == "operations_static_key_auth_used"
@@ -171,7 +101,6 @@ def test_operations_auth_records_static_key_metric() -> None:
         authenticate_operations_key(
             "admin-key",
             admin_key="admin-key",
-            read_key="read-key",
         )
 
         data = reader.get_metrics_data()
@@ -193,13 +122,181 @@ def test_operations_auth_records_static_key_metric() -> None:
         reset_metrics_state_for_tests()
 
 
-def test_operations_admin_auth_rejects_read_key() -> None:
+def test_operations_auth_rejects_admin_key_when_absent() -> None:
+    """Regression guard for the historical 503 bug: a missing static key must
+    surface as a plain 401 from ``authenticate_operations_key`` itself, not a
+    503 -- the 401 is what lets ``_authenticate_with_fallback`` try the
+    persisted-credential store next."""
     with pytest.raises(HTTPException) as exc_info:
-        authenticate_operations_key(
-            "read-key",
-            admin_key="admin-key",
-            read_key="read-key",
+        authenticate_operations_key(None, admin_key=None)
+
+    assert exc_info.value.status_code == 401
+
+
+# --- Etapa 1: fallback to persisted (tenant) credentials --------------------
+#
+# ``authenticate_operations_key`` only knows about the static admin key; the
+# persisted-credential fallback lives in the async ``_authenticate_with_fallback``
+# wrapper, so these tests exercise that layer directly, monkeypatching the
+# database lookup rather than standing up a real session.
+
+
+async def test_fallback_authenticates_persisted_credential_when_admin_key_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Etapa 1, teste 1: sem MPLACAS_OPERATIONS_API_KEY configurada, uma
+    credencial de tenant persistida válida ainda autentica com sucesso e
+    preserva seu próprio PlantScope (não vira admin/unrestricted)."""
+    plant_id = uuid.UUID("00000000-0000-0000-0000-000000000040")
+    expected_principal = OperationsPrincipal(
+        role=OperationsRole.READ,
+        credential_id="operations:read:persisted-fingerprint",
+        plant_scope=PlantScope.restricted(frozenset({plant_id})),
+        organization_id=uuid.uuid4(),
+    )
+
+    async def _fake_resolve(provided: str, *, require_admin: bool):
+        assert provided == "tenant-secret"
+        assert require_admin is False
+        return expected_principal
+
+    monkeypatch.setattr(security, "_resolve_persisted_credential", _fake_resolve)
+
+    class _Settings:
+        operations_api_key = None
+
+    monkeypatch.setattr(security, "get_settings", lambda: _Settings())
+
+    principal = await security._authenticate_with_fallback(
+        "tenant-secret",
+        require_admin=False,
+    )
+
+    assert principal is expected_principal
+    assert principal.role is OperationsRole.READ
+    assert principal.plant_scope.is_restricted is True
+    assert principal.plant_scope.allows(plant_id) is True
+    assert principal.organization_id == expected_principal.organization_id
+
+
+async def test_fallback_returns_401_when_admin_key_absent_and_credential_unmatched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Etapa 1, teste 2: sem chave estática configurada, uma credencial que
+    não bate com nada (nem persistida) recebe 401, não 503."""
+
+    async def _fake_resolve(provided: str, *, require_admin: bool):
+        return None
+
+    monkeypatch.setattr(security, "_resolve_persisted_credential", _fake_resolve)
+
+    class _Settings:
+        operations_api_key = None
+
+    monkeypatch.setattr(security, "get_settings", lambda: _Settings())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await security._authenticate_with_fallback(
+            "unknown-secret",
+            require_admin=False,
+        )
+
+    assert exc_info.value.status_code == 401
+
+
+async def test_fallback_with_admin_key_configured_matches_current_production_behavior(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Etapa 1, teste 3: quando a chave estática está configurada (caso atual
+    de produção), o resultado é idêntico ao anterior -- autentica como ADMIN
+    sem sequer consultar o armazenamento persistido."""
+
+    async def _fail_if_called(*args, **kwargs):
+        raise AssertionError(
+            "persisted credential lookup must not run when the static key matches"
+        )
+
+    monkeypatch.setattr(security, "_resolve_persisted_credential", _fail_if_called)
+
+    class _Secret:
+        def get_secret_value(self) -> str:
+            return "admin-key"
+
+    class _Settings:
+        operations_api_key = _Secret()
+
+    monkeypatch.setattr(security, "get_settings", lambda: _Settings())
+
+    principal = await security._authenticate_with_fallback(
+        "admin-key",
+        require_admin=True,
+    )
+
+    assert principal.role is OperationsRole.ADMIN
+    assert principal.plant_scope.is_restricted is False
+
+
+async def test_fallback_with_admin_key_configured_rejects_unknown_credential_with_401(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Etapa 1, teste 3 (continuação): com a chave estática configurada, uma
+    credencial desconhecida ainda cai no fallback persistido e, não
+    encontrando nada, resulta em 401 -- exatamente como hoje."""
+
+    async def _fake_resolve(provided: str, *, require_admin: bool):
+        return None
+
+    monkeypatch.setattr(security, "_resolve_persisted_credential", _fake_resolve)
+
+    class _Secret:
+        def get_secret_value(self) -> str:
+            return "admin-key"
+
+    class _Settings:
+        operations_api_key = _Secret()
+
+    monkeypatch.setattr(security, "get_settings", lambda: _Settings())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await security._authenticate_with_fallback(
+            "wrong-key",
             require_admin=True,
         )
 
     assert exc_info.value.status_code == 401
+
+
+async def test_fallback_with_no_credential_provided_returns_401_not_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Etapa 1, teste 4: caso de 503 avaliado e descartado. Depois do fix não
+    existe mais um caso genuinamente "nenhum método disponível" alcançável a
+    partir de ``_authenticate_with_fallback`` -- mesmo sem chave estática
+    configurada e sem nenhuma credencial informada (``provided is None``), o
+    resultado correto é 401 ("nenhuma credencial fornecida"), pois o
+    armazenamento persistido continua sendo um método de autenticação
+    disponível em princípio; ele simplesmente não pode ser consultado sem um
+    valor de credencial para procurar. Isto prova que o 503 não é mais
+    alcançável por essa rota; ``validate_operations_key`` (função separada,
+    não tocada por esta mudança) continua sendo o único lugar do módulo que
+    ainda produz 503 quando não configurada."""
+
+    class _Settings:
+        operations_api_key = None
+
+    monkeypatch.setattr(security, "get_settings", lambda: _Settings())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await security._authenticate_with_fallback(None, require_admin=False)
+
+    assert exc_info.value.status_code == 401
+
+
+def test_validate_operations_key_still_fails_closed_when_unconfigured() -> None:
+    """The unrelated ``validate_operations_key`` helper (currently unused by
+    any router, kept only for its own tests) is untouched by this change and
+    keeps its original 503-when-unconfigured contract."""
+    with pytest.raises(HTTPException) as exc_info:
+        validate_operations_key("anything", None)
+
+    assert exc_info.value.status_code == 503

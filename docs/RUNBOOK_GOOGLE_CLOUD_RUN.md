@@ -77,7 +77,6 @@ Segredos previstos no Secret Manager:
 
 - `DATABASE_URL`
 - `OPERATIONS_API_KEY`
-- `OPERATIONS_READ_API_KEY` opcional para consumidores somente leitura
 - `NEP_ACCOUNT`
 - `NEP_PASSWORD`
 - `TELEGRAM_BOT_TOKEN`
@@ -85,15 +84,13 @@ Segredos previstos no Secret Manager:
 - `EXPLANATION_API_KEY`
 
 Mapeie os segredos para variáveis `MPLACAS_DATABASE_URL`,
-`MPLACAS_OPERATIONS_API_KEY`, `MPLACAS_OPERATIONS_READ_API_KEY` quando houver consumidores somente
-leitura, `MPLACAS_NEP_ACCOUNT`, `MPLACAS_NEP_PASSWORD`,
+`MPLACAS_OPERATIONS_API_KEY`, `MPLACAS_NEP_ACCOUNT`, `MPLACAS_NEP_PASSWORD`,
 `MPLACAS_TELEGRAM_BOT_TOKEN`, `MPLACAS_TELEGRAM_WEBHOOK_SECRET` e
 `MPLACAS_EXPLANATION_API_KEY`.
 
-Quando a chave de leitura não puder consultar todas as usinas, configure também a variável não
-secreta `MPLACAS_OPERATIONS_READ_PLANT_IDS` com os UUIDs autorizados separados por vírgula. Uma lista
-inválida, vazia ou configurada sem `MPLACAS_OPERATIONS_READ_API_KEY` impede a inicialização. A ausência
-da variável mantém o acesso de leitura global por compatibilidade.
+Consumidores somente leitura autenticam com uma credencial operacional persistida (papel `READ`,
+com ou sem escopo de usina), emitida via `/operations/credentials` — não existe mais uma chave
+estática de leitura no ambiente.
 
 Não use arquivo JSON de chave de service account no repositório ou na imagem.
 
