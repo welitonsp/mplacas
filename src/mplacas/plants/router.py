@@ -14,6 +14,7 @@ from mplacas.audit.repository import AuditEventRepository
 from mplacas.core.tenancy import AdminPlantPath, ReadPlantPath
 from mplacas.db.models import Device, Plant
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_principal_context
 
 router = APIRouter(prefix="/plants", tags=["plants"])
 
@@ -148,6 +149,7 @@ async def get_plant_technical_configuration(
 ) -> PlantTechnicalConfigurationView:
     """Return plant geometry and power ratings within the caller's tenant."""
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         plant = await session.get(Plant, scoped.plant_id)
         if plant is None:
             raise HTTPException(
@@ -167,6 +169,7 @@ async def update_plant_technical_configuration(
 ) -> PlantTechnicalConfigurationView:
     """Atomically update plant and inverter technical configuration."""
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         plant = await session.get(Plant, scoped.plant_id)
         if plant is None:
             raise HTTPException(
@@ -244,6 +247,7 @@ async def update_plant_location(
     """
     plant_id = scoped.plant_id
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         # ``AdminPlantPath`` already proved ``plant_id`` exists and is in scope
         # (it queries ``Plant.id`` to build the caller's ``PlantScope``), so a
         # missing row here would indicate a race (e.g. the plant was deleted

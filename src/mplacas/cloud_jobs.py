@@ -30,6 +30,7 @@ from mplacas.db.models import Plant
 from mplacas.db.repositories.plant import PlantRepository
 from mplacas.db.session import SessionFactory
 from mplacas.db.session import engine as database_engine
+from mplacas.db.tenant_context import set_platform_context
 from mplacas.retention.service import RetentionService, RetentionWindows
 from mplacas.retention.timeseries_service import (
     TimeSeriesRetentionService,
@@ -227,6 +228,7 @@ async def run_operational_watchdog(*, now: datetime | None = None) -> None:
     plant_id = await _find_plant_id(plant_name)
     current_time = now or datetime.now(UTC)
     async with SessionFactory() as session:
+        await set_platform_context(session)
         latest = await get_latest_pipeline_execution(session, plant_id=plant_id)
     if latest is None:
         raise RuntimeError("daily pipeline has no execution history")
@@ -309,6 +311,7 @@ async def run_retention() -> None:
     )
     logger.info("cloud_job_retention_started")
     async with SessionFactory() as session:
+        await set_platform_context(session)
         report = await RetentionService(session).purge(windows=windows)
         energy_deleted, climate_deleted = await TimeSeriesRetentionService(session).purge(
             windows=ts_windows
@@ -331,6 +334,7 @@ async def run_smoke_check() -> None:
     """Fail fast when a deployed job cannot reach the configured database."""
 
     async with SessionFactory() as session:
+        await set_platform_context(session)
         await session.execute(text("SELECT 1"))
     logger.info("cloud_job_smoke_completed")
 
@@ -426,6 +430,7 @@ async def run_daily_pipeline(
         extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
     )
     async with SessionFactory() as session:
+        await set_platform_context(session)
         try:
             await run_ledger_backed_daily_pipeline(
                 session,
@@ -486,6 +491,7 @@ async def run_daily_digest(
         extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
     )
     async with SessionFactory() as session:
+        await set_platform_context(session)
         sent = await send_daily_digest(
             session,
             plant_id=plant_id,
@@ -515,6 +521,7 @@ async def run_outbox_dispatch() -> AlertJobSummary:
         timeout_seconds=settings.request_timeout_seconds,
     )
     async with SessionFactory() as session:
+        await set_platform_context(session)
         summary = await dispatch_due_alert_outbox(
             session,
             provider=provider,
@@ -560,6 +567,7 @@ async def _resolve_plant_id(plant_name: str) -> uuid.UUID:
     `plants.id`.
     """
     async with SessionFactory() as session:
+        await set_platform_context(session)
         plant = await PlantRepository(session).get_or_create(plant_name)
         plant_id = plant.id
         await session.commit()
@@ -569,6 +577,7 @@ async def _resolve_plant_id(plant_name: str) -> uuid.UUID:
 async def _find_plant_id(plant_name: str) -> uuid.UUID:
     """Resolve an existing plant without mutating state from the watchdog."""
     async with SessionFactory() as session:
+        await set_platform_context(session)
         plant_ids = tuple(
             await session.scalars(select(Plant.id).where(Plant.name == plant_name))
         )

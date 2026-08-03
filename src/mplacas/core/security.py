@@ -144,6 +144,7 @@ async def _resolve_persisted_credential(
 ) -> OperationsPrincipal | None:
     from mplacas.credentials.service import CredentialService
     from mplacas.db.session import SessionFactory
+    from mplacas.db.tenant_context import set_platform_context
 
     settings = get_settings()
     pepper = (
@@ -152,6 +153,7 @@ async def _resolve_persisted_credential(
         else ""
     )
     async with SessionFactory() as session:
+        await set_platform_context(session)
         principal = await CredentialService(session, pepper=pepper).resolve(provided)
     if principal is None:
         return None

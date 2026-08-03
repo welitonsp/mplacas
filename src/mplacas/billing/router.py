@@ -11,6 +11,7 @@ from mplacas.billing.repository import UtilityBillRepository
 from mplacas.core.config import get_settings
 from mplacas.core.tenancy import AdminPlant, AdminPrincipal, resolve_admin_plant_scope
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_principal_context
 from mplacas.reports.snapshot import materialize_monthly_report_snapshot
 
 router = APIRouter(
@@ -66,6 +67,7 @@ async def intake_bill_text(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         repository = UtilityBillRepository(session)
         try:
             record = await repository.create_pending(
@@ -98,6 +100,7 @@ async def pending_bills(
     limit: int = Query(default=20, ge=1, le=100),
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         records = await UtilityBillRepository(session).list_pending(
             limit=limit,
             plant_id=scoped.plant_id,
@@ -112,6 +115,7 @@ async def confirm_bill(
     scoped: AdminPlant,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         repository = UtilityBillRepository(session)
         record = await repository.get(bill_id, plant_id=scoped.plant_id)
         if record is None:
@@ -159,6 +163,7 @@ async def reject_bill(
     scoped: AdminPlant,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         repository = UtilityBillRepository(session)
         record = await repository.get(bill_id, plant_id=scoped.plant_id)
         if record is None:

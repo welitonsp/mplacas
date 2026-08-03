@@ -13,6 +13,7 @@ from mplacas.climate.open_meteo import OpenMeteoHistoricalProvider
 from mplacas.core.config import get_settings
 from mplacas.core.tenancy import AdminPlant
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_principal_context
 from mplacas.orchestration.execution_repository import PipelineExecutionAlreadyRunningError
 from mplacas.orchestration.runtime import run_ledger_backed_daily_pipeline
 from mplacas.orchestration.status_service import get_latest_pipeline_execution
@@ -58,6 +59,7 @@ async def run_pipeline(
     )
 
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         try:
             result = await run_ledger_backed_daily_pipeline(
                 session,
@@ -168,6 +170,7 @@ async def run_pipeline(
 @router.get("/status/latest", status_code=status.HTTP_200_OK)
 async def latest_pipeline_status(scoped: AdminPlant) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         snapshot = await get_latest_pipeline_execution(session, plant_id=scoped.plant_id)
     if snapshot is None:
         raise HTTPException(

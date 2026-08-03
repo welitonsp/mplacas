@@ -44,8 +44,12 @@ evitando rollout parcial inseguro.
 
 ## Gates para rollout produtivo
 
-- inventário completo das tabelas diretas, filhas e netas, incluindo outbox e séries temporais;
-- todas as factories HTTP/jobs vinculam tenant ou plataforma antes da primeira query;
+- inventário completo das tabelas diretas, filhas e netas, incluindo outbox e séries temporais —
+  **concluído em 2026-08-02** e protegido por comparação automática com as 24 tabelas do
+  `Base.metadata`; detalhes em `RLS_ROLLOUT_INVENTORY.md`;
+- todas as factories HTTP/jobs vinculam tenant ou plataforma antes da primeira query —
+  **concluído em 2026-08-02** para todos os consumidores diretos de `SessionFactory()`, com teste
+  arquitetural que falha se uma nova sessão não contextualizar como primeira operação;
 - roles runtime/migration separadas no Neon e verificadas por teste — **concluído em produção em
   2026-08-02**: `mplacas_runtime` está sem ownership e `BYPASSRLS`, enquanto `neondb_owner` ficou
   restrito ao endpoint direto de migrations;
@@ -55,4 +59,14 @@ evitando rollout parcial inseguro.
 
 Até os gates restantes serem atendidos, filtros de aplicação continuam sendo o controle produtivo
 e o item permanece parcial no checklist. Não habilitar policies nas tabelas reais antes do canário
-em branch descartável e da contextualização integral de requests/jobs.
+em branch descartável, da modelagem tenant de auditoria e da autorização mínima de plataforma.
+
+## Evidência da fundação de rollout — 2026-08-02
+
+- `mplacas.db.rls_inventory` mantém a classificação executável das tabelas.
+- Contexto transacional foi aplicado às rotas HTTP, autenticação, readiness, jobs, retenção,
+  coletores, drains de relatórios/outbox e webhook Telegram.
+- Descobertas globais usam contexto de plataforma explícito; após resolver a organização, o
+  Telegram troca para contexto tenant antes das consultas e escritas da fatura.
+- Validação local: **626 passed**, **4 skipped**, Ruff e Mypy aprovados.
+- Nenhuma migration `ENABLE/FORCE ROW LEVEL SECURITY` foi criada ou aplicada nesta etapa.

@@ -12,6 +12,7 @@ from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.core.config import get_settings
 from mplacas.core.tenancy import AdminPlant
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_principal_context
 
 router = APIRouter(
     prefix="/alerts",
@@ -49,6 +50,7 @@ async def run_alerts(
         timeout_seconds=settings.request_timeout_seconds,
     )
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         result = await run_operational_alert_pipeline(
             session,
             plant_id=plant_id,

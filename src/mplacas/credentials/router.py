@@ -15,6 +15,7 @@ from mplacas.core.tenancy import AdminPrincipal
 from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
 from mplacas.credentials.service import CredentialError, CredentialService, UserService
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_principal_context
 from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
 
 router = APIRouter(
@@ -146,6 +147,7 @@ async def create_credential(
     principal: AdminPrincipal,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         organization_id = await _resolve_organization_id(session, principal)
         service = CredentialService(session, pepper=_pepper())
         try:
@@ -188,6 +190,7 @@ async def list_credentials(
     principal: AdminPrincipal,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         organization_id = await _resolve_organization_id(session, principal)
         records = await CredentialService(session).list_credentials(
             organization_id=organization_id
@@ -205,6 +208,7 @@ async def revoke_credential(
     principal: AdminPrincipal,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         organization_id = await _resolve_organization_id(session, principal)
         service = CredentialService(session, pepper=_pepper())
         try:
@@ -242,6 +246,7 @@ async def create_user(
     principal: AdminPrincipal,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         organization_id = await _resolve_organization_id(session, principal)
         try:
             record = await UserService(session).create(
@@ -271,6 +276,7 @@ async def list_users(
     principal: AdminPrincipal,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         organization_id = await _resolve_organization_id(session, principal)
         records = await UserService(session).list_users(organization_id=organization_id)
     return {
@@ -286,6 +292,7 @@ async def deactivate_user(
     principal: AdminPrincipal,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, principal)
         organization_id = await _resolve_organization_id(session, principal)
         try:
             record = await UserService(session).deactivate(

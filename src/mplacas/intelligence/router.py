@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from mplacas.core.tenancy import ReadPlant
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_principal_context
 from mplacas.intelligence.anomaly_service import (
     AnomalyDataNotFoundError,
     analyze_recent_persisted_anomalies,
@@ -161,6 +162,7 @@ async def energy_cycle_summary(
     expected_production_kwh: Decimal | None = Query(default=None, ge=0),
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         try:
             result = await analyze_persisted_cycle(
                 session,
@@ -180,6 +182,7 @@ async def latest_energy_trend(
     stable_tolerance_percent: Decimal = Query(default=Decimal("2.0"), ge=0, le=100),
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         try:
             result = await compare_latest_confirmed_cycles(
                 session,
@@ -199,6 +202,7 @@ async def latest_executive_dashboard(
     stable_tolerance_percent: Decimal = Query(default=Decimal("2.0"), ge=0, le=100),
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         try:
             result = await _executive_dashboard_read_model.get(
                 session,
@@ -219,6 +223,7 @@ async def latest_energy_anomalies(
     days: int = Query(default=7, ge=1, le=90),
 ) -> dict[str, object]:
     async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         try:
             result = await analyze_recent_persisted_anomalies(
                 session,

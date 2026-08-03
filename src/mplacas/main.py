@@ -16,6 +16,7 @@ from mplacas.core.config import get_settings
 from mplacas.credentials.router import router as credentials_router
 from mplacas.credentials.router import users_router
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_platform_context
 from mplacas.explanations.router import router as explanations_router
 from mplacas.intelligence.router import router as intelligence_router
 from mplacas.observability.context import (
@@ -180,6 +181,7 @@ async def ready(response: Response) -> dict[str, object]:
     database_ready = False
     try:
         async with SessionFactory() as session:
+            await set_platform_context(session)
             await asyncio.wait_for(
                 session.execute(text("SELECT 1")),
                 timeout=settings.readiness_timeout_seconds,

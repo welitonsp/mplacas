@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from mplacas.core.config import get_settings
 from mplacas.core.tenancy import ReadPlant
 from mplacas.db.session import SessionFactory
+from mplacas.db.tenant_context import set_principal_context
 from mplacas.explanations.executive import executive_explanation_request
 from mplacas.explanations.http_provider import StructuredHttpExplanationProvider
 from mplacas.explanations.provider import ExplanationProvider
@@ -46,6 +47,7 @@ async def latest_explanation(
 
     try:
         async with SessionFactory() as session:
+            await set_principal_context(session, scoped.principal)
             dashboard = await build_executive_dashboard(
                 session,
                 plant_id=plant_id,
