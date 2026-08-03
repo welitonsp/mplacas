@@ -40,10 +40,13 @@ describe('EnergyProductionSection', () => {
   })
 
   it('marca "Parcial" apenas nos cards derivados do dado diário de geração, nunca em importada/injetada', () => {
+    // "Produção no ciclo" saiu deste componente na Etapa 5 (agora fica em
+    // `DashboardPage`, ao lado de "Produção esperada") — a mesma regra de
+    // completude (`hasIncompleteDailyProduction`, exportada por este arquivo)
+    // continua sendo aplicada lá, só que fora deste teste de unidade.
     const quality = buildQuality({ missing_days: 3 })
     render(<EnergyProductionSection indicators={buildIndicators()} quality={quality} />)
 
-    expect(within(cardFor('Produção no ciclo')).getByText('Parcial')).toBeInTheDocument()
     expect(within(cardFor('Autoconsumo estimado')).getByText('Parcial')).toBeInTheDocument()
     expect(within(cardFor('Consumo total estimado')).getByText('Parcial')).toBeInTheDocument()
 

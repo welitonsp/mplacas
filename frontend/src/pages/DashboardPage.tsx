@@ -19,11 +19,11 @@ import { HeroCard } from '../components/HeroCard'
 import { QualityBanner } from '../components/QualityBanner'
 import { TrendCard } from '../components/TrendCard'
 import { EnergyFlowDiagram } from '../components/EnergyFlowDiagram'
-import { ConsumptionDonut } from '../components/ConsumptionDonut'
+import { ExpectedProductionCard } from '../components/ExpectedProductionCard'
 import { DashboardHeader } from '../components/DashboardHeader'
 import { DataFreshness } from '../components/DataFreshness'
 import { DiagnosticsCard } from '../components/DiagnosticsCard'
-import { EnergyProductionSection } from '../components/EnergyProductionSection'
+import { EnergyProductionSection, hasIncompleteDailyProduction } from '../components/EnergyProductionSection'
 import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
 import { ProductionHistorySection } from '../components/ProductionHistorySection'
@@ -179,6 +179,9 @@ export function DashboardPage() {
 
         {data && indicators && quality && (
           <>
+            {/* Bloco 1 — "Está indo bem?": saúde do ciclo, produção real vs.
+                esperada lado a lado, status de anomalia recente, diagnósticos
+                e comparação com o ciclo anterior. */}
             <HeroCard
               referenceMonth={data.current_cycle.reference_month}
               headline={data.headline}
@@ -186,6 +189,27 @@ export function DashboardPage() {
               healthScore={indicators.health_score}
             />
             <QualityBanner quality={quality} />
+
+            <div className="mt-8">
+              <SectionTitle>Produção real vs. esperada</SectionTitle>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <MetricCard
+                  label="Produção no ciclo"
+                  value={indicators.cycle_production_kwh}
+                  unit="kWh"
+                  partial={hasIncompleteDailyProduction(quality)}
+                />
+                <ExpectedProductionCard expectedProduction={expectedProduction} />
+              </div>
+              {anomalyState.data && anomalyState.data.current_streak_days > 0 && (
+                <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-[var(--color-danger)]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-danger)]" />
+                  {anomalyState.data.current_streak_days} dia
+                  {anomalyState.data.current_streak_days > 1 ? 's' : ''} seguido
+                  {anomalyState.data.current_streak_days > 1 ? 's' : ''} com produção abaixo do esperado.
+                </p>
+              )}
+            </div>
 
             <DiagnosticsCard diagnostics={combineDiagnostics(data)} />
 
@@ -196,26 +220,23 @@ export function DashboardPage() {
               </div>
             )}
 
+            {/* Bloco 2 — "Para onde foi a energia?": um único diagrama de
+                fluxo (autoconsumo/injetada/importada não se repetem em mais
+                visuais — ver Etapa 5), detalhamento numérico e histórico. */}
             <div className="mt-8">
-              <SectionTitle>Energia e produção</SectionTitle>
-              <EnergyProductionSection indicators={indicators} quality={quality} />
+              <SectionTitle>Fluxo de energia</SectionTitle>
+              <EnergyFlowDiagram
+                production={indicators.cycle_production_kwh}
+                selfConsumption={indicators.estimated_self_consumption_kwh}
+                injected={indicators.injected_kwh}
+                imported={indicators.imported_kwh}
+                consumption={indicators.estimated_total_consumption_kwh}
+              />
             </div>
 
             <div className="mt-8">
-              <SectionTitle>Fluxo de energia</SectionTitle>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
-                <EnergyFlowDiagram
-                  production={indicators.cycle_production_kwh}
-                  selfConsumption={indicators.estimated_self_consumption_kwh}
-                  injected={indicators.injected_kwh}
-                  imported={indicators.imported_kwh}
-                  consumption={indicators.estimated_total_consumption_kwh}
-                />
-                <ConsumptionDonut
-                  imported={indicators.imported_kwh}
-                  selfConsumption={indicators.estimated_self_consumption_kwh}
-                />
-              </div>
+              <SectionTitle>Energia e produção</SectionTitle>
+              <EnergyProductionSection indicators={indicators} quality={quality} />
             </div>
 
             <div className="mt-8">
@@ -245,9 +266,12 @@ export function DashboardPage() {
               </div>
             </div>
 
+            {/* Bloco 3 — "Quanto custou?": financeiro. Grid de 1 coluna porque
+                só há um card hoje — Etapa 7 ("financeiro completo") é quem
+                deve adicionar mais conteúdo e, com ele, mais colunas. */}
             <div className="mt-8">
               <SectionTitle>Financeiro</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <CurrencyCard
                   label="Componente energia da fatura"
                   value={indicators.bill_energy_component_brl}
