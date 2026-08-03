@@ -56,18 +56,19 @@ bash infra/gcp/bootstrap.sh "$GCP_PROJECT_ID"
 
 Digite o ID do projeto quando o script solicitar confirmação.
 
-## 3. Rotacionar a senha do Neon exposta anteriormente
+## 3. Separar e rotacionar os papéis do Neon
 
-No painel do Neon:
+O backend e as migrations não podem compartilhar `neondb_owner`:
 
-1. Abra o projeto Mplacas.
-2. Selecione o role `neondb_owner`.
-3. Execute **Reset password**.
-4. Copie novamente as duas connection strings:
-   - pooled: hostname contém `-pooler`;
-   - direta: hostname não contém `-pooler`.
+1. Use `mplacas_runtime` no endpoint pooled; o papel deve ser `NOBYPASSRLS`, sem ownership,
+   criação de banco ou criação de roles, e receber somente DML/sequence no schema `public`.
+2. Use `neondb_owner` somente no endpoint direto do job de migrations.
+3. Rotacione senhas por canal sem eco e cadastre cada URL no secret correspondente.
+4. Exija `sslmode=require&channel_binding=require` uma única vez; rejeite parâmetros duplicados,
+   whitespace e qualquer URL aninhada dentro da query string.
 
-Nunca reutilize a senha ou as URLs antigas.
+Nunca reutilize senha ou URL antiga. Desative a versão anterior somente depois de validar
+`/ready`, smoke, watchdog e o job de migração; não destrua versões no mesmo procedimento.
 
 ## 4. Cadastrar separadamente os segredos GCP
 
@@ -82,12 +83,14 @@ bash infra/gcp/set-secrets.sh jwt
 
 | Secret Manager | Uso |
 |---|---|
-| `mplacas-database-url` | endpoint Neon pooled do serviço web |
-| `mplacas-migration-database-url` | endpoint Neon direto do job de migração |
+| `mplacas-database-url` | endpoint Neon pooled do serviço web, role `mplacas_runtime` |
+| `mplacas-migration-database-url` | endpoint Neon direto do job, role `neondb_owner` |
 | `mplacas-operations-api-key` | autenticação operacional do backend |
 | `mplacas-jwt-secret` | assinatura dos tokens de login |
 
 O script rejeita endpoint direto no subcomando `database-runtime` e endpoint pooled no subcomando `database-migration`.
+Também rejeita credenciais ausentes, parâmetros duplicados/desconhecidos, TLS/channel binding
+fracos, whitespace e connection strings concatenadas.
 
 Não execute `jwt --rotate-jwt` durante a implantação normal. Essa opção invalida tokens ativos e exige confirmação explícita.
 

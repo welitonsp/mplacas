@@ -79,7 +79,8 @@ def _validate_endpoint(tmp_path: Path, url: str, expected: str) -> subprocess.Co
 def test_runtime_accepts_neon_pooler(tmp_path: Path) -> None:
     result = _validate_endpoint(
         tmp_path,
-        "postgresql://user:pass@ep-test-pooler.us-east-1.aws.neon.tech/neondb",
+        "postgresql://user:pass@ep-test-pooler.us-east-1.aws.neon.tech/neondb"
+        "?sslmode=require&channel_binding=require",
         "runtime",
     )
     assert result.returncode == 0, result.stderr
@@ -88,7 +89,8 @@ def test_runtime_accepts_neon_pooler(tmp_path: Path) -> None:
 def test_runtime_rejects_direct_neon_endpoint(tmp_path: Path) -> None:
     result = _validate_endpoint(
         tmp_path,
-        "postgresql://user:pass@ep-test.us-east-1.aws.neon.tech/neondb",
+        "postgresql://user:pass@ep-test.us-east-1.aws.neon.tech/neondb"
+        "?sslmode=require&channel_binding=require",
         "runtime",
     )
     assert result.returncode != 0
@@ -97,7 +99,8 @@ def test_runtime_rejects_direct_neon_endpoint(tmp_path: Path) -> None:
 def test_migration_accepts_direct_neon_endpoint(tmp_path: Path) -> None:
     result = _validate_endpoint(
         tmp_path,
-        "postgresql://user:pass@ep-test.us-east-1.aws.neon.tech/neondb",
+        "postgresql://user:pass@ep-test.us-east-1.aws.neon.tech/neondb"
+        "?sslmode=require&channel_binding=require",
         "migration",
     )
     assert result.returncode == 0, result.stderr
@@ -106,7 +109,8 @@ def test_migration_accepts_direct_neon_endpoint(tmp_path: Path) -> None:
 def test_migration_rejects_pooler(tmp_path: Path) -> None:
     result = _validate_endpoint(
         tmp_path,
-        "postgresql://user:pass@ep-test-pooler.us-east-1.aws.neon.tech/neondb",
+        "postgresql://user:pass@ep-test-pooler.us-east-1.aws.neon.tech/neondb"
+        "?sslmode=require&channel_binding=require",
         "migration",
     )
     assert result.returncode != 0

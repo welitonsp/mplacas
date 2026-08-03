@@ -94,6 +94,18 @@ def test_secret_rotation_captures_created_version_without_racy_sort() -> None:
     assert '[[ "$new_version" =~ ^[0-9]+$ ]]' in script
 
 
+def test_database_secret_setup_uses_canonical_url_validator() -> None:
+    library = read("infra/gcp/lib.sh")
+    validator = read("infra/gcp/validate_database_url.py")
+
+    assert 'validate_database_url.py" "$file" "$expected"' in library
+    assert 'ALLOWED_QUERY_KEYS = frozenset({' in validator
+    assert 'params.get("sslmode") != "require"' in validator
+    assert 'params.get("channel_binding") != "require"' in validator
+    assert 'len(keys) != len(set(keys))' in validator
+    assert '"://" in item' in validator
+
+
 def test_operations_key_rotation_is_fail_closed_and_auditable() -> None:
     script = read("infra/gcp/rotate-operations-key.sh")
 

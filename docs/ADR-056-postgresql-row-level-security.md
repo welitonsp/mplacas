@@ -46,10 +46,13 @@ evitando rollout parcial inseguro.
 
 - inventário completo das tabelas diretas, filhas e netas, incluindo outbox e séries temporais;
 - todas as factories HTTP/jobs vinculam tenant ou plataforma antes da primeira query;
-- roles runtime/migration separadas no Neon e verificadas por teste;
+- roles runtime/migration separadas no Neon e verificadas por teste — **concluído em produção em
+  2026-08-02**: `mplacas_runtime` está sem ownership e `BYPASSRLS`, enquanto `neondb_owner` ficou
+  restrito ao endpoint direto de migrations;
 - migrations com policies `USING` e `WITH CHECK`, `ENABLE` e `FORCE RLS`;
 - testes PostgreSQL de leitura, inserção, atualização e exclusão cross-tenant;
 - canário em branch Neon descartável, métricas de violações e rollback ensaiado.
 
-Até esses gates serem atendidos, filtros de aplicação continuam sendo o controle produtivo e o item
-permanece parcial no checklist.
+Até os gates restantes serem atendidos, filtros de aplicação continuam sendo o controle produtivo
+e o item permanece parcial no checklist. Não habilitar policies nas tabelas reais antes do canário
+em branch descartável e da contextualização integral de requests/jobs.
