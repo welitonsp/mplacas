@@ -17,11 +17,11 @@ dependencies = [
   "asyncpg>=0.30,<1",
   "aiosqlite>=0.21,<1",
   "pypdf>=6.14.2,<7",
-  "reportlab>=4.4,<5",
+  "reportlab>=4.4,<6",
   "xlsxwriter>=3.2,<4",
   "pyjwt>=2.8,<3",
-  "argon2-cffi>=23.1,<24",
-  "google-cloud-storage>=2.10,<3",
+  "argon2-cffi>=23.1,<26",
+  "google-cloud-storage>=2.10,<4",
   "tzdata>=2025.2",
   "opentelemetry-api>=1.44,<2",
   "opentelemetry-sdk>=1.44,<2",
@@ -34,13 +34,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "editables==0.5",
+  "editables==0.6",
   "hatchling>=1.27,<2",
   "pip-tools==7.6.0",
   "pytest>=9.0.3,<10",
   "pytest-asyncio>=1.2,<2",
   "ruff>=0.11,<1",
-  "mypy>=1.15,<2",
+  "mypy>=1.15,<3",
   "pip-audit>=2.9,<3",
   "types-reportlab>=4.5.1.20260712,<5",
 ]
