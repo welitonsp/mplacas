@@ -1,4 +1,4 @@
-import type { AnomalyLevel, Severity, TrendDirection } from './contracts'
+import type { AnomalyLevel, DiagnosticSeverity, Severity, TrendDirection } from './contracts'
 
 // Status é calculado no backend (ver intelligence/executive_service.py) — o front
 // apenas mapeia o mesmo vocabulário para rótulo pt-BR e cor de severidade, sem
@@ -46,6 +46,14 @@ export const SEVERITY_DOT: Record<Severity, string> = {
   warning: 'bg-[var(--color-warning)]',
   danger: 'bg-[var(--color-danger)]',
   neutral: 'bg-gray-400',
+}
+
+// Rótulo textual da severidade do diagnóstico — sempre exibido junto da cor (ver
+// skill frontend-design, regra de acessibilidade: cor sozinha não basta).
+export const DIAGNOSTIC_SEVERITY_META: Record<DiagnosticSeverity, { label: string; severity: Severity }> = {
+  CRITICAL: { label: 'Crítico', severity: 'danger' },
+  WARNING: { label: 'Atenção', severity: 'warning' },
+  INFO: { label: 'Informativo', severity: 'neutral' },
 }
 
 export const LEVEL_LABEL: Record<AnomalyLevel, string> = {

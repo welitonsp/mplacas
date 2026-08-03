@@ -23,10 +23,27 @@ export interface ExecutiveIndicators {
   health_score: MetricValue
 }
 
+// Vocabulário compartilhado com o backend (ver intelligence/energy_engine.py::DiagnosticSeverity).
+export type DiagnosticSeverity = 'CRITICAL' | 'WARNING' | 'INFO'
+export const DIAGNOSTIC_SEVERITIES: ReadonlySet<string> = new Set(['CRITICAL', 'WARNING', 'INFO'])
+
+// Um diagnóstico é o "porquê" por trás de uma ação prioritária: problema detectado
+// (`message`), gravidade (`severity`) e o que fazer a respeito (`recommended_action`).
+// `priority_actions` no payload é só a lista deduplicada de `recommended_action` de
+// todos os diagnósticos (ver intelligence/executive_service.py::_priority_actions) —
+// por isso a UI deve mostrar o diagnóstico completo, não a ação isolada.
+export interface Diagnostic {
+  code: string
+  severity: DiagnosticSeverity
+  message: string
+  recommended_action: string
+}
+
 export interface ExecutiveCycle {
   reference_month: string
   quality: CycleQuality
   indicators: ExecutiveIndicators
+  diagnostics: Diagnostic[]
 }
 
 export type TrendDirection = 'UP' | 'DOWN' | 'STABLE'
@@ -49,6 +66,7 @@ export interface ExecutiveTrend {
   current_reference_month: string
   previous_reference_month: string
   metrics: TrendMetrics
+  diagnostics: Diagnostic[]
 }
 
 export interface ExecutiveDashboardResponse {
@@ -112,6 +130,25 @@ export function classifyAnomalyErrorStatus(status: number): AnomalyFetchError | 
   return 'SERVER_ERROR'
 }
 
+// Mais crítico primeiro — mesma ordem de gravidade usada no backend para decidir o
+// `status` executivo (ver intelligence/executive_service.py::_status_for_cycle).
+const DIAGNOSTIC_SEVERITY_ORDER: Record<DiagnosticSeverity, number> = {
+  CRITICAL: 0,
+  WARNING: 1,
+  INFO: 2,
+}
+
+// Combina os diagnósticos do ciclo atual com os da tendência (quando houver) e
+// ordena por gravidade — a mesma lista de onde `priority_actions` é derivada no
+// backend (ver intelligence/executive_service.py::_priority_actions), mas mantendo
+// o problema e a severidade junto da ação, não só a ação isolada.
+export function combineDiagnostics(dashboard: ExecutiveDashboardResponse): Diagnostic[] {
+  const all = [...dashboard.current_cycle.diagnostics, ...(dashboard.trend?.diagnostics ?? [])]
+  return [...all].sort(
+    (a, b) => DIAGNOSTIC_SEVERITY_ORDER[a.severity] - DIAGNOSTIC_SEVERITY_ORDER[b.severity],
+  )
+}
+
 // Data (ISO `YYYY-MM-DD`) do último dia com produção diária realmente coletada
 // (`actual_production_kwh` não nulo) no payload de anomalias — usado para mostrar
 // o frescor real do dado em vez da hora em que o navegador fez o fetch. `daily`
@@ -172,6 +209,30 @@ function parseTrendMetric(source: Record<string, unknown>, key: string): TrendMe
   }
 }
 
+function requireDiagnosticSeverity(source: Record<string, unknown>, key: string): DiagnosticSeverity {
+  const value = source[key]
+  if (typeof value !== 'string' || !DIAGNOSTIC_SEVERITIES.has(value)) {
+    throw new Error(`Resposta inválida da API: ${key}`)
+  }
+  return value as DiagnosticSeverity
+}
+
+function parseDiagnostic(value: unknown): Diagnostic {
+  if (!isRecord(value)) throw new Error('Resposta inválida da API: diagnostics')
+  return {
+    code: requireString(value, 'code'),
+    severity: requireDiagnosticSeverity(value, 'severity'),
+    message: requireString(value, 'message'),
+    recommended_action: requireString(value, 'recommended_action'),
+  }
+}
+
+function parseDiagnostics(source: Record<string, unknown>): Diagnostic[] {
+  const diagnostics = source.diagnostics
+  if (!Array.isArray(diagnostics)) throw new Error('Resposta inválida da API: diagnostics')
+  return diagnostics.map(parseDiagnostic)
+}
+
 function optionalTrend(source: Record<string, unknown>): ExecutiveTrend | null {
   const trend = source.trend
   if (trend === null) return null
@@ -187,6 +248,7 @@ function optionalTrend(source: Record<string, unknown>): ExecutiveTrend | null {
       self_sufficiency_delta_points: metricValue(metrics, 'self_sufficiency_delta_points'),
       health_score_delta: metricValue(metrics, 'health_score_delta'),
     },
+    diagnostics: parseDiagnostics(trend),
   }
 }
 
@@ -262,6 +324,7 @@ export function parseExecutiveDashboard(payload: unknown): ExecutiveDashboardRes
         bill_energy_component_brl: metricValue(indicators, 'bill_energy_component_brl'),
         health_score: metricValue(indicators, 'health_score'),
       },
+      diagnostics: parseDiagnostics(currentCycle),
     },
     trend: optionalTrend(payload),
   }

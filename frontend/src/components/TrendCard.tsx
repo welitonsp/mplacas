@@ -7,6 +7,10 @@ export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
   const points = toNumber(trend.metrics.self_sufficiency_delta_points)
   const pointsSeverity: Severity = points == null || points === 0 ? 'neutral' : points > 0 ? 'success' : 'danger'
 
+  const healthDelta = toNumber(trend.metrics.health_score_delta)
+  const healthDeltaSeverity: Severity =
+    healthDelta == null || healthDelta === 0 ? 'neutral' : healthDelta > 0 ? 'success' : 'danger'
+
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
@@ -39,6 +43,13 @@ export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
           <span className={`text-sm font-semibold ${SEVERITY_TEXT[pointsSeverity]}`}>
             {points != null && points > 0 ? '+' : ''}
             {formatNumber(points, 1)} p.p.
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5">
+          <span className="text-sm text-gray-600">Índice de saúde</span>
+          <span className={`text-sm font-semibold ${SEVERITY_TEXT[healthDeltaSeverity]}`}>
+            {healthDelta != null && healthDelta > 0 ? '+' : ''}
+            {formatNumber(healthDelta, 1)} pts
           </span>
         </div>
       </div>

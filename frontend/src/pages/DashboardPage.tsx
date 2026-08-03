@@ -5,6 +5,7 @@ import { PLANT_ID } from '../env'
 import type { AnomalyFetchState, FetchState } from '../lib/dashboard/contracts'
 import {
   classifyAnomalyErrorStatus,
+  combineDiagnostics,
   latestNonNullProductionDate,
   parseAnomalyDashboard,
   parseExecutiveDashboard,
@@ -21,10 +22,10 @@ import { EnergyFlowDiagram } from '../components/EnergyFlowDiagram'
 import { ConsumptionDonut } from '../components/ConsumptionDonut'
 import { DashboardHeader } from '../components/DashboardHeader'
 import { DataFreshness } from '../components/DataFreshness'
+import { DiagnosticsCard } from '../components/DiagnosticsCard'
 import { EnergyProductionSection } from '../components/EnergyProductionSection'
 import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
-import { PriorityActionsCard } from '../components/PriorityActionsCard'
 import { ProductionHistorySection } from '../components/ProductionHistorySection'
 
 export function DashboardPage() {
@@ -186,7 +187,7 @@ export function DashboardPage() {
             />
             <QualityBanner quality={quality} />
 
-            <PriorityActionsCard actions={data.priority_actions} />
+            <DiagnosticsCard diagnostics={combineDiagnostics(data)} />
 
             {data.trend && (
               <div className="mt-8">
