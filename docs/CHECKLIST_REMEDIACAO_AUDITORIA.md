@@ -406,6 +406,14 @@ Baseline de validação deste ciclo:
     desativado. Restam modelar tenant em `audit_events`, criar/testar policies reais, autorizar a
     role de plataforma mínima e executar canário/rollback em branch Neon descartável. Validação
     consolidada: **626 passed**, **4 skipped**, Ruff e Mypy aprovados.
+  - Evidência produtiva em 2026-08-02: o
+    [PR #93](https://github.com/welitonsp/mplacas/pull/93) foi aprovado pelos jobs de qualidade,
+    integração PostgreSQL, contrato GCP, frontend, container, CodeQL e secret scan. O commit
+    `92d1f4a` foi implantado na revisão `mplacas-api-00017-vst`, com 100% do tráfego; `/health` e
+    `/ready` retornaram HTTP 200, `mplacas-smoke-pdtvp` e
+    `mplacas-operational-watchdog-xqndh` concluíram. A inspeção Neon confirmou
+    `mplacas_runtime` sem superuser, `CREATEDB`, `CREATEROLE` ou `BYPASSRLS`, nenhuma tabela com
+    RLS habilitado/forçado e ausência intencional da futura role `mplacas_platform`.
 
 - [x] **P2-02 — escopar idempotência de faturas por usina/tenant.**
   - Substituir unicidade global de `source_hash` por constraint composta apropriada.

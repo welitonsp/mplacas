@@ -70,3 +70,6 @@ em branch descartável, da modelagem tenant de auditoria e da autorização mín
   Telegram troca para contexto tenant antes das consultas e escritas da fatura.
 - Validação local: **626 passed**, **4 skipped**, Ruff e Mypy aprovados.
 - Nenhuma migration `ENABLE/FORCE ROW LEVEL SECURITY` foi criada ou aplicada nesta etapa.
+- O PR #93 foi integrado e implantado na revisão `mplacas-api-00017-vst`; `/health`, `/ready`,
+  smoke e watchdog foram aprovados. A inspeção posterior confirmou zero tabelas com RLS
+  habilitado/forçado e a role runtime ainda sem `BYPASSRLS`.
