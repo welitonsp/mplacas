@@ -169,6 +169,12 @@ def calculate_seasonal_baseline(
 
 
 def _eligible(row: SeasonalPerformanceObservation) -> bool:
+    # NOTE: `photovoltaic/read_service.py:_derive_baseline_unavailable_reason`
+    # reimplements the SQL-expressible part of this predicate (version match,
+    # `data_quality_status == "FINAL"`, `reporting_availability_ratio >=
+    # MINIMUM_REPORTING_AVAILABILITY`) to derive a "why is there no baseline
+    # yet" reason without recalculating the full baseline (ADR-065 section 6).
+    # If this predicate changes, revisit that function too.
     ratio = row.selected_performance_ratio
     return (
         row.data_quality_status == "FINAL"
