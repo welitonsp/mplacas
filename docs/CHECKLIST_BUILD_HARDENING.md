@@ -106,9 +106,18 @@ Legenda: `[x]` concluído, `[~]` parcial, `[ ]` pendente.
     `MPLACAS_CONFIG_FROM_ENV` (completo passa sem `config.env` em disco; incompleto falha com a
     mesma mensagem de sempre) em `tests/test_gcp_input_validation.py`.
 
-  Nenhum comando `gcloud` de deploy real foi executado durante a implementação — apenas scripts,
-  testes automatizados e revisão manual do `Dockerfile.audit`. O deploy real
-  (`bash infra/gcp/provision-cost-audit.sh`) fica para confirmação explícita do operador.
+  **Deploy real executado e validado em produção nesta sessão** (com confirmação explícita do
+  operador). Dois bugs só visíveis rodando de fato no Cloud Run foram encontrados e corrigidos:
+  (a) checkout no Windows sem `.gitattributes` corrompia os scripts para CRLF, quebrando o bash
+  real dentro do container Linux — corrigido com `.gitattributes` (`*.sh eol=lf`); (b)
+  `useradd --system` no `Dockerfile.audit` não cria home directory, quebrando a config do `gcloud`
+  dentro do container non-root — corrigido com `ENV HOME=/app`. Após as correções,
+  `gcloud run jobs execute mplacas-cost-audit --wait` completou com sucesso.
+  Durante a validação, o guardrail pegou um achado real de produção: o Cloud Scheduler
+  `mplacas-daily-digest-schedule` (pausado, apontando pro mesmo job que o legítimo
+  `mplacas-daily-digest` com outro horário, não rastreado por `provision-operations.sh`) — removido
+  manualmente após confirmação do operador. É exatamente a classe de problema que este guardrail
+  existe para detectar.
 
 ## Resumo
 
@@ -117,11 +126,11 @@ Legenda: `[x]` concluído, `[~]` parcial, `[ ]` pendente.
 | P1 (build reprodutível) | 2 | 0 | 0 |
 | P2 (automação de guardrail) | 1 | 0 | 0 |
 
-Nenhum item pendente hoje. Dois itens de acompanhamento não bloqueantes ficam em aberto: (1) rodar
+Nenhum item pendente hoje. P2 está validado de ponta a ponta em produção (deploy real + execução
+com sucesso). Um item de acompanhamento não bloqueante fica em aberto: rodar
 `scripts/compile-locks.sh` de fato em ambiente com Docker para fechar a divergência de plataforma
-residual dos lockfiles (ver P1 acima); (2) o deploy real de `infra/gcp/provision-cost-audit.sh` —
-deliberadamente não executado durante a implementação, aguardando confirmação explícita do operador
-antes de tocar infraestrutura compartilhada.
+residual dos lockfiles (ver P1 acima) — não foi possível nesta sessão por falta de Docker no
+sandbox usado.
 
 ## PR #70 (Docker Python 3.12 → 3.14) — mantido em aberto deliberadamente
 
