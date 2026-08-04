@@ -9,6 +9,7 @@ export function MetricCard({
   partial,
   barPercent,
   maximumFractionDigits,
+  className,
 }: {
   label: string
   value: MetricValue
@@ -18,9 +19,10 @@ export function MetricCard({
   // Tarifas em R$/kWh precisam de mais casas decimais que o padrão de 2 (ver
   // ADR-056) para não arredondar um valor como R$ 0,175126/kWh para R$ 0,18.
   maximumFractionDigits?: number
+  className?: string
 }) {
   return (
-    <Card dashed={partial}>
+    <Card dashed={partial} className={className}>
       {partial && (
         <span className="absolute right-3 top-3 rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-warning)]">
           Parcial

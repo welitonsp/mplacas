@@ -27,7 +27,7 @@ export function EnergyProductionSection({
   const partial = hasIncompleteDailyProduction(quality)
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       <MetricCard label="Energia importada" value={indicators.imported_kwh} unit="kWh" />
       <MetricCard label="Energia injetada" value={indicators.injected_kwh} unit="kWh" />
       <MetricCard

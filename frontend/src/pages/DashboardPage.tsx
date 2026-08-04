@@ -21,7 +21,6 @@ import { TrendCard } from '../components/TrendCard'
 import { EnergyFlowDiagram } from '../components/EnergyFlowDiagram'
 import { ExpectedProductionCard } from '../components/ExpectedProductionCard'
 import { DashboardHeader } from '../components/DashboardHeader'
-import { DataFreshness } from '../components/DataFreshness'
 import { DiagnosticsCard } from '../components/DiagnosticsCard'
 import { EnergyProductionSection, hasIncompleteDailyProduction } from '../components/EnergyProductionSection'
 import { EstimatedSavingsCard } from '../components/EstimatedSavingsCard'
@@ -174,11 +173,10 @@ export function DashboardPage() {
     <div className="min-h-screen bg-gray-50">
       <DashboardHeader onLogout={logout} />
 
-      <main className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8">
+      <main className="mx-auto max-w-7xl 2xl:max-w-[96rem] px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-sm font-medium text-gray-600">Dashboard executivo</h2>
           <div className="flex items-center gap-3">
-            <DataFreshness latestDataDate={latestDataDate} lastSyncedAt={lastUpdated} />
             <button
               onClick={() => {
                 void fetchData()
@@ -204,28 +202,43 @@ export function DashboardPage() {
         {loading && !data && <MetricCardSkeletonGrid />}
 
         {data && indicators && quality && (
-          <>
-            {/* Bloco 1 — "Está indo bem?": saúde do ciclo, produção real vs.
-                esperada lado a lado, status de anomalia recente, diagnósticos
-                e comparação com o ciclo anterior. */}
-            <HeroCard
-              referenceMonth={data.current_cycle.reference_month}
-              headline={data.headline}
-              status={data.status}
-              healthScore={indicators.health_score}
-            />
-            <QualityBanner quality={quality} />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
+            {/* Bloco 1 — "Está indo bem?": saúde do ciclo e status de qualidade
+                do ciclo, em uma faixa horizontal full-width. */}
+            <section className="md:col-span-6 lg:col-span-12">
+              <HeroCard
+                referenceMonth={data.current_cycle.reference_month}
+                headline={data.headline}
+                status={data.status}
+                healthScore={indicators.health_score}
+                latestDataDate={latestDataDate}
+                lastSyncedAt={lastUpdated}
+              />
+              <QualityBanner quality={quality} />
+            </section>
 
-            <div className="mt-8">
+            {/* Histórico de produção diária — bloco maior (gráfico), ao lado
+                da produção real vs. esperada. */}
+            <section className="md:col-span-6 lg:col-span-8 2xl:col-span-9">
+              <SectionTitle>Histórico de produção</SectionTitle>
+              <ProductionHistorySection
+                anomalyState={anomalyState}
+                expectedProduction={expectedProduction}
+                onRetry={retryAnomalies}
+              />
+            </section>
+
+            <section className="md:col-span-6 lg:col-span-4 2xl:col-span-3">
               <SectionTitle>Produção real vs. esperada</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
                 <MetricCard
                   label="Produção no ciclo"
                   value={indicators.cycle_production_kwh}
                   unit="kWh"
                   partial={hasIncompleteDailyProduction(quality)}
+                  className="h-full"
                 />
-                <ExpectedProductionCard expectedProduction={expectedProduction} />
+                <ExpectedProductionCard expectedProduction={expectedProduction} className="h-full" />
               </div>
               {anomalyState.data && anomalyState.data.current_streak_days > 0 && (
                 <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-[var(--color-danger)]">
@@ -235,16 +248,34 @@ export function DashboardPage() {
                   {anomalyState.data.current_streak_days > 1 ? 's' : ''} com produção abaixo do esperado.
                 </p>
               )}
-            </div>
+            </section>
 
-            <DiagnosticsCard diagnostics={combineDiagnostics(data)} />
+            {/* Bloco 2 — "Para onde foi a energia?": um único diagrama de
+                fluxo (autoconsumo/injetada/importada não se repetem em mais
+                visuais — ver Etapa 5), detalhamento numérico e histórico. */}
+            <section className="md:col-span-6 lg:col-span-7">
+              <SectionTitle>Fluxo de energia</SectionTitle>
+              <EnergyFlowDiagram
+                production={indicators.cycle_production_kwh}
+                selfConsumption={indicators.estimated_self_consumption_kwh}
+                injected={indicators.injected_kwh}
+                imported={indicators.imported_kwh}
+                consumption={indicators.estimated_total_consumption_kwh}
+              />
+            </section>
 
-            {data.trend && (
-              <div className="mt-8">
-                <SectionTitle>Tendência</SectionTitle>
-                <TrendCard trend={data.trend} />
-              </div>
-            )}
+            {/* Diagnósticos e comparação com o ciclo anterior, empilhados na
+                mesma coluna estreita. */}
+            <section className="md:col-span-6 lg:col-span-5">
+              <DiagnosticsCard diagnostics={combineDiagnostics(data)} />
+
+              {data.trend && (
+                <div className="mt-8">
+                  <SectionTitle>Tendência</SectionTitle>
+                  <TrendCard trend={data.trend} />
+                </div>
+              )}
+            </section>
 
             {/* Bloco próprio — "Como está o desempenho técnico?": PR, PR
                 corrigido por temperatura, yield específico, disponibilidade de
@@ -254,42 +285,19 @@ export function DashboardPage() {
                 dentro dele (ver Etapa 6), posicionada logo depois porque ainda
                 é sobre "produção/desempenho", antes do Bloco 2 mudar o foco
                 para "para onde foi a energia". */}
-            <div className="mt-8">
+            <section className="md:col-span-6 lg:col-span-12">
               <SectionTitle>Desempenho técnico</SectionTitle>
               <TechnicalPerformanceSection summary={pvSummary} />
-            </div>
+            </section>
 
-            {/* Bloco 2 — "Para onde foi a energia?": um único diagrama de
-                fluxo (autoconsumo/injetada/importada não se repetem em mais
-                visuais — ver Etapa 5), detalhamento numérico e histórico. */}
-            <div className="mt-8">
-              <SectionTitle>Fluxo de energia</SectionTitle>
-              <EnergyFlowDiagram
-                production={indicators.cycle_production_kwh}
-                selfConsumption={indicators.estimated_self_consumption_kwh}
-                injected={indicators.injected_kwh}
-                imported={indicators.imported_kwh}
-                consumption={indicators.estimated_total_consumption_kwh}
-              />
-            </div>
-
-            <div className="mt-8">
+            <section className="md:col-span-6 lg:col-span-8">
               <SectionTitle>Energia e produção</SectionTitle>
               <EnergyProductionSection indicators={indicators} quality={quality} />
-            </div>
+            </section>
 
-            <div className="mt-8">
-              <SectionTitle>Histórico de produção</SectionTitle>
-              <ProductionHistorySection
-                anomalyState={anomalyState}
-                expectedProduction={expectedProduction}
-                onRetry={retryAnomalies}
-              />
-            </div>
-
-            <div className="mt-8">
+            <section className="md:col-span-6 lg:col-span-4">
               <SectionTitle>Indicadores percentuais</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <MetricCard
                   label="Autossuficiência"
                   value={indicators.self_sufficiency_rate_percent}
@@ -303,7 +311,7 @@ export function DashboardPage() {
                   barPercent={toNumber(indicators.grid_dependency_rate_percent)}
                 />
               </div>
-            </div>
+            </section>
 
             {/* Bloco 3 — "Quanto custou?": financeiro completo (Etapa 7).
                 Valores em R$ (total da fatura, componente de energia,
@@ -311,9 +319,9 @@ export function DashboardPage() {
                 saldo/cobertura de créditos — cada card com unidade sempre
                 visível, sem exceção para a economia quando a tarifa não está
                 registrada (ver EstimatedSavingsCard). */}
-            <div className="mt-8">
+            <section className="md:col-span-6 lg:col-span-12">
               <SectionTitle>Financeiro</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <CurrencyCard label="Valor total da fatura" value={indicators.total_amount_brl} />
                 <CurrencyCard
                   label="Componente energia da fatura"
@@ -344,8 +352,8 @@ export function DashboardPage() {
                   barPercent={toNumber(indicators.credit_coverage_rate_percent)}
                 />
               </div>
-            </div>
-          </>
+            </section>
+          </div>
         )}
       </main>
     </div>

@@ -101,7 +101,7 @@ export function ProductionHistorySection({
   const hasIrradiation = anomalyState.data.daily.some((d) => toNumber(d.irradiation_kwh_m2) != null)
 
   return (
-    <div className={hasIrradiation ? 'grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]' : ''}>
+    <div className={hasIrradiation ? 'grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]' : ''}>
       <ProductionHistoryChart
         daily={anomalyState.data.daily}
         currentStreakDays={anomalyState.data.current_streak_days}

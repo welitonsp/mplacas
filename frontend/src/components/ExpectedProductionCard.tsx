@@ -10,12 +10,14 @@ import { Card } from './Card'
 // rótulo deixa isso explícito para não comparar grandezas diferentes.
 export function ExpectedProductionCard({
   expectedProduction,
+  className,
 }: {
   expectedProduction: ExpectedDailyProduction | null
+  className?: string
 }) {
   if (expectedProduction === null) {
     return (
-      <Card className="animate-pulse">
+      <Card className={`animate-pulse ${className ?? ''}`.trim()}>
         <div className="mb-3 h-3 w-1/3 rounded bg-gray-200" />
         <div className="h-8 w-1/2 rounded bg-gray-100" />
       </Card>
@@ -24,7 +26,7 @@ export function ExpectedProductionCard({
 
   if (!expectedProduction.available) {
     return (
-      <Card>
+      <Card className={className}>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Produção esperada</p>
         <p className="mt-4 text-sm text-gray-500">
           {baselineUnavailableMessage(expectedProduction.reason, expectedProduction.referenceCompleteOn)}
@@ -34,7 +36,7 @@ export function ExpectedProductionCard({
   }
 
   return (
-    <Card>
+    <Card className={className}>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
         Produção esperada (média diária)
       </p>
