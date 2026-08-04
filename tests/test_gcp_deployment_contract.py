@@ -68,8 +68,13 @@ def test_watchdog_drill_scripts_only_run_against_real_production_project() -> No
     assert "find_monitoring_policy" in teardown
     assert "MPLACAS_EXPECTED_SCHEDULER_JOBS" in teardown
 
+    # The drill ran for real on 2026-08-04 and was torn down (see
+    # docs/CHECKLIST_REMEDIACAO_AUDITORIA.md P1-05); the temporary allowlist
+    # entry was removed from infra/gcp/lib.sh per teardown's own warning, so
+    # it must NOT be present here anymore — a stray entry would let a future
+    # scheduler job with the same name silently pass audit-costs.sh.
     library = read("infra/gcp/lib.sh")
-    assert "mplacas-watchdog-drill" in _quoted_array(
+    assert "mplacas-watchdog-drill" not in _quoted_array(
         library, "MPLACAS_EXPECTED_SCHEDULER_JOBS"
     )
 
