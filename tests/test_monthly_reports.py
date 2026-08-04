@@ -74,6 +74,8 @@ def _dashboard(plant_id: uuid.UUID) -> SimpleNamespace:
                 exported_generation_rate_percent=Decimal("40.0"),
                 credit_coverage_rate_percent=Decimal("80.0"),
                 bill_energy_component_brl=Decimal("45.20"),
+                estimated_savings_brl=Decimal("18.75"),
+                savings_unavailable_reason=None,
                 health_score=97,
                 diagnostics=(
                     SimpleNamespace(

@@ -22,16 +22,19 @@ DAILY_SOURCE = "DAILY_ENERGY_AGGREGATE"
 def _metric(
     key: str,
     label: str,
-    value: Decimal | int,
+    value: Decimal | int | str | None,
     *,
     unit: str | None,
     nature: str,
     source: str,
 ) -> ReportMetric:
+    # `None` projeta como `value=""`, nunca omitida — necessário para
+    # `estimated_savings_brl`/`savings_unavailable_reason` (ADR-067, Etapa A):
+    # vazio distingue "indisponível" de "conceito ausente em snapshot antigo".
     return ReportMetric(
         key=key,
         label=label,
-        value=str(value),
+        value="" if value is None else str(value),
         unit=unit,
         nature=nature,
         source=source,
@@ -145,6 +148,22 @@ def _project_metrics(dashboard: ExecutiveEnergyDashboard) -> tuple[ReportMetric,
             intelligence.bill_energy_component_brl,
             unit="BRL",
             nature="CALCULATED",
+            source=ENGINE_SOURCE,
+        ),
+        _metric(
+            "estimated_savings_brl",
+            "Economia estimada",
+            intelligence.estimated_savings_brl,
+            unit="BRL",
+            nature="CALCULATED",
+            source=ENGINE_SOURCE,
+        ),
+        _metric(
+            "savings_unavailable_reason",
+            "Motivo de indisponibilidade da economia",
+            intelligence.savings_unavailable_reason,
+            unit=None,
+            nature="UNAVAILABILITY_REASON",
             source=ENGINE_SOURCE,
         ),
         _metric(

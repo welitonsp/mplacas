@@ -443,3 +443,49 @@ def test_auth_timestamp_migration_rejects_nulls_before_enforcement() -> None:
     assert '_assert_no_nulls("login_rate_limits", "first_attempt_at")' in source
     assert source.count("nullable=False") == 2
     assert source.count("nullable=True") == 2
+
+
+def test_plant_investment_amount_migration_matches_orm() -> None:
+    import sqlalchemy as sa
+
+    from mplacas.db.models import Plant
+
+    source = (
+        ROOT / "migrations" / "versions" / "20260804_0042_add_plant_investment_amount.py"
+    ).read_text(encoding="utf-8")
+    plant_columns = Plant.__table__.c
+    plant_checks = {
+        constraint.name
+        for constraint in Plant.__table__.constraints
+        if isinstance(constraint, sa.CheckConstraint)
+    }
+
+    assert 'revision = "20260804_0042"' in source
+    assert 'down_revision = "20260803_0041"' in source
+    assert "batch_alter_table" in source
+    assert '"investment_amount_brl"' in source
+    assert '"investment_recorded_on"' in source
+    assert "sa.Numeric(12, 2)" in source
+    assert "nullable=True" in source
+    assert plant_columns.investment_amount_brl.type.precision == 12
+    assert plant_columns.investment_amount_brl.type.scale == 2
+    assert plant_columns.investment_amount_brl.nullable is True
+    assert plant_columns.investment_recorded_on.type.python_type is __import__("datetime").date
+    assert plant_columns.investment_recorded_on.nullable is True
+    assert "ck_plants_investment_amount_positive" in plant_checks
+
+    def upgrade_body(text: str) -> str:
+        start = text.index("def upgrade()")
+        end = text.index("def downgrade()")
+        return text[start:end]
+
+    def downgrade_body(text: str) -> str:
+        start = text.index("def downgrade()")
+        return text[start:]
+
+    assert "drop_column" not in upgrade_body(source)
+    assert "add_column" not in downgrade_body(source)
+    assert "drop_column" in downgrade_body(source)
+    assert 'batch.drop_constraint("ck_plants_investment_amount_positive"' in downgrade_body(
+        source
+    )

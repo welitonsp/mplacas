@@ -62,6 +62,10 @@ class Plant(Base):
             "'THIN_FILM', 'OTHER')",
             name="ck_plants_module_technology",
         ),
+        CheckConstraint(
+            "investment_amount_brl IS NULL OR investment_amount_brl > 0",
+            name="ck_plants_investment_amount_positive",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -87,6 +91,10 @@ class Plant(Base):
     commissioned_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
+    investment_amount_brl: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
+    investment_recorded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
