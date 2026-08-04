@@ -24,6 +24,7 @@ import { DashboardHeader } from '../components/DashboardHeader'
 import { DataFreshness } from '../components/DataFreshness'
 import { DiagnosticsCard } from '../components/DiagnosticsCard'
 import { EnergyProductionSection, hasIncompleteDailyProduction } from '../components/EnergyProductionSection'
+import { EstimatedSavingsCard } from '../components/EstimatedSavingsCard'
 import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
 import { ProductionHistorySection } from '../components/ProductionHistorySection'
@@ -304,15 +305,43 @@ export function DashboardPage() {
               </div>
             </div>
 
-            {/* Bloco 3 — "Quanto custou?": financeiro. Grid de 1 coluna porque
-                só há um card hoje — Etapa 7 ("financeiro completo") é quem
-                deve adicionar mais conteúdo e, com ele, mais colunas. */}
+            {/* Bloco 3 — "Quanto custou?": financeiro completo (Etapa 7).
+                Valores em R$ (total da fatura, componente de energia,
+                iluminação pública, economia estimada), tarifas em R$/kWh e
+                saldo/cobertura de créditos — cada card com unidade sempre
+                visível, sem exceção para a economia quando a tarifa não está
+                registrada (ver EstimatedSavingsCard). */}
             <div className="mt-8">
               <SectionTitle>Financeiro</SectionTitle>
-              <div className="grid grid-cols-1 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <CurrencyCard label="Valor total da fatura" value={indicators.total_amount_brl} />
                 <CurrencyCard
                   label="Componente energia da fatura"
                   value={indicators.bill_energy_component_brl}
+                />
+                <CurrencyCard label="Iluminação pública" value={indicators.public_lighting_brl} />
+                <EstimatedSavingsCard
+                  value={indicators.estimated_savings_brl}
+                  unavailableReason={indicators.savings_unavailable_reason}
+                />
+                <MetricCard
+                  label="Tarifa com impostos"
+                  value={indicators.tariff_with_taxes_brl_kwh}
+                  unit="R$/kWh"
+                  maximumFractionDigits={6}
+                />
+                <MetricCard
+                  label="Tarifa sem impostos"
+                  value={indicators.tariff_without_taxes_brl_kwh}
+                  unit="R$/kWh"
+                  maximumFractionDigits={6}
+                />
+                <MetricCard label="Saldo de créditos" value={indicators.credit_balance_kwh} unit="kWh" />
+                <MetricCard
+                  label="Cobertura de créditos"
+                  value={indicators.credit_coverage_rate_percent}
+                  unit="%"
+                  barPercent={toNumber(indicators.credit_coverage_rate_percent)}
                 />
               </div>
             </div>

@@ -32,6 +32,12 @@ class EnergyDiagnostic:
     recommended_action: str
 
 
+# Motivos explícitos de por que a economia estimada não pôde ser calculada —
+# nunca mostrar R$ 0,00 nesses casos, ver EnergyCycleIntelligence.estimated_savings_brl.
+SAVINGS_UNAVAILABLE_TARIFF_NOT_REGISTERED = "TARIFF_NOT_AVAILABLE"
+SAVINGS_UNAVAILABLE_NO_CONSUMPTION_DATA = "NO_CONSUMPTION_DATA"
+
+
 @dataclass(frozen=True, slots=True)
 class EnergyCycleIntelligence:
     reconciliation: BillingReconciliation
@@ -41,6 +47,18 @@ class EnergyCycleIntelligence:
     bill_energy_component_brl: Decimal
     health_score: int
     diagnostics: tuple[EnergyDiagnostic, ...]
+    # Campos financeiros do ciclo (Etapa 7 — "Quanto custou?"). Espelham direto
+    # os campos correspondentes de `UtilityBill`/`UtilityBillRecord`, exceto
+    # `estimated_savings_brl`, que é calculado (ver fórmula abaixo).
+    total_amount_brl: Decimal = Decimal("0")
+    public_lighting_brl: Decimal = Decimal("0")
+    tariff_with_taxes_brl_kwh: Decimal | None = None
+    tariff_without_taxes_brl_kwh: Decimal | None = None
+    credit_balance_kwh: Decimal = Decimal("0")
+    # `None` quando a fatura não tem tarifa registrada — nunca um R$ 0,00
+    # fabricado. Ver `savings_unavailable_reason` para o motivo explícito.
+    estimated_savings_brl: Decimal | None = None
+    savings_unavailable_reason: str | None = None
 
 
 def analyze_energy_cycle(
@@ -78,6 +96,37 @@ def analyze_energy_cycle(
         Decimal("0"),
         bill.total_amount_brl - bill.public_lighting_brl,
     )
+
+    # Economia estimada do ciclo: quanto teria custado comprar da rede toda a
+    # energia efetivamente consumida (produção autoconsumida + energia
+    # importada), à tarifa cheia com impostos, menos o que a fatura realmente
+    # cobrou pelo componente de energia (já líquido de iluminação pública).
+    # Ou seja: custo hipotético sem geração própria − custo real do ciclo.
+    # Exige `tariff_with_taxes_brl_kwh` na fatura — quando ausente, o valor é
+    # `None` (nunca R$ 0,00 fabricado) e o motivo fica explícito em
+    # `savings_unavailable_reason`.
+    estimated_savings_brl: Decimal | None
+    savings_unavailable_reason: str | None
+    if bill.tariff_with_taxes_brl_kwh is None:
+        estimated_savings_brl = None
+        savings_unavailable_reason = SAVINGS_UNAVAILABLE_TARIFF_NOT_REGISTERED
+    elif reconciliation.estimated_total_consumption_kwh <= 0:
+        # Consumo total zero normalmente significa "ainda sem dado do ciclo",
+        # não "usina não consumiu nada". Sem isso, a fórmula abaixo devolveria
+        # `-energy_component` — um número real, mas que pareceria "você pagou
+        # a mais" quando na verdade é ausência de dado. Mesmo princípio de
+        # nunca fabricar um valor enganoso que rege o ramo de tarifa ausente.
+        estimated_savings_brl = None
+        savings_unavailable_reason = SAVINGS_UNAVAILABLE_NO_CONSUMPTION_DATA
+    else:
+        hypothetical_grid_cost = (
+            reconciliation.estimated_total_consumption_kwh * bill.tariff_with_taxes_brl_kwh
+        )
+        estimated_savings_brl = (hypothetical_grid_cost - energy_component).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+        savings_unavailable_reason = None
 
     score = 100
     diagnostics: list[EnergyDiagnostic] = []
@@ -199,4 +248,11 @@ def analyze_energy_cycle(
         ),
         health_score=max(0, min(100, score)),
         diagnostics=tuple(diagnostics),
+        total_amount_brl=bill.total_amount_brl,
+        public_lighting_brl=bill.public_lighting_brl,
+        tariff_with_taxes_brl_kwh=bill.tariff_with_taxes_brl_kwh,
+        tariff_without_taxes_brl_kwh=bill.tariff_without_taxes_brl_kwh,
+        credit_balance_kwh=bill.credit_balance_kwh,
+        estimated_savings_brl=estimated_savings_brl,
+        savings_unavailable_reason=savings_unavailable_reason,
     )

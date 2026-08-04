@@ -7,12 +7,16 @@ export function MetricCard({
   unit,
   partial,
   barPercent,
+  maximumFractionDigits,
 }: {
   label: string
   value: MetricValue
   unit?: string
   partial?: boolean
   barPercent?: number | null
+  // Tarifas em R$/kWh precisam de mais casas decimais que o padrão de 2 (ver
+  // ADR-056) para não arredondar um valor como R$ 0,175126/kWh para R$ 0,18.
+  maximumFractionDigits?: number
 }) {
   return (
     <div
@@ -27,7 +31,7 @@ export function MetricCard({
       )}
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
       <p className="mt-2 text-2xl font-semibold text-gray-900">
-        {formatNumber(value)}
+        {formatNumber(value, maximumFractionDigits)}
         {unit && <span className="ml-1 text-sm font-normal text-gray-500">{unit}</span>}
       </p>
       {barPercent != null && (

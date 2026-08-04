@@ -38,10 +38,34 @@ const executivePayload = {
       credit_coverage_rate_percent: 100,
       bill_energy_component_brl: 350.5,
       health_score: 70,
+      total_amount_brl: 420.71,
+      public_lighting_brl: 30.21,
+      tariff_with_taxes_brl_kwh: 0.85,
+      tariff_without_taxes_brl_kwh: 0.6,
+      credit_balance_kwh: 63.98,
+      estimated_savings_brl: 120.4,
+      savings_unavailable_reason: null,
     },
     diagnostics: [],
   },
   trend: null,
+}
+
+// Variante do payload executivo sem tarifa registrada na fatura do ciclo —
+// usada para garantir que a economia estimada nunca aparece como "R$ 0,00"
+// (ver EstimatedSavingsCard e intelligence/energy_engine.py).
+const executivePayloadWithoutTariff = {
+  ...executivePayload,
+  current_cycle: {
+    ...executivePayload.current_cycle,
+    indicators: {
+      ...executivePayload.current_cycle.indicators,
+      tariff_with_taxes_brl_kwh: null,
+      tariff_without_taxes_brl_kwh: null,
+      estimated_savings_brl: null,
+      savings_unavailable_reason: 'TARIFF_NOT_AVAILABLE',
+    },
+  },
 }
 
 const photovoltaicSummaryPayload = {
@@ -101,10 +125,10 @@ const anomalyPayload = {
   ],
 }
 
-function installApiMock() {
+function installApiMock(executiveOverride: unknown = executivePayload) {
   vi.doMock('../lib/api', () => ({
     apiFetch: vi.fn(async (path: string) => {
-      if (path.startsWith('/energy/executive/latest')) return jsonResponse(executivePayload)
+      if (path.startsWith('/energy/executive/latest')) return jsonResponse(executiveOverride)
       if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(anomalyPayload)
       throw new Error(`unexpected apiFetch path in test: ${path}`)
     }),
@@ -113,8 +137,8 @@ function installApiMock() {
   }))
 }
 
-async function renderDashboard() {
-  installApiMock()
+async function renderDashboard(executiveOverride: unknown = executivePayload) {
+  installApiMock(executiveOverride)
   const { DashboardPage } = await import('./DashboardPage')
   const { AuthProvider } = await import('../contexts/AuthContext')
 
@@ -159,7 +183,7 @@ describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
     expect(screen.queryByText('Origem do consumo')).not.toBeInTheDocument()
   })
 
-  it('nenhum grid tem mais colunas declaradas do que filhos renderizados (seção Financeiro)', async () => {
+  it('a seção Financeiro tem exatamente um card por filho declarado no grid (Etapa 7)', async () => {
     vi.resetModules()
     await renderDashboard()
 
@@ -169,11 +193,55 @@ describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
     const grid = within(section as HTMLElement).getByText('Componente energia da fatura').closest('.grid')
     expect(grid).not.toBeNull()
 
-    // Grid de 1 coluna, sem breakpoints declarando mais colunas do que o único
-    // card financeiro renderizado hoje.
-    expect(grid!.className).toMatch(/grid-cols-1/)
-    expect(grid!.className).not.toMatch(/sm:grid-cols-2|lg:grid-cols-3/)
-    expect(grid!.children).toHaveLength(1)
+    // Etapa 7 expandiu a seção — agora com múltiplas colunas em telas maiores,
+    // mas o número de filhos do grid ainda precisa bater com os cards
+    // efetivamente renderizados abaixo.
+    expect(grid!.children).toHaveLength(8)
+  })
+
+  it('renderiza todos os valores financeiros novos com a unidade correta quando a fatura tem tarifa registrada', async () => {
+    vi.resetModules()
+    await renderDashboard()
+
+    await screen.findByText('Financeiro')
+
+    expect(screen.getByText('Valor total da fatura')).toBeInTheDocument()
+    expect(screen.getByText(/R\$\s*420,71/)).toBeInTheDocument()
+
+    expect(screen.getByText('Iluminação pública')).toBeInTheDocument()
+    expect(screen.getByText(/R\$\s*30,21/)).toBeInTheDocument()
+
+    const tariffWithTaxesLabel = screen.getByText('Tarifa com impostos')
+    const tariffWithTaxesCard = tariffWithTaxesLabel.closest('div') as HTMLElement
+    expect(within(tariffWithTaxesCard).getByText(/0,85/)).toBeInTheDocument()
+    expect(within(tariffWithTaxesCard).getByText('R$/kWh')).toBeInTheDocument()
+
+    const tariffWithoutTaxesLabel = screen.getByText('Tarifa sem impostos')
+    const tariffWithoutTaxesCard = tariffWithoutTaxesLabel.closest('div') as HTMLElement
+    expect(within(tariffWithoutTaxesCard).getByText(/^0,6$/)).toBeInTheDocument()
+    expect(within(tariffWithoutTaxesCard).getByText('R$/kWh')).toBeInTheDocument()
+
+    expect(screen.getByText('Saldo de créditos')).toBeInTheDocument()
+    expect(screen.getByText(/63,98/)).toBeInTheDocument()
+
+    expect(screen.getByText('Cobertura de créditos')).toBeInTheDocument()
+
+    expect(screen.getByText('Economia estimada')).toBeInTheDocument()
+    expect(screen.getByText(/R\$\s*120,40/)).toBeInTheDocument()
+  })
+
+  it('nunca mostra R$ 0,00 de economia quando a fatura não tem tarifa registrada — mostra mensagem explícita', async () => {
+    vi.resetModules()
+    await renderDashboard(executivePayloadWithoutTariff)
+
+    await screen.findByText('Financeiro')
+    const savingsLabel = await screen.findByText('Economia estimada')
+    const savingsCard = savingsLabel.closest('div') as HTMLElement
+
+    expect(within(savingsCard).queryByText(/R\$\s*0,00/)).not.toBeInTheDocument()
+    expect(
+      within(savingsCard).getByText(/fatura deste ciclo não tem a tarifa com impostos registrada/)
+    ).toBeInTheDocument()
   })
 
   it('mostra o status de anomalia (streak) dentro do bloco "Está indo bem?"', async () => {

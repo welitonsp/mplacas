@@ -17,6 +17,13 @@ function buildIndicators(overrides: Partial<ExecutiveIndicators> = {}): Executiv
     credit_coverage_rate_percent: 100,
     bill_energy_component_brl: 350.5,
     health_score: 90,
+    total_amount_brl: 420.71,
+    public_lighting_brl: 30.21,
+    tariff_with_taxes_brl_kwh: 0.85,
+    tariff_without_taxes_brl_kwh: 0.6,
+    credit_balance_kwh: 63.98,
+    estimated_savings_brl: 120.4,
+    savings_unavailable_reason: null,
     ...overrides,
   }
 }

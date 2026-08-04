@@ -21,6 +21,32 @@ export interface ExecutiveIndicators {
   credit_coverage_rate_percent: MetricValue
   bill_energy_component_brl: MetricValue
   health_score: MetricValue
+  total_amount_brl: MetricValue
+  public_lighting_brl: MetricValue
+  tariff_with_taxes_brl_kwh: MetricValue
+  tariff_without_taxes_brl_kwh: MetricValue
+  credit_balance_kwh: MetricValue
+  // `null` quando a fatura do ciclo não tem tarifa registrada — nunca um R$
+  // 0,00 fabricado nesse caso. Ver `savings_unavailable_reason` para o motivo
+  // explícito (ver intelligence/energy_engine.py::analyze_energy_cycle).
+  estimated_savings_brl: MetricValue
+  savings_unavailable_reason: string | null
+}
+
+// Vocabulário compartilhado com o backend (ver
+// intelligence/energy_engine.py::SAVINGS_UNAVAILABLE_TARIFF_NOT_REGISTERED)
+// — hoje o único motivo possível é a fatura do ciclo não ter tarifa com
+// impostos registrada. Nunca renderizar R$ 0,00 quando este campo vem
+// preenchido; mostrar a mensagem explícita abaixo no lugar do valor.
+export function savingsUnavailableMessage(reason: string): string {
+  switch (reason) {
+    case 'TARIFF_NOT_AVAILABLE':
+      return 'Economia estimada ainda não disponível — a fatura deste ciclo não tem a tarifa com impostos registrada.'
+    case 'NO_CONSUMPTION_DATA':
+      return 'Economia estimada ainda não disponível — ainda não há dado de consumo para este ciclo.'
+    default:
+      return 'Economia estimada ainda não disponível para este ciclo.'
+  }
 }
 
 // Vocabulário compartilhado com o backend (ver intelligence/energy_engine.py::DiagnosticSeverity).
@@ -178,6 +204,13 @@ function requireString(source: Record<string, unknown>, key: string): string {
   return value
 }
 
+function optionalString(source: Record<string, unknown>, key: string): string | null {
+  const value = source[key]
+  if (value === null) return null
+  if (typeof value === 'string' && value.trim() !== '') return value
+  throw new Error(`Resposta inválida da API: ${key}`)
+}
+
 function metricValue(source: Record<string, unknown>, key: string): MetricValue {
   const value = source[key]
   if (value === null || typeof value === 'string' || typeof value === 'number') return value
@@ -323,6 +356,13 @@ export function parseExecutiveDashboard(payload: unknown): ExecutiveDashboardRes
         credit_coverage_rate_percent: metricValue(indicators, 'credit_coverage_rate_percent'),
         bill_energy_component_brl: metricValue(indicators, 'bill_energy_component_brl'),
         health_score: metricValue(indicators, 'health_score'),
+        total_amount_brl: metricValue(indicators, 'total_amount_brl'),
+        public_lighting_brl: metricValue(indicators, 'public_lighting_brl'),
+        tariff_with_taxes_brl_kwh: metricValue(indicators, 'tariff_with_taxes_brl_kwh'),
+        tariff_without_taxes_brl_kwh: metricValue(indicators, 'tariff_without_taxes_brl_kwh'),
+        credit_balance_kwh: metricValue(indicators, 'credit_balance_kwh'),
+        estimated_savings_brl: metricValue(indicators, 'estimated_savings_brl'),
+        savings_unavailable_reason: optionalString(indicators, 'savings_unavailable_reason'),
       },
       diagnostics: parseDiagnostics(currentCycle),
     },

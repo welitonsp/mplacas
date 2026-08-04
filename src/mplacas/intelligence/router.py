@@ -54,6 +54,25 @@ def _serialize(result) -> dict[str, object]:
             "credit_coverage_rate_percent": str(intelligence.credit_coverage_rate_percent),
             "bill_energy_component_brl": str(intelligence.bill_energy_component_brl),
             "health_score": intelligence.health_score,
+            "total_amount_brl": str(intelligence.total_amount_brl),
+            "public_lighting_brl": str(intelligence.public_lighting_brl),
+            "tariff_with_taxes_brl_kwh": (
+                str(intelligence.tariff_with_taxes_brl_kwh)
+                if intelligence.tariff_with_taxes_brl_kwh is not None
+                else None
+            ),
+            "tariff_without_taxes_brl_kwh": (
+                str(intelligence.tariff_without_taxes_brl_kwh)
+                if intelligence.tariff_without_taxes_brl_kwh is not None
+                else None
+            ),
+            "credit_balance_kwh": str(intelligence.credit_balance_kwh),
+            "estimated_savings_brl": (
+                str(intelligence.estimated_savings_brl)
+                if intelligence.estimated_savings_brl is not None
+                else None
+            ),
+            "savings_unavailable_reason": intelligence.savings_unavailable_reason,
         },
         "diagnostics": [
             {
