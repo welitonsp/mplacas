@@ -294,7 +294,7 @@ Baseline de validação deste ciclo:
     concorrente, locks/`SKIP LOCKED`, fila, outbox, `/ready` e PoC de RLS. Artifact auditável:
     `postgres-integration-report` 8835307257, retenção de 30 dias.
 
-- [~] **P1-05 — automatizar componentes operacionais obrigatórios.**
+- [x] **P1-05 — automatizar componentes operacionais obrigatórios.**
   - Provisionar Cloud Run Jobs, Scheduler, IAM mínimo, policies de alerta e verificação pós-deploy.
   - Cobrir collect, daily-pipeline, drains, outbox, relatórios e retenção.
   - Critério de aceite: deploy idempotente detecta componente ausente e smoke test confirma execução.
@@ -334,15 +334,28 @@ Baseline de validação deste ciclo:
     fail-closed antes da inicialização do ledger. O PR
     [#78](https://github.com/welitonsp/mplacas/pull/78) corrigiu o contexto de source deploy que
     excluía `src/mplacas/reports` e foi integrado após todos os checks verdes.
-  - **Drill em andamento em 2026-08-03 (Plano B — gêmeo isolado, sem tocar o watchdog real).** Em vez
-    de projeto de staging separado, foi provisionado um gêmeo `mplacas-watchdog-drill` no mesmo
-    projeto `mplacas` (job trivial sem secrets, mesma cadência, policy forkada só nos campos de nome —
-    `duration`/`alignmentPeriod`/`autoClose` idênticos ao original, travado por teste de contrato),
-    reusando o canal de notificação real. Decisão registrada: prova entrega ponta-a-ponta no canal
-    real e fica coberto pelo `audit-costs.sh`, ao custo de gerar um e-mail de incidente `[DRILL]` real
-    (aceito) e de uma entrada temporária em `MPLACAS_EXPECTED_SCHEDULER_JOBS` (remover no teardown).
-    Sequência: primed com execução manual bem-sucedida, **T0 (pausado) = 2026-08-03T18:25:50Z**.
-    Aguardando confirmação de abertura do incidente (janela mínima T0+3h, esperado até T0+3h30).
+  - **Drill executado de verdade em 2026-08-03/04 (Plano B — gêmeo isolado, sem tocar o watchdog
+    real) — abertura E fechamento comprovados, item fechado.** Em vez de projeto de staging separado,
+    foi provisionado um gêmeo `mplacas-watchdog-drill` no mesmo projeto `mplacas` (job trivial sem
+    secrets, mesma cadência, policy forkada só nos campos de nome — `duration`/`alignmentPeriod`/
+    `autoClose` idênticos ao original, travado por teste de contrato), reusando o canal de notificação
+    real.
+    - **T0 (pausado) = 2026-08-03T18:25:50Z.**
+    - **Abertura confirmada**: e-mail real `[DRILL]` recebido no canal de plantão de produção entre
+      T0+3h e T0+3h30, conforme esperado.
+    - **Achado de processo**: a checagem original do runbook (log de auditoria
+      `methodName:CreateAlert`) nunca teria funcionado — não existe esse evento de auditoria pra
+      criação de incidente do Cloud Monitoring, e a API v3 não expõe um recurso `incidents`
+      publicamente. Corrigido em `docs/RUNBOOK_WATCHDOG_DRILL.md`: critério real é o e-mail recebido,
+      com série temporal bruta como evidência de apoio.
+    - **T2 (retomado) = 2026-08-04T12:49:31Z.**
+    - **Fechamento confirmado**: série temporal voltou a registrar sucesso normalmente (execuções às
+      12:51, 13:06, 14:07) — condição de ausência deixou de ser verdadeira, verificado em T2+1h30
+      (14:21Z). E-mail de fechamento não recebido (Cloud Monitoring nem sempre notifica fechamento),
+      aceito como suficiente dado que a métrica já comprova a normalização.
+    - **Teardown executado**: scheduler, Cloud Run Job e alert policy do gêmeo removidos; canal de
+      notificação real preservado; entrada temporária `mplacas-watchdog-drill` removida de
+      `MPLACAS_EXPECTED_SCHEDULER_JOBS` em `infra/gcp/lib.sh`.
   - Watchdog de produção real (`mplacas-operational-watchdog`) não foi tocado em nenhum momento.
 
 - [x] **P1-06 — automatizar backup/PITR e restore drill.**
@@ -614,15 +627,18 @@ Baseline de validação deste ciclo:
 | Categoria | Concluídos | Parciais | Pendentes |
 |---|---:|---:|---:|
 | P0 | 6 | 0 | 0 |
-| P1 | 6 | 1 | 0 |
+| P1 | 7 | 0 | 0 |
 | P2 arquitetura/supply chain | 5 | 0 | 0 |
 | Evolução solar | 5 | 1 | 0 |
-| **Total novo** | **22** | **2** | **0** |
+| **Total novo** | **23** | **1** | **0** |
 
 **P1-06 fechado em 2026-08-03:** janela PITR do Neon Free confirmada (6h/1GB) e documentada; RPO=24h
 do projeto comprovadamente independe do PITR nativo, cobre-se pelo snapshot lógico diário já
-validado por restore drill real. Próxima ação recomendada: preparar uma homologação isolada para o
-incidente controlado de ausência de **P1-05**. Na implementação local, a próxima ação é concluir
-**SOL-06** com dados de campo autorizados e revisão real de especialista, seguindo
-`RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O **P2-01** está concluído com RLS ativo, canário, rollback
-ensaiado e evidência produtiva.
+validado por restore drill real.
+
+**P1-05 fechado em 2026-08-04:** drill de watchdog executado de verdade (Plano B, gêmeo isolado) —
+abertura e fechamento de incidente comprovados via e-mail real e série temporal, teardown concluído,
+achado de processo sobre o método de detecção corrigido no runbook. Único item restante do ciclo:
+**SOL-06**, aguardando dados de campo autorizados e revisão real de especialista do próprio usuário,
+seguindo `RUNBOOK_VALIDACAO_GOLDEN_SOLAR.md`. O **P2-01** está concluído com RLS ativo, canário,
+rollback ensaiado e evidência produtiva.
