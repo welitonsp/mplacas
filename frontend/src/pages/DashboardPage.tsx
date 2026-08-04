@@ -22,7 +22,7 @@ import { EnergyFlowDiagram } from '../components/EnergyFlowDiagram'
 import { ExpectedProductionCard } from '../components/ExpectedProductionCard'
 import { DashboardHeader } from '../components/DashboardHeader'
 import { DiagnosticsCard } from '../components/DiagnosticsCard'
-import { EnergyProductionSection, hasIncompleteDailyProduction } from '../components/EnergyProductionSection'
+import { hasIncompleteDailyProduction } from '../components/EnergyProductionSection'
 import { EstimatedSavingsCard } from '../components/EstimatedSavingsCard'
 import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
@@ -168,6 +168,10 @@ export function DashboardPage() {
   const indicators = data?.current_cycle.indicators
   const quality = data?.current_cycle.quality
   const latestDataDate = anomalyState.data ? latestNonNullProductionDate(anomalyState.data.daily) : null
+  // Calculado uma única vez e reusado pelo chip do Hero (`AttentionSummary`,
+  // ver Etapa 1.7) e pela lista completa (`DiagnosticsCard`) — mesma lista,
+  // duas apresentações.
+  const diagnostics = data ? combineDiagnostics(data) : []
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -193,9 +197,24 @@ export function DashboardPage() {
         {error && (
           <div
             role="alert"
-            className="mb-6 rounded-lg bg-[var(--color-danger-light)] border border-[var(--color-danger)]/20 px-4 py-3 text-sm text-[var(--color-danger)]"
+            className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--color-danger-light)] border border-[var(--color-danger)]/20 px-4 py-3 text-sm text-[var(--color-danger)]"
           >
-            {error}
+            <span>{error}</span>
+            {/* Retry associado diretamente ao erro global (não só o link
+                "Atualizar" no topo da página, que existia mas não estava
+                visualmente ligado à mensagem — ver P2-08 na auditoria de
+                UI/UX). Mesmo padrão de `ProductionHistorySection` para o
+                erro de servidor do histórico de produção. */}
+            <button
+              type="button"
+              onClick={() => {
+                void fetchData()
+                void fetchExpectedProduction()
+              }}
+              className="shrink-0 rounded text-sm font-medium text-[var(--color-danger-text)] hover:underline transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)]"
+            >
+              Tentar novamente
+            </button>
           </div>
         )}
 
@@ -213,13 +232,15 @@ export function DashboardPage() {
                 healthScore={indicators.health_score}
                 latestDataDate={latestDataDate}
                 lastSyncedAt={lastUpdated}
+                diagnostics={diagnostics}
               />
               <QualityBanner quality={quality} />
             </section>
 
             {/* Histórico de produção diária — bloco maior (gráfico), ao lado
-                da produção real vs. esperada. */}
-            <section className="md:col-span-6 lg:col-span-8 2xl:col-span-9">
+                da produção real vs. esperada. Já forma duas colunas reais a
+                partir de `md` (768px) — não só em `lg` (ver P1-04). */}
+            <section className="md:col-span-4 lg:col-span-8 2xl:col-span-9">
               <SectionTitle>Histórico de produção</SectionTitle>
               <ProductionHistorySection
                 anomalyState={anomalyState}
@@ -228,7 +249,7 @@ export function DashboardPage() {
               />
             </section>
 
-            <section className="md:col-span-6 lg:col-span-4 2xl:col-span-3">
+            <section className="md:col-span-2 lg:col-span-4 2xl:col-span-3">
               <SectionTitle>Produção real vs. esperada</SectionTitle>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
                 <MetricCard
@@ -240,20 +261,17 @@ export function DashboardPage() {
                 />
                 <ExpectedProductionCard expectedProduction={expectedProduction} className="h-full" />
               </div>
-              {anomalyState.data && anomalyState.data.current_streak_days > 0 && (
-                <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-[var(--color-danger)]">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-danger)]" />
-                  {anomalyState.data.current_streak_days} dia
-                  {anomalyState.data.current_streak_days > 1 ? 's' : ''} seguido
-                  {anomalyState.data.current_streak_days > 1 ? 's' : ''} com produção abaixo do esperado.
-                </p>
-              )}
+              {/* A frase de streak abaixo do esperado aparece só dentro do
+                  gráfico de histórico (ver `ProductionHistoryChart`) — este
+                  bloco chegou a duplicá-la lado a lado com o gráfico em
+                  `lg+`; mantida uma única vez, no lugar onde o contexto
+                  diário (qual dia, qual nível) já está visível (ver P2-02). */}
             </section>
 
             {/* Bloco 2 — "Para onde foi a energia?": um único diagrama de
                 fluxo (autoconsumo/injetada/importada não se repetem em mais
                 visuais — ver Etapa 5), detalhamento numérico e histórico. */}
-            <section className="md:col-span-6 lg:col-span-7">
+            <section className="md:col-span-3 lg:col-span-7">
               <SectionTitle>Fluxo de energia</SectionTitle>
               <EnergyFlowDiagram
                 production={indicators.cycle_production_kwh}
@@ -265,9 +283,10 @@ export function DashboardPage() {
             </section>
 
             {/* Diagnósticos e comparação com o ciclo anterior, empilhados na
-                mesma coluna estreita. */}
-            <section className="md:col-span-6 lg:col-span-5">
-              <DiagnosticsCard diagnostics={combineDiagnostics(data)} />
+                mesma coluna estreita. `id` é o alvo da âncora do chip de
+                atenção no Hero (ver `AttentionSummary`, Etapa 1.7). */}
+            <section id="diagnosticos" className="md:col-span-3 lg:col-span-5">
+              <DiagnosticsCard diagnostics={diagnostics} />
 
               {data.trend && (
                 <div className="mt-8">
@@ -290,14 +309,16 @@ export function DashboardPage() {
               <TechnicalPerformanceSection summary={pvSummary} />
             </section>
 
-            <section className="md:col-span-6 lg:col-span-8">
-              <SectionTitle>Energia e produção</SectionTitle>
-              <EnergyProductionSection indicators={indicators} quality={quality} />
-            </section>
-
-            <section className="md:col-span-6 lg:col-span-4">
+            {/* "Energia e produção" (importada/injetada/autoconsumo/consumo)
+                foi removida da composição — os mesmos quatro números já
+                aparecem em "Fluxo de energia" (`EnergyFlowDiagram`), com a
+                relação entre eles, que os cards isolados não davam (ver
+                P2-01). O componente `EnergyProductionSection` continua
+                existindo em `components/` para reuso futuro, só não compõe
+                mais esta página. */}
+            <section className="md:col-span-6 lg:col-span-12">
               <SectionTitle>Indicadores percentuais</SectionTitle>
-              <div className="grid grid-cols-1 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <MetricCard
                   label="Autossuficiência"
                   value={indicators.self_sufficiency_rate_percent}

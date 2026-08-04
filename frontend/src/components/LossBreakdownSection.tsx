@@ -48,7 +48,7 @@ export function LossBreakdownSection({
                 </span>
                 {item.limitation && <p className="mt-1 text-xs text-gray-500">{item.limitation}</p>}
               </div>
-              <p className="text-sm font-semibold text-gray-900">
+              <p className="text-sm font-semibold text-gray-900 tabular-nums">
                 {formatNumber(lossValue)}
                 <span className="ml-1 text-xs font-normal text-gray-500">%</span>
               </p>

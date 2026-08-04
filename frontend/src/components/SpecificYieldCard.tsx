@@ -28,7 +28,7 @@ export function SpecificYieldCard({
   return (
     <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Yield específico</p>
-      <p className="mt-2 text-2xl font-semibold text-gray-900">
+      <p className="mt-2 text-2xl font-semibold text-gray-900 tabular-nums">
         {formatNumber(toNumber(performance.final_yield_kwh_per_kwp))}
         <span className="ml-1 text-sm font-normal text-gray-500">kWh/kWp</span>
       </p>

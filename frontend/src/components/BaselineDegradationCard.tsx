@@ -53,7 +53,7 @@ export function BaselineDegradationCard({
         </p>
       ) : (
         <>
-          <p className="mt-2 text-2xl font-semibold text-gray-900">
+          <p className="mt-2 text-2xl font-semibold text-gray-900 tabular-nums">
             {formatNumber(annualized)}
             <span className="ml-1 text-sm font-normal text-gray-500">%/ano</span>
           </p>

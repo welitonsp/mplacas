@@ -244,15 +244,101 @@ describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
     ).toBeInTheDocument()
   })
 
-  it('mostra o status de anomalia (streak) dentro do bloco "Está indo bem?"', async () => {
+  it('mostra o status de anomalia (streak) dentro do histórico de produção, não mais duplicado ao lado (Etapa 1.4)', async () => {
     vi.resetModules()
     await renderDashboard()
 
-    const sectionTitle = await screen.findByText('Produção real vs. esperada')
+    const sectionTitle = await screen.findByText('Histórico de produção')
     const section = sectionTitle.parentElement as HTMLElement
 
     await waitFor(() => {
       expect(within(section).getByText(/dias seguidos com produção abaixo do esperado/)).toBeInTheDocument()
     })
+  })
+})
+
+describe('DashboardPage — desredundância (Etapa 1.4)', () => {
+  it('a frase de streak de anomalia aparece exatamente uma vez na página', async () => {
+    vi.resetModules()
+    await renderDashboard()
+
+    await screen.findByText('Financeiro')
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/dias seguidos com produção abaixo do esperado/)).toHaveLength(1)
+    })
+  })
+
+  it('não renderiza mais a seção "Energia e produção" (redundante com o diagrama de fluxo)', async () => {
+    vi.resetModules()
+    await renderDashboard()
+
+    await screen.findByText('Financeiro')
+
+    expect(screen.queryByText('Energia e produção')).not.toBeInTheDocument()
+    // Os mesmos fatos continuam visíveis, só que uma única vez, no diagrama de fluxo.
+    expect(screen.getByText('Fluxo de energia no ciclo')).toBeInTheDocument()
+  })
+})
+
+describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () => {
+  it('mostra "Tentar novamente" junto do erro e refaz o fetch ao clicar', async () => {
+    vi.resetModules()
+    let executiveCalls = 0
+    vi.doMock('../lib/api', () => ({
+      apiFetch: vi.fn(async (path: string) => {
+        if (path.startsWith('/energy/executive/latest')) {
+          executiveCalls += 1
+          if (executiveCalls === 1) return jsonResponse({ error: 'boom' }, 500)
+          return jsonResponse(executivePayload)
+        }
+        if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(anomalyPayload)
+        throw new Error(`unexpected apiFetch path in test: ${path}`)
+      }),
+      fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
+      configureApi: vi.fn(),
+    }))
+
+    const { DashboardPage } = await import('./DashboardPage')
+    const { AuthProvider } = await import('../contexts/AuthContext')
+    const { getByRole, findByRole, findByText } = render(
+      <MemoryRouter>
+        <AuthProvider>
+          <DashboardPage />
+        </AuthProvider>
+      </MemoryRouter>
+    )
+
+    const alert = await findByRole('alert')
+    expect(alert).toHaveTextContent(/Erro ao buscar dados/)
+
+    const retryButton = getByRole('button', { name: 'Tentar novamente' })
+    retryButton.click()
+
+    await findByText('Financeiro')
+    expect(executiveCalls).toBe(2)
+  })
+})
+
+describe('DashboardPage — grid real no breakpoint md (Etapa 1.2)', () => {
+  it('pelo menos duas seções distintas declaram md:col-span diferente de 6 (grid de 6 colunas)', async () => {
+    vi.resetModules()
+    const { container } = await renderDashboard()
+
+    await screen.findByText('Financeiro')
+
+    const sections = Array.from(container.querySelectorAll('main > div.grid > section'))
+    expect(sections.length).toBeGreaterThan(0)
+
+    const nonFullWidthAtMd = sections.filter((section) => {
+      const match = section.className.match(/\bmd:col-span-(\d+)\b/)
+      return match !== null && match[1] !== '6'
+    })
+
+    // O grid de página é `md:grid-cols-6` — uma seção com `md:col-span-6` (ou
+    // sem span declarado) ocupa a largura inteira, igual ao empilhamento de
+    // mobile. Pelo menos duas seções precisam declarar um span menor no
+    // breakpoint `md` para o tablet deixar de ser uma coluna única (P1-04).
+    expect(nonFullWidthAtMd.length).toBeGreaterThanOrEqual(2)
   })
 })

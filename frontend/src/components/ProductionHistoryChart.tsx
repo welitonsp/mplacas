@@ -122,13 +122,13 @@ export function ProductionHistoryChart({
           </p>
           {performancePercent != null && (
             <span
-              className={`text-lg font-semibold ${SEVERITY_TEXT[performanceSeverity(performancePercent)]}`}
+              className={`text-lg font-semibold tabular-nums ${SEVERITY_TEXT[performanceSeverity(performancePercent)]}`}
             >
               Desempenho: {formatNumber(performancePercent, 1)}%
             </span>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
           {ANOMALY_LEGEND.map((item) => (
             <span key={item.level} className="inline-flex items-center gap-1">
               <span className={`h-2 w-2 rounded-full ${SEVERITY_DOT[levelSeverity(item.level)]}`} />
@@ -136,7 +136,7 @@ export function ProductionHistoryChart({
             </span>
           ))}
           <span className="inline-flex items-center gap-1">
-            <span className="h-0 w-3 border-t border-dashed border-gray-400" />
+            <span className="h-0 w-3 border-t border-dashed border-[var(--color-chart-reference)]" />
             Esperado
           </span>
           {hasIrradiation && (
@@ -160,10 +160,10 @@ export function ProductionHistoryChart({
         <div className="relative" style={{ minWidth: `${daily.length * 8}px` }}>
           {hasIrradiation && (
             <>
-              <span className="pointer-events-none absolute right-0 top-0 z-10 text-[10px] font-medium text-[var(--color-data-secondary)]">
+              <span className="pointer-events-none absolute right-0 top-0 z-10 text-xs font-medium text-[var(--color-data-secondary)] tabular-nums">
                 {formatNumber(maxIrradiationScale, 1)} kWh/m²
               </span>
-              <span className="pointer-events-none absolute right-0 bottom-0 z-10 text-[10px] font-medium text-[var(--color-data-secondary)]">
+              <span className="pointer-events-none absolute right-0 bottom-0 z-10 text-xs font-medium text-[var(--color-data-secondary)] tabular-nums">
                 0 kWh/m²
               </span>
               <svg
@@ -218,7 +218,7 @@ export function ProductionHistoryChart({
                 onClick={() => setSelectedIndex(i)}
               >
                 <span
-                  className="absolute right-0 left-0 border-t border-dashed border-gray-400"
+                  className="absolute right-0 left-0 border-t border-dashed border-[var(--color-chart-reference)]"
                   style={{ bottom: `${expectedHeightPercent}%` }}
                 />
                 <span
@@ -231,13 +231,17 @@ export function ProductionHistoryChart({
             )
           })}
           </div>
-        </div>
-      </div>
 
-      <div className="mt-1 flex justify-between text-[10px] text-gray-500">
-        <span>{formatShortDate(daily[0].date)}</span>
-        <span>{formatShortDate(daily[Math.floor(daily.length / 2)].date)}</span>
-        <span>{formatShortDate(daily[daily.length - 1].date)}</span>
+          {/* Régua de datas DENTRO do mesmo container com `overflow-x-auto` e
+              `minWidth` das barras acima (ver P1-05) — assim ela rola junto
+              com o gráfico e os rótulos sempre correspondem às barras reais,
+              mesmo em telas menores que a largura mínima do gráfico. */}
+          <div className="mt-1 flex justify-between text-xs text-gray-500 tabular-nums">
+            <span>{formatShortDate(daily[0].date)}</span>
+            <span>{formatShortDate(daily[Math.floor(daily.length / 2)].date)}</span>
+            <span>{formatShortDate(daily[daily.length - 1].date)}</span>
+          </div>
+        </div>
       </div>
 
       <div
@@ -246,14 +250,19 @@ export function ProductionHistoryChart({
       >
         <span className="font-medium text-gray-900">{formatShortDate(activeDay.date)}</span>
         <span>
-          Real: <strong className="text-gray-900">{formatNumber(activeDay.actual_production_kwh)} kWh</strong>
+          Real:{' '}
+          <strong className="text-gray-900 tabular-nums">
+            {formatNumber(activeDay.actual_production_kwh)} kWh
+          </strong>
         </span>
         <span>
           Esperado:{' '}
-          <strong className="text-gray-900">{formatNumber(activeDay.expected_production_kwh)} kWh</strong>
+          <strong className="text-gray-900 tabular-nums">
+            {formatNumber(activeDay.expected_production_kwh)} kWh
+          </strong>
         </span>
         {activeDay.deviation_percent != null && (
-          <span className={SEVERITY_TEXT[activeSeverity]}>
+          <span className={`tabular-nums ${SEVERITY_TEXT[activeSeverity]}`}>
             Desvio: {formatNumber(activeDay.deviation_percent, 1)}%
           </span>
         )}
@@ -264,7 +273,7 @@ export function ProductionHistoryChart({
         {activeIrradiation != null && (
           <span>
             Irradiância:{' '}
-            <strong className="text-[var(--color-data-secondary)]">
+            <strong className="text-[var(--color-data-secondary)] tabular-nums">
               {formatNumber(activeIrradiation, 2)} kWh/m²
             </strong>
           </span>
@@ -272,10 +281,10 @@ export function ProductionHistoryChart({
         {activeYieldInfo && (
           <span>
             Rendimento:{' '}
-            <strong className="text-[var(--color-data-secondary)]">
+            <strong className="text-[var(--color-data-secondary)] tabular-nums">
               {formatNumber(activeYieldInfo.yieldValue, 2)} kWh por kWh/m²
             </strong>{' '}
-            <span className="text-gray-500">
+            <span className="text-gray-500 tabular-nums">
               ({activeYieldInfo.deviationPercent > 0 ? '+' : ''}
               {formatNumber(activeYieldInfo.deviationPercent, 0)}% vs. média do período)
             </span>

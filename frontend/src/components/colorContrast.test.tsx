@@ -27,3 +27,14 @@ describe('contraste de cor — sem text-gray-400 em componente algum', () => {
     expect(content).not.toMatch(/text-gray-400\b/)
   })
 })
+
+// `border-gray-400` (#9ca3af) sobre branco tem contraste ~2,54:1 — reprova o
+// mínimo de 3:1 para elementos gráficos (WCAG 1.4.11). Era exatamente a linha
+// de referência "Esperado" do gráfico (ver P1-03 na auditoria); agora usa
+// `--color-chart-reference`. Guard de regressão análogo ao de `text-gray-400`
+// acima.
+describe('contraste de cor — sem border-gray-400 em componente algum', () => {
+  it.each(files)('%s não usa a classe border-gray-400', (_path, content) => {
+    expect(content).not.toMatch(/border-gray-400\b/)
+  })
+})

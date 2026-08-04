@@ -15,6 +15,27 @@
   --color-success-light: #f0fdf4;
   --color-warning: #d97706;
   --color-warning-light: #fffbeb;
+  /* Variantes de TEXTO dos tokens de severidade acima — `--color-success`/
+     `--color-warning` reprovam WCAG 2.2 AA (4.5:1) quando usados como cor de
+     texto sobre branco (medido: 3,30:1 e 3,19:1 respectivamente, ver
+     docs/UI_UX_AUDIT_2026-08-04.md P1-03). Estes tokens `-text` existem só
+     para uso em `color`/`text-*`; `--color-success`/`--color-warning`
+     continuam intocados para fundo/preenchimento (badges, barras). Nenhuma
+     mudança de semântica de severidade, só de acessibilidade do texto. */
+  --color-success-text: #15803d;
+  --color-warning-text: #b45309;
+  /* `--color-danger` (#dc2626, 4,83:1) já passa em AA, mas esta variante é
+     ainda mais segura (6,29:1) e mantém o mesmo padrão dos dois tokens
+     acima para o consumidor não ter que decidir caso a caso. */
+  --color-danger-text: #b91c1c;
+  /* Linha de referência/esperado dos gráficos (ex.: `ProductionHistoryChart`)
+     — substitui `border-gray-400` (#9ca3af), que reprova o mínimo de 3:1 para
+     elementos gráficos (WCAG 1.4.11, medido ~2,54:1). */
+  --color-chart-reference: #6b7280;
+  /* Trilho de barras de progresso/gráfico (ex.: `role="progressbar"`) —
+     substitui `bg-gray-100`, que também não garante 3:1 contra os
+     preenchimentos de severidade. */
+  --color-chart-track: #e5e7eb;
   /* Dado quantitativo/categórico (irradiância, rendimento) — NÃO é severidade.
      Roxo escolhido deliberadamente fora do eixo success(verde)/warning(âmbar)/
      danger(vermelho) para não sugerir "bom/ruim" num valor que é só uma medida

@@ -24,18 +24,18 @@ export function MetricCard({
   return (
     <Card dashed={partial} className={className}>
       {partial && (
-        <span className="absolute right-3 top-3 rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-warning)]">
+        <span className="absolute right-3 top-3 rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-warning)]">
           Parcial
         </span>
       )}
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-gray-900">
+      <p className="mt-2 text-2xl font-semibold text-gray-900 tabular-nums">
         {formatNumber(value, maximumFractionDigits)}
         {unit && <span className="ml-1 text-sm font-normal text-gray-500">{unit}</span>}
       </p>
       {barPercent != null && (
         <div
-          className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-gray-100"
+          className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-chart-track)]"
           role="progressbar"
           aria-valuenow={clampPercent(barPercent)}
           aria-valuemin={0}

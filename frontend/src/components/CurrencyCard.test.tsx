@@ -15,4 +15,11 @@ describe('CurrencyCard', () => {
 
     expect(screen.getByText(/R\$\s*—/)).toBeInTheDocument()
   })
+
+  it('o valor numérico principal usa tabular-nums (Etapa 1.5)', () => {
+    render(<CurrencyCard label="Componente de energia" value={123.45} />)
+
+    const valueNode = screen.getByText(/R\$\s*123,45/)
+    expect(valueNode.className).toMatch(/\btabular-nums\b/)
+  })
 })

@@ -38,14 +38,14 @@ export function PerformanceRatioCard({
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Performance ratio (PR)</p>
       <div className="mt-2 grid grid-cols-2 gap-4">
         <div>
-          <p className="text-2xl font-semibold text-gray-900">
+          <p className="text-2xl font-semibold text-gray-900 tabular-nums">
             {formatNumber(pr)}
             <span className="ml-1 text-sm font-normal text-gray-500">%</span>
           </p>
           <p className="mt-1 text-xs text-gray-500">Bruto</p>
         </div>
         <div>
-          <p className="text-2xl font-semibold text-gray-900">
+          <p className="text-2xl font-semibold text-gray-900 tabular-nums">
             {formatNumber(prCorrected)}
             <span className="ml-1 text-sm font-normal text-gray-500">%</span>
           </p>

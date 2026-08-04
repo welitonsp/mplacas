@@ -14,10 +14,14 @@ export function statusMeta(status: string): { label: string; severity: Severity 
   return STATUS_META[status] ?? { label: status, severity: 'neutral' }
 }
 
+// Tokens de TEXTO (`-text`), não os de preenchimento — `--color-success`/
+// `--color-warning`/`--color-danger` continuam usados em `SEVERITY_BG`/
+// `SEVERITY_BAR`/`SEVERITY_DOT`/`SEVERITY_BORDER_L` abaixo, sem alteração.
+// Ver `--color-*-text` em `index.css` para a medição de contraste (P1-03).
 export const SEVERITY_TEXT: Record<Severity, string> = {
-  success: 'text-[var(--color-success)]',
-  warning: 'text-[var(--color-warning)]',
-  danger: 'text-[var(--color-danger)]',
+  success: 'text-[var(--color-success-text)]',
+  warning: 'text-[var(--color-warning-text)]',
+  danger: 'text-[var(--color-danger-text)]',
   neutral: 'text-gray-600',
 }
 

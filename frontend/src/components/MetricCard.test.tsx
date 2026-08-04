@@ -38,4 +38,11 @@ describe('MetricCard', () => {
 
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
+
+  it('o valor numérico principal usa tabular-nums (Etapa 1.5)', () => {
+    render(<MetricCard label="Produção no ciclo" value={123.456} unit="kWh" />)
+
+    const valueNode = screen.getByText(/123,46/)
+    expect(valueNode.className).toMatch(/\btabular-nums\b/)
+  })
 })

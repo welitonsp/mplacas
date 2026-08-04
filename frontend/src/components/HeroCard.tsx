@@ -1,6 +1,7 @@
-import type { MetricValue } from '../lib/dashboard/contracts'
+import type { Diagnostic, MetricValue } from '../lib/dashboard/contracts'
 import { clampPercent, formatNumber, toNumber } from '../lib/format'
 import { SEVERITY_BAR, SEVERITY_BG, SEVERITY_DOT, SEVERITY_TEXT, statusMeta } from '../lib/dashboard/visuals'
+import { AttentionSummary } from './AttentionSummary'
 import { Card } from './Card'
 import { DataFreshness } from './DataFreshness'
 
@@ -21,6 +22,7 @@ export function HeroCard({
   healthScore,
   latestDataDate = null,
   lastSyncedAt = null,
+  diagnostics = [],
 }: {
   referenceMonth: string
   headline: string
@@ -28,6 +30,9 @@ export function HeroCard({
   healthScore: MetricValue
   latestDataDate?: string | null
   lastSyncedAt?: Date | null
+  // Ver `AttentionSummary` — chip "N críticos" só aparece quando há pelo
+  // menos um diagnóstico CRITICAL; lista vazia (padrão) não renderiza nada.
+  diagnostics?: Diagnostic[]
 }) {
   const meta = statusMeta(status)
   const score = toNumber(healthScore)
@@ -42,18 +47,19 @@ export function HeroCard({
             Ciclo de referência: {referenceMonth}
           </p>
           <p className="mt-1 text-xl font-semibold text-gray-900">{headline}</p>
+          <AttentionSummary diagnostics={diagnostics} />
         </div>
 
         {score != null && (
           <div className="mt-5 [grid-area:score] sm:mt-5 lg:mt-0 lg:w-64 lg:max-w-xs">
             <div className="flex items-center justify-between text-xs text-gray-500">
               <span className="font-medium uppercase tracking-wide">Saúde da usina</span>
-              <span className={`font-semibold ${SEVERITY_TEXT[meta.severity]}`}>
+              <span className={`font-semibold tabular-nums ${SEVERITY_TEXT[meta.severity]}`}>
                 {formatNumber(score, 0)}/100
               </span>
             </div>
             <div
-              className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-gray-100"
+              className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-[var(--color-chart-track)]"
               role="progressbar"
               aria-valuenow={clampPercent(score)}
               aria-valuemin={0}

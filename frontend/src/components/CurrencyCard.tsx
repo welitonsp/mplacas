@@ -9,7 +9,7 @@ export function CurrencyCard({ label, value }: { label: string; value: MetricVal
   return (
     <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-gray-900">{formatCurrency(value)}</p>
+      <p className="mt-2 text-2xl font-semibold text-gray-900 tabular-nums">{formatCurrency(value)}</p>
     </Card>
   )
 }

@@ -30,7 +30,7 @@ export function ReportingAvailabilityCard({
   return (
     <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Disponibilidade de reporte</p>
-      <p className="mt-2 text-2xl font-semibold text-gray-900">
+      <p className="mt-2 text-2xl font-semibold text-gray-900 tabular-nums">
         {formatNumber(availability)}
         <span className="ml-1 text-sm font-normal text-gray-500">%</span>
       </p>

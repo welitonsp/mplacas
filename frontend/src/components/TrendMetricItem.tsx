@@ -23,12 +23,12 @@ export function TrendMetricItem({
       <span className="text-sm text-gray-600">{label}</span>
       <span className={`inline-flex items-center gap-1.5 text-sm font-semibold ${SEVERITY_TEXT[severity]}`}>
         <span aria-hidden="true">{DIRECTION_SYMBOL[metric.direction]}</span>
-        <span>
+        <span className="tabular-nums">
           {sign}
           {formatNumber(absolute)} {unit}
         </span>
         {percent != null && (
-          <span className="text-xs font-normal text-gray-500">
+          <span className="text-xs font-normal text-gray-500 tabular-nums">
             ({percent > 0 ? '+' : ''}
             {formatNumber(percent, 1)}% · {DIRECTION_TEXT[metric.direction]})
           </span>

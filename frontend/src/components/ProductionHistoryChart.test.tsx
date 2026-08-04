@@ -63,6 +63,21 @@ describe('ProductionHistoryChart — teclado e semântica ARIA', () => {
     expect(liveRegion).toHaveTextContent('30 kWh')
   })
 
+  it('a régua de datas é descendente do mesmo container overflow-x-auto que as barras (Etapa 1.3)', () => {
+    const { container } = render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
+
+    const scrollContainer = container.querySelector('.overflow-x-auto')
+    expect(scrollContainer).not.toBeNull()
+
+    const slider = screen.getByRole('slider')
+    expect(scrollContainer!.contains(slider)).toBe(true)
+
+    // Rótulo do primeiro dia — a régua de datas precisa estar dentro do mesmo
+    // container que rola horizontalmente junto com as barras, não fora dele.
+    const firstDateLabel = screen.getByText('01/07')
+    expect(scrollContainer!.contains(firstDateLabel)).toBe(true)
+  })
+
   it('mantém o dia selecionado explicitamente ao invés de resetar para o último dia', () => {
     render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
 

@@ -40,7 +40,7 @@ export function ExpectedProductionCard({
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
         Produção esperada (média diária)
       </p>
-      <p className="mt-2 text-2xl font-semibold text-gray-900">
+      <p className="mt-2 text-2xl font-semibold text-gray-900 tabular-nums">
         {formatNumber(expectedProduction.kwh)}
         <span className="ml-1 text-sm font-normal text-gray-500">kWh/dia</span>
       </p>

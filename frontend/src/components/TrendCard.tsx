@@ -41,14 +41,14 @@ export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
         />
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5">
           <span className="text-sm text-gray-600">Autossuficiência</span>
-          <span className={`text-sm font-semibold ${SEVERITY_TEXT[pointsSeverity]}`}>
+          <span className={`text-sm font-semibold tabular-nums ${SEVERITY_TEXT[pointsSeverity]}`}>
             {points != null && points > 0 ? '+' : ''}
             {formatNumber(points, 1)} p.p.
           </span>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5">
           <span className="text-sm text-gray-600">Índice de saúde</span>
-          <span className={`text-sm font-semibold ${SEVERITY_TEXT[healthDeltaSeverity]}`}>
+          <span className={`text-sm font-semibold tabular-nums ${SEVERITY_TEXT[healthDeltaSeverity]}`}>
             {healthDelta != null && healthDelta > 0 ? '+' : ''}
             {formatNumber(healthDelta, 1)} pts
           </span>

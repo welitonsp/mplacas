@@ -54,10 +54,10 @@ export function EnergyFlowDiagram({
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_1fr] sm:grid-rows-2 sm:items-center sm:gap-x-6 sm:gap-y-3">
         {/* Nó: Produção */}
         <div className="sm:col-start-1 sm:row-start-1 sm:row-span-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Produção</p>
-          <p className="mt-1 text-xl font-semibold text-gray-900">{formatNumber(production_)} kWh</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Produção</p>
+          <p className="mt-1 text-xl font-semibold text-gray-900 tabular-nums">{formatNumber(production_)} kWh</p>
           <div
-            className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-gray-100"
+            className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-[var(--color-chart-track)]"
             role="progressbar"
             aria-valuenow={Math.round(clampPercent(prodAutoPercent))}
             aria-valuemin={0}
@@ -73,11 +73,11 @@ export function EnergyFlowDiagram({
           <ul className="mt-2 space-y-1 text-xs text-gray-600">
             <li className="flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-brand-primary)]" />
-              Autoconsumo: <span className="font-medium text-gray-900">{formatNumber(selfConsumption_)} kWh</span>
+              Autoconsumo: <span className="font-medium text-gray-900 tabular-nums">{formatNumber(selfConsumption_)} kWh</span>
             </li>
             <li className="flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-gray-300" />
-              Exportada: <span className="font-medium text-gray-900">{formatNumber(injected_)} kWh</span>
+              Exportada: <span className="font-medium text-gray-900 tabular-nums">{formatNumber(injected_)} kWh</span>
             </li>
           </ul>
         </div>
@@ -93,27 +93,27 @@ export function EnergyFlowDiagram({
           <span className="text-xs text-gray-500">
             autoconsumo
             <br />
-            <span className="font-medium text-gray-900">{formatNumber(selfConsumption_)} kWh</span>
+            <span className="font-medium text-gray-900 tabular-nums">{formatNumber(selfConsumption_)} kWh</span>
           </span>
         </div>
 
         {/* Nó: Rede (exportada entra, importada sai) */}
         <div className="rounded-lg border border-dashed border-gray-200 bg-white p-3 text-center sm:col-start-2 sm:row-start-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Rede</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Rede</p>
           <p className="mt-1 text-xs text-gray-600">
-            <span aria-hidden="true">←</span> Exportada: <span className="font-medium text-gray-900">{formatNumber(injected_)} kWh</span>
+            <span aria-hidden="true">←</span> Exportada: <span className="font-medium text-gray-900 tabular-nums">{formatNumber(injected_)} kWh</span>
           </p>
           <p className="mt-0.5 text-xs text-gray-600">
-            Importada: <span className="font-medium text-gray-900">{formatNumber(imported_)} kWh</span> <span aria-hidden="true">→</span>
+            Importada: <span className="font-medium text-gray-900 tabular-nums">{formatNumber(imported_)} kWh</span> <span aria-hidden="true">→</span>
           </p>
         </div>
 
         {/* Nó: Consumo */}
         <div className="sm:col-start-3 sm:row-start-1 sm:row-span-2 rounded-lg border border-gray-100 bg-gray-50 p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Consumo</p>
-          <p className="mt-1 text-xl font-semibold text-gray-900">{formatNumber(consumption_)} kWh</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Consumo</p>
+          <p className="mt-1 text-xl font-semibold text-gray-900 tabular-nums">{formatNumber(consumption_)} kWh</p>
           <div
-            className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-gray-100"
+            className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-[var(--color-chart-track)]"
             role="progressbar"
             aria-valuenow={Math.round(clampPercent(consAutoPercent))}
             aria-valuemin={0}
@@ -129,11 +129,11 @@ export function EnergyFlowDiagram({
           <ul className="mt-2 space-y-1 text-xs text-gray-600">
             <li className="flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-brand-primary)]" />
-              Autoconsumo: <span className="font-medium text-gray-900">{formatNumber(selfConsumption_)} kWh</span>
+              Autoconsumo: <span className="font-medium text-gray-900 tabular-nums">{formatNumber(selfConsumption_)} kWh</span>
             </li>
             <li className="flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-gray-300" />
-              Importada: <span className="font-medium text-gray-900">{formatNumber(imported_)} kWh</span>
+              Importada: <span className="font-medium text-gray-900 tabular-nums">{formatNumber(imported_)} kWh</span>
             </li>
           </ul>
         </div>

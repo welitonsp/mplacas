@@ -10,10 +10,10 @@ export function MetricCardSkeletonGrid({ count = 6 }: { count?: number }) {
       <Card className="animate-pulse md:col-span-6 lg:col-span-12 h-24">
         <div className="h-3 bg-gray-200 rounded w-1/3" />
       </Card>
-      <Card className="animate-pulse md:col-span-6 lg:col-span-8 2xl:col-span-9 h-64">
+      <Card className="animate-pulse md:col-span-4 lg:col-span-8 2xl:col-span-9 h-64">
         <div className="h-3 bg-gray-200 rounded w-1/3" />
       </Card>
-      <div className="grid grid-cols-1 gap-4 md:col-span-6 lg:col-span-4 2xl:col-span-3">
+      <div className="grid grid-cols-1 gap-4 md:col-span-2 lg:col-span-4 2xl:col-span-3">
         {Array.from({ length: count }).map((_, i) => (
           <Card key={i} className="animate-pulse">
             <div className="h-3 bg-gray-200 rounded w-1/2 mb-3" />
