@@ -1,6 +1,7 @@
 import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-contracts'
 import { baselineUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
 import { formatNumber } from '../lib/format'
+import { Card } from './Card'
 
 // Companheiro direto de "Produção no ciclo" (ver `DashboardPage`) — os dois
 // ficam sempre no mesmo container visual para que o dono da usina compare
@@ -14,26 +15,26 @@ export function ExpectedProductionCard({
 }) {
   if (expectedProduction === null) {
     return (
-      <div className="animate-pulse rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card className="animate-pulse">
         <div className="mb-3 h-3 w-1/3 rounded bg-gray-200" />
         <div className="h-8 w-1/2 rounded bg-gray-100" />
-      </div>
+      </Card>
     )
   }
 
   if (!expectedProduction.available) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Produção esperada</p>
         <p className="mt-4 text-sm text-gray-500">
           {baselineUnavailableMessage(expectedProduction.reason, expectedProduction.referenceCompleteOn)}
         </p>
-      </div>
+      </Card>
     )
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
         Produção esperada (média diária)
       </p>
@@ -41,6 +42,6 @@ export function ExpectedProductionCard({
         {formatNumber(expectedProduction.kwh)}
         <span className="ml-1 text-sm font-normal text-gray-500">kWh/dia</span>
       </p>
-    </div>
+    </Card>
   )
 }

@@ -1,6 +1,7 @@
 import type { PerformanceUnavailableReason, PhotovoltaicPerformanceLatest } from '../lib/dashboard/photovoltaic-contracts'
 import { performanceUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
 import { formatNumber, toNumber } from '../lib/format'
+import { Card } from './Card'
 
 // Yield específico (`final_yield_kwh_per_kwp`) normaliza a produção pela
 // capacidade instalada — a métrica que permite comparar o desempenho da usina
@@ -15,22 +16,22 @@ export function SpecificYieldCard({
 }) {
   if (performance === null) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Yield específico</p>
         <p className="mt-4 text-sm text-gray-500">
           {performanceUnavailableMessage(unavailableReason ?? 'NO_PERFORMANCE_RESULTS')}
         </p>
-      </div>
+      </Card>
     )
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Yield específico</p>
       <p className="mt-2 text-2xl font-semibold text-gray-900">
         {formatNumber(toNumber(performance.final_yield_kwh_per_kwp))}
         <span className="ml-1 text-sm font-normal text-gray-500">kWh/kWp</span>
       </p>
-    </div>
+    </Card>
   )
 }

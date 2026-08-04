@@ -2,6 +2,7 @@ import type { AnomalyFetchState } from '../lib/dashboard/contracts'
 import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-contracts'
 import { baselineUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
 import { toNumber } from '../lib/format'
+import { Card } from './Card'
 import { ProductionHistoryChart } from './ProductionHistoryChart'
 import { YieldCard } from './YieldCard'
 
@@ -21,10 +22,10 @@ export function ProductionHistorySection({
 
   if (loadingExpected || loadingHistory) {
     return (
-      <div className="animate-pulse rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card className="animate-pulse">
         <div className="mb-3 h-3 w-1/3 rounded bg-gray-200" />
         <div className="h-40 w-full rounded bg-gray-100" />
-      </div>
+      </Card>
     )
   }
 
@@ -34,14 +35,14 @@ export function ProductionHistorySection({
   // em vez de um card vazio (ver skill frontend-design).
   if (!expectedProduction.available) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Histórico de produção diária
         </p>
         <p className="mt-4 text-sm text-gray-500">
           {baselineUnavailableMessage(expectedProduction.reason, expectedProduction.referenceCompleteOn)}
         </p>
-      </div>
+      </Card>
     )
   }
 
@@ -49,14 +50,14 @@ export function ProductionHistorySection({
   // (usina nova, backfill pendente), não é uma falha do sistema.
   if (anomalyState.error === 'NOT_FOUND') {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Histórico de produção diária
         </p>
         <p className="mt-4 text-sm text-[var(--color-text-secondary)]">
           Ainda não há dado de produção diária coletado para este período.
         </p>
-      </div>
+      </Card>
     )
   }
 
@@ -64,7 +65,7 @@ export function ProductionHistorySection({
   // tentar novamente, em vez de misturar com o caso acima.
   if (anomalyState.error === 'SERVER_ERROR') {
     return (
-      <div className="rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger-light)] p-5 shadow-sm">
+      <Card tone="danger">
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Histórico de produção diária
         </p>
@@ -75,25 +76,25 @@ export function ProductionHistorySection({
           <button
             type="button"
             onClick={onRetry}
-            className="mt-3 rounded text-xs font-medium text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+            className="mt-3 rounded text-xs font-medium text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
           >
             Tentar novamente
           </button>
         )}
-      </div>
+      </Card>
     )
   }
 
   if (!anomalyState.data) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Histórico de produção diária
         </p>
         <p className="mt-4 text-sm text-gray-500">
           Não foi possível carregar o histórico de produção diária no momento.
         </p>
-      </div>
+      </Card>
     )
   }
 

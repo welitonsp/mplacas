@@ -1,6 +1,7 @@
 import type { MetricValue } from '../lib/dashboard/contracts'
 import { savingsUnavailableMessage } from '../lib/dashboard/contracts'
 import { formatCurrency } from '../lib/format'
+import { Card } from './Card'
 
 // Economia estimada do ciclo (ver
 // intelligence/energy_engine.py::analyze_energy_cycle para a fórmula exata).
@@ -17,17 +18,17 @@ export function EstimatedSavingsCard({
 }) {
   if (unavailableReason != null) {
     return (
-      <div className="rounded-xl border border-[var(--color-brand-primary)]/20 bg-[var(--color-brand-primary-light)] p-5 shadow-sm">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Economia estimada</p>
         <p className="mt-4 text-sm text-gray-500">{savingsUnavailableMessage(unavailableReason)}</p>
-      </div>
+      </Card>
     )
   }
 
   return (
-    <div className="rounded-xl border border-[var(--color-brand-primary)]/20 bg-[var(--color-brand-primary-light)] p-5 shadow-sm">
+    <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Economia estimada</p>
       <p className="mt-2 text-2xl font-semibold text-gray-900">{formatCurrency(value)}</p>
-    </div>
+    </Card>
   )
 }

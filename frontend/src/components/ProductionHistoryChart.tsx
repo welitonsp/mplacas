@@ -11,6 +11,7 @@ import {
   performanceSeverity,
 } from '../lib/dashboard/visuals'
 import { computeYieldStats } from '../lib/dashboard/yield'
+import { Card } from './Card'
 
 export function ProductionHistoryChart({
   daily,
@@ -27,14 +28,14 @@ export function ProductionHistoryChart({
 
   if (daily.length === 0) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Histórico de produção diária
         </p>
         <p className="mt-4 text-sm text-gray-500">
           Ainda não há dados diários suficientes para este gráfico.
         </p>
-      </div>
+      </Card>
     )
   }
 
@@ -113,7 +114,7 @@ export function ProductionHistoryChart({
   const activeYieldInfo = yieldStats.days.find((d) => d.date === activeDay.date) ?? null
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
@@ -281,6 +282,6 @@ export function ProductionHistoryChart({
           </span>
         )}
       </div>
-    </div>
+    </Card>
   )
 }

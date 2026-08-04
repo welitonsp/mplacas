@@ -1,6 +1,7 @@
 import type { ExecutiveTrend, Severity } from '../lib/dashboard/contracts'
 import { formatNumber, toNumber } from '../lib/format'
 import { SEVERITY_TEXT } from '../lib/dashboard/visuals'
+import { Card } from './Card'
 import { TrendMetricItem } from './TrendMetricItem'
 
 export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
@@ -12,7 +13,7 @@ export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
     healthDelta == null || healthDelta === 0 ? 'neutral' : healthDelta > 0 ? 'success' : 'danger'
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
         Comparação com o ciclo anterior
       </p>
@@ -53,6 +54,6 @@ export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
           </span>
         </div>
       </div>
-    </div>
+    </Card>
   )
 }

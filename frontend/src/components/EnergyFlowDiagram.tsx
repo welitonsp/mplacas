@@ -1,5 +1,6 @@
 import type { MetricValue } from '../lib/dashboard/contracts'
 import { clampPercent, formatNumber, toNumber } from '../lib/format'
+import { Card } from './Card'
 
 export function EnergyFlowDiagram({
   production,
@@ -24,12 +25,12 @@ export function EnergyFlowDiagram({
 
   if (!hasData) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Fluxo de energia no ciclo
         </p>
         <p className="mt-4 text-sm text-gray-500">Dados insuficientes para o diagrama.</p>
-      </div>
+      </Card>
     )
   }
 
@@ -45,7 +46,7 @@ export function EnergyFlowDiagram({
   const consImportPercent = (imported_ / consumption_) * 100
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
         Fluxo de energia no ciclo
       </p>
@@ -137,6 +138,6 @@ export function EnergyFlowDiagram({
           </ul>
         </div>
       </div>
-    </div>
+    </Card>
   )
 }

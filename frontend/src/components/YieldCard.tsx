@@ -1,6 +1,7 @@
 import type { AnomalyDailyPoint } from '../lib/dashboard/contracts'
 import { formatNumber, formatShortDate } from '../lib/format'
 import { computeYieldStats, YIELD_ATYPICAL_THRESHOLD_PERCENT } from '../lib/dashboard/yield'
+import { Card } from './Card'
 
 export function YieldCard({ daily }: { daily: AnomalyDailyPoint[] }) {
   const { periodYield, days } = computeYieldStats(daily)
@@ -15,7 +16,7 @@ export function YieldCard({ daily }: { daily: AnomalyDailyPoint[] }) {
     .slice(0, 3)
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
         Rendimento do período
       </p>
@@ -51,6 +52,6 @@ export function YieldCard({ daily }: { daily: AnomalyDailyPoint[] }) {
           </p>
         </>
       )}
-    </div>
+    </Card>
   )
 }

@@ -113,11 +113,10 @@ export const ANOMALY_LEGEND: { level: AnomalyLevel; label: string }[] = [
   { level: 'ANOMALY', label: 'Anomalia/crítico' },
 ]
 
-// Cor "grid" reutilizada em todo o diagrama de fluxo e no donut: mesmo cinza
-// (gray-300, hex #d1d5db) já usado em ProductionSplitCard para "injetada na
-// rede". Autoconsumo = brand-primary em todos os pontos. Composição não é
-// severidade (bom/ruim) — por isso não usamos success/warning/danger aqui,
-// ver skill dataviz.
+// Cor "grid" reutilizada em `EnergyFlowDiagram` para representar energia
+// injetada/importada da rede (gray-300, hex #d1d5db). Autoconsumo =
+// brand-primary em todos os pontos. Composição não é severidade (bom/ruim) —
+// por isso não usamos success/warning/danger aqui, ver skill dataviz.
 export const GRID_HEX = '#d1d5db'
 
 // Nomes em pt-BR para as oito categorias da taxonomia de perdas fotovoltaicas

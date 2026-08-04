@@ -1,5 +1,6 @@
 import type { MetricValue } from '../lib/dashboard/contracts'
 import { clampPercent, formatNumber } from '../lib/format'
+import { Card } from './Card'
 
 export function MetricCard({
   label,
@@ -19,11 +20,7 @@ export function MetricCard({
   maximumFractionDigits?: number
 }) {
   return (
-    <div
-      className={`relative rounded-xl border bg-white p-5 shadow-sm ${
-        partial ? 'border-dashed border-gray-300' : 'border-gray-200'
-      }`}
-    >
+    <Card dashed={partial}>
       {partial && (
         <span className="absolute right-3 top-3 rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-warning)]">
           Parcial
@@ -49,6 +46,6 @@ export function MetricCard({
           />
         </div>
       )}
-    </div>
+    </Card>
   )
 }

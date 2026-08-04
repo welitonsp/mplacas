@@ -1,6 +1,7 @@
 import type { MetricValue } from '../lib/dashboard/contracts'
 import { clampPercent, formatNumber, toNumber } from '../lib/format'
-import { SEVERITY_BAR, SEVERITY_BG, SEVERITY_BORDER_L, SEVERITY_DOT, SEVERITY_TEXT, statusMeta } from '../lib/dashboard/visuals'
+import { SEVERITY_BAR, SEVERITY_BG, SEVERITY_DOT, SEVERITY_TEXT, statusMeta } from '../lib/dashboard/visuals'
+import { Card } from './Card'
 
 export function HeroCard({
   referenceMonth,
@@ -17,9 +18,7 @@ export function HeroCard({
   const score = toNumber(healthScore)
 
   return (
-    <div
-      className={`rounded-xl border border-gray-200 border-l-4 ${SEVERITY_BORDER_L[meta.severity]} bg-white p-5 shadow-sm sm:p-6`}
-    >
+    <Card accent={meta.severity} className="sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
@@ -58,6 +57,6 @@ export function HeroCard({
           </div>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

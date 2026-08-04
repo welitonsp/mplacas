@@ -1,4 +1,5 @@
 import type { CycleQuality } from '../lib/dashboard/contracts'
+import { Card } from './Card'
 
 export function QualityBanner({ quality }: { quality: CycleQuality }) {
   const items = [
@@ -18,7 +19,7 @@ export function QualityBanner({ quality }: { quality: CycleQuality }) {
   }
 
   return (
-    <div className="mt-4 rounded-xl border border-dashed border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4">
+    <Card dashed tone="warning" padding="p-4" className="mt-4">
       <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-warning)]">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
         Dados parciais neste ciclo
@@ -29,6 +30,6 @@ export function QualityBanner({ quality }: { quality: CycleQuality }) {
           .join(', ')}
         .
       </p>
-    </div>
+    </Card>
   )
 }

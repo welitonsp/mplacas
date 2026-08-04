@@ -185,7 +185,7 @@ export function DashboardPage() {
                 void fetchExpectedProduction()
               }}
               disabled={loading}
-              className="rounded text-xs text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] disabled:opacity-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+              className="rounded text-xs text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] disabled:opacity-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
             >
               {loading ? 'Atualizando...' : 'Atualizar'}
             </button>
@@ -195,7 +195,7 @@ export function DashboardPage() {
         {error && (
           <div
             role="alert"
-            className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700"
+            className="mb-6 rounded-lg bg-[var(--color-danger-light)] border border-[var(--color-danger)]/20 px-4 py-3 text-sm text-[var(--color-danger)]"
           >
             {error}
           </div>

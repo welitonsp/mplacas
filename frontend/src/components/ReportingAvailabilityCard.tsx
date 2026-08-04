@@ -1,6 +1,7 @@
 import type { PerformanceUnavailableReason, PhotovoltaicPerformanceLatest } from '../lib/dashboard/photovoltaic-contracts'
 import { performanceUnavailableMessage, ratioToPercent } from '../lib/dashboard/photovoltaic-contracts'
 import { formatNumber } from '../lib/format'
+import { Card } from './Card'
 
 // `reporting_availability_ratio` é disponibilidade de REPORTE de dados (quantos
 // devices enviaram medição), não disponibilidade técnica dos equipamentos —
@@ -15,19 +16,19 @@ export function ReportingAvailabilityCard({
 }) {
   if (performance === null) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Disponibilidade de reporte</p>
         <p className="mt-4 text-sm text-gray-500">
           {performanceUnavailableMessage(unavailableReason ?? 'NO_PERFORMANCE_RESULTS')}
         </p>
-      </div>
+      </Card>
     )
   }
 
   const availability = ratioToPercent(performance.reporting_availability_ratio)
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Disponibilidade de reporte</p>
       <p className="mt-2 text-2xl font-semibold text-gray-900">
         {formatNumber(availability)}
@@ -36,6 +37,6 @@ export function ReportingAvailabilityCard({
       <p className="mt-1 text-xs text-gray-500">
         Fração de devices que enviaram dados no dia — não é o uptime dos equipamentos.
       </p>
-    </div>
+    </Card>
   )
 }

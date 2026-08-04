@@ -1,6 +1,7 @@
 import type { PerformanceUnavailableReason, PhotovoltaicPerformanceLatest } from '../lib/dashboard/photovoltaic-contracts'
 import { performanceUnavailableMessage, ratioToPercent } from '../lib/dashboard/photovoltaic-contracts'
 import { formatNumber } from '../lib/format'
+import { Card } from './Card'
 
 // PR (performance ratio) mede o quanto a usina produziu em relação ao que a
 // irradiância recebida permitiria, sem descontar o efeito da temperatura nas
@@ -20,12 +21,12 @@ export function PerformanceRatioCard({
 }) {
   if (performance === null) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Performance ratio (PR)</p>
         <p className="mt-4 text-sm text-gray-500">
           {performanceUnavailableMessage(unavailableReason ?? 'NO_PERFORMANCE_RESULTS')}
         </p>
-      </div>
+      </Card>
     )
   }
 
@@ -33,7 +34,7 @@ export function PerformanceRatioCard({
   const prCorrected = ratioToPercent(performance.temperature_corrected_performance_ratio)
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Performance ratio (PR)</p>
       <div className="mt-2 grid grid-cols-2 gap-4">
         <div>
@@ -56,6 +57,6 @@ export function PerformanceRatioCard({
         por temperatura desconta o efeito do calor nas células, então isola melhor problemas que
         não são clima.
       </p>
-    </div>
+    </Card>
   )
 }

@@ -1,5 +1,6 @@
 import type { Diagnostic } from '../lib/dashboard/contracts'
 import { DIAGNOSTIC_SEVERITY_META, SEVERITY_BG, SEVERITY_BORDER_L, SEVERITY_TEXT } from '../lib/dashboard/visuals'
+import { Card } from './Card'
 
 // Cada item mostra problema → severidade → ação recomendada, nessa ordem: o usuário
 // precisa entender POR QUE uma ação é recomendada antes de ver a ação em si. A lista
@@ -11,15 +12,15 @@ import { DIAGNOSTIC_SEVERITY_META, SEVERITY_BG, SEVERITY_BORDER_L, SEVERITY_TEXT
 export function DiagnosticsCard({ diagnostics }: { diagnostics: Diagnostic[] }) {
   if (diagnostics.length === 0) {
     return (
-      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card className="mt-4">
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnósticos</p>
         <p className="mt-3 text-sm text-gray-500">Nenhum diagnóstico neste ciclo.</p>
-      </div>
+      </Card>
     )
   }
 
   return (
-    <div className="mt-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <Card className="mt-4">
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnósticos</p>
       <ul className="mt-3 space-y-3">
         {diagnostics.map((diagnostic) => {
@@ -45,6 +46,6 @@ export function DiagnosticsCard({ diagnostics }: { diagnostics: Diagnostic[] }) 
           )
         })}
       </ul>
-    </div>
+    </Card>
   )
 }

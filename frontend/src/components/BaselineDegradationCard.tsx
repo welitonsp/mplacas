@@ -4,6 +4,7 @@ import type {
 } from '../lib/dashboard/photovoltaic-contracts'
 import { baselineUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
 import { formatNumber, toNumber } from '../lib/format'
+import { Card } from './Card'
 
 const DEGRADATION_STATUS_LABEL: Record<string, string> = {
   STABLE: 'Estável',
@@ -28,12 +29,12 @@ export function BaselineDegradationCard({
 }) {
   if (baseline === null) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Degradação anualizada</p>
         <p className="mt-4 text-sm text-gray-500">
           {baselineUnavailableMessage(unavailableReason ?? 'NO_PERFORMANCE_HISTORY', referenceCompleteOn)}
         </p>
-      </div>
+      </Card>
     )
   }
 
@@ -43,7 +44,7 @@ export function BaselineDegradationCard({
     : null
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Degradação anualizada</p>
       {annualized === null ? (
         <p className="mt-4 text-sm text-gray-500">
@@ -59,6 +60,6 @@ export function BaselineDegradationCard({
           {statusLabel && <p className="mt-1 text-xs text-gray-500">{statusLabel}</p>}
         </>
       )}
-    </div>
+    </Card>
   )
 }
