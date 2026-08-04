@@ -20,6 +20,11 @@ audit_scheduler_jobs() {
   local unexpected=()
 
   while IFS= read -r job_name; do
+    # gcloud emits CRLF line endings when run on Windows (Git Bash), which
+    # `read -r` does not strip on its own -- without this, every job name
+    # carries a trailing \r and never matches the allowlist, regardless of
+    # platform this runs on defensively strip it.
+    job_name="${job_name%$'\r'}"
     [[ -n "$job_name" ]] || continue
     scheduler_job_is_expected "$job_name" || unexpected+=("$job_name")
   done < <(
