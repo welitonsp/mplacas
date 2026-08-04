@@ -93,31 +93,28 @@ abertura do incidente é **T0 + 3h** (`7200s` + `3600s`). Não confirme ausênci
 
 ### T1 — confirmar abertura do incidente
 
-Verifique via log de auditoria do próprio Cloud Monitoring:
+**Correção de processo (2026-08-04, drill real executado):** a checagem original abaixo, via log de
+auditoria filtrando `protoPayload.methodName:"CreateAlert"`, **não funciona** — não existe esse tipo de
+evento de auditoria para criação de incidente do Cloud Monitoring, e a API `v3` do Monitoring não expõe
+um recurso `incidents` publicamente (`gcloud alpha monitoring` também não tem esse comando). No drill
+real, o `gcloud logging read` com esse filtro nunca retornou nada mesmo com o incidente tendo aberto de
+verdade e o e-mail real tendo sido entregue — **não trate essa ausência de log como falha do drill.**
+
+O critério de aceite real e único confiável é **o e-mail (ou canal configurado) de notificação
+recebido de fato** — confirme isso diretamente na caixa de entrada, fora do `gcloud`. Opcionalmente,
+para corroborar que a condição de ausência é real (não prova o incidente em si, só a métrica
+subjacente), consulte a série temporal bruta:
 
 ```bash
-gcloud logging read \
-  'protoPayload.serviceName="monitoring.googleapis.com" AND protoPayload.methodName:"CreateAlert" AND timestamp>="<T0 em RFC3339>"' \
-  --project mplacas \
-  --format='table(timestamp,protoPayload.methodName,protoPayload.resourceName)'
+TOKEN=$(gcloud auth print-access-token)
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://monitoring.googleapis.com/v3/projects/mplacas/timeSeries?filter=metric.type%3D%22run.googleapis.com%2Fjob%2Fcompleted_execution_count%22%20AND%20resource.labels.job_name%3D%22mplacas-watchdog-drill%22&interval.startTime=<T0 em RFC3339>&interval.endTime=<agora em RFC3339>&view=FULL"
 ```
 
-E/ou liste incidentes abertos associados à policy do drill:
+Ausência de pontos novos depois de T0 confirma que a condição de ausência é real; não confirma, por si
+só, que o incidente abriu — só o e-mail confirma isso.
 
-```bash
-gcloud monitoring policies list \
-  --project mplacas \
-  --filter='userLabels.mplacas_policy_id="operational_watchdog_absence_drill"' \
-  --format='value(name)'
-```
-
-(use o `name` retornado para inspecionar incidentes relacionados no console do Cloud Monitoring, seção
-Alerting → Incidents, filtrando pela policy `[DRILL] Mplacas - watchdog operacional sem execução`.)
-
-Confirme também, fora do `gcloud`, que o e-mail (ou canal configurado) de notificação REAL recebeu o
-alerta — esse é o critério de aceite mais importante do drill: a prova de entrega no canal real.
-
-Registre o horário exato de T1 (abertura confirmada) e, se disponível, o ID do incidente.
+Registre o horário exato de T1 (e-mail recebido, conforme relatado pelo operador).
 
 ### T2 — retomar e forçar uma execução imediata
 
@@ -143,15 +140,10 @@ período de alinhamento (até 1h) e fecha o incidente automaticamente quando a a
 verdadeira; aguarde **T2 + 1h30** como margem de segurança antes de declarar falha caso ainda esteja
 aberto.
 
-```bash
-gcloud monitoring policies list \
-  --project mplacas \
-  --filter='userLabels.mplacas_policy_id="operational_watchdog_absence_drill"' \
-  --format='value(name)'
-```
-
-Confirme no console (Alerting → Incidents) que o incidente aberto em T1 está com estado `Closed`, e
-confirme também o recebimento da notificação real de fechamento (se o canal notificar fechamento).
+Mesma correção de processo do T1: não há checagem de `gcloud` que confirme diretamente o fechamento do
+incidente. Confirme via **e-mail de fechamento** (se o canal notificar fechamento) ou, na ausência
+disso, pela série temporal voltando a registrar sucesso (comando de série temporal do T1, agora
+apontando para depois de T2) como evidência indireta de que a condição deixou de ser verdadeira.
 
 Registre o horário exato de T3 (fechamento confirmado).
 
