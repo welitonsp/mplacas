@@ -306,6 +306,7 @@ export function DashboardPage() {
                 injected={indicators.injected_kwh}
                 imported={indicators.imported_kwh}
                 consumption={indicators.estimated_total_consumption_kwh}
+                partial={hasIncompleteDailyProduction(quality)}
               />
             </section>
 
@@ -321,19 +322,6 @@ export function DashboardPage() {
                   <TrendCard trend={data.trend} />
                 </div>
               )}
-            </section>
-
-            {/* Bloco próprio — "Como está o desempenho técnico?": PR, PR
-                corrigido por temperatura, yield específico, disponibilidade de
-                reporte, degradação anualizada e atribuição de causa de perda.
-                Responde "está indo bem?" com granularidade técnica maior que o
-                Bloco 1 acima — por isso vira seção own em vez de subseção
-                dentro dele (ver Etapa 6), posicionada logo depois porque ainda
-                é sobre "produção/desempenho", antes do Bloco 2 mudar o foco
-                para "para onde foi a energia". */}
-            <section className="md:col-span-6 lg:col-span-12">
-              <SectionTitle>Desempenho técnico</SectionTitle>
-              <TechnicalPerformanceSection summary={pvSummary} />
             </section>
 
             {/* "Energia e produção" (importada/injetada/autoconsumo/consumo)
@@ -432,6 +420,21 @@ export function DashboardPage() {
                   />
                 </div>
               )}
+            </section>
+
+            {/* Bloco próprio — "Como está o desempenho técnico?": PR, PR
+                corrigido por temperatura, yield específico, disponibilidade de
+                reporte, degradação anualizada e atribuição de causa de perda.
+                Responde "está indo bem?" com granularidade técnica maior que o
+                Bloco 1 acima — por isso vira seção own em vez de subseção
+                dentro dele (ver Etapa 6). Reordenada para depois do bloco
+                Financeiro/Retorno do investimento (Etapa 3.2, P2-04 parcial):
+                "quanto custou" e "qual o retorno" respondem à pergunta mais
+                prática de um dono de usina antes da granularidade técnica de
+                PR/yield/degradação, que agora também está colapsada por
+                padrão (ver `TechnicalPerformanceSection`, Etapa 3.4). */}
+            <section className="md:col-span-6 lg:col-span-12">
+              <TechnicalPerformanceSection summary={pvSummary} />
             </section>
           </div>
         )}

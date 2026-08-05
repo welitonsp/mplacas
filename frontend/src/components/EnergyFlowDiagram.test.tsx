@@ -36,4 +36,33 @@ describe('EnergyFlowDiagram', () => {
 
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
+
+  it('mostra o selo "Parcial" quando o ciclo tem dado diário incompleto (Etapa 3.3, absorve o selo dos cards removidos)', () => {
+    render(
+      <EnergyFlowDiagram
+        production={100}
+        selfConsumption={60}
+        injected={40}
+        imported={20}
+        consumption={80}
+        partial
+      />
+    )
+
+    expect(screen.getByText('Parcial')).toBeInTheDocument()
+  })
+
+  it('não mostra o selo "Parcial" quando o ciclo está completo', () => {
+    render(
+      <EnergyFlowDiagram
+        production={100}
+        selfConsumption={60}
+        injected={40}
+        imported={20}
+        consumption={80}
+      />
+    )
+
+    expect(screen.queryByText('Parcial')).not.toBeInTheDocument()
+  })
 })

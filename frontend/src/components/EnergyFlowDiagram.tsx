@@ -8,12 +8,21 @@ export function EnergyFlowDiagram({
   injected,
   imported,
   consumption,
+  partial = false,
 }: {
   production: MetricValue
   selfConsumption: MetricValue
   injected: MetricValue
   imported: MetricValue
   consumption: MetricValue
+  // Autoconsumo/consumo/produção vêm do dado diário e podem ficar incompletos
+  // quando o ciclo tem `missing_days`/`provisional_days`/`incomplete_days`/
+  // `unavailable_days` (ver `hasIncompleteDailyProduction` em
+  // `EnergyProductionSection`). Importada/injetada vêm da fatura confirmada,
+  // nunca parciais — por isso o selo cobre o diagrama inteiro (que mistura os
+  // dois), não um nó isolado. Absorve o selo "Parcial" que antes só existia
+  // nos cards removidos de "Energia e produção" (ver P2-01, Etapa 3.3).
+  partial?: boolean
 }) {
   const prod = toNumber(production)
   const sc = toNumber(selfConsumption)
@@ -46,7 +55,12 @@ export function EnergyFlowDiagram({
   const consImportPercent = (imported_ / consumption_) * 100
 
   return (
-    <Card>
+    <Card dashed={partial}>
+      {partial && (
+        <span className="absolute right-3 top-3 rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-warning)]">
+          Parcial
+        </span>
+      )}
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
         Fluxo de energia no ciclo
       </p>

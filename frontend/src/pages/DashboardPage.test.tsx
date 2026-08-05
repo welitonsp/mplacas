@@ -279,6 +279,45 @@ describe('DashboardPage — desredundância (Etapa 1.4)', () => {
     // Os mesmos fatos continuam visíveis, só que uma única vez, no diagrama de fluxo.
     expect(screen.getByText('Fluxo de energia no ciclo')).toBeInTheDocument()
   })
+
+  it('importada, injetada, autoconsumo e consumo aparecem em uma única visualização — nenhum card avulso duplica os rótulos de "Energia e produção" removidos (Etapa 3.3)', async () => {
+    vi.resetModules()
+    await renderDashboard()
+
+    await screen.findByText('Financeiro')
+
+    // `EnergyProductionSection` (removida da composição na Etapa 1.4) usava
+    // exatamente estes quatro rótulos em cards isolados — se algum deles
+    // reaparecer na página fora do diagrama de fluxo, o fato voltou a ser
+    // duplicado (P2-01). O diagrama em si (`EnergyFlowDiagram`) é uma única
+    // visualização e, por design de fluxo (sankey), repete o valor de um
+    // mesmo fato quando ele é ao mesmo tempo saída de um nó e entrada de
+    // outro (ex.: "Exportada" sai de Produção e entra em Rede) — isso não é
+    // a duplicação que a Etapa 3.3 elimina.
+    expect(screen.queryByText('Energia importada')).not.toBeInTheDocument()
+    expect(screen.queryByText('Energia injetada')).not.toBeInTheDocument()
+    expect(screen.queryByText('Autoconsumo estimado')).not.toBeInTheDocument()
+    expect(screen.queryByText('Consumo total estimado')).not.toBeInTheDocument()
+
+    // Os quatro fatos continuam visíveis, todos dentro do único diagrama de
+    // fluxo — valores do payload: imported=120, injected=80,
+    // self_consumption=420, total_consumption=540.
+    const flowSectionTitle = screen.getByText('Fluxo de energia no ciclo')
+    const flowSection = flowSectionTitle.closest('div') as HTMLElement
+    expect(within(flowSection).getAllByText(/120 kWh/).length).toBeGreaterThan(0)
+    expect(within(flowSection).getAllByText(/80 kWh/).length).toBeGreaterThan(0)
+    expect(within(flowSection).getAllByText(/420 kWh/).length).toBeGreaterThan(0)
+    expect(within(flowSection).getAllByText(/540 kWh/).length).toBeGreaterThan(0)
+
+    // E não aparecem duplicados fora dele, em nenhum outro card da página.
+    const outsideFlow = document.body
+    const allOccurrences = (pattern: RegExp) =>
+      within(outsideFlow).getAllByText(pattern).filter((el) => !flowSection.contains(el))
+    expect(allOccurrences(/^120 kWh$/)).toHaveLength(0)
+    expect(allOccurrences(/^80 kWh$/)).toHaveLength(0)
+    expect(allOccurrences(/^420 kWh$/)).toHaveLength(0)
+    expect(allOccurrences(/^540 kWh$/)).toHaveLength(0)
+  })
 })
 
 describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () => {
