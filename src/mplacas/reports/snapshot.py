@@ -150,6 +150,30 @@ class MonthlyReportSnapshotRepository:
         )
         return _to_snapshot(record) if record is not None else None
 
+    async def list_for_plant(
+        self, *, plant_id: uuid.UUID
+    ) -> tuple[MonthlyReportSnapshot, ...]:
+        """All snapshots for ``plant_id``, oldest reference month first.
+
+        Used by ``intelligence.financial_return_service`` (ADR-067) to sum
+        ``estimated_savings_brl`` across the plant's full history — strictly
+        reading persisted, immutable snapshots, never recomputing from
+        ``utility_bills``.
+        """
+        if not self._plant_scope.allows(plant_id):
+            return ()
+        records = (
+            await self._session.scalars(
+                select(MonthlyReportSnapshotRecord)
+                .where(MonthlyReportSnapshotRecord.plant_id == plant_id)
+                .order_by(
+                    MonthlyReportSnapshotRecord.reference_month,
+                    MonthlyReportSnapshotRecord.created_at,
+                )
+            )
+        ).all()
+        return tuple(_to_snapshot(record) for record in records)
+
     async def create(self, report: MonthlyEnergyReport) -> MonthlyReportSnapshot:
         if not self._plant_scope.allows(report.plant_id):
             raise PermissionError("plant is outside the report snapshot scope")

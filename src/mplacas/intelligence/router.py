@@ -15,6 +15,11 @@ from mplacas.intelligence.anomaly_service import (
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError, analyze_persisted_cycle
 from mplacas.intelligence.dashboard_readmodel import ExecutiveDashboardReadModel
 from mplacas.intelligence.executive_service import build_executive_dashboard
+from mplacas.intelligence.financial_return_service import (
+    FinancialReturnPlantNotFoundError,
+    FinancialReturnResult,
+    get_latest_financial_return,
+)
 from mplacas.intelligence.history_service import (
     EnergyHistoryNotFoundError,
     compare_latest_confirmed_cycles,
@@ -233,6 +238,70 @@ async def latest_executive_dashboard(
         except EnergyCycleNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _serialize_executive(result)
+
+
+def _serialize_financial_return(result: FinancialReturnResult) -> dict[str, object]:
+    return {
+        "plant_id": str(result.plant_id),
+        "investment_amount_brl": (
+            str(result.investment_amount_brl)
+            if result.investment_amount_brl is not None
+            else None
+        ),
+        "investment_recorded_on": (
+            result.investment_recorded_on.isoformat()
+            if result.investment_recorded_on is not None
+            else None
+        ),
+        "commissioned_on": (
+            result.commissioned_on.isoformat() if result.commissioned_on is not None else None
+        ),
+        "accumulated_savings_brl": (
+            str(result.accumulated_savings_brl)
+            if result.accumulated_savings_brl is not None
+            else None
+        ),
+        "average_monthly_savings_brl": (
+            str(result.average_monthly_savings_brl)
+            if result.average_monthly_savings_brl is not None
+            else None
+        ),
+        "cycles_counted": result.cycles_counted,
+        "cycles_expected": result.cycles_expected,
+        "roi_percent": (str(result.roi_percent) if result.roi_percent is not None else None),
+        "payback_projection_months": result.payback_projection_months,
+        "unavailable_reason": (
+            result.unavailable_reason.value if result.unavailable_reason is not None else None
+        ),
+        "payback_unavailable_reason": (
+            result.payback_unavailable_reason.value
+            if result.payback_unavailable_reason is not None
+            else None
+        ),
+    }
+
+
+@router.get("/financial-return/latest")
+async def latest_financial_return(scoped: ReadPlant) -> dict[str, object]:
+    """ROI/payback projection from immutable snapshots (ADR-067).
+
+    Strictly read-only: it never materializes a snapshot (see ADR-067,
+    Decisão item 6). ``ReadPlant`` resolves ``plant_id`` from a query
+    parameter and validates it against the caller's organization scope,
+    the same dependency already used by ``/energy/executive/latest`` and
+    ``/energy/trends/latest``.
+    """
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        try:
+            result = await get_latest_financial_return(
+                session,
+                plant_id=scoped.plant_id,
+                plant_scope=scoped.principal.plant_scope,
+            )
+        except FinancialReturnPlantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _serialize_financial_return(result)
 
 
 @router.get("/anomalies/latest")

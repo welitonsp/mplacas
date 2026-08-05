@@ -172,7 +172,7 @@ Contrato de resposta:
   "cycles_counted": 12,
   "cycles_expected": 17,
   "roi_percent": "19.0",
-  "payback_projection_months": 63,
+  "payback_projection_months": 64,
   "unavailable_reason": null,
   "payback_unavailable_reason": null
 }
