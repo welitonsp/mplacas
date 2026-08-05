@@ -316,3 +316,166 @@ def test_technical_configuration_is_tenant_and_role_scoped(
         headers={"Authorization": f"Bearer {token_b_admin}"},
         json={"dc_capacity_kwp": "5.000"},
     ).status_code == 404
+
+
+def test_financial_configuration_get_defaults_to_null(
+    tenancy_setup, client: TestClient
+) -> None:
+    _, _, _, _, token_a_read, _ = tenancy_setup
+    response = client.get(
+        f"/plants/{PLANT_A}/financial-configuration",
+        headers={"Authorization": f"Bearer {token_a_read}"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "plant_id": str(PLANT_A),
+        "investment_amount_brl": None,
+        "investment_recorded_on": None,
+    }
+
+
+def test_financial_configuration_update_and_read_are_persisted(
+    tenancy_setup, client: TestClient
+) -> None:
+    factory, _, _, token_a_admin, token_a_read, _ = tenancy_setup
+    response = client.patch(
+        f"/plants/{PLANT_A}/financial-configuration",
+        headers={"Authorization": f"Bearer {token_a_admin}"},
+        json={
+            "investment_amount_brl": "48000.00",
+            "investment_recorded_on": "2024-03-11",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert Decimal(body["investment_amount_brl"]) == Decimal("48000.00")
+    assert body["investment_recorded_on"] == "2024-03-11"
+
+    read_response = client.get(
+        f"/plants/{PLANT_A}/financial-configuration",
+        headers={"Authorization": f"Bearer {token_a_read}"},
+    )
+    assert read_response.status_code == 200
+    assert read_response.json() == body
+
+    plant = asyncio.run(_reload_plant(factory, PLANT_A))
+    assert plant is not None
+    assert plant.investment_amount_brl == Decimal("48000.00")
+    assert plant.investment_recorded_on == date(2024, 3, 11)
+
+    events = asyncio.run(_audit_events(factory))
+    assert len(events) == 1
+    event = events[0]
+    assert event.action == "plant.financial_configuration_updated"
+    assert event.resource_type == "plant"
+    assert event.resource_id == str(PLANT_A)
+    assert event.outcome == "SUCCEEDED"
+    assert event.details == {
+        "investment_amount_brl": "48000.00",
+        "investment_recorded_on": "2024-03-11",
+    }
+
+
+def test_financial_configuration_partial_update_preserves_other_field(
+    tenancy_setup, client: TestClient
+) -> None:
+    _, _, _, token_a_admin, _, _ = tenancy_setup
+    client.patch(
+        f"/plants/{PLANT_A}/financial-configuration",
+        headers={"Authorization": f"Bearer {token_a_admin}"},
+        json={
+            "investment_amount_brl": "48000.00",
+            "investment_recorded_on": "2024-03-11",
+        },
+    )
+
+    response = client.patch(
+        f"/plants/{PLANT_A}/financial-configuration",
+        headers={"Authorization": f"Bearer {token_a_admin}"},
+        json={"investment_amount_brl": "50000.00"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert Decimal(body["investment_amount_brl"]) == Decimal("50000.00")
+    assert body["investment_recorded_on"] == "2024-03-11"
+
+
+def test_financial_configuration_explicit_null_clears_field(
+    tenancy_setup, client: TestClient
+) -> None:
+    _, _, _, token_a_admin, _, _ = tenancy_setup
+    client.patch(
+        f"/plants/{PLANT_A}/financial-configuration",
+        headers={"Authorization": f"Bearer {token_a_admin}"},
+        json={
+            "investment_amount_brl": "48000.00",
+            "investment_recorded_on": "2024-03-11",
+        },
+    )
+
+    response = client.patch(
+        f"/plants/{PLANT_A}/financial-configuration",
+        headers={"Authorization": f"Bearer {token_a_admin}"},
+        json={"investment_amount_brl": None},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["investment_amount_brl"] is None
+    assert body["investment_recorded_on"] == "2024-03-11"
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "-100.50"])
+def test_financial_configuration_rejects_non_positive_investment(
+    tenancy_setup, client: TestClient, value: str
+) -> None:
+    _, _, _, token_a_admin, _, _ = tenancy_setup
+    response = client.patch(
+        f"/plants/{PLANT_A}/financial-configuration",
+        headers={"Authorization": f"Bearer {token_a_admin}"},
+        json={"investment_amount_brl": value},
+    )
+    assert response.status_code == 422
+
+
+def test_financial_configuration_rejects_empty_payload(
+    tenancy_setup, client: TestClient
+) -> None:
+    _, _, _, token_a_admin, _, _ = tenancy_setup
+    response = client.patch(
+        f"/plants/{PLANT_A}/financial-configuration",
+        headers={"Authorization": f"Bearer {token_a_admin}"},
+        json={},
+    )
+    assert response.status_code == 422
+
+
+def test_financial_configuration_is_tenant_and_role_scoped(
+    tenancy_setup, client: TestClient
+) -> None:
+    factory, _, _, _, token_a_read, token_b_admin = tenancy_setup
+    path = f"/plants/{PLANT_A}/financial-configuration"
+
+    assert client.patch(
+        path,
+        headers={"Authorization": f"Bearer {token_a_read}"},
+        json={"investment_amount_brl": "5000.00"},
+    ).status_code == 403
+    assert client.get(
+        path, headers={"Authorization": f"Bearer {token_b_admin}"}
+    ).status_code == 404
+    assert client.get(
+        path, headers={"Authorization": f"Bearer {token_b_admin}"}
+    ).json() == {"detail": "plant not found"}
+    assert client.patch(
+        path,
+        headers={"Authorization": f"Bearer {token_b_admin}"},
+        json={"investment_amount_brl": "5000.00"},
+    ).status_code == 404
+
+    plant = asyncio.run(_reload_plant(factory, PLANT_A))
+    assert plant is not None
+    assert plant.investment_amount_brl is None
+    assert asyncio.run(_audit_events(factory)) == []

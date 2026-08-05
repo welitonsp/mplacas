@@ -82,6 +82,35 @@ class PlantTechnicalConfigurationUpdateRequest(BaseModel):
         return self
 
 
+class PlantFinancialConfigurationUpdateRequest(BaseModel):
+    """CAPEX input backing the financial-return indicator (ADR-067).
+
+    No coherence rule between ``investment_recorded_on`` and
+    ``commissioned_on`` is enforced by design (ADR-067, Decisão item 4): the
+    date is informative only, and ``commissioned_on`` remains the sole
+    reference date for calculations.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    investment_amount_brl: Decimal | None = Field(
+        default=None, gt=0, max_digits=12, decimal_places=2
+    )
+    investment_recorded_on: date | None = None
+
+    @model_validator(mode="after")
+    def validate_at_least_one_field(self) -> PlantFinancialConfigurationUpdateRequest:
+        if not self.model_fields_set:
+            raise ValueError("at least one financial configuration field is required")
+        return self
+
+
+class PlantFinancialConfigurationView(BaseModel):
+    plant_id: uuid.UUID
+    investment_amount_brl: Decimal | None
+    investment_recorded_on: date | None
+
+
 class DevicePowerConfigurationView(BaseModel):
     device_id: uuid.UUID
     serial_number: str
@@ -228,6 +257,76 @@ async def update_plant_technical_configuration(
             details=payload.model_dump(mode="json", exclude_unset=True),
         )
         response = await _technical_configuration_view(session, plant)
+        await session.commit()
+        return response
+
+
+def _financial_configuration_view(plant: Plant) -> PlantFinancialConfigurationView:
+    return PlantFinancialConfigurationView(
+        plant_id=plant.id,
+        investment_amount_brl=plant.investment_amount_brl,
+        investment_recorded_on=plant.investment_recorded_on,
+    )
+
+
+@router.get(
+    "/{plant_id}/financial-configuration",
+    response_model=PlantFinancialConfigurationView,
+)
+async def get_plant_financial_configuration(
+    scoped: ReadPlantPath,
+) -> PlantFinancialConfigurationView:
+    """Return the plant's CAPEX input (ADR-067) within the caller's tenant."""
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        plant = await session.get(Plant, scoped.plant_id)
+        if plant is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="plant not found"
+            )
+        return _financial_configuration_view(plant)
+
+
+@router.patch(
+    "/{plant_id}/financial-configuration",
+    response_model=PlantFinancialConfigurationView,
+)
+async def update_plant_financial_configuration(
+    request: Request,
+    scoped: AdminPlantPath,
+    payload: PlantFinancialConfigurationUpdateRequest,
+) -> PlantFinancialConfigurationView:
+    """Set or clear the plant's CAPEX input feeding the financial-return
+    indicator (ADR-067).
+
+    ``AdminPlantPath`` resolves ``plant_id`` from the URL path and validates
+    it against the caller's organization scope, returning 404 (not 403) for
+    a plant belonging to another organization — the same convention used by
+    every other plant-scoped router (see ``core.tenancy`` and
+    ``update_plant_location`` above).
+    """
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        plant = await session.get(Plant, scoped.plant_id)
+        if plant is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="plant not found"
+            )
+
+        for field_name in ("investment_amount_brl", "investment_recorded_on"):
+            if field_name in payload.model_fields_set:
+                setattr(plant, field_name, getattr(payload, field_name))
+
+        await session.flush()
+        await AuditEventRepository(session).record(
+            request,
+            action="plant.financial_configuration_updated",
+            resource_type="plant",
+            resource_id=str(plant.id),
+            outcome="SUCCEEDED",
+            details=payload.model_dump(mode="json", exclude_unset=True),
+        )
+        response = _financial_configuration_view(plant)
         await session.commit()
         return response
 
