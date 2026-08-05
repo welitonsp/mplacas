@@ -230,6 +230,7 @@ ReadPlantPath = Annotated[ScopedPlant, Depends(resolve_read_plant_path)]
 AdminPlant = Annotated[ScopedPlant, Depends(resolve_admin_plant)]
 AdminPlantPath = Annotated[ScopedPlant, Depends(resolve_admin_plant_path)]
 AdminPrincipal = Annotated[OperationsPrincipal, Depends(_admin_principal)]
+ReadPrincipal = Annotated[OperationsPrincipal, Depends(_read_principal)]
 
 
 # ---------------------------------------------------------------------------

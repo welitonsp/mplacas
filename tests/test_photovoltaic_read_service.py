@@ -18,6 +18,7 @@ from mplacas.photovoltaic.loss_taxonomy import LOSS_TAXONOMY_MODEL_VERSION
 from mplacas.photovoltaic.performance import PERFORMANCE_MODEL_VERSION
 from mplacas.photovoltaic.poa import MODEL_VERSION as SOLAR_MODEL_VERSION
 from mplacas.photovoltaic.read_service import (
+    INCOMPLETE_EXPECTATION_INPUTS_REASON,
     InvalidPerformanceWindowError,
     PhotovoltaicBaselineNotFoundError,
     PhotovoltaicLossAssessmentNotFoundError,
@@ -27,6 +28,7 @@ from mplacas.photovoltaic.read_service import (
     get_latest_performance,
     get_performance_series,
     get_summary,
+    resolve_expected_daily_production,
 )
 from mplacas.photovoltaic.seasonal_baseline import (
     BASELINE_MODEL_VERSION,
@@ -205,6 +207,42 @@ async def test_get_performance_series_rejects_window_over_366_days() -> None:
     await engine.dispose()
 
 
+def _baseline_row(
+    *,
+    plant_id: uuid.UUID,
+    observation_date: date = date(2027, 7, 1),
+    clear_sky_poa_p90_kwh_m2: Decimal = Decimal("6.500"),
+    baseline_median_performance_ratio: Decimal = Decimal("0.8500"),
+) -> SeasonalPvBaselineRecord:
+    return SeasonalPvBaselineRecord(
+        plant_id=plant_id,
+        observation_date=observation_date,
+        baseline_model_version=BASELINE_MODEL_VERSION,
+        performance_model_version=PERFORMANCE_MODEL_VERSION,
+        metric_nature="TEMPERATURE_CORRECTED_PR_PREFERRED",
+        clear_sky_index_nature="EMPIRICAL_SEASONAL_POA_P90",
+        season_key="MONTH_07",
+        reference_start_date=date(2026, 7, 1),
+        reference_end_date=date(2027, 7, 1),
+        baseline_sample_count=20,
+        baseline_excluded_count=0,
+        comparison_start_date=date(2027, 7, 2),
+        comparison_sample_count=10,
+        clear_sky_poa_p90_kwh_m2=clear_sky_poa_p90_kwh_m2,
+        target_clear_sky_index=Decimal("0.9500"),
+        baseline_median_performance_ratio=baseline_median_performance_ratio,
+        baseline_mad=Decimal("0.0100"),
+        baseline_q10=Decimal("0.8300"),
+        baseline_q90=Decimal("0.8700"),
+        comparison_median_performance_ratio=Decimal("0.8000"),
+        degradation_percent=Decimal("-5.88"),
+        annualized_degradation_percent=Decimal("-5.90"),
+        degradation_status="DEGRADED",
+        quality_flags=[],
+        assumptions_json={},
+    )
+
+
 @pytest.mark.asyncio
 async def test_get_latest_baseline_returns_record_when_present() -> None:
     factory, engine = await _factory()
@@ -212,35 +250,7 @@ async def test_get_latest_baseline_returns_record_when_present() -> None:
         plant = Plant(name="Plant", timezone="America/Sao_Paulo")
         session.add(plant)
         await session.flush()
-        session.add(
-            SeasonalPvBaselineRecord(
-                plant_id=plant.id,
-                observation_date=date(2027, 7, 1),
-                baseline_model_version=BASELINE_MODEL_VERSION,
-                performance_model_version=PERFORMANCE_MODEL_VERSION,
-                metric_nature="TEMPERATURE_CORRECTED_PR_PREFERRED",
-                clear_sky_index_nature="EMPIRICAL_SEASONAL_POA_P90",
-                season_key="MONTH_07",
-                reference_start_date=date(2026, 7, 1),
-                reference_end_date=date(2027, 7, 1),
-                baseline_sample_count=20,
-                baseline_excluded_count=0,
-                comparison_start_date=date(2027, 7, 2),
-                comparison_sample_count=10,
-                clear_sky_poa_p90_kwh_m2=Decimal("6.500"),
-                target_clear_sky_index=Decimal("0.9500"),
-                baseline_median_performance_ratio=Decimal("0.8500"),
-                baseline_mad=Decimal("0.0100"),
-                baseline_q10=Decimal("0.8300"),
-                baseline_q90=Decimal("0.8700"),
-                comparison_median_performance_ratio=Decimal("0.8000"),
-                degradation_percent=Decimal("-5.88"),
-                annualized_degradation_percent=Decimal("-5.90"),
-                degradation_status="DEGRADED",
-                quality_flags=[],
-                assumptions_json={},
-            )
-        )
+        session.add(_baseline_row(plant_id=plant.id))
         await session.commit()
 
         result = await get_latest_baseline(session, plant_id=plant.id)
@@ -447,4 +457,119 @@ async def test_get_summary_returns_populated_blocks_when_available() -> None:
         assert result.reference_complete_on is not None
         assert result.losses is not None
         assert result.losses_unavailable_reason is None
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_resolve_expected_daily_production_returns_value_when_available() -> None:
+    factory, engine = await _factory()
+    async with factory() as session:
+        plant = Plant(name="Plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        session.add(_performance_row(plant_id=plant.id, observation_date=date(2027, 7, 1)))
+        session.add(
+            _baseline_row(
+                plant_id=plant.id,
+                clear_sky_poa_p90_kwh_m2=Decimal("6.500"),
+                baseline_median_performance_ratio=Decimal("0.8500"),
+            )
+        )
+        await session.commit()
+
+        result = await resolve_expected_daily_production(
+            session, plant_id=plant.id, today=date(2027, 7, 1)
+        )
+        assert result.unavailable_reason is None
+        assert result.reference_complete_on is None
+        assert result.expected is not None
+        # dc_capacity_kwp (100.000) x clear_sky_poa_p90_kwh_m2 (6.500) x
+        # baseline_median_performance_ratio (0.8500) = 552.500
+        assert result.expected.expected_daily_production_kwh == Decimal("552.500")
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_resolve_expected_daily_production_reason_no_performance_history() -> None:
+    factory, engine = await _factory()
+    async with factory() as session:
+        plant = Plant(name="Plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.commit()
+
+        result = await resolve_expected_daily_production(session, plant_id=plant.id)
+        assert result.expected is None
+        assert result.unavailable_reason == "NO_PERFORMANCE_HISTORY"
+        assert result.reference_complete_on is None
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_resolve_expected_daily_production_reason_reference_year_incomplete() -> None:
+    factory, engine = await _factory()
+    async with factory() as session:
+        plant = Plant(name="Plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        first_observation = date(2026, 1, 1)
+        session.add(_performance_row(plant_id=plant.id, observation_date=first_observation))
+        await session.commit()
+
+        today = first_observation + timedelta(days=10)
+        result = await resolve_expected_daily_production(
+            session, plant_id=plant.id, today=today
+        )
+        assert result.expected is None
+        assert result.unavailable_reason == "REFERENCE_YEAR_INCOMPLETE"
+        expected_reference_complete_on = first_observation + timedelta(
+            days=REFERENCE_WINDOW_DAYS
+        )
+        assert result.reference_complete_on == expected_reference_complete_on
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_resolve_expected_daily_production_reason_insufficient_seasonal_samples() -> None:
+    factory, engine = await _factory()
+    async with factory() as session:
+        plant = Plant(name="Plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        first_observation = date(2026, 1, 1)
+        session.add(_performance_row(plant_id=plant.id, observation_date=first_observation))
+        await session.commit()
+
+        today = first_observation + timedelta(days=REFERENCE_WINDOW_DAYS + 30)
+        result = await resolve_expected_daily_production(
+            session, plant_id=plant.id, today=today
+        )
+        assert result.expected is None
+        assert result.unavailable_reason == "INSUFFICIENT_SEASONAL_SAMPLES"
+        assert result.reference_complete_on is None
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_resolve_expected_daily_production_reason_incomplete_inputs() -> None:
+    """A defensible baseline exists, but the performance record is missing.
+
+    ``dc_capacity_kwp`` therefore cannot be resolved, so the formula input
+    is incomplete even though a baseline is present — the fourth
+    unavailability code from ADR-068 section 2, distinct from the three
+    "no baseline yet" codes above.
+    """
+    factory, engine = await _factory()
+    async with factory() as session:
+        plant = Plant(name="Plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        session.add(_baseline_row(plant_id=plant.id, observation_date=date(2027, 7, 1)))
+        await session.commit()
+
+        result = await resolve_expected_daily_production(
+            session, plant_id=plant.id, today=date(2027, 7, 1)
+        )
+        assert result.expected is None
+        assert result.unavailable_reason == INCOMPLETE_EXPECTATION_INPUTS_REASON
+        assert result.reference_complete_on is None
     await engine.dispose()

@@ -1,9 +1,43 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Substrings that would flag a localStorage key as credential-shaped. Case
+# insensitive, checked against the literal string argument passed to
+# setItem/getItem/removeItem — never against arbitrary code.
+_CREDENTIAL_LIKE = (
+    "token",
+    "cred",
+    "secret",
+    "password",
+    "jwt",
+    "session",
+    "api_key",
+    "apikey",
+)
+
+# Explicit allowlist of non-sensitive localStorage keys the frontend is
+# permitted to read/write, with the reason documented alongside. Anything not
+# in this list, or anything credential-shaped, fails the test below. Add an
+# entry here (with a reason) rather than loosening the assertion.
+_ALLOWED_KEYS = {
+    "mplacas_creds_v1": (
+        "legacy key from a pre-refactor build; only ever removed on "
+        "startup (frontend/src/main.tsx), never written"
+    ),
+    "mplacas:technical-performance-expanded": (
+        "UI preference (whether the technical performance section starts "
+        "expanded) — not sensitive, no credential/token value"
+    ),
+}
+
+_KEY_CALL = re.compile(
+    r"localStorage\.(setItem|getItem|removeItem)\(\s*['\"]([^'\"]+)['\"]"
+)
 
 
 def test_frontend_never_persists_tokens_or_operational_keys() -> None:
@@ -12,18 +46,33 @@ def test_frontend_never_persists_tokens_or_operational_keys() -> None:
         for path in (ROOT / "frontend" / "src").rglob("*")
         if path.is_file()
     }
-    local_storage = [
-        (name, line)
-        for name, content in sources.items()
-        for line in content.splitlines()
-        if "localStorage" in line
-    ]
 
-    assert local_storage == [
-        ("frontend/src/main.tsx", "window.localStorage.removeItem('mplacas_creds_v1')")
-    ]
+    calls: set[tuple[str, str]] = set()
+    for content in sources.values():
+        calls.update(_KEY_CALL.findall(content))
+
+    # setItem is the only call that persists a value — that's the one that
+    # can actually leak a credential to disk. getItem/removeItem only ever
+    # read or clean up, so a credential-shaped key there (e.g. removing the
+    # legacy 'mplacas_creds_v1' on startup) is safe by construction.
+    written_credential_like = sorted(
+        key
+        for method, key in calls
+        if method == "setItem" and any(marker in key.lower() for marker in _CREDENTIAL_LIKE)
+    )
+    assert not written_credential_like, (
+        "localStorage.setItem with a credential-shaped key, never persist "
+        f"these: {written_credential_like}"
+    )
+
+    keys_used = {key for _method, key in calls}
+    unlisted = sorted(keys_used - _ALLOWED_KEYS.keys())
+    assert not unlisted, (
+        "localStorage key(s) not in the allowlist above — add an entry with a "
+        f"reason if this is legitimate, non-sensitive UI state: {unlisted}"
+    )
+
     assert all("sessionStorage" not in content for content in sources.values())
-    assert all("localStorage.setItem" not in content for content in sources.values())
 
 
 def test_logout_revokes_server_session_best_effort() -> None:

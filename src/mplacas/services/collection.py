@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mplacas.db.models import DataStatus, Device, Plant
 from mplacas.db.repositories.daily_energy import DailyEnergyRepository
 from mplacas.db.repositories.plant import PlantRepository
+from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID
 from mplacas.providers.base import SolarProvider
 
 
@@ -107,7 +108,12 @@ class SolarCollectionService:
         )
 
     async def _get_or_create_plant(self, name: str) -> Plant:
-        return await self._plants.get_or_create(name)
+        # Jobs de coleta em nuvem rodam sob configuração estática de
+        # plataforma (settings.cloud_job_plant_name), sem organização por
+        # requisição — usam a organização default legada (ADR-052/069).
+        return await self._plants.get_or_create(
+            name, organization_id=DEFAULT_ORGANIZATION_ID
+        )
 
     async def _get_or_create_device(
         self, *, plant: Plant, serial_number: str, model_name: str | None

@@ -11,12 +11,46 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.audit.repository import AuditEventRepository
-from mplacas.core.tenancy import AdminPlantPath, ReadPlantPath
+from mplacas.core.tenancy import AdminPlantPath, ReadPlantPath, ReadPrincipal
 from mplacas.db.models import Device, Plant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_principal_context
 
 router = APIRouter(prefix="/plants", tags=["plants"])
+
+
+def _plant_list_item(plant: Plant) -> dict[str, object]:
+    return {
+        "id": str(plant.id),
+        "name": plant.name,
+        "installed_power_kwp": (
+            str(plant.installed_power_kwp)
+            if plant.installed_power_kwp is not None
+            else None
+        ),
+    }
+
+
+@router.get("")
+async def list_plants(principal: ReadPrincipal) -> dict[str, object]:
+    """List the plants visible to the caller (ADR-069, Etapa A).
+
+    Filters by ``principal.organization_id`` when set — a static platform
+    operational key has none, and lists across every organization, mirroring
+    ``organizations.router.list_organizations``. Then intersects with
+    ``principal.plant_scope``, since a persisted credential (ADR-043) may
+    carry a scope restricted to a subset of the organization's plants.
+    """
+    async with SessionFactory() as session:
+        await set_principal_context(session, principal)
+        statement = select(Plant).order_by(Plant.name, Plant.id)
+        if principal.organization_id is not None:
+            statement = statement.where(Plant.organization_id == principal.organization_id)
+        plants = list(await session.scalars(statement))
+    items = [
+        _plant_list_item(plant) for plant in plants if principal.plant_scope.allows(plant.id)
+    ]
+    return {"count": len(items), "items": items}
 
 
 class PlantLocationUpdateRequest(BaseModel):

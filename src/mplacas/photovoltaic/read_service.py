@@ -25,6 +25,10 @@ from mplacas.photovoltaic.db_models import (
     DailyPvPerformanceRecord,
     SeasonalPvBaselineRecord,
 )
+from mplacas.photovoltaic.expected_production import (
+    ExpectedDailyProduction,
+    calculate_expected_daily_production,
+)
 from mplacas.photovoltaic.loss_taxonomy import LOSS_TAXONOMY_MODEL_VERSION, LossCategory
 from mplacas.photovoltaic.performance import PERFORMANCE_MODEL_VERSION
 from mplacas.photovoltaic.poa import MODEL_VERSION as SOLAR_MODEL_VERSION
@@ -43,6 +47,13 @@ _LOSS_CATEGORY_ORDER = {category.value: index for index, category in enumerate(L
 
 PERFORMANCE_UNAVAILABLE_REASON = "NO_PERFORMANCE_RESULTS"
 LOSSES_UNAVAILABLE_REASON = "NO_LOSS_ASSESSMENTS"
+
+#: Fourth expected-production unavailability code (ADR-068 section 2): a
+#: defensible baseline exists, but at least one of the three inputs to
+#: `calculate_expected_daily_production` came back null or non-positive.
+#: Distinct from the three baseline-derived reasons above, which all mean
+#: "there is no baseline yet".
+INCOMPLETE_EXPECTATION_INPUTS_REASON = "INCOMPLETE_EXPECTATION_INPUTS"
 
 
 class PhotovoltaicPerformanceNotFoundError(LookupError):
@@ -80,6 +91,13 @@ class PhotovoltaicSummary:
     reference_complete_on: date | None
     losses: tuple[DailyPvLossAssessmentRecord, ...] | None
     losses_unavailable_reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExpectedProductionResolution:
+    expected: ExpectedDailyProduction | None
+    unavailable_reason: str | None
+    reference_complete_on: date | None
 
 
 async def get_latest_performance(
@@ -300,4 +318,57 @@ async def get_summary(
         reference_complete_on=reference_complete_on,
         losses=losses,
         losses_unavailable_reason=losses_reason,
+    )
+
+
+async def resolve_expected_daily_production(
+    session: AsyncSession, *, plant_id: uuid.UUID, today: date | None = None
+) -> ExpectedProductionResolution:
+    """Resolve the expected daily production for a plant (ADR-068 section 2).
+
+    Reuses `get_latest_performance` and `get_latest_baseline` — no query is
+    added beyond what those two already run. The result carries one of four
+    unavailability codes when `expected` is `None`: the three baseline-derived
+    codes from `_derive_baseline_unavailable_reason`
+    (`NO_PERFORMANCE_HISTORY` / `REFERENCE_YEAR_INCOMPLETE` /
+    `INSUFFICIENT_SEASONAL_SAMPLES`), or `INCOMPLETE_EXPECTATION_INPUTS` when
+    a defensible baseline exists but one of the three formula inputs is null
+    or non-positive (e.g. no performance record, so `dc_capacity_kwp` is
+    unavailable).
+
+    Like the rest of this module, this function assumes the caller already
+    opened a session with tenant context applied; it performs no
+    authorization of its own.
+    """
+    performance: DailyPvPerformanceRecord | None
+    try:
+        performance = await get_latest_performance(session, plant_id=plant_id)
+    except PhotovoltaicPerformanceNotFoundError:
+        performance = None
+
+    try:
+        baseline = await get_latest_baseline(session, plant_id=plant_id, today=today)
+    except PhotovoltaicBaselineNotFoundError as exc:
+        return ExpectedProductionResolution(
+            expected=None,
+            unavailable_reason=exc.reason,
+            reference_complete_on=exc.reference_complete_on,
+        )
+
+    expected = calculate_expected_daily_production(
+        dc_capacity_kwp=performance.dc_capacity_kwp if performance is not None else None,
+        clear_sky_poa_p90_kwh_m2=baseline.clear_sky_poa_p90_kwh_m2,
+        baseline_median_performance_ratio=baseline.baseline_median_performance_ratio,
+    )
+    if expected is None:
+        return ExpectedProductionResolution(
+            expected=None,
+            unavailable_reason=INCOMPLETE_EXPECTATION_INPUTS_REASON,
+            reference_complete_on=None,
+        )
+
+    return ExpectedProductionResolution(
+        expected=expected,
+        unavailable_reason=None,
+        reference_complete_on=None,
     )

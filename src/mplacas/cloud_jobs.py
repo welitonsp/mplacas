@@ -28,6 +28,7 @@ from mplacas.collection.job import run_solar_collection
 from mplacas.core.config import get_settings
 from mplacas.db.models import Plant
 from mplacas.db.repositories.plant import PlantRepository
+from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID
 from mplacas.db.session import SessionFactory
 from mplacas.db.session import engine as database_engine
 from mplacas.db.tenant_context import set_platform_context
@@ -568,7 +569,9 @@ async def _resolve_plant_id(plant_name: str) -> uuid.UUID:
     """
     async with SessionFactory() as session:
         await set_platform_context(session)
-        plant = await PlantRepository(session).get_or_create(plant_name)
+        plant = await PlantRepository(session).get_or_create(
+            plant_name, organization_id=DEFAULT_ORGANIZATION_ID
+        )
         plant_id = plant.id
         await session.commit()
     return plant_id

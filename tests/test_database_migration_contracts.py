@@ -414,6 +414,52 @@ def test_loss_taxonomy_migration_preserves_category_level_evidence() -> None:
     assert 'op.drop_table("daily_pv_loss_assessments")' in source
 
 
+def test_organization_default_plant_migration_matches_orm() -> None:
+    import sqlalchemy as sa
+
+    from mplacas.organizations.db_models import OrganizationRecord
+
+    source = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "20260805_0043_add_organization_default_plant.py"
+    ).read_text(encoding="utf-8")
+    organization_columns = OrganizationRecord.__table__.c
+    foreign_keys = {
+        fk.constraint.name: (fk.parent.name, fk.target_fullname)
+        for fk in OrganizationRecord.__table__.foreign_keys
+    }
+
+    assert 'revision = "20260805_0043"' in source
+    assert 'down_revision = "20260804_0042"' in source
+    assert "batch_alter_table" in source
+    assert '"default_plant_id"' in source
+    assert organization_columns.default_plant_id.nullable is True
+    assert organization_columns.default_plant_id.type.python_type is __import__("uuid").UUID
+    assert foreign_keys["fk_organizations_default_plant_id"] == (
+        "default_plant_id",
+        "plants.id",
+    )
+    assert not organization_columns.default_plant_id.index
+
+    def upgrade_body(text: str) -> str:
+        start = text.index("def upgrade()")
+        end = text.index("def downgrade()")
+        return text[start:end]
+
+    def downgrade_body(text: str) -> str:
+        start = text.index("def downgrade()")
+        return text[start:]
+
+    assert "drop_column" not in upgrade_body(source)
+    assert "ondelete=\"SET NULL\"" in upgrade_body(source)
+    assert "UPDATE organizations SET default_plant_id" in upgrade_body(source)
+    assert "add_column" not in downgrade_body(source)
+    assert "drop_column" in downgrade_body(source)
+    assert 'drop_constraint("fk_organizations_default_plant_id"' in downgrade_body(source)
+
+
 def test_postgres_ci_covers_migrations_locks_outbox_queue_and_readiness() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     integration = (ROOT / "tests" / "test_postgres_operational_contracts.py").read_text(

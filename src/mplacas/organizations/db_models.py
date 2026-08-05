@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from mplacas.db.base import Base
@@ -30,3 +30,11 @@ class OrganizationRecord(Base):
         BigInteger, unique=True, nullable=True, index=True
     )
     telegram_allowed_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    default_plant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "plants.id",
+            ondelete="SET NULL",
+            name="fk_organizations_default_plant_id",
+        ),
+        nullable=True,
+    )

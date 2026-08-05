@@ -76,6 +76,15 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
         "task_id), not from a query parameter — validated via "
         "principal.require_plant_access(task.plant_id) after lookup"
     ),
+    # plants: enumeration across the caller's scope (ADR-069, Etapa A) — no
+    # single plant_id to resolve. Filters by principal.organization_id and
+    # intersects with principal.plant_scope internally, mirroring
+    # organizations.router.list_organizations.
+    ("GET", "/plants"): (
+        "lists every plant visible to the caller (filtered by "
+        "principal.organization_id and principal.plant_scope) — there is no "
+        "single plant_id to resolve via ReadPlant/AdminPlant"
+    ),
     # operations: org-wide operational visibility, deliberately not
     # plant-scoped (require_unrestricted_access, not require_plant_access).
     ("GET", "/operations/jobs"): (
