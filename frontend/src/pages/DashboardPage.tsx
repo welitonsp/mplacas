@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { apiFetch, fetchPhotovoltaicSummary } from '../lib/api'
+import { apiFetch, fetchFinancialReturn, fetchPhotovoltaicSummary } from '../lib/api'
 import { PLANT_ID } from '../env'
 import type { AnomalyFetchState, FetchState } from '../lib/dashboard/contracts'
 import {
@@ -10,6 +10,8 @@ import {
   parseAnomalyDashboard,
   parseExecutiveDashboard,
 } from '../lib/dashboard/contracts'
+import type { FinancialReturnResponse } from '../lib/dashboard/financial-return-contracts'
+import { parseFinancialReturn } from '../lib/dashboard/financial-return-contracts'
 import type { ExpectedDailyProduction, PhotovoltaicSummaryResponse } from '../lib/dashboard/photovoltaic-contracts'
 import { deriveExpectedDailyProduction, parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
 import { toNumber } from '../lib/format'
@@ -24,6 +26,7 @@ import { DashboardHeader } from '../components/DashboardHeader'
 import { DiagnosticsCard } from '../components/DiagnosticsCard'
 import { hasIncompleteDailyProduction } from '../components/EnergyProductionSection'
 import { EstimatedSavingsCard } from '../components/EstimatedSavingsCard'
+import { FinancialReturnSection } from '../components/FinancialReturnSection'
 import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
 import { ProductionHistorySection } from '../components/ProductionHistorySection'
@@ -66,6 +69,12 @@ export function DashboardPage() {
   // `fetchExpectedProduction` — guardamos o resumo inteiro aqui para alimentar
   // `TechnicalPerformanceSection` sem uma segunda chamada de rede).
   const [pvSummary, setPvSummary] = useState<PhotovoltaicSummaryResponse | null>(null)
+  // `null` = ainda carregando `/energy/financial-return/latest` (ADR-067). Erro de
+  // rede/servidor fica em `financialReturnError`, separado do estado de
+  // indisponibilidade de negócio (`unavailable_reason`), que é tratado dentro de
+  // `FinancialReturnSection` — os dois nunca se confundem.
+  const [financialReturn, setFinancialReturn] = useState<FinancialReturnResponse | null>(null)
+  const [financialReturnError, setFinancialReturnError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }))
@@ -120,6 +129,22 @@ export function DashboardPage() {
     }
   }, [])
 
+  const fetchFinancialReturnData = useCallback(async () => {
+    setFinancialReturnError(null)
+    try {
+      const response = await fetchFinancialReturn(PLANT_ID)
+      if (!response.ok) {
+        if (response.status === 401) return
+        throw new Error(`Erro ao buscar retorno do investimento (${response.status}).`)
+      }
+      setFinancialReturn(parseFinancialReturn(await response.json()))
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Erro ao buscar retorno do investimento.'
+      setFinancialReturnError(message)
+    }
+  }, [])
+
   const fetchAnomalies = useCallback(async (expectedDailyProductionKwh: number) => {
     setAnomalyState((prev) => ({ ...prev, loading: true }))
     try {
@@ -146,7 +171,8 @@ export function DashboardPage() {
   useEffect(() => {
     void fetchData()
     void fetchExpectedProduction()
-  }, [fetchData, fetchExpectedProduction])
+    void fetchFinancialReturnData()
+  }, [fetchData, fetchExpectedProduction, fetchFinancialReturnData])
 
   // O histórico de produção/anomalias só é buscado depois que sabemos a produção
   // esperada real da usina — sem ela o endpoint de anomalias não tem contra o que
@@ -185,6 +211,7 @@ export function DashboardPage() {
               onClick={() => {
                 void fetchData()
                 void fetchExpectedProduction()
+                void fetchFinancialReturnData()
               }}
               disabled={loading}
               className="rounded text-xs text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] disabled:opacity-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
@@ -373,6 +400,38 @@ export function DashboardPage() {
                   barPercent={toNumber(indicators.credit_coverage_rate_percent)}
                 />
               </div>
+            </section>
+
+            {/* Retorno do investimento (ADR-067, Etapa E): CAPEX, ROI acumulado e
+                projeção de payback, logo depois do Bloco 3 ("Quanto custou?") —
+                mesma pergunta financeira, num horizonte mais longo. Card único,
+                mais estreito que o grid acima (o conteúdo é uma barra de progresso
+                mais dois blocos de texto, não uma grade de métricas). */}
+            <section className="md:col-span-6 lg:col-span-12">
+              <SectionTitle>Retorno do investimento</SectionTitle>
+              {financialReturnError ? (
+                <div
+                  role="alert"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--color-danger-light)] border border-[var(--color-danger)]/20 px-4 py-3 text-sm text-[var(--color-danger-text)]"
+                >
+                  <span>{financialReturnError}</span>
+                  <button
+                    type="button"
+                    onClick={() => void fetchFinancialReturnData()}
+                    className="shrink-0 rounded text-sm font-medium hover:underline transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)]"
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
+              ) : (
+                <div className="max-w-xl">
+                  <FinancialReturnSection
+                    financialReturn={financialReturn}
+                    plantId={PLANT_ID}
+                    onInvestmentRegistered={() => void fetchFinancialReturnData()}
+                  />
+                </div>
+              )}
             </section>
           </div>
         )}

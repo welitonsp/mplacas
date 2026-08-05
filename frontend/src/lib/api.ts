@@ -64,3 +64,37 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 export async function fetchPhotovoltaicSummary(plantId: string): Promise<Response> {
   return apiFetch(`/photovoltaic/summary?plant_id=${encodeURIComponent(plantId)}`)
 }
+
+// ROI/payback do investimento (ADR-067, `GET /energy/financial-return/latest`).
+// Estritamente leitura; mesma convenção de sempre-200-dentro-do-escopo dos demais
+// endpoints de `/energy/*` — indisponibilidade vem como campo no payload, não como
+// status HTTP de erro (ver `financial-return-contracts.ts`).
+export async function fetchFinancialReturn(plantId: string): Promise<Response> {
+  return apiFetch(`/energy/financial-return/latest?plant_id=${encodeURIComponent(plantId)}`)
+}
+
+// Configuração financeira (CAPEX) da usina (ADR-067,
+// `GET/PATCH /plants/{plant_id}/financial-configuration`). `GET` usa `ReadPlantPath`,
+// `PATCH` usa `AdminPlantPath` — um chamador com credencial READ recebe 403 do
+// backend no `PATCH`, que é a fronteira de autorização real (ver
+// `plants/router.py::update_plant_financial_configuration`); o frontend hoje não tem
+// mecanismo de distinção de papel para esconder a ação antes disso (ver
+// `CapexRegistrationForm`).
+export async function fetchFinancialConfiguration(plantId: string): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/financial-configuration`)
+}
+
+export interface FinancialConfigurationUpdatePayload {
+  investment_amount_brl?: string
+  investment_recorded_on?: string | null
+}
+
+export async function updateFinancialConfiguration(
+  plantId: string,
+  payload: FinancialConfigurationUpdatePayload,
+): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/financial-configuration`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
