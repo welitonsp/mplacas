@@ -317,7 +317,7 @@ E8. E5, E6, E7 e E9 são novas.)*
 
 **E8 — `is_default` em `GET /plants` e rótulo no seletor.** *(Era E6.)* Depende da Etapa A. *Verificável*: a listagem da organização traz `is_default: true` exatamente uma vez.
 
-**E9 — fan-out do agendador (`cloud_jobs.py`).** *(Era a "Etapa F".)* `run_daily_pipeline`, `run_collection` e `run_operational_watchdog` deixam de resolver uma única usina por `MPLACAS_CLOUD_JOB_PLANT_NAME` e passam a iterar as usinas da organização, com a expectativa resolvida por usina (E6). **Sem esta sub-etapa o fan-out HTTP não faz a segunda usina ser coletada de madrugada** — ver E.11.7. Depende de E6. *Verificável*: job executado numa org com 2 usinas grava execução de pipeline para as duas; falha numa usina não impede a outra e o job termina com código de saída não-zero. **Reviewer.** **Entrada em escopo pende de confirmação — E.10 item 8.**
+**E9 — fan-out do agendador (`cloud_jobs.py`).** *(Era a "Etapa F".)* `run_daily_pipeline`, `run_collection` e `run_operational_watchdog` deixam de resolver uma única usina por `MPLACAS_CLOUD_JOB_PLANT_NAME` e passam a iterar as usinas da organização, com a expectativa resolvida por usina (E6). **Sem esta sub-etapa o fan-out HTTP não faz a segunda usina ser coletada de madrugada** — ver E.11.7. Depende de E6. *Verificável*: job executado numa org com 2 usinas grava execução de pipeline para as duas; falha numa usina não impede a outra e o job termina com código de saída não-zero. **Reviewer.** **Entrada em escopo confirmada pelo usuário em 2026-08-06 — E.10 item 8.**
 
 Ordem: E1, depois E2, depois E3 e E4 em paralelo. E5 vem depois de E2 (compartilham `core/tenancy.py`). E6 é independente e pode andar em paralelo com E2–E5. E7 depende de E5 e E6. E8 depende de A e de E1. E9 depende de E6.
 
@@ -353,12 +353,12 @@ Complementos:
 3. **Mudança de comportamento do bot em produção** — confirmada.
 4. **`PlantRepository.get_or_create` corrigido dentro de E1** — confirmado e implementado.
 
-**Abertos, introduzidos pelo fan-out (precisam de confirmação antes de E7):**
+**Resolvidos em 2026-08-06 (segunda rodada, pós-redesenho do fan-out):**
 
-5. **Envelope uniforme mesmo quando `plant_id` é explícito.** Os quatro endpoints passam a responder `{count, items}` **sempre**, inclusive no caso de uma usina só — a resposta de hoje vira o corpo do item único. Verificado que nenhum chamador automatizado quebra: o Cloud Scheduler não fala HTTP com esses endpoints (§ E.11.1, achado A), o frontend não os chama (nenhuma ocorrência em `frontend/src/**`), o Telegram não os chama; só os testes de contrato. Mesmo assim, é mudança de contrato público. A alternativa é resposta **polimórfica** (objeto quando `plant_id` é explícito, lista quando omitido) — rejeitada por custo permanente em OpenAPI, em tipos de cliente e em todo teste futuro. **Confirmar o envelope uniforme.**
-6. **`expected_daily_production_kwh` deixa de ser obrigatório** em `alerts/run` e `pipeline/run` e passa a ser derivado no servidor quando ausente (§ E.11.5). Se o valor derivado divergir do que vem sendo passado à mão ou por env, **a severidade dos alertas em produção muda**. É a consequência inevitável do fan-out: um único valor de query string não descreve N usinas de portes diferentes. **Confirmar.**
-7. **Falha parcial responde 200.** Um `pipeline/run` em que uma de duas usinas falhou devolve **200** com `failed == 1`, não 5xx. Quem monitora por código de status precisa passar a olhar o corpo (ou os audit events por usina, que continuam sendo gravados com `outcome="failure"`). Alternativa considerada e rejeitada: 207 Multi-Status (§ E.11.2). **Confirmar.**
-8. **E9 (fan-out do agendador) entra em escopo?** Sem ela, o fan-out HTTP fica pronto mas **a segunda usina continua sem coleta noturna**, porque o Cloud Run Job resolve uma única usina por `MPLACAS_CLOUD_JOB_PLANT_NAME`. Recomendo que entre, depois de E6. **Confirmar.**
+5. **Envelope uniforme mesmo quando `plant_id` é explícito.** Confirmado. Os quatro endpoints passam a responder `{count, succeeded, failed, skipped, items}` sempre, inclusive no caso de uma usina só. Resposta polimórfica foi avaliada e rejeitada.
+6. **`expected_daily_production_kwh` deixa de ser obrigatório** em `alerts/run` e `pipeline/run`, passando a ser resolvido internamente por usina via `resolve_expected_daily_production` (mesmo padrão do ADR-068). Confirmado, com ciência de que isso pode mudar a severidade de alertas em produção onde o valor divergir do que era passado manualmente.
+7. **Falha parcial responde 200**, com detalhe por item (`succeeded`/`failed` no corpo). 207 Multi-Status avaliado e rejeitado.
+8. **E9 (fan-out do agendador) entra no escopo desta frente.** Confirmado — sem ela a coleta noturna continuaria rodando só a usina padrão.
 
 ---
 
