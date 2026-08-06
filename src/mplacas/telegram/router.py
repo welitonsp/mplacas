@@ -6,13 +6,14 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.parser import BillParseError, parse_equatorial_bill_text
 from mplacas.billing.repository import UtilityBillRepository
 from mplacas.core.config import get_settings
 from mplacas.core.tenancy import _infer_single_plant_for_organization_in_session
+from mplacas.db.models import Plant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context, set_tenant_context
 from mplacas.organizations.db_models import OrganizationRecord
@@ -33,11 +34,147 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 
-def _pending_message(reference_month: str) -> str:
+def _pending_message(reference_month: str, plant_name: str) -> str:
     return (
-        f"Fatura {reference_month} recebida e analisada. "
-        "Ela ficou pendente de revisão humana antes da consolidação."
+        f"Fatura {reference_month} recebida e analisada, lançada na usina {plant_name}.\n"
+        "Ela ficou pendente de revisão humana antes da consolidação.\n"
+        "Usina errada? Use /usina <nome> e reenvie."
     )
+
+
+_COMMAND_HELP_MESSAGE = (
+    "Comando não reconhecido. Use /usinas para listar as usinas da sua conta "
+    "ou /usina <nome> para trocar a usina ativa."
+)
+
+
+async def _fetch_plant_name(session: AsyncSession, plant_id: uuid.UUID) -> str:
+    """Fetch a plant's ``name`` for use in human-facing messages.
+
+    Falls back to a generic label rather than raising if the row somehow
+    vanished between resolution and this lookup — the bill was already
+    written against ``plant_id``, so the confirmation message must not fail.
+    """
+    name = (
+        await session.execute(select(Plant.name).where(Plant.id == plant_id))
+    ).scalar_one_or_none()
+    return name or "usina"
+
+
+async def _list_plants_for_organization(
+    session: AsyncSession, organization_id: uuid.UUID
+) -> list[tuple[uuid.UUID, str]]:
+    result = await session.execute(
+        select(Plant.id, Plant.name)
+        .where(Plant.organization_id == organization_id)
+        .order_by(Plant.name, Plant.id)
+    )
+    return [(row[0], row[1]) for row in result]
+
+
+async def _current_default_plant_id(
+    session: AsyncSession, organization_id: uuid.UUID
+) -> uuid.UUID | None:
+    return (
+        await session.execute(
+            select(OrganizationRecord.default_plant_id).where(
+                OrganizationRecord.id == organization_id
+            )
+        )
+    ).scalar_one_or_none()
+
+
+def _format_plant_list_message(
+    plants: list[tuple[uuid.UUID, str]], default_plant_id: uuid.UUID | None
+) -> str:
+    if not plants:
+        return "Sua conta ainda não tem nenhuma usina cadastrada."
+    lines = ["Usinas da sua conta:"]
+    for plant_id, name in plants:
+        suffix = " (padrão)" if plant_id == default_plant_id else ""
+        lines.append(f"- {name}{suffix}")
+    lines.append(f"Para trocar: /usina {plants[-1][1]}")
+    return "\n".join(lines)
+
+
+async def _resolve_plant_by_name(
+    session: AsyncSession, organization_id: uuid.UUID, name: str
+) -> list[tuple[uuid.UUID, str]]:
+    """Resolve ``name`` against the organization's plants.
+
+    Case-insensitive exact match takes precedence over a case-insensitive
+    prefix match (``ILIKE`` anchored at the start). Always scoped by
+    ``organization_id`` in the ``WHERE`` clause, on top of RLS. Returns the
+    exact match alone when exactly one exists; otherwise returns every
+    prefix candidate (zero, one, or many), leaving ambiguity/absence
+    handling to the caller.
+    """
+    clean_name = name.strip()
+
+    exact_result = await session.execute(
+        select(Plant.id, Plant.name).where(
+            Plant.organization_id == organization_id,
+            func.lower(Plant.name) == clean_name.lower(),
+        )
+    )
+    exact = [(row[0], row[1]) for row in exact_result]
+    if len(exact) == 1:
+        return exact
+
+    escaped = clean_name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    prefix_result = await session.execute(
+        select(Plant.id, Plant.name)
+        .where(
+            Plant.organization_id == organization_id,
+            Plant.name.ilike(f"{escaped}%", escape="\\"),
+        )
+        .order_by(Plant.name, Plant.id)
+    )
+    return [(row[0], row[1]) for row in prefix_result]
+
+
+async def _switch_default_plant(
+    session: AsyncSession, organization_id: uuid.UUID, name: str
+) -> str:
+    candidates = await _resolve_plant_by_name(session, organization_id, name)
+    if not candidates:
+        return "Não encontrei essa usina. Use /usinas para ver a lista."
+    if len(candidates) > 1:
+        names = ", ".join(candidate_name for _, candidate_name in candidates)
+        return (
+            "Encontrei mais de uma usina com esse nome: "
+            f"{names}. Use /usina <nome completo> para escolher."
+        )
+    plant_id, plant_name = candidates[0]
+    organization = await session.get(OrganizationRecord, organization_id)
+    if organization is not None:
+        organization.default_plant_id = plant_id
+        await session.flush()
+    return f"Usina ativa agora: {plant_name}. As próximas faturas serão lançadas nela."
+
+
+async def _handle_telegram_command(
+    session: AsyncSession, organization_id: uuid.UUID, command_text: str
+) -> str:
+    """Dispatch a Telegram command (``/usinas``, ``/usina <nome>``, ...).
+
+    Unknown commands return help text rather than raising — the webhook
+    keeps responding 202 regardless of whether the command was recognized
+    (see ADR-069 § E.5).
+    """
+    parts = command_text.strip().split(maxsplit=1)
+    command = parts[0].lower() if parts else ""
+    argument = parts[1].strip() if len(parts) > 1 else ""
+
+    if command in ("/usinas", "/usina") and not argument:
+        plants = await _list_plants_for_organization(session, organization_id)
+        default_plant_id = await _current_default_plant_id(session, organization_id)
+        return _format_plant_list_message(plants, default_plant_id)
+
+    if command == "/usina":
+        return await _switch_default_plant(session, organization_id, argument)
+
+    return _COMMAND_HELP_MESSAGE
 
 
 async def _resolve_telegram_organization(
@@ -180,6 +317,18 @@ async def telegram_webhook(
     )
 
     if message.kind == "command":
+        async with SessionFactory() as session:
+            await set_tenant_context(session, organization_id)
+            reply_text = await _handle_telegram_command(
+                session, organization_id, message.text or ""
+            )
+            await session.commit()
+        try:
+            await client.send_message(message.chat_id, reply_text)
+        except TelegramClientError as exc:
+            raise HTTPException(
+                status_code=502, detail="Telegram acknowledgement failed"
+            ) from exc
         return {
             "accepted": True,
             "kind": "command",
@@ -199,6 +348,7 @@ async def telegram_webhook(
             async with SessionFactory() as session:
                 await set_tenant_context(session, organization_id)
                 plant_id = await _resolve_telegram_plant_scope(session, organization_id)
+                plant_name = await _fetch_plant_name(session, plant_id)
                 record = await UtilityBillRepository(session).create_pending(
                     bill,
                     plant_id=plant_id,
@@ -206,7 +356,9 @@ async def telegram_webhook(
                 )
                 await session.commit()
                 reference_month = record.reference_month
-            await client.send_message(message.chat_id, _pending_message(reference_month))
+            await client.send_message(
+                message.chat_id, _pending_message(reference_month, plant_name)
+            )
         except BillParseError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except TelegramClientError as exc:
@@ -236,6 +388,7 @@ async def telegram_webhook(
         async with SessionFactory() as session:
             await set_tenant_context(session, organization_id)
             plant_id = await _resolve_telegram_plant_scope(session, organization_id)
+            plant_name = await _fetch_plant_name(session, plant_id)
             record = await UtilityBillRepository(session).create_pending(
                 processed.bill,
                 plant_id=plant_id,
@@ -243,7 +396,9 @@ async def telegram_webhook(
             )
             await session.commit()
             reference_month = record.reference_month
-        await client.send_message(message.chat_id, _pending_message(reference_month))
+        await client.send_message(
+            message.chat_id, _pending_message(reference_month, plant_name)
+        )
     except (
         TelegramClientError,
         TelegramDocumentProcessingError,
