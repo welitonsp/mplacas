@@ -16,9 +16,20 @@ from mplacas.photovoltaic.expected_production import (
 )
 from mplacas.photovoltaic.read_service import ExpectedProductionResolution
 import mplacas.alerts.router as alerts_router
+import mplacas.core.tenancy as tenancy_module
+
+
+class FakeQueryResult:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> object:
+        return self._value
 
 
 class FakeSession:
+    plant_name = "Usina Teste"
+
     async def __aenter__(self) -> FakeSession:
         return self
 
@@ -27,6 +38,12 @@ class FakeSession:
 
     async def commit(self) -> None:
         return None
+
+    async def rollback(self) -> None:
+        return None
+
+    async def execute(self, *args: object, **kwargs: object) -> FakeQueryResult:
+        return FakeQueryResult(self.plant_name)
 
 
 class FakeAuditEventRepository:
@@ -97,6 +114,17 @@ def test_alerts_run_endpoint_records_sanitized_audit_event(monkeypatch) -> None:
     assert response.status_code == 200
     assert "synthetic-token" not in response.text
     assert "synthetic-chat" not in response.text
+    body = response.json()
+    assert body["count"] == 1
+    assert body["succeeded"] == 1
+    assert body["failed"] == 0
+    assert body["skipped"] == 0
+    item = body["items"][0]
+    assert item["plant_id"] == str(plant_id)
+    assert item["plant_name"] == "Usina Teste"
+    assert item["outcome"] == "succeeded"
+    assert item["error"] is None
+    assert item["result"]["executive_available"] is True
     event = FakeAuditEventRepository.events[-1]
     assert event["action"] == "alerts.run"
     assert event["resource_type"] == "plant"
@@ -216,4 +244,66 @@ def test_alerts_run_returns_422_when_expectation_unavailable(monkeypatch) -> Non
     assert response.status_code == 422
     assert response.json()["detail"] == {"unavailable_reason": "NO_PERFORMANCE_HISTORY"}
     assert called["pipeline_invoked"] is False
+    get_settings.cache_clear()
+
+
+def test_alerts_run_static_key_single_plant_omitted_allows_expectation(
+    monkeypatch,
+) -> None:
+    """ADR-069 § E.11.3: static key, single-plant install, no ambiguity.
+
+    ``plant_id`` omitted (as today's single-usina callers do) and
+    ``expected_daily_production_kwh`` supplied must succeed (200), not 409:
+    ``scoped.explicit`` is ``False`` here, but the resolved set has exactly
+    one plant, so there is no real ambiguity.
+    """
+    _configure(monkeypatch)
+    plant_id = uuid.UUID("00000000-0000-0000-0000-000000000031")
+
+    async def fake_infer_single_plant(organization_id):
+        assert organization_id is None
+        return plant_id
+
+    async def fake_run_alert_pipeline(*args, **kwargs):
+        return SimpleNamespace(
+            plant_id=plant_id,
+            executive_available=True,
+            anomaly_available=False,
+            metrics=SimpleNamespace(
+                evaluated=1,
+                sent=1,
+                skipped=0,
+                failed=0,
+                duplicates=0,
+                below_minimum_severity=0,
+            ),
+            job=SimpleNamespace(results=()),
+        )
+
+    monkeypatch.setattr(
+        tenancy_module, "_infer_single_plant_for_organization", fake_infer_single_plant
+    )
+    monkeypatch.setattr(alerts_router, "SessionFactory", lambda: FakeSession())
+    monkeypatch.setattr(
+        alerts_router,
+        "run_operational_alert_pipeline",
+        fake_run_alert_pipeline,
+    )
+    FakeAuditEventRepository.events = []
+    monkeypatch.setattr(alerts_router, "AuditEventRepository", FakeAuditEventRepository)
+
+    response = TestClient(app).post(
+        "/alerts/run",
+        headers={"X-API-Key": "synthetic-key"},
+        params={
+            "expected_daily_production_kwh": "1000",
+            "minimum_severity": AlertSeverity.WARNING.value,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 1
+    assert body["succeeded"] == 1
+    assert body["items"][0]["plant_id"] == str(plant_id)
     get_settings.cache_clear()

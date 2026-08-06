@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from mplacas.core.config import get_settings
 from mplacas.main import app
 from mplacas.orchestration.db_models import PipelineExecutionStatus
+from mplacas.orchestration.execution_repository import PipelineExecutionAlreadyRunningError
 from mplacas.photovoltaic.expected_production import (
     EXPECTED_PRODUCTION_MODEL_VERSION,
     EXPECTED_PRODUCTION_NATURE,
@@ -17,9 +18,20 @@ from mplacas.photovoltaic.expected_production import (
 )
 from mplacas.photovoltaic.read_service import ExpectedProductionResolution
 import mplacas.orchestration.router as orchestration_router
+import mplacas.core.tenancy as tenancy_module
+
+
+class FakeQueryResult:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> object:
+        return self._value
 
 
 class FakeSession:
+    plant_name = "Usina Teste"
+
     async def __aenter__(self) -> FakeSession:
         return self
 
@@ -31,6 +43,9 @@ class FakeSession:
 
     async def rollback(self) -> None:
         return None
+
+    async def execute(self, *args: object, **kwargs: object) -> FakeQueryResult:
+        return FakeQueryResult(self.plant_name)
 
 
 class FakeAuditEventRepository:
@@ -125,8 +140,17 @@ def test_pipeline_run_endpoint_is_protected_and_returns_sanitized_metrics(monkey
         },
     )
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["plant_id"] == str(plant_id)
+    body = response.json()
+    assert body["count"] == 1
+    assert body["succeeded"] == 1
+    assert body["failed"] == 0
+    assert body["skipped"] == 0
+    item = body["items"][0]
+    assert item["plant_id"] == str(plant_id)
+    assert item["plant_name"] == "Usina Teste"
+    assert item["outcome"] == "succeeded"
+    assert item["error"] is None
+    payload = item["result"]
     assert payload["duration_ms"] == 125
     assert payload["solar_projection"] == {
         "inserted": 1,
@@ -269,6 +293,137 @@ def test_pipeline_run_returns_422_when_expectation_unavailable(monkeypatch) -> N
     get_settings.cache_clear()
 
 
+def test_pipeline_run_returns_409_when_already_running_explicit(monkeypatch) -> None:
+    """ADR-069 § E.11.2: explicit `plant_id` preserves today's 409."""
+    _configure(monkeypatch)
+    plant_id = uuid.UUID("00000000-0000-0000-0000-000000000027")
+
+    async def fake_runtime(*args, **kwargs):
+        raise PipelineExecutionAlreadyRunningError("locked")
+
+    monkeypatch.setattr(orchestration_router, "SessionFactory", lambda: FakeSession())
+    monkeypatch.setattr(orchestration_router, "run_ledger_backed_daily_pipeline", fake_runtime)
+    FakeAuditEventRepository.events = []
+    monkeypatch.setattr(orchestration_router, "AuditEventRepository", FakeAuditEventRepository)
+
+    response = TestClient(app).post(
+        "/pipeline/run",
+        headers={"X-API-Key": "synthetic-key"},
+        params={
+            "plant_id": str(plant_id),
+            "target_date": "2026-07-13",
+            "expected_daily_production_kwh": "10",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "pipeline execution is already running"
+    get_settings.cache_clear()
+
+
+def test_pipeline_run_returns_502_on_unexpected_failure_explicit(monkeypatch) -> None:
+    """ADR-069 § E.11.2: explicit `plant_id` preserves today's 502."""
+    _configure(monkeypatch)
+    plant_id = uuid.UUID("00000000-0000-0000-0000-000000000027")
+
+    async def fake_runtime(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    async def fake_latest(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(orchestration_router, "SessionFactory", lambda: FakeSession())
+    monkeypatch.setattr(orchestration_router, "run_ledger_backed_daily_pipeline", fake_runtime)
+    monkeypatch.setattr(orchestration_router, "get_latest_pipeline_execution", fake_latest)
+    FakeAuditEventRepository.events = []
+    monkeypatch.setattr(orchestration_router, "AuditEventRepository", FakeAuditEventRepository)
+
+    response = TestClient(app).post(
+        "/pipeline/run",
+        headers={"X-API-Key": "synthetic-key"},
+        params={
+            "plant_id": str(plant_id),
+            "target_date": "2026-07-13",
+            "expected_daily_production_kwh": "10",
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "pipeline execution failed"
+    assert FakeAuditEventRepository.events[-1]["outcome"] == "failure"
+    get_settings.cache_clear()
+
+
+def test_pipeline_run_static_key_single_plant_omitted_allows_expectation(
+    monkeypatch,
+) -> None:
+    """ADR-069 § E.11.3: static key, single-plant install, no ambiguity.
+
+    ``plant_id`` omitted (as today's single-usina callers do) and
+    ``expected_daily_production_kwh`` supplied must succeed (200), not 409:
+    ``scoped.explicit`` is ``False`` here, but the resolved set has exactly
+    one plant, so there is no real ambiguity.
+    """
+    _configure(monkeypatch)
+    plant_id = uuid.UUID("00000000-0000-0000-0000-000000000027")
+
+    async def fake_infer_single_plant(organization_id):
+        assert organization_id is None
+        return plant_id
+
+    async def fake_runtime(*args, **kwargs):
+        return SimpleNamespace(
+            execution_id=uuid.UUID("00000000-0000-0000-0000-000000000127"),
+            plant_id=plant_id,
+            target_date=date(2026, 7, 13),
+            duration_ms=125,
+            pipeline=SimpleNamespace(
+                climate=SimpleNamespace(
+                    received=1,
+                    solar_projection=SimpleNamespace(
+                        inserted=1, updated=0, unchanged=0, skipped=0, skip_reason=None
+                    ),
+                ),
+                performance=SimpleNamespace(
+                    inserted=1, updated=0, unchanged=0, skipped=0, skip_reason=None
+                ),
+                seasonal_baseline=SimpleNamespace(
+                    inserted=0, updated=0, unchanged=0, skipped=1, skip_reason=None
+                ),
+                loss_taxonomy=SimpleNamespace(
+                    inserted=8, updated=0, unchanged=0, skipped=0, skip_reason=None
+                ),
+                alerts=SimpleNamespace(
+                    metrics=SimpleNamespace(evaluated=2, sent=1, skipped=1, failed=0)
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(
+        tenancy_module, "_infer_single_plant_for_organization", fake_infer_single_plant
+    )
+    monkeypatch.setattr(orchestration_router, "SessionFactory", lambda: FakeSession())
+    monkeypatch.setattr(orchestration_router, "run_ledger_backed_daily_pipeline", fake_runtime)
+    FakeAuditEventRepository.events = []
+    monkeypatch.setattr(orchestration_router, "AuditEventRepository", FakeAuditEventRepository)
+
+    response = TestClient(app).post(
+        "/pipeline/run",
+        headers={"X-API-Key": "synthetic-key"},
+        params={
+            "target_date": "2026-07-13",
+            "expected_daily_production_kwh": "10",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 1
+    assert body["succeeded"] == 1
+    assert body["items"][0]["plant_id"] == str(plant_id)
+    get_settings.cache_clear()
+
+
 def test_latest_pipeline_status_endpoint_returns_technical_snapshot(monkeypatch) -> None:
     _configure(monkeypatch)
     plant_id = uuid.UUID("00000000-0000-0000-0000-000000000027")
@@ -295,6 +450,33 @@ def test_latest_pipeline_status_endpoint_returns_technical_snapshot(monkeypatch)
         params={"plant_id": str(plant_id)},
     )
     assert response.status_code == 200
-    assert response.json()["status"] == "SUCCEEDED"
-    assert response.json()["attempt_count"] == 2
+    body = response.json()
+    assert body["count"] == 1
+    assert body["succeeded"] == 1
+    item = body["items"][0]
+    assert item["plant_id"] == str(plant_id)
+    assert item["outcome"] == "succeeded"
+    assert item["result"]["status"] == "SUCCEEDED"
+    assert item["result"]["attempt_count"] == 2
+    get_settings.cache_clear()
+
+
+def test_latest_pipeline_status_returns_404_when_no_execution_explicit(monkeypatch) -> None:
+    """ADR-069 § E.11.2: explicit `plant_id` preserves today's 404."""
+    _configure(monkeypatch)
+    plant_id = uuid.UUID("00000000-0000-0000-0000-000000000027")
+
+    async def fake_latest(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(orchestration_router, "SessionFactory", lambda: FakeSession())
+    monkeypatch.setattr(orchestration_router, "get_latest_pipeline_execution", fake_latest)
+
+    response = TestClient(app).get(
+        "/pipeline/status/latest",
+        headers={"X-API-Key": "synthetic-key"},
+        params={"plant_id": str(plant_id)},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "pipeline execution not found"
     get_settings.cache_clear()

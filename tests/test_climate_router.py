@@ -12,7 +12,17 @@ from mplacas.main import app
 import mplacas.climate.router as climate_router
 
 
+class FakeQueryResult:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> object:
+        return self._value
+
+
 class FakeSession:
+    plant_name = "Usina Teste"
+
     async def __aenter__(self) -> FakeSession:
         return self
 
@@ -21,6 +31,12 @@ class FakeSession:
 
     async def commit(self) -> None:
         return None
+
+    async def rollback(self) -> None:
+        return None
+
+    async def execute(self, *args: object, **kwargs: object) -> FakeQueryResult:
+        return FakeQueryResult(self.plant_name)
 
 
 class FakeAuditEventRepository:
@@ -85,9 +101,19 @@ def test_climate_collection_endpoint_returns_persistence_metrics(monkeypatch) ->
         },
     )
     assert response.status_code == 200
-    assert response.json()["received"] == 2
-    assert response.json()["persistence"] == {"inserted": 1, "updated": 1, "unchanged": 0}
-    assert response.json()["solar_projection"] == {
+    body = response.json()
+    assert body["count"] == 1
+    assert body["succeeded"] == 1
+    assert body["failed"] == 0
+    assert body["skipped"] == 0
+    item = body["items"][0]
+    assert item["plant_id"] == str(plant_id)
+    assert item["plant_name"] == "Usina Teste"
+    assert item["outcome"] == "succeeded"
+    assert item["error"] is None
+    assert item["result"]["received"] == 2
+    assert item["result"]["persistence"] == {"inserted": 1, "updated": 1, "unchanged": 0}
+    assert item["result"]["solar_projection"] == {
         "inserted": 1,
         "updated": 1,
         "unchanged": 0,

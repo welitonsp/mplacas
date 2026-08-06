@@ -22,7 +22,7 @@ from typing import Annotated, Iterator, get_args, get_origin, get_type_hints
 import fastapi.routing as fastapi_routing
 from fastapi.routing import APIRoute
 
-from mplacas.core.tenancy import ScopedPlant
+from mplacas.core.tenancy import ScopedPlant, ScopedPlantSet
 from mplacas.main import app
 
 
@@ -219,7 +219,13 @@ def _declares_scoped_plant(endpoint: object) -> bool:
     for hint in hints.values():
         if get_origin(hint) is Annotated:
             args = get_args(hint)
-            if args and args[0] is ScopedPlant:
+            # ScopedPlantSet (behind AdminPlantFanout, ADR-069 § E5/E7) is the
+            # fan-out sibling of ScopedPlant: it resolves a *set* of plants
+            # (one, in the explicit-plant_id case) instead of exactly one,
+            # but the same structural guarantee applies — plant_id(s) are
+            # resolved and validated against the caller's scope, never taken
+            # on faith from a raw query/body parameter.
+            if args and args[0] in (ScopedPlant, ScopedPlantSet):
                 return True
     return False
 
