@@ -2,9 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import { AppShell } from './AppShell'
 import { useAuth } from '../contexts/AuthContext'
+import { usePlant } from '../contexts/PlantContext'
 
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: vi.fn(),
+}))
+
+vi.mock('../contexts/PlantContext', () => ({
+  usePlant: vi.fn(),
 }))
 
 vi.mocked(useAuth).mockReturnValue({
@@ -12,6 +17,14 @@ vi.mocked(useAuth).mockReturnValue({
   username: null,
   login: vi.fn(),
   logout: vi.fn(),
+})
+
+vi.mocked(usePlant).mockReturnValue({
+  plantId: null,
+  plants: [],
+  loading: false,
+  error: null,
+  selectPlant: vi.fn(),
 })
 
 describe('AppShell — skip link', () => {

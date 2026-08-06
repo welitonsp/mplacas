@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
 import { AuthProvider } from './contexts/AuthContext'
+import { PlantProvider } from './contexts/PlantContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AppShell } from './components/AppShell'
 import { LoginPage } from './pages/LoginPage'
@@ -15,9 +16,11 @@ export function App() {
             path="/dashboard"
             element={
               <ProtectedRoute>
-                <AppShell>
-                  <DashboardPage />
-                </AppShell>
+                <PlantProvider>
+                  <AppShell>
+                    <DashboardPage />
+                  </AppShell>
+                </PlantProvider>
               </ProtectedRoute>
             }
           />

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch, fetchFinancialReturn, fetchPhotovoltaicSummary } from '../lib/api'
-import { PLANT_ID } from '../env'
+import { usePlant } from '../contexts/PlantContext'
 import type { AnomalyFetchState, FetchState } from '../lib/dashboard/contracts'
 import {
   classifyAnomalyErrorStatus,
@@ -35,19 +35,24 @@ import { TechnicalPerformanceSection } from '../components/TechnicalPerformanceS
 // 401): a seção de desempenho técnico mostra as mensagens de indisponibilidade
 // por bloco em vez de ficar carregando indefinidamente — mesmo princípio de
 // `expectedProduction` acima, aplicado a todos os blocos do resumo.
-const FALLBACK_PV_SUMMARY: PhotovoltaicSummaryResponse = {
-  plant_id: PLANT_ID,
-  performance: null,
-  performance_unavailable_reason: 'NO_PERFORMANCE_RESULTS',
-  baseline: null,
-  baseline_unavailable_reason: 'NO_PERFORMANCE_HISTORY',
-  reference_complete_on: null,
-  losses: null,
-  losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
-  expectedProduction: { available: false, reason: 'NO_PERFORMANCE_HISTORY', referenceCompleteOn: null },
+// `plant_id` depende da usina ativa (`PlantContext`, ADR-069), por isso vira
+// função em vez de constante de módulo.
+function fallbackPvSummary(plantId: string): PhotovoltaicSummaryResponse {
+  return {
+    plant_id: plantId,
+    performance: null,
+    performance_unavailable_reason: 'NO_PERFORMANCE_RESULTS',
+    baseline: null,
+    baseline_unavailable_reason: 'NO_PERFORMANCE_HISTORY',
+    reference_complete_on: null,
+    losses: null,
+    losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
+    expectedProduction: { available: false, reason: 'NO_PERFORMANCE_HISTORY', referenceCompleteOn: null },
+  }
 }
 
 export function DashboardPage() {
+  const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
   const [state, setState] = useState<FetchState>({
     data: null,
     loading: true,
@@ -76,10 +81,11 @@ export function DashboardPage() {
   const [financialReturnError, setFinancialReturnError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
+    if (!plantId) return
     setState((prev) => ({ ...prev, loading: true, error: null }))
     try {
       const response = await apiFetch(
-        `/energy/executive/latest?plant_id=${encodeURIComponent(PLANT_ID)}`
+        `/energy/executive/latest?plant_id=${encodeURIComponent(plantId)}`
       )
       if (!response.ok) {
         if (response.status === 401) {
@@ -94,13 +100,14 @@ export function DashboardPage() {
       const message = err instanceof Error ? err.message : 'Erro desconhecido ao buscar dados.'
       setState((prev) => ({ ...prev, loading: false, error: message }))
     }
-  }, [])
+  }, [plantId])
 
   const fetchExpectedProduction = useCallback(async () => {
+    if (!plantId) return
     setExpectedProduction(null)
     setPvSummary(null)
     try {
-      const response = await fetchPhotovoltaicSummary(PLANT_ID)
+      const response = await fetchPhotovoltaicSummary(plantId)
       if (!response.ok) {
         if (response.status === 401) return
         // Sessão expirada à parte, um erro aqui não deve travar o resto do
@@ -112,7 +119,7 @@ export function DashboardPage() {
           reason: 'NO_PERFORMANCE_HISTORY',
           referenceCompleteOn: null,
         })
-        setPvSummary(FALLBACK_PV_SUMMARY)
+        setPvSummary(fallbackPvSummary(plantId))
         return
       }
       const summary = parsePhotovoltaicSummary(await response.json())
@@ -124,14 +131,15 @@ export function DashboardPage() {
         reason: 'NO_PERFORMANCE_HISTORY',
         referenceCompleteOn: null,
       })
-      setPvSummary(FALLBACK_PV_SUMMARY)
+      setPvSummary(fallbackPvSummary(plantId))
     }
-  }, [])
+  }, [plantId])
 
   const fetchFinancialReturnData = useCallback(async () => {
+    if (!plantId) return
     setFinancialReturnError(null)
     try {
-      const response = await fetchFinancialReturn(PLANT_ID)
+      const response = await fetchFinancialReturn(plantId)
       if (!response.ok) {
         if (response.status === 401) return
         throw new Error(`Erro ao buscar retorno do investimento (${response.status}).`)
@@ -142,13 +150,14 @@ export function DashboardPage() {
         err instanceof Error ? err.message : 'Erro ao buscar retorno do investimento.'
       setFinancialReturnError(message)
     }
-  }, [])
+  }, [plantId])
 
   const fetchAnomalies = useCallback(async (expectedDailyProductionKwh: number) => {
+    if (!plantId) return
     setAnomalyState((prev) => ({ ...prev, loading: true }))
     try {
       const response = await apiFetch(
-        `/energy/anomalies/latest?plant_id=${encodeURIComponent(PLANT_ID)}` +
+        `/energy/anomalies/latest?plant_id=${encodeURIComponent(plantId)}` +
           `&expected_daily_production_kwh=${expectedDailyProductionKwh}&days=90`
       )
       if (!response.ok) {
@@ -165,7 +174,7 @@ export function DashboardPage() {
       // Falha de rede: mesma categoria de "algo quebrou" que um 5xx.
       setAnomalyState({ data: null, loading: false, error: 'SERVER_ERROR' })
     }
-  }, [])
+  }, [plantId])
 
   useEffect(() => {
     void fetchData()
@@ -175,7 +184,8 @@ export function DashboardPage() {
 
   // O histórico de produção/anomalias só é buscado depois que sabemos a produção
   // esperada real da usina — sem ela o endpoint de anomalias não tem contra o que
-  // comparar o dia (ver `fetchAnomalies` acima).
+  // comparar o dia (ver `fetchAnomalies` acima). `plantId` entra nas dependências
+  // porque `fetchAnomalies` é recriado quando a usina ativa muda (ADR-069).
   useEffect(() => {
     if (expectedProduction === null) return
     if (expectedProduction.available) {
@@ -183,7 +193,7 @@ export function DashboardPage() {
     } else {
       setAnomalyState({ data: null, loading: false, error: null })
     }
-  }, [expectedProduction, fetchAnomalies])
+  }, [expectedProduction, fetchAnomalies, plantId])
 
   const retryAnomalies = useCallback(() => {
     if (expectedProduction?.available) void fetchAnomalies(expectedProduction.kwh)
@@ -197,6 +207,35 @@ export function DashboardPage() {
   // ver Etapa 1.7) e pela lista completa (`DiagnosticsCard`) — mesma lista,
   // duas apresentações.
   const diagnostics = data ? combineDiagnostics(data) : []
+
+  // Enquanto a lista de usinas (`PlantContext`) ainda carrega, nenhuma
+  // requisição de dados do dashboard foi disparada — mostra o mesmo
+  // esqueleto de carregamento usado para os dados do ciclo.
+  if (plantsLoading) {
+    return <MetricCardSkeletonGrid />
+  }
+
+  // Falha ao carregar `/plants`: sem usina resolvida, não há como buscar dado
+  // nenhum do dashboard.
+  if (plantsError) {
+    return (
+      <RetryableError
+        message={plantsError}
+        onRetry={() => window.location.reload()}
+        className="mb-6"
+      />
+    )
+  }
+
+  // Organização sem nenhuma usina cadastrada (`count == 0`, ADR-069, seção 7):
+  // estado vazio explícito, zero chamadas de dados disparadas.
+  if (!plantId || plants.length === 0) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-white px-6 py-10 text-center text-sm text-gray-600">
+        Nenhuma usina cadastrada para esta conta ainda.
+      </div>
+    )
+  }
 
   return (
     <>
@@ -415,13 +454,15 @@ export function DashboardPage() {
                   onRetry={() => void fetchFinancialReturnData()}
                 />
               ) : (
-                <div className="max-w-xl">
-                  <FinancialReturnSection
-                    financialReturn={financialReturn}
-                    plantId={PLANT_ID}
-                    onInvestmentRegistered={() => void fetchFinancialReturnData()}
-                  />
-                </div>
+                plantId && (
+                  <div className="max-w-xl">
+                    <FinancialReturnSection
+                      financialReturn={financialReturn}
+                      plantId={plantId}
+                      onInvestmentRegistered={() => void fetchFinancialReturnData()}
+                    />
+                  </div>
+                )
               )}
             </section>
 

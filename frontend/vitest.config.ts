@@ -11,6 +11,12 @@ export default mergeConfig(
       environment: 'jsdom',
       setupFiles: ['./src/test/setup.ts'],
       globals: false,
+      // `DashboardPage` agora depende de uma requisição adicional (`GET
+      // /plants` via `PlantContext`, ADR-069 Etapa C) antes do primeiro
+      // render — sob carga da suíte inteira em paralelo, o primeiro teste que
+      // monta a página estourava o timeout padrão de 5s. 15s dá folga sem
+      // mascarar travamentos reais.
+      testTimeout: 15000,
     },
   })
 )

@@ -1,12 +1,14 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { BrandMark } from './BrandMark'
+import { PlantSelector } from './PlantSelector'
 
-// Casca do app (Frente S) — substitui `DashboardHeader`. `plantName` é um slot
-// reservado para o ADR-069 (multi-usina): quando ausente/undefined, este
-// componente não renderiza absolutamente nada no lugar (nem placeholder, nem
-// "Usina não identificada") — decisão já confirmada com o usuário.
-export function AppHeader({ plantName }: { plantName?: string }) {
+// Casca do app (Frente S) — substitui `DashboardHeader`. O nome/seletor de
+// usina (ADR-069, Etapa D) é resolvido pelo próprio `PlantSelector`, que lê o
+// `PlantContext` diretamente: dropdown com múltiplas usinas, texto simples
+// com uma só, nada com zero. `AppHeader` só precisa estar dentro do
+// `PlantProvider`, o que já é garantido pela composição em `App.tsx`.
+export function AppHeader() {
   const { username, logout } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuId = useId()
@@ -43,13 +45,7 @@ export function AppHeader({ plantName }: { plantName?: string }) {
         <div className="flex items-center gap-3 min-w-0">
           <BrandMark className="h-7 w-auto text-[var(--color-brand-primary)] flex-shrink-0" />
           <span className="text-lg font-semibold text-gray-900 hidden sm:inline">Mplacas</span>
-          {/* Reservado para o ADR-069 (multi-usina) — nunca renderiza nada
-              quando `plantName` está ausente. */}
-          {plantName && (
-            <span className="truncate text-sm text-gray-500 border-l border-gray-200 pl-3 ml-1">
-              {plantName}
-            </span>
-          )}
+          <PlantSelector />
         </div>
 
         <div ref={containerRef} className="relative">

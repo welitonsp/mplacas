@@ -212,7 +212,6 @@ jobs:
           # browser bundle. Real values are provided by GitHub Variables (not Secrets)
           # in the deployment workflow. Placeholder values are used here for CI only.
           VITE_API_URL: https://ci-placeholder.example.com
-          VITE_PLANT_ID: 00000000-0000-0000-0000-000000000001
         run: npm run build
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -38,18 +38,16 @@ jobs:
         # Values are never printed — only presence is checked.
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
-          VITE_PLANT_ID: ${{ vars.VITE_PLANT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           missing=()
           [ -n "$VITE_API_URL" ]          || missing+=(VITE_API_URL)
-          [ -n "$VITE_PLANT_ID" ]         || missing+=(VITE_PLANT_ID)
           [ -n "$CLOUDFLARE_API_TOKEN" ]  || missing+=(CLOUDFLARE_API_TOKEN)
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing+=(CLOUDFLARE_ACCOUNT_ID)
           if [ "${#missing[@]}" -gt 0 ]; then
             printf 'Required configuration is missing: %s\n' "${missing[*]}" >&2
-            printf 'Set GitHub Variables (VITE_API_URL, VITE_PLANT_ID, CLOUDFLARE_ACCOUNT_ID)\n' >&2
+            printf 'Set GitHub Variables (VITE_API_URL, CLOUDFLARE_ACCOUNT_ID)\n' >&2
             printf 'and GitHub Secrets (CLOUDFLARE_API_TOKEN) before running this workflow.\n' >&2
             exit 1
           fi
@@ -64,7 +62,6 @@ jobs:
       - name: Build
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
-          VITE_PLANT_ID: ${{ vars.VITE_PLANT_ID }}
         run: npm run build
 
       - name: Deploy to Cloudflare Pages

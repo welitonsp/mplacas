@@ -2,13 +2,20 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 
-// `AuthContext` importa `env.ts`, que valida `VITE_API_URL`/`VITE_PLANT_ID` no
-// carregamento do módulo — não há `.env.local` no ambiente de teste (ver
-// `LoginPage.test.tsx`).
+// `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
+// módulo — não há `.env.local` no ambiente de teste (ver `LoginPage.test.tsx`).
 vi.mock('../env', () => ({
   API_URL: 'https://api.example.test',
-  PLANT_ID: '00000000-0000-0000-0000-000000000000',
 }))
+
+// `PlantContext` busca `/plants` ao montar (ADR-069, Etapa C) — uma única
+// usina, para preservar o comportamento anterior a esta etapa em todos os
+// testes que não são especificamente sobre seleção de usina.
+const singlePlant = {
+  id: '00000000-0000-0000-0000-000000000000',
+  name: 'Usina de teste',
+  installedPowerKwp: null,
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -140,6 +147,23 @@ function installApiMock(executiveOverride: unknown = executivePayload) {
       throw new Error(`unexpected apiFetch path in test: ${path}`)
     }),
     fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
+    fetchFinancialReturn: vi.fn(async () =>
+      jsonResponse({
+        plant_id: 'plant-1',
+        investment_amount_brl: null,
+        investment_recorded_on: null,
+        commissioned_on: null,
+        accumulated_savings_brl: null,
+        average_monthly_savings_brl: null,
+        cycles_counted: null,
+        cycles_expected: null,
+        roi_percent: null,
+        payback_projection_months: null,
+        unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+        payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+      })
+    ),
+    fetchPlants: vi.fn(async () => [singlePlant]),
     configureApi: vi.fn(),
   }))
 }
@@ -148,6 +172,7 @@ async function renderDashboard(executiveOverride: unknown = executivePayload) {
   installApiMock(executiveOverride)
   const { DashboardPage } = await import('./DashboardPage')
   const { AuthProvider } = await import('../contexts/AuthContext')
+  const { PlantProvider } = await import('../contexts/PlantContext')
 
   // `DashboardPage` não renderiza mais sua própria casca — o `<main>` (e o
   // container/padding) agora vive em `AppShell` (Frente S). Os testes abaixo
@@ -155,15 +180,21 @@ async function renderDashboard(executiveOverride: unknown = executivePayload) {
   // ancestral, então o harness precisa fornecer um, sem trazer `AppShell`
   // inteiro (que exigiria mockar o menu de usuário) — só a estrutura mínima
   // que os seletores usam.
-  return render(
+  const result = render(
     <MemoryRouter>
       <AuthProvider>
-        <main>
-          <DashboardPage />
-        </main>
+        <PlantProvider>
+          <main>
+            <DashboardPage />
+          </main>
+        </PlantProvider>
       </AuthProvider>
     </MemoryRouter>
   )
+  // `PlantContext` resolve a usina de forma assíncrona (busca `/plants`) —
+  // espera a página sair do esqueleto de carregamento antes de prosseguir.
+  await screen.findByText('Atualizar')
+  return result
 }
 
 describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
@@ -365,15 +396,35 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
         throw new Error(`unexpected apiFetch path in test: ${path}`)
       }),
       fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
+      fetchFinancialReturn: vi.fn(async () =>
+        jsonResponse({
+          plant_id: 'plant-1',
+          investment_amount_brl: null,
+          investment_recorded_on: null,
+          commissioned_on: null,
+          accumulated_savings_brl: null,
+          average_monthly_savings_brl: null,
+          cycles_counted: null,
+          cycles_expected: null,
+          roi_percent: null,
+          payback_projection_months: null,
+          unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+          payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+        })
+      ),
+      fetchPlants: vi.fn(async () => [singlePlant]),
       configureApi: vi.fn(),
     }))
 
     const { DashboardPage } = await import('./DashboardPage')
     const { AuthProvider } = await import('../contexts/AuthContext')
+    const { PlantProvider } = await import('../contexts/PlantContext')
     const { getByRole, findByRole, findByText } = render(
       <MemoryRouter>
         <AuthProvider>
-          <DashboardPage />
+          <PlantProvider>
+            <DashboardPage />
+          </PlantProvider>
         </AuthProvider>
       </MemoryRouter>
     )
@@ -409,5 +460,82 @@ describe('DashboardPage — grid real no breakpoint md (Etapa 1.2)', () => {
     // mobile. Pelo menos duas seções precisam declarar um span menor no
     // breakpoint `md` para o tablet deixar de ser uma coluna única (P1-04).
     expect(nonFullWidthAtMd.length).toBeGreaterThanOrEqual(2)
+  })
+})
+
+describe('DashboardPage — re-busca dados quando a usina ativa muda (ADR-069, Etapa C)', () => {
+  it('refaz as chamadas de dados com o novo plant_id quando o PlantContext resolve outra usina', async () => {
+    vi.resetModules()
+
+    const secondPlant = {
+      id: '00000000-0000-0000-0000-000000000002',
+      name: 'Segunda usina',
+      installedPowerKwp: null,
+    }
+    const executiveCallsPlantIds: string[] = []
+
+    vi.doMock('../lib/api', () => ({
+      apiFetch: vi.fn(async (path: string) => {
+        if (path.startsWith('/energy/executive/latest')) {
+          const url = new URL(path, 'https://example.test')
+          executiveCallsPlantIds.push(url.searchParams.get('plant_id') ?? '')
+          return jsonResponse(executivePayload)
+        }
+        if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(anomalyPayload)
+        throw new Error(`unexpected apiFetch path in test: ${path}`)
+      }),
+      fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
+      fetchFinancialReturn: vi.fn(async () =>
+        jsonResponse({
+          plant_id: 'plant-1',
+          investment_amount_brl: null,
+          investment_recorded_on: null,
+          commissioned_on: null,
+          accumulated_savings_brl: null,
+          average_monthly_savings_brl: null,
+          cycles_counted: null,
+          cycles_expected: null,
+          roi_percent: null,
+          payback_projection_months: null,
+          unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+          payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+        })
+      ),
+      fetchPlants: vi.fn(async () => [singlePlant, secondPlant]),
+      configureApi: vi.fn(),
+    }))
+
+    const { DashboardPage } = await import('./DashboardPage')
+    const { AuthProvider } = await import('../contexts/AuthContext')
+    const { PlantProvider, usePlant } = await import('../contexts/PlantContext')
+
+    function PlantSwitcher() {
+      const { selectPlant } = usePlant()
+      return (
+        <button onClick={() => selectPlant(secondPlant.id)}>trocar-usina</button>
+      )
+    }
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <PlantProvider>
+            <PlantSwitcher />
+            <main>
+              <DashboardPage />
+            </main>
+          </PlantProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    )
+
+    await screen.findByText('Financeiro')
+    expect(executiveCallsPlantIds).toEqual([singlePlant.id])
+
+    screen.getByRole('button', { name: 'trocar-usina' }).click()
+
+    await waitFor(() => {
+      expect(executiveCallsPlantIds).toEqual([singlePlant.id, secondPlant.id])
+    })
   })
 })

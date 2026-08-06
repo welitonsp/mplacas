@@ -2,12 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 
-// `AuthContext` importa `env.ts`, que valida `VITE_API_URL`/`VITE_PLANT_ID` no
-// carregamento do módulo e lança se ausentes — não há `.env.local` no ambiente
-// de teste (são valores de configuração de deploy, não segredos versionados).
+// `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
+// módulo e lança se ausente — não há `.env.local` no ambiente de teste (é
+// valor de configuração de deploy, não segredo versionado).
 vi.mock('../env', () => ({
   API_URL: 'https://api.example.test',
-  PLANT_ID: '00000000-0000-0000-0000-000000000000',
 }))
 
 const { LoginPage } = await import('./LoginPage')

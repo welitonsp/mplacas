@@ -4,9 +4,9 @@ import { AppHeader } from './AppHeader'
 const MAIN_ID = 'conteudo'
 
 // Casca do app (Frente S): header fixo + skip link + container/padding que
-// antes vivia solto dentro de `DashboardPage`. `plantName` é repassado direto
-// para `AppHeader` (reservado para o ADR-069, multi-usina).
-export function AppShell({ children, plantName }: { children: ReactNode; plantName?: string }) {
+// antes vivia solto dentro de `DashboardPage`. O `AppHeader` resolve o nome
+// da usina sozinho, via `PlantSelector`/`PlantContext` (ADR-069, Etapa D).
+export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <a
@@ -16,7 +16,7 @@ export function AppShell({ children, plantName }: { children: ReactNode; plantNa
         Pular para o conteúdo
       </a>
 
-      <AppHeader plantName={plantName} />
+      <AppHeader />
 
       <main id={MAIN_ID} className="mx-auto max-w-7xl 2xl:max-w-[96rem] px-4 sm:px-6 lg:px-8 py-8">
         {children}

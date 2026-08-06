@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useRef, useState } from 
 import { configureApi, apiFetch } from '../lib/api'
 import { TokenStore } from '../lib/auth'
 import { API_URL } from '../env'
+import { SELECTED_PLANT_STORAGE_KEY } from './PlantContext'
 
 interface AuthContextValue {
   isAuthenticated: boolean
@@ -22,6 +23,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     const refreshToken = refreshTokenRef.current
     TokenStore.clear()
+    // A usina selecionada é estado de sessão (ADR-069, seção 5) — limpa junto
+    // do token para não vazar seleção entre logins de usuários diferentes no
+    // mesmo navegador.
+    window.localStorage.removeItem(SELECTED_PLANT_STORAGE_KEY)
     refreshTokenRef.current = null
     setIsAuthenticated(false)
     setUsername(null)

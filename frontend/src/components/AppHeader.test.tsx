@@ -1,13 +1,20 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { AppHeader } from './AppHeader'
 import { useAuth } from '../contexts/AuthContext'
+import { usePlant } from '../contexts/PlantContext'
+import type { Plant } from '../lib/dashboard/plant-contracts'
 
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: vi.fn(),
 }))
 
+vi.mock('../contexts/PlantContext', () => ({
+  usePlant: vi.fn(),
+}))
+
 const mockedUseAuth = vi.mocked(useAuth)
+const mockedUsePlant = vi.mocked(usePlant)
 
 function setAuth(overrides: Partial<ReturnType<typeof useAuth>> = {}) {
   mockedUseAuth.mockReturnValue({
@@ -19,7 +26,25 @@ function setAuth(overrides: Partial<ReturnType<typeof useAuth>> = {}) {
   })
 }
 
+function setPlant(overrides: Partial<ReturnType<typeof usePlant>> = {}) {
+  mockedUsePlant.mockReturnValue({
+    plantId: null,
+    plants: [],
+    loading: false,
+    error: null,
+    selectPlant: vi.fn(),
+    ...overrides,
+  })
+}
+
+const PLANT_A: Plant = { id: 'p1', name: 'Usina Solar Norte', installedPowerKwp: '48.600' }
+const PLANT_B: Plant = { id: 'p2', name: 'Filial Sul', installedPowerKwp: null }
+
 describe('AppHeader — menu de usuário', () => {
+  beforeEach(() => {
+    setPlant()
+  })
+
   it('abre o menu ao clicar no botão e mostra a ação "Sair"', () => {
     setAuth()
     render(<AppHeader />)
@@ -90,18 +115,42 @@ describe('AppHeader — menu de usuário', () => {
   })
 })
 
-describe('AppHeader — slot de plantName (reservado para ADR-069)', () => {
-  it('não renderiza nenhum texto de placeholder quando plantName está ausente', () => {
+describe('AppHeader — seletor de usina (ADR-069, Etapa D)', () => {
+  it('não renderiza nada relacionado a usina quando não há nenhuma no contexto', () => {
     setAuth()
+    setPlant({ plants: [] })
     render(<AppHeader />)
 
     expect(screen.queryByText(/usina/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 
-  it('renderiza o nome da usina quando plantName é passado', () => {
+  it('renderiza o nome da usina como texto simples quando há exatamente uma', () => {
     setAuth()
-    render(<AppHeader plantName="Usina Solar Norte" />)
+    setPlant({ plantId: PLANT_A.id, plants: [PLANT_A] })
+    render(<AppHeader />)
 
-    expect(screen.getByText('Usina Solar Norte')).toBeInTheDocument()
+    expect(screen.getByText(PLANT_A.name)).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('renderiza um dropdown com as usinas quando há mais de uma', () => {
+    setAuth()
+    setPlant({ plantId: PLANT_A.id, plants: [PLANT_A, PLANT_B] })
+    render(<AppHeader />)
+
+    const select = screen.getByRole('combobox', { name: /usina ativa/i })
+    expect(select).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: PLANT_A.name })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: PLANT_B.name })).toBeInTheDocument()
+  })
+
+  it('o restante do header (menu de usuário) continua intacto com o seletor presente', () => {
+    setAuth()
+    setPlant({ plantId: PLANT_A.id, plants: [PLANT_A, PLANT_B] })
+    render(<AppHeader />)
+
+    fireEvent.click(screen.getByRole('button', { name: /maria/i }))
+    expect(screen.getByRole('menuitem', { name: 'Sair' })).toBeInTheDocument()
   })
 })

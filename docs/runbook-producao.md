@@ -230,7 +230,6 @@ Variables:
 |---|---|
 | `CLOUDFLARE_ACCOUNT_ID` | Account ID mostrado pelo Wrangler/Cloudflare |
 | `VITE_API_URL` | valor de `BACKEND_URL` |
-| `VITE_PLANT_ID` | UUID real da planta |
 
 As variáveis `VITE_*` ficam visíveis no bundle do navegador e nunca podem conter segredos.
 
