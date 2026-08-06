@@ -272,6 +272,103 @@ ReadPrincipal = Annotated[OperationsPrincipal, Depends(_read_principal)]
 
 
 # ---------------------------------------------------------------------------
+# Fan-out resolver (ADR-069 § E5 / § E.11.3): resolves a *set* of plants for
+# admin endpoints that operate across every plant an organization owns
+# (alerts/run, climate/collect, pipeline/run, pipeline/status/latest — wired
+# up in a later etapa, not here). Kept as a sibling of
+# ``_infer_single_plant_for_organization_in_session`` rather than a variant
+# of it: that function must keep returning exactly one plant for its own
+# callers (see its docstring), so a caller asking "which plants" needs a
+# resolver of its own instead of a flag that changes the return shape.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ScopedPlantSet:
+    """A set of ``plant_id``s already resolved and validated against scope.
+
+    ``plant_ids`` is ordered by ``Plant.name``, tie-broken by ``Plant.id``, so
+    that fan-out execution (ADR-069 § E.11.4) is deterministic across runs.
+    """
+
+    plant_ids: tuple[uuid.UUID, ...]
+    principal: OperationsPrincipal
+    explicit: bool
+
+
+async def resolve_admin_plant_fanout(
+    principal: Annotated[OperationsPrincipal, Depends(_admin_principal)],
+    plant_id: uuid.UUID | None = Query(default=None),
+) -> ScopedPlantSet:
+    """Resolve an optional ``plant_id`` query param into a *set* of plants.
+
+    Resolution order (see ADR-069 § E.11.3):
+
+    (a) ``plant_id`` explicit: validated against the caller's scope exactly
+        as :func:`resolve_admin_plant` does today; the set has exactly one
+        member, ``explicit=True``.
+    (b) ``plant_id`` omitted and the principal has no ``organization_id``
+        (the static platform key): fan-out never applies. Falls back to
+        :func:`_infer_single_plant_for_organization` — one plant resolves,
+        two or more raise 409. The platform key never sees more than one
+        organization's plants at once.
+    (c) ``plant_id`` omitted with a known organization: every plant owned by
+        ``principal.organization_id``, filtered by
+        ``principal.plant_scope.allows(...)`` (so a plant-restricted
+        credential still only sees its own plants), ordered by name then id.
+        An empty result is 409 with the same actionable message as
+        :func:`_infer_single_plant_for_organization_in_session`. A result
+        above ``settings.fanout_max_plants`` is 409 asking for an explicit
+        ``plant_id`` -- raised before any plant in the set is touched.
+
+    ``organizations.default_plant_id`` plays no role here: it answers "where
+    do I file this bill", not "which plants should I run this against".
+    """
+    if plant_id is not None:
+        principal.require_plant_access(plant_id)
+        return ScopedPlantSet(plant_ids=(plant_id,), principal=principal, explicit=True)
+
+    if principal.organization_id is None:
+        resolved = await _infer_single_plant_for_organization(None)
+        return ScopedPlantSet(plant_ids=(resolved,), principal=principal, explicit=False)
+
+    from mplacas.core.config import get_settings
+    from mplacas.db.session import SessionFactory
+
+    async with SessionFactory() as session:
+        await set_organization_context(session, principal.organization_id)
+        result = await session.execute(
+            select(Plant.id, Plant.name)
+            .where(Plant.organization_id == principal.organization_id)
+            .order_by(Plant.name, Plant.id)
+        )
+        rows = result.all()
+
+    plant_ids = tuple(row[0] for row in rows if principal.plant_scope.allows(row[0]))
+
+    if not plant_ids:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="plant_id is required when no plant can be inferred; "
+            "set a default with PATCH /organizations/{id} "
+            "(default_plant_id) to avoid this",
+        )
+
+    max_plants = get_settings().fanout_max_plants
+    if len(plant_ids) > max_plants:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"organization has more than {max_plants} plants; "
+            "pass plant_id explicitly to select one",
+        )
+
+    return ScopedPlantSet(plant_ids=plant_ids, principal=principal, explicit=False)
+
+
+AdminPlantFanout = Annotated[ScopedPlantSet, Depends(resolve_admin_plant_fanout)]
+
+
+# ---------------------------------------------------------------------------
 # Platform vs. organization admin discrimination (PR-1 of the onboarding plan)
 # ---------------------------------------------------------------------------
 #

@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     telegram_pdf_parse_memory_bytes: int = 268_435_456
     bill_text_max_bytes: int = 250_000
     request_timeout_seconds: float = 20.0
+    # ADR-069 § E9: cloud_jobs.run_daily_pipeline and run_operational_watchdog
+    # no longer read cloud_job_plant_name (they iterate every plant of
+    # DEFAULT_ORGANIZATION_ID instead) nor cloud_job_expected_daily_production_kwh
+    # (each plant resolves its own via resolve_expected_daily_production).
+    # cloud_job_plant_name is still read by run_collection and
+    # run_collection_drain, which stay single-plant by design (see
+    # cloud_jobs.run_collection docstring), and by run_daily_digest.
+    # cloud_job_expected_daily_production_kwh is still read by
+    # run_daily_digest.
     cloud_job_plant_name: str | None = None
     cloud_job_expected_daily_production_kwh: Decimal | None = None
     cloud_job_expected_cycle_production_kwh: Decimal | None = None
@@ -92,6 +101,7 @@ class Settings(BaseSettings):
     auth_invitation_ttl_seconds: int = 259_200
     cors_allowed_origins: str | None = None
     dashboard_url: HttpUrl = HttpUrl("https://mplacas-frontend.pages.dev/dashboard")
+    fanout_max_plants: int = 10
 
     @property
     def jwt_configured(self) -> bool:
@@ -235,6 +245,13 @@ class Settings(BaseSettings):
     def _validate_outbox_batch_size(cls, value: int) -> int:
         if not 1 <= value <= 1000:
             raise ValueError("outbox dispatch batch size must be between 1 and 1000")
+        return value
+
+    @field_validator("fanout_max_plants")
+    @classmethod
+    def _validate_fanout_max_plants(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("fanout_max_plants must be positive")
         return value
 
     @field_validator("database_url")
