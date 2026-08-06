@@ -1,7 +1,9 @@
 import type { LossesUnavailableReason, PhotovoltaicLossItem } from '../lib/dashboard/photovoltaic-contracts'
 import { lossesUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
-import { EVIDENCE_LEVEL_META, LOSS_CATEGORY_LABEL, SEVERITY_BG, SEVERITY_TEXT } from '../lib/dashboard/visuals'
+import { EVIDENCE_LEVEL_META, LOSS_CATEGORY_LABEL } from '../lib/dashboard/visuals'
 import { formatNumber, toNumber } from '../lib/format'
+import type { BarListItem } from './charts/BarList'
+import { BarList } from './charts/BarList'
 import { Card } from './Card'
 
 // "Por que produzi menos": as oito categorias fixas da taxonomia de perdas
@@ -27,35 +29,32 @@ export function LossBreakdownSection({
     )
   }
 
+  // `BarList` nunca reordena os itens que recebe — a ordem de `losses` (a
+  // mesma devolvida pelo backend) é preservada 1:1 aqui, item a item.
+  const items: BarListItem[] = losses.map((item) => {
+    const meta = EVIDENCE_LEVEL_META[item.evidence_level]
+    const lossValue = toNumber(item.estimated_loss_percent)
+    return {
+      label: LOSS_CATEGORY_LABEL[item.category],
+      // `estimated_loss_percent: null` (NOT_ASSESSABLE ou NOT_DETECTED sem
+      // estimativa numérica) nunca vira barra de 0% fabricada — `BarList`
+      // desenha um estado neutro nesse caso (ver `BarListItem.value`).
+      value: lossValue,
+      tone: meta.severity,
+      badge: { label: meta.label, tone: meta.severity },
+      description: item.limitation ?? undefined,
+    }
+  })
+
   return (
     <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Por que produzi menos</p>
-      <ul className="mt-3 space-y-2">
-        {losses.map((item) => {
-          const meta = EVIDENCE_LEVEL_META[item.evidence_level]
-          const lossValue = toNumber(item.estimated_loss_percent)
-          return (
-            <li
-              key={item.category}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-100 p-3"
-            >
-              <div>
-                <p className="text-sm font-medium text-gray-800">{LOSS_CATEGORY_LABEL[item.category]}</p>
-                <span
-                  className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${SEVERITY_BG[meta.severity]} ${SEVERITY_TEXT[meta.severity]}`}
-                >
-                  {meta.label}
-                </span>
-                {item.limitation && <p className="mt-1 text-xs text-gray-500">{item.limitation}</p>}
-              </div>
-              <p className="text-sm font-semibold text-gray-900 tabular-nums">
-                {formatNumber(lossValue)}
-                <span className="ml-1 text-xs font-normal text-gray-500">%</span>
-              </p>
-            </li>
-          )
-        })}
-      </ul>
+      <BarList
+        className="mt-3"
+        items={items}
+        maxValue={100}
+        valueFormatter={(value) => `${formatNumber(value, 1)}%`}
+      />
     </Card>
   )
 }

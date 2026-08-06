@@ -1,7 +1,9 @@
 import type { PerformanceUnavailableReason, PhotovoltaicPerformanceLatest } from '../lib/dashboard/photovoltaic-contracts'
 import { performanceUnavailableMessage, ratioToPercent } from '../lib/dashboard/photovoltaic-contracts'
+import { performanceSeverity } from '../lib/dashboard/visuals'
 import { formatNumber } from '../lib/format'
 import { Card } from './Card'
+import { Gauge } from './charts/Gauge'
 
 // `reporting_availability_ratio` é disponibilidade de REPORTE de dados (quantos
 // devices enviaram medição), não disponibilidade técnica dos equipamentos —
@@ -27,14 +29,30 @@ export function ReportingAvailabilityCard({
 
   const availability = ratioToPercent(performance.reporting_availability_ratio)
 
+  if (availability === null) {
+    return (
+      <Card>
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Disponibilidade de reporte</p>
+        <p className="mt-2 text-sm text-gray-500">{formatNumber(availability)}</p>
+        <p className="mt-1 text-xs text-gray-500">
+          Fração de devices que enviaram dados no dia — não é o uptime dos equipamentos.
+        </p>
+      </Card>
+    )
+  }
+
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Disponibilidade de reporte</p>
-      <p className="mt-2 text-2xl font-semibold text-gray-900 tabular-nums">
-        {formatNumber(availability)}
-        <span className="ml-1 text-sm font-normal text-gray-500">%</span>
-      </p>
-      <p className="mt-1 text-xs text-gray-500">
+      <div className="mt-1">
+        <Gauge
+          value={availability}
+          label="Disponibilidade de reporte"
+          valueLabel={`${formatNumber(availability, 0)}%`}
+          tone={performanceSeverity(availability)}
+          size={72}
+        />
+      </div>
+      <p className="mt-2 text-xs text-gray-500">
         Fração de devices que enviaram dados no dia — não é o uptime dos equipamentos.
       </p>
     </Card>

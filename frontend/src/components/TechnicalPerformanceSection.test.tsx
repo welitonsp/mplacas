@@ -24,29 +24,30 @@ describe('TechnicalPerformanceSection — camada técnica colapsável (Etapa 3.4
     window.localStorage.clear()
   })
 
-  it('começa colapsada por padrão', () => {
+  it('começa expandida por padrão (decisão de 2026-08-06)', () => {
     render(<TechnicalPerformanceSection summary={SUMMARY} />)
 
     const toggle = screen.getByRole('button', { name: /desempenho técnico/i })
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
 
     const region = document.getElementById('technical-performance-content')
     expect(region).not.toBeNull()
-    expect(region).toHaveAttribute('hidden')
-    // Conteúdo continua montado no DOM (não desmontado condicionalmente),
-    // só inacessível por leitor de tela via `hidden`.
+    expect(region).not.toHaveAttribute('hidden')
     expect(screen.getByText('Performance ratio (PR)')).toBeInTheDocument()
   })
 
-  it('expande ao clicar no controle e atualiza aria-expanded', () => {
+  it('colapsa ao clicar no controle e atualiza aria-expanded', () => {
     render(<TechnicalPerformanceSection summary={SUMMARY} />)
 
     const toggle = screen.getByRole('button', { name: /desempenho técnico/i })
     fireEvent.click(toggle)
 
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
     const region = document.getElementById('technical-performance-content')
-    expect(region).not.toHaveAttribute('hidden')
+    expect(region).toHaveAttribute('hidden')
+    // Conteúdo continua montado no DOM (não desmontado condicionalmente),
+    // só inacessível por leitor de tela via `hidden`.
+    expect(screen.getByText('Performance ratio (PR)')).toBeInTheDocument()
   })
 
   it('aria-controls do botão aponta para o id do conteúdo, e a região tem role apropriado', () => {
@@ -64,13 +65,13 @@ describe('TechnicalPerformanceSection — camada técnica colapsável (Etapa 3.4
     const { unmount } = render(<TechnicalPerformanceSection summary={SUMMARY} />)
 
     fireEvent.click(screen.getByRole('button', { name: /desempenho técnico/i }))
-    expect(window.localStorage.getItem('mplacas:technical-performance-expanded')).toBe('true')
+    expect(window.localStorage.getItem('mplacas:technical-performance-expanded')).toBe('false')
     unmount()
 
     render(<TechnicalPerformanceSection summary={SUMMARY} />)
     expect(screen.getByRole('button', { name: /desempenho técnico/i })).toHaveAttribute(
       'aria-expanded',
-      'true'
+      'false'
     )
   })
 })

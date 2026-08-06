@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { EnergyFlowDiagram } from './EnergyFlowDiagram'
 
 describe('EnergyFlowDiagram', () => {
-  it('expõe as duas barras de fluxo (produção e consumo) com semântica ARIA de progressbar', () => {
+  it('monta o SankeyFlow com os valores corretos de produção, autoconsumo, injeção e importação', () => {
     render(
       <EnergyFlowDiagram
         production={100}
@@ -14,16 +14,14 @@ describe('EnergyFlowDiagram', () => {
       />
     )
 
-    const progressbars = screen.getAllByRole('progressbar')
-    expect(progressbars).toHaveLength(2)
-    progressbars.forEach((bar) => {
-      expect(bar).toHaveAttribute('aria-valuemin', '0')
-      expect(bar).toHaveAttribute('aria-valuemax', '100')
-      expect(bar).toHaveAttribute('aria-valuenow')
-    })
+    const svg = screen.getByRole('img')
+    expect(svg).toHaveAttribute(
+      'aria-label',
+      'Produção de 100 kWh: 60 kWh consumidos diretamente, 40 kWh injetados na rede. Consumo total de 80 kWh: 60 kWh de produção própria, 20 kWh importados da rede.',
+    )
   })
 
-  it('não renderiza barras quando não há dados suficientes', () => {
+  it('não renderiza o diagrama quando não há dados suficientes', () => {
     render(
       <EnergyFlowDiagram
         production={null}
@@ -34,7 +32,8 @@ describe('EnergyFlowDiagram', () => {
       />
     )
 
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(screen.getByText('Dados insuficientes para o diagrama.')).toBeInTheDocument()
   })
 
   it('mostra o selo "Parcial" quando o ciclo tem dado diário incompleto (Etapa 3.3, absorve o selo dos cards removidos)', () => {

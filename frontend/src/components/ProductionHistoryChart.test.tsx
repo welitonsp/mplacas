@@ -92,3 +92,37 @@ describe('ProductionHistoryChart — teclado e semântica ARIA', () => {
     expect(slider).toHaveAttribute('aria-valuenow', '0')
   })
 })
+
+describe('ProductionHistoryChart — eixo Y e linha de "Esperado"', () => {
+  it('mostra o eixo Y com rótulos numéricos de 0, metade e máximo, baseados no maxValue real', () => {
+    // maxValue = max(actual, expected) do conjunto (expected=50 em todo dia) * 1.1 = 55.
+    render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
+
+    expect(screen.getByText('55 kWh')).toBeInTheDocument()
+    expect(screen.getByText('28 kWh')).toBeInTheDocument()
+    expect(screen.getByText('0 kWh')).toBeInTheDocument()
+  })
+
+  it('desenha a linha de "Esperado" como uma única polilinha contínua quando a expectativa está disponível', () => {
+    const { container } = render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
+
+    // Um único elemento de linha conectando os pontos, não N traços por barra.
+    const paths = container.querySelectorAll('path[stroke-dasharray]')
+    expect(paths).toHaveLength(1)
+    // `M`/`L` para os 3 dias — uma polilinha contínua, sem reiniciar o traço.
+    expect(paths[0].getAttribute('d')).toMatch(/^M0\.5 .+ L1\.5 .+ L2\.5 /)
+
+    expect(screen.getByText('Esperado')).toBeInTheDocument()
+  })
+
+  it('não desenha a linha de "Esperado" quando expectedAvailable é false, mas as barras de produção real continuam', () => {
+    const { container } = render(
+      <ProductionHistoryChart daily={DAILY} currentStreakDays={0} expectedAvailable={false} />
+    )
+
+    expect(container.querySelectorAll('path[stroke-dasharray]')).toHaveLength(0)
+    expect(screen.queryByText('Esperado')).not.toBeInTheDocument()
+    // As barras de produção real continuam presentes.
+    expect(screen.getByRole('slider')).toBeInTheDocument()
+  })
+})

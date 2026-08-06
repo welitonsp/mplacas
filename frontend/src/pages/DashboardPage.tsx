@@ -13,18 +13,19 @@ import type { FinancialReturnResponse } from '../lib/dashboard/financial-return-
 import { parseFinancialReturn } from '../lib/dashboard/financial-return-contracts'
 import type { ExpectedDailyProduction, PhotovoltaicSummaryResponse } from '../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
-import { toNumber } from '../lib/format'
+import { formatCurrency, formatNumber, toNumber } from '../lib/format'
 import { SectionTitle } from '../components/SectionTitle'
 import { CurrencyCard } from '../components/CurrencyCard'
+import { StackedBar } from '../components/charts/StackedBar'
 import { HeroCard } from '../components/HeroCard'
 import { QualityBanner } from '../components/QualityBanner'
 import { TrendCard } from '../components/TrendCard'
 import { EnergyFlowDiagram } from '../components/EnergyFlowDiagram'
-import { ExpectedProductionCard } from '../components/ExpectedProductionCard'
 import { DiagnosticsCard } from '../components/DiagnosticsCard'
 import { hasIncompleteDailyProduction } from '../components/EnergyProductionSection'
 import { EstimatedSavingsCard } from '../components/EstimatedSavingsCard'
 import { FinancialReturnSection } from '../components/FinancialReturnSection'
+import { LatestDailyProductionCard } from '../components/LatestDailyProductionCard'
 import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
 import { ProductionHistorySection } from '../components/ProductionHistorySection'
@@ -202,6 +203,25 @@ export function DashboardPage() {
   const { data, loading, error, lastUpdated } = state
   const indicators = data?.current_cycle.indicators
   const quality = data?.current_cycle.quality
+  // Autossuficiência e dependência da rede são complementares (somam 100%) —
+  // convertidos uma única vez para alimentar a `StackedBar` unificada
+  // (ver seção "Indicadores percentuais" abaixo).
+  const selfSufficiencyPercent = toNumber(indicators?.self_sufficiency_rate_percent ?? null)
+  const gridDependencyPercent = toNumber(indicators?.grid_dependency_rate_percent ?? null)
+  // Decomposição da fatura (Parte C): `bill_energy_component_brl` é definido
+  // no backend como `total_amount_brl - public_lighting_brl` (clamped em 0,
+  // ver intelligence/energy_engine.py::analyze_energy_cycle) — a soma dos
+  // dois sempre reconstrói o total, então "resto" existe só para cobrir um
+  // eventual encargo futuro não capturado por essas duas categorias, nunca
+  // para absorver uma inconsistência de parser. Se qualquer um dos três
+  // valores vier `null`, mantém os `CurrencyCard` separados.
+  const billTotalAmount = toNumber(indicators?.total_amount_brl ?? null)
+  const billEnergyComponent = toNumber(indicators?.bill_energy_component_brl ?? null)
+  const billPublicLighting = toNumber(indicators?.public_lighting_brl ?? null)
+  const billOtherCharges =
+    billTotalAmount != null && billEnergyComponent != null && billPublicLighting != null
+      ? billTotalAmount - billEnergyComponent - billPublicLighting
+      : null
   const latestDataDate = anomalyState.data ? latestNonNullProductionDate(anomalyState.data.daily) : null
   // Calculado uma única vez e reusado pelo chip do Hero (`AttentionSummary`,
   // ver Etapa 1.7) e pela lista completa (`DiagnosticsCard`) — mesma lista,
@@ -306,17 +326,13 @@ export function DashboardPage() {
             </section>
 
             <section className="md:col-span-2 lg:col-span-4 2xl:col-span-3">
-              <SectionTitle as="h2">Produção real vs. esperada</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
-                <MetricCard
-                  label="Produção no ciclo"
-                  value={indicators.cycle_production_kwh}
-                  unit="kWh"
-                  partial={hasIncompleteDailyProduction(quality)}
-                  className="h-full"
-                />
-                <ExpectedProductionCard expectedProduction={expectedProduction} className="h-full" />
-              </div>
+              <SectionTitle as="h2">Produção do último dia vs. esperada</SectionTitle>
+              {/* Compara o último dia com dado diário coletado (real vs.
+                  esperado, mesma escala kWh/dia) — não mais o total do ciclo
+                  (~30 dias) contra uma média diária, comparação que produzia
+                  um desvio percentual absurdo. A produção do ciclo continua
+                  visível no nó "Produção" de `EnergyFlowDiagram` abaixo. */}
+              <LatestDailyProductionCard anomalyState={anomalyState} className="h-full" />
               {/* A frase de streak abaixo do esperado aparece só dentro do
                   gráfico de histórico (ver `ProductionHistoryChart`) — este
                   bloco chegou a duplicá-la lado a lado com o gráfico em
@@ -362,20 +378,38 @@ export function DashboardPage() {
                 mais esta página. */}
             <section className="md:col-span-6 lg:col-span-12">
               <SectionTitle as="h2">Indicadores percentuais</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <MetricCard
-                  label="Autossuficiência"
-                  value={indicators.self_sufficiency_rate_percent}
-                  unit="%"
-                  barPercent={toNumber(indicators.self_sufficiency_rate_percent)}
+              {/* Autossuficiência e dependência da rede são complementares
+                  (somam 100%) — antes eram dois `MetricCard` soltos com dois
+                  números sem relação visual entre si (P2-03, fechado agora
+                  por decisão do usuário). Uma única `StackedBar` de 2
+                  segmentos deixa a proporção explícita. Se qualquer um dos
+                  dois vier `null`, mantém os cards separados em vez de
+                  fabricar a barra com metade do dado ausente. */}
+              {selfSufficiencyPercent != null && gridDependencyPercent != null ? (
+                <StackedBar
+                  segments={[
+                    { label: 'Autossuficiência', value: selfSufficiencyPercent, tone: 'success' },
+                    { label: 'Dependência da rede', value: gridDependencyPercent, tone: 'neutral' },
+                  ]}
+                  total={100}
+                  valueFormatter={(value) => `${formatNumber(value, 1)}%`}
                 />
-                <MetricCard
-                  label="Dependência da rede"
-                  value={indicators.grid_dependency_rate_percent}
-                  unit="%"
-                  barPercent={toNumber(indicators.grid_dependency_rate_percent)}
-                />
-              </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <MetricCard
+                    label="Autossuficiência"
+                    value={indicators.self_sufficiency_rate_percent}
+                    unit="%"
+                    barPercent={selfSufficiencyPercent}
+                  />
+                  <MetricCard
+                    label="Dependência da rede"
+                    value={indicators.grid_dependency_rate_percent}
+                    unit="%"
+                    barPercent={gridDependencyPercent}
+                  />
+                </div>
+              )}
             </section>
 
             {/* Bloco 3 — "Quanto custou?": financeiro completo (Etapa 7).
@@ -394,13 +428,45 @@ export function DashboardPage() {
               <div className="space-y-6">
                 <div>
                   <SectionTitle>Custo do ciclo</SectionTitle>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <CurrencyCard label="Valor total da fatura" value={indicators.total_amount_brl} />
-                    <CurrencyCard
-                      label="Componente energia da fatura"
-                      value={indicators.bill_energy_component_brl}
-                    />
-                    <CurrencyCard label="Iluminação pública" value={indicators.public_lighting_brl} />
+                  {/* Decomposição da fatura (energia + iluminação pública [+
+                      outros encargos, quando a soma não fecha em cima dos
+                      dois conhecidos]) — antes eram três `CurrencyCard`
+                      soltos sem nenhuma indicação visual de que compunham o
+                      mesmo total. Validado contra o parser real
+                      (`bill_energy_component_brl = total_amount_brl -
+                      public_lighting_brl`, ver `intelligence/energy_engine.py`)
+                      antes de decompor — ver skill `financial-visualization`. */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                    {billTotalAmount != null && billEnergyComponent != null && billPublicLighting != null ? (
+                      <div className="rounded-lg border border-gray-200 bg-white p-4">
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                          Valor total da fatura
+                        </p>
+                        <p className="mt-1 mb-3 text-2xl font-semibold text-gray-900 tabular-nums">
+                          {formatCurrency(billTotalAmount)}
+                        </p>
+                        <StackedBar
+                          segments={[
+                            { label: 'Componente energia', value: billEnergyComponent, tone: 'neutral' },
+                            { label: 'Iluminação pública', value: billPublicLighting, tone: 'warning' },
+                            ...(billOtherCharges != null && billOtherCharges > 0.005
+                              ? [{ label: 'Outros encargos', value: billOtherCharges, tone: 'danger' as const }]
+                              : []),
+                          ]}
+                          total={billTotalAmount}
+                          valueFormatter={formatCurrency}
+                        />
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:col-span-2">
+                        <CurrencyCard label="Valor total da fatura" value={indicators.total_amount_brl} />
+                        <CurrencyCard
+                          label="Componente energia da fatura"
+                          value={indicators.bill_energy_component_brl}
+                        />
+                        <CurrencyCard label="Iluminação pública" value={indicators.public_lighting_brl} />
+                      </div>
+                    )}
                     <EstimatedSavingsCard
                       value={indicators.estimated_savings_brl}
                       unavailableReason={indicators.savings_unavailable_reason}

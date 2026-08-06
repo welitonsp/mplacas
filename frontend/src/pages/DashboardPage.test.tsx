@@ -43,7 +43,10 @@ const executivePayload = {
       grid_dependency_rate_percent: 22.3,
       exported_generation_rate_percent: 16,
       credit_coverage_rate_percent: 100,
-      bill_energy_component_brl: 350.5,
+      // Consistente com a fórmula real do backend: bill_energy_component_brl
+      // = total_amount_brl - public_lighting_brl (ver
+      // intelligence/energy_engine.py::analyze_energy_cycle) — 420.71 - 30.21.
+      bill_energy_component_brl: 390.5,
       health_score: 70,
       total_amount_brl: 420.71,
       public_lighting_brl: 30.21,
@@ -198,28 +201,31 @@ async function renderDashboard(executiveOverride: unknown = executivePayload) {
 }
 
 describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
-  it('produção real ("Produção no ciclo") e produção esperada aparecem no mesmo container imediato', async () => {
+  it('compara a produção real do último dia vs. a esperada do mesmo dia em um único bullet chart', async () => {
     vi.resetModules()
     await renderDashboard()
 
-    const realLabel = await screen.findByText('Produção no ciclo')
-    const expectedLabel = await screen.findByText('Produção esperada (média diária)')
+    // `anomalyPayload.daily` traz dois dias; o mais recente (2026-07-30) tem
+    // actual_production_kwh=40 e expected_production_kwh=44 — mesma escala
+    // diária, não mais o total do ciclo (500 kWh) comparado com uma média.
+    const sectionTitle = await screen.findByText('Produção do último dia vs. esperada')
+    const section = sectionTitle.closest('section') as HTMLElement
 
-    const realCard = realLabel.closest('div')
-    const expectedCard = expectedLabel.closest('div')
-    expect(realCard).not.toBeNull()
-    expect(expectedCard).not.toBeNull()
+    expect(within(section).getByText('40 kWh')).toBeInTheDocument()
+    expect(within(section).getByText(/esperado 44 kWh/)).toBeInTheDocument()
+    // (40 - 44) / 44 * 100 ≈ -9,1%
+    expect(within(section).getByText(/-9,1%/)).toBeInTheDocument()
 
-    // Ambos os cards precisam compartilhar o mesmo pai imediato (o grid que os
-    // agrupa) — não é permitido que fiquem em seções separadas da página.
-    expect(realCard!.parentElement).toBe(expectedCard!.parentElement)
+    // A produção total do ciclo (500 kWh) não desapareceu — continua visível
+    // no nó "Produção" do diagrama de fluxo de energia.
+    expect(screen.queryByText('Produção no ciclo')).not.toBeInTheDocument()
   })
 
   it('autoconsumo/injetada/importada aparecem em um único componente de visualização (EnergyFlowDiagram)', async () => {
     vi.resetModules()
     await renderDashboard()
 
-    await screen.findByText('Produção no ciclo')
+    await screen.findByText('Produção do último dia vs. esperada')
 
     // O diagrama de fluxo é o único visual mantido — os outros dois visuais
     // redundantes (composição em barra e donut de origem do consumo) não
@@ -238,14 +244,16 @@ describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
     expect(section).not.toBeNull()
 
     // A grade achatada de 8 cards virou três subgrupos rotulados — "Custo do
-    // ciclo" (4 cards), "Tarifas" (2 cards) e "Créditos de energia" (2
-    // cards) — cada um com seu próprio grid, mas todos os 8 cards financeiros
-    // originais continuam presentes e visíveis dentro da seção.
+    // ciclo" (decomposição da fatura em `StackedBar` + economia estimada),
+    // "Tarifas" (2 cards) e "Créditos de energia" (2 cards) — todos os 8
+    // valores financeiros originais continuam presentes e visíveis dentro da
+    // seção, só que os três primeiros (total, energia, iluminação) agora
+    // compõem uma única barra em vez de três cards soltos (ver Etapa 5).
     const custoGrid = within(section as HTMLElement)
-      .getByText('Componente energia da fatura')
+      .getByText('Valor total da fatura')
       .closest('.grid')
     expect(custoGrid).not.toBeNull()
-    expect(custoGrid!.children).toHaveLength(4)
+    expect(custoGrid!.children).toHaveLength(2)
 
     const tarifasGrid = within(section as HTMLElement).getByText('Tarifa com impostos').closest('.grid')
     expect(tarifasGrid).not.toBeNull()
@@ -260,6 +268,24 @@ describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
     expect(within(section as HTMLElement).getByText('Créditos de energia')).toBeInTheDocument()
   })
 
+  it('unifica autossuficiência e dependência da rede em uma única StackedBar de 2 segmentos somando 100%', async () => {
+    vi.resetModules()
+    await renderDashboard()
+
+    await screen.findByText('Indicadores percentuais')
+
+    const bar = screen.getByRole('img', { name: /Total 100%/ })
+    expect(bar).toHaveAttribute(
+      'aria-label',
+      'Total 100%: Autossuficiência 77,7%, Dependência da rede 22,3%',
+    )
+
+    expect(screen.getByText('Autossuficiência')).toBeInTheDocument()
+    expect(screen.getByText('Dependência da rede')).toBeInTheDocument()
+    expect(screen.getAllByText('77,7%').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('22,3%').length).toBeGreaterThan(0)
+  })
+
   it('renderiza todos os valores financeiros novos com a unidade correta quando a fatura tem tarifa registrada', async () => {
     vi.resetModules()
     await renderDashboard()
@@ -271,6 +297,24 @@ describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
 
     expect(screen.getByText('Iluminação pública')).toBeInTheDocument()
     expect(screen.getByText(/R\$\s*30,21/)).toBeInTheDocument()
+
+    // Decomposição da fatura: `StackedBar` com energia + iluminação pública,
+    // sem um terceiro segmento "Outros encargos" porque, no mock,
+    // energia + iluminação já reconstrói o total exatamente (mesma garantia
+    // do backend real — ver `intelligence/energy_engine.py`).
+    expect(screen.getByText('Componente energia')).toBeInTheDocument()
+    expect(screen.getByText(/R\$\s*390,50/)).toBeInTheDocument()
+    expect(screen.queryByText('Outros encargos')).not.toBeInTheDocument()
+
+    const billBar = screen.getByRole('img', { name: /Total R\$\s*420,71/ })
+    expect(billBar).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('Componente energia R$ 390,50'),
+    )
+    expect(billBar).toHaveAttribute(
+      'aria-label',
+      expect.stringContaining('Iluminação pública R$ 30,21'),
+    )
 
     const tariffWithTaxesLabel = screen.getByText('Tarifa com impostos')
     const tariffWithTaxesCard = tariffWithTaxesLabel.closest('div') as HTMLElement

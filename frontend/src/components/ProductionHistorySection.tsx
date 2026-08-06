@@ -18,7 +18,12 @@ export function ProductionHistorySection({
   onRetry?: () => void
 }) {
   const loadingExpected = expectedProduction === null
-  const loadingHistory = expectedProduction?.available === true && anomalyState.loading && !anomalyState.data
+  // Antes só esperava o histórico terminar de carregar quando a produção
+  // esperada estava disponível — o que fazia o card pular direto pro
+  // fallback de "indisponível" sem nunca checar se havia produção real
+  // (ver diagnóstico do architect). Agora espera sempre, pra poder decidir
+  // corretamente no bloco abaixo.
+  const loadingHistory = anomalyState.loading && !anomalyState.data
 
   if (loadingExpected || loadingHistory) {
     return (
@@ -30,20 +35,29 @@ export function ProductionHistorySection({
   }
 
   // Produção esperada indisponível (ver os três motivos em
-  // `photovoltaic-contracts.ts`): sem ela o backend não classifica anomalia por
-  // dia, então nem chegamos a buscar o histórico. Mostramos o motivo específico
-  // em vez de um card vazio (ver skill frontend-design).
+  // `photovoltaic-contracts.ts`, ex.: baseline sazonal exige 366 dias de
+  // histórico). Isso não significa que não exista produção real registrada —
+  // o card de "produção esperada indisponível" só faz sentido quando também
+  // não há dado de produção real nenhum. Havendo produção real, o gráfico
+  // monta do mesmo jeito (sem a linha de comparação "esperado" — ver
+  // `ProductionHistoryChart`/`expectedAvailable`), em vez de esconder um dado
+  // que o usuário já tem (ver diagnóstico do architect).
   if (!expectedProduction.available) {
-    return (
-      <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-          Histórico de produção diária
-        </p>
-        <p className="mt-4 text-sm text-gray-500">
-          {baselineUnavailableMessage(expectedProduction.reason, expectedProduction.referenceCompleteOn)}
-        </p>
-      </Card>
-    )
+    const hasActualProduction =
+      anomalyState.data?.daily.some((d) => toNumber(d.actual_production_kwh) != null) ?? false
+
+    if (!hasActualProduction) {
+      return (
+        <Card>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+            Histórico de produção diária
+          </p>
+          <p className="mt-4 text-sm text-gray-500">
+            {baselineUnavailableMessage(expectedProduction.reason, expectedProduction.referenceCompleteOn)}
+          </p>
+        </Card>
+      )
+    }
   }
 
   // 404: ainda não há dado diário coletado para este período — estado esperado
@@ -105,6 +119,7 @@ export function ProductionHistorySection({
       <ProductionHistoryChart
         daily={anomalyState.data.daily}
         currentStreakDays={anomalyState.data.current_streak_days}
+        expectedAvailable={expectedProduction.available}
       />
       <YieldCard daily={anomalyState.data.daily} />
     </div>

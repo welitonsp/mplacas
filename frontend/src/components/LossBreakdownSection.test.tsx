@@ -17,21 +17,43 @@ function buildLosses(): PhotovoltaicLossItem[] {
 }
 
 describe('LossBreakdownSection', () => {
-  it('renderiza as oito categorias com valor e unidade', () => {
+  it('renderiza as oito categorias, na ordem do backend, com valor, unidade e selo de evidência', () => {
     render(<LossBreakdownSection losses={buildLosses()} unavailableReason={null} />)
 
-    expect(screen.getByText('Comunicação (dados ausentes)')).toBeInTheDocument()
-    expect(screen.getByText('Indisponibilidade')).toBeInTheDocument()
-    expect(screen.getByText('Clipping (limite do inversor)')).toBeInTheDocument()
-    expect(screen.getByText('Sujeira (soiling)')).toBeInTheDocument()
-    expect(screen.getByText('Sombreamento')).toBeInTheDocument()
-    expect(screen.getByText('Temperatura')).toBeInTheDocument()
-    expect(screen.getByText('Degradação')).toBeInTheDocument()
-    expect(screen.getByText('Não explicada')).toBeInTheDocument()
+    const labels = [
+      'Comunicação (dados ausentes)',
+      'Indisponibilidade',
+      'Clipping (limite do inversor)',
+      'Sujeira (soiling)',
+      'Sombreamento',
+      'Temperatura',
+      'Degradação',
+      'Não explicada',
+    ]
+    for (const label of labels) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
 
-    // Percentuais aparecem sempre com "%" visível.
-    expect(screen.getAllByText('%').length).toBeGreaterThanOrEqual(8)
-    // Item sem valor (NOT_ASSESSABLE) mostra travessão, não um número inventado.
+    // Ordem de entrada preservada — ADR-065 §4, não reordenar por severidade/valor.
+    const renderedLabels = screen.getAllByTitle(/./, { exact: false }).map((node) => node.textContent)
+    expect(renderedLabels).toEqual(labels)
+
+    // Sete categorias têm valor numérico (progressbar); DEGRADATION é
+    // NOT_ASSESSABLE (estimated_loss_percent: null) e não vira barra fabricada.
+    expect(screen.getAllByRole('progressbar')).toHaveLength(7)
+    expect(screen.getByRole('status')).toHaveAttribute('aria-label', 'Degradação: —')
+
+    // Percentuais aparecem sempre com "%" visível, junto do valor.
+    expect(screen.getByText('2,3%')).toBeInTheDocument()
+    expect(screen.getByText('1,5%')).toBeInTheDocument()
+
+    // Selo de evidência continua visível ao lado de cada barra.
+    expect(screen.getAllByText('Não detectada').length).toBeGreaterThan(0)
+    expect(screen.getByText('Possível causa')).toBeInTheDocument()
+    expect(screen.getByText('Evidência de causa')).toBeInTheDocument()
+    expect(screen.getByText('Não avaliável')).toBeInTheDocument()
+
+    // Item sem valor (NOT_ASSESSABLE) preserva a mensagem de limitação.
     expect(screen.getByText('Baseline insuficiente.')).toBeInTheDocument()
   })
 

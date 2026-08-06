@@ -8,17 +8,20 @@ import { ReportingAvailabilityCard } from './ReportingAvailabilityCard'
 import { SpecificYieldCard } from './SpecificYieldCard'
 
 const CONTENT_ID = 'technical-performance-content'
-// Só a preferência de expansão é persistida — nenhum dado de negócio. Se o
+// Só a preferência de expansão é persistida — nenhum dado de negócio. Padrão
+// (decisão de 2026-08-06, revertendo a Onda 3): expandida — os gráficos
+// técnicos (PR, disponibilidade, perdas) agora carregam informação visual
+// forte o bastante para não ficarem escondidos por padrão. Se o
 // `localStorage` estiver indisponível (modo privado, política de origem
-// etc.), o padrão continua sendo "colapsado" e a interação segue funcionando
+// etc.), o padrão continua sendo "expandida" e a interação segue funcionando
 // dentro da sessão (ver `readStoredExpanded`/`writeStoredExpanded`).
 const STORAGE_KEY = 'mplacas:technical-performance-expanded'
 
 function readStoredExpanded(): boolean {
   try {
-    return window.localStorage.getItem(STORAGE_KEY) === 'true'
+    return window.localStorage.getItem(STORAGE_KEY) !== 'false'
   } catch {
-    return false
+    return true
   }
 }
 

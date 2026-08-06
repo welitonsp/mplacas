@@ -1,9 +1,10 @@
 import type { Diagnostic, MetricValue } from '../lib/dashboard/contracts'
-import { clampPercent, formatNumber, toNumber } from '../lib/format'
-import { SEVERITY_BAR, SEVERITY_BG, SEVERITY_DOT, SEVERITY_TEXT, statusMeta } from '../lib/dashboard/visuals'
+import { formatNumber, toNumber } from '../lib/format'
+import { SEVERITY_BG, SEVERITY_DOT, SEVERITY_TEXT, statusMeta } from '../lib/dashboard/visuals'
 import { AttentionSummary } from './AttentionSummary'
 import { Card } from './Card'
 import { DataFreshness } from './DataFreshness'
+import { Gauge } from './charts/Gauge'
 
 // Abaixo de `lg` o layout é o empilhamento vertical original (ciclo+headline,
 // badge de status ao lado em `sm+`, saúde da usina embaixo). A partir de `lg`
@@ -51,26 +52,14 @@ export function HeroCard({
         </div>
 
         {score != null && (
-          <div className="mt-5 [grid-area:score] sm:mt-5 lg:mt-0 lg:w-64 lg:max-w-xs">
-            <div className="flex items-center justify-between text-xs text-gray-500">
-              <span className="font-medium uppercase tracking-wide">Saúde da usina</span>
-              <span className={`font-semibold tabular-nums ${SEVERITY_TEXT[meta.severity]}`}>
-                {formatNumber(score, 0)}/100
-              </span>
-            </div>
-            <div
-              className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-[var(--color-chart-track)]"
-              role="progressbar"
-              aria-valuenow={clampPercent(score)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="Saúde da usina"
-            >
-              <div
-                className={`h-full rounded-full ${SEVERITY_BAR[meta.severity]}`}
-                style={{ width: `${clampPercent(score)}%` }}
-              />
-            </div>
+          <div className="mt-5 flex flex-col items-center [grid-area:score] sm:mt-5 lg:mt-0 lg:w-64 lg:max-w-xs">
+            <Gauge
+              value={score}
+              label="Saúde da usina"
+              valueLabel={`${formatNumber(score, 0)}/100`}
+              tone={meta.severity}
+              size={112}
+            />
           </div>
         )}
 

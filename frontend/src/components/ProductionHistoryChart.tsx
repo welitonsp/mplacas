@@ -16,9 +16,16 @@ import { Card } from './Card'
 export function ProductionHistoryChart({
   daily,
   currentStreakDays,
+  expectedAvailable = true,
 }: {
   daily: AnomalyDailyPoint[]
   currentStreakDays: number
+  // `false` quando o baseline sazonal ainda não existe para a usina (ADR-065/068
+  // — `expectedProduction.available === false` em `/photovoltaic/summary`). O
+  // gráfico de produção real continua útil mesmo assim: só a linha/legenda de
+  // "Esperado" some, sem impedir o card inteiro de montar (ver
+  // `ProductionHistorySection`).
+  expectedAvailable?: boolean
 }) {
   // Dia selecionado. `null` = último dia (padrão inicial). Uma vez que o
   // usuário selecione um dia explicitamente (mouse, teclado), o painel de
@@ -43,11 +50,40 @@ export function ProductionHistoryChart({
     Math.max(
       ...daily.map((d) => {
         const actual = toNumber(d.actual_production_kwh) ?? 0
-        const expected = toNumber(d.expected_production_kwh) ?? 0
+        const expected = expectedAvailable ? (toNumber(d.expected_production_kwh) ?? 0) : 0
         return Math.max(actual, expected)
       }),
       1
     ) * 1.1
+
+  // Só existe algo pra desenhar como linha de "Esperado" quando o baseline
+  // está disponível E ao menos um dia do período tem valor não-nulo — mesmo
+  // tratamento de lacuna já usado para irradiância (`hasIrradiation` abaixo).
+  const hasExpected =
+    expectedAvailable && daily.some((d) => toNumber(d.expected_production_kwh) != null)
+
+  // Polilinha SVG contínua da produção esperada, na mesma escala (0–maxValue)
+  // das barras de produção real — ao contrário do traço tracejado por barra
+  // anterior, que virava ruído pontilhado em vez de uma linha de referência
+  // legível (ver diagnóstico do architect). Segue o mesmo padrão de
+  // `buildIrradiationPath` abaixo: `M`/`L` por ponto, reinicia o traço (`M`)
+  // quando encontra um dia sem valor em vez de interpolar sobre a lacuna.
+  function buildExpectedPath(): string {
+    let d = ''
+    let drawing = false
+    daily.forEach((day, i) => {
+      const v = toNumber(day.expected_production_kwh)
+      if (v == null) {
+        drawing = false
+        return
+      }
+      const x = i + 0.5
+      const y = 100 - clampPercent((v / maxValue) * 100)
+      d += `${drawing ? 'L' : 'M'}${x} ${y} `
+      drawing = true
+    })
+    return d.trim()
+  }
 
   // % de desempenho do período: soma do real dividido pela soma do esperado no
   // conjunto de dias exibido — derivado do array `daily` já em mãos, sem cálculo
@@ -138,10 +174,12 @@ export function ProductionHistoryChart({
               {item.label}
             </span>
           ))}
-          <span className="inline-flex items-center gap-1">
-            <span className="h-0 w-3 border-t border-dashed border-[var(--color-chart-reference)]" />
-            Esperado
-          </span>
+          {hasExpected && (
+            <span className="inline-flex items-center gap-1">
+              <span className="h-0 w-3 border-t border-dashed border-[var(--color-chart-reference)]" />
+              Esperado
+            </span>
+          )}
           {hasIrradiation && (
             <span className="inline-flex items-center gap-1">
               <span className="h-0 w-3 border-t-2 border-[var(--color-data-secondary)]" />
@@ -159,90 +197,135 @@ export function ProductionHistoryChart({
         </p>
       )}
 
-      <div className="mt-4 overflow-x-auto">
-        <div className="relative" style={{ minWidth: `${daily.length * 8}px` }}>
-          {hasIrradiation && (
-            <>
+      <div className="mt-4 flex items-stretch gap-2">
+        {/* Eixo Y da grandeza principal (kWh de produção) — fora do container
+            que rola horizontalmente, pra permanecer visível independente do
+            scroll. Reaproveita `maxValue` já calculado acima em vez de criar
+            uma segunda escala (ver diagnóstico do architect: sem isto as
+            barras não liam como gráfico de verdade). */}
+        <div
+          className="flex flex-shrink-0 flex-col justify-between py-0 text-right text-xs text-gray-500 tabular-nums"
+          style={{ height: '220px' }}
+          aria-hidden="true"
+        >
+          <span>{`${formatNumber(maxValue, 0)} kWh`}</span>
+          <span>{`${formatNumber(maxValue / 2, 0)} kWh`}</span>
+          <span>0 kWh</span>
+        </div>
+
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          <div className="relative" style={{ minWidth: `${daily.length * 8}px` }}>
+            {hasIrradiation && (
               <span className="pointer-events-none absolute right-0 top-0 z-10 text-xs font-medium text-[var(--color-data-secondary)] tabular-nums">
                 {formatNumber(maxIrradiationScale, 1)} kWh/m²
               </span>
-              <span className="pointer-events-none absolute right-0 bottom-0 z-10 text-xs font-medium text-[var(--color-data-secondary)] tabular-nums">
-                0 kWh/m²
-              </span>
-              <svg
-                className="pointer-events-none absolute inset-0 h-full w-full"
-                viewBox={`0 0 ${daily.length} 100`}
-                preserveAspectRatio="none"
-                aria-hidden="true"
-              >
-                <path
-                  d={buildIrradiationPath()}
-                  fill="none"
-                  stroke="var(--color-data-secondary)"
-                  strokeWidth="1.5"
-                  vectorEffect="non-scaling-stroke"
-                />
-              </svg>
-            </>
-          )}
-          {/* Único tab stop para todo o gráfico — navegação entre dias é por
-              seta esquerda/direita (ver `handleChartKeyDown`), não por Tab
-              atravessando até 90 barras. */}
-          <div
-            className="flex items-end gap-[2px] rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
-            style={{ height: '160px' }}
-            tabIndex={0}
-            role="slider"
-            aria-label="Histórico de produção diária. Use as setas esquerda e direita para navegar entre os dias."
-            aria-valuemin={0}
-            aria-valuemax={daily.length - 1}
-            aria-valuenow={activeIndex}
-            aria-valuetext={`${formatShortDate(activeDay.date)}: ${formatNumber(
-              toNumber(activeDay.actual_production_kwh) ?? 0
-            )} kWh produzidos de ${formatNumber(
-              toNumber(activeDay.expected_production_kwh) ?? 0
-            )} kWh esperados. Nível: ${LEVEL_LABEL[activeDay.level]}.`}
-            onKeyDown={handleChartKeyDown}
-          >
-          {daily.map((d, i) => {
-            const actual = toNumber(d.actual_production_kwh) ?? 0
-            const expected = toNumber(d.expected_production_kwh) ?? 0
-            const barHeightPercent = clampPercent((actual / maxValue) * 100)
-            const expectedHeightPercent = clampPercent((expected / maxValue) * 100)
-            const severity = levelSeverity(d.level)
-            const isActive = activeIndex === i
+            )}
 
-            return (
+            {/* Área das barras + gridlines + polilinhas de referência, todas
+                na mesma altura (220px) — mantém as escalas alinhadas ao pixel
+                em vez de esticar um SVG sobre uma área que inclui a régua de
+                datas abaixo. */}
+            <div className="relative" style={{ height: '220px' }}>
+              {/* 3 gridlines horizontais (0, max/2, max) para a grandeza
+                  principal — sem elas as barras não têm referência de leitura. */}
+              <span className="pointer-events-none absolute inset-x-0 top-0 border-t border-gray-100" />
+              <span className="pointer-events-none absolute inset-x-0 border-t border-gray-100" style={{ top: '50%' }} />
+              <span className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-gray-100" />
+
+              {hasExpected && (
+                <svg
+                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  viewBox={`0 0 ${daily.length} 100`}
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d={buildExpectedPath()}
+                    fill="none"
+                    stroke="var(--color-chart-reference)"
+                    strokeWidth="1.5"
+                    strokeDasharray="4 3"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+              )}
+
+              {hasIrradiation && (
+                <svg
+                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  viewBox={`0 0 ${daily.length} 100`}
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d={buildIrradiationPath()}
+                    fill="none"
+                    stroke="var(--color-data-secondary)"
+                    strokeWidth="1.5"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+              )}
+
+              {/* Único tab stop para todo o gráfico — navegação entre dias é
+                  por seta esquerda/direita (ver `handleChartKeyDown`), não por
+                  Tab atravessando até 90 barras. */}
               <div
-                key={d.date}
-                className="relative flex h-full flex-1 items-end rounded-sm"
-                style={{ minWidth: '6px' }}
-                onMouseEnter={() => setSelectedIndex(i)}
-                onClick={() => setSelectedIndex(i)}
+                className="flex h-full items-end gap-[2px] rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+                tabIndex={0}
+                role="slider"
+                aria-label="Histórico de produção diária. Use as setas esquerda e direita para navegar entre os dias."
+                aria-valuemin={0}
+                aria-valuemax={daily.length - 1}
+                aria-valuenow={activeIndex}
+                aria-valuetext={`${formatShortDate(activeDay.date)}: ${formatNumber(
+                  toNumber(activeDay.actual_production_kwh) ?? 0
+                )} kWh produzidos de ${formatNumber(
+                  toNumber(activeDay.expected_production_kwh) ?? 0
+                )} kWh esperados. Nível: ${LEVEL_LABEL[activeDay.level]}.`}
+                onKeyDown={handleChartKeyDown}
               >
-                <span
-                  className="absolute right-0 left-0 border-t border-dashed border-[var(--color-chart-reference)]"
-                  style={{ bottom: `${expectedHeightPercent}%` }}
-                />
-                <span
-                  className={`w-full rounded-t-sm ${SEVERITY_BAR[severity]} ${
-                    isActive ? '' : 'opacity-90'
-                  }`}
-                  style={{ height: `${Math.max(barHeightPercent, 2)}%` }}
-                />
-              </div>
-            )
-          })}
-          </div>
+                {daily.map((d, i) => {
+                  const actual = toNumber(d.actual_production_kwh) ?? 0
+                  const barHeightPercent = clampPercent((actual / maxValue) * 100)
+                  const severity = levelSeverity(d.level)
+                  const isActive = activeIndex === i
 
-          {/* Régua de datas DENTRO do mesmo container com `overflow-x-auto` e
-              `minWidth` das barras acima (ver P1-05) — assim ela rola junto
-              com o gráfico e os rótulos sempre correspondem às barras reais,
-              mesmo em telas menores que a largura mínima do gráfico. */}
-          <div className="mt-1 flex justify-between text-xs text-gray-500 tabular-nums">
-            <span>{formatShortDate(daily[0].date)}</span>
-            <span>{formatShortDate(daily[Math.floor(daily.length / 2)].date)}</span>
-            <span>{formatShortDate(daily[daily.length - 1].date)}</span>
+                  return (
+                    <div
+                      key={d.date}
+                      className="relative flex h-full flex-1 items-end rounded-sm"
+                      style={{ minWidth: '6px' }}
+                      onMouseEnter={() => setSelectedIndex(i)}
+                      onClick={() => setSelectedIndex(i)}
+                    >
+                      <span
+                        className={`w-full rounded-t-sm ${SEVERITY_BAR[severity]} ${
+                          isActive ? '' : 'opacity-90'
+                        }`}
+                        style={{ height: `${Math.max(barHeightPercent, 2)}%` }}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+
+              {hasIrradiation && (
+                <span className="pointer-events-none absolute right-0 bottom-0 z-10 text-xs font-medium text-[var(--color-data-secondary)] tabular-nums">
+                  0 kWh/m²
+                </span>
+              )}
+            </div>
+
+            {/* Régua de datas DENTRO do mesmo container com `overflow-x-auto` e
+                `minWidth` das barras acima (ver P1-05) — assim ela rola junto
+                com o gráfico e os rótulos sempre correspondem às barras reais,
+                mesmo em telas menores que a largura mínima do gráfico. */}
+            <div className="mt-1 flex justify-between text-xs text-gray-500 tabular-nums">
+              <span>{formatShortDate(daily[0].date)}</span>
+              <span>{formatShortDate(daily[Math.floor(daily.length / 2)].date)}</span>
+              <span>{formatShortDate(daily[daily.length - 1].date)}</span>
+            </div>
           </div>
         </div>
       </div>

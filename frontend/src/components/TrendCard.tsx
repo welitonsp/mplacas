@@ -3,6 +3,15 @@ import { formatNumber, toNumber } from '../lib/format'
 import { SEVERITY_TEXT } from '../lib/dashboard/visuals'
 import { Card } from './Card'
 import { TrendMetricItem } from './TrendMetricItem'
+import { Sparkline } from './charts/Sparkline'
+
+function formatPoints(value: number): string {
+  return `${Math.abs(value).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} p.p.`
+}
+
+function formatScorePoints(value: number): string {
+  return `${Math.abs(value).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} pts`
+}
 
 export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
   const points = toNumber(trend.metrics.self_sufficiency_delta_points)
@@ -41,17 +50,39 @@ export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
         />
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5">
           <span className="text-sm text-gray-600">Autossuficiência</span>
-          <span className={`text-sm font-semibold tabular-nums ${SEVERITY_TEXT[pointsSeverity]}`}>
-            {points != null && points > 0 ? '+' : ''}
-            {formatNumber(points, 1)} p.p.
-          </span>
+          <div className="flex flex-col items-end gap-1">
+            <span className={`text-sm font-semibold tabular-nums ${SEVERITY_TEXT[pointsSeverity]}`}>
+              {points != null && points > 0 ? '+' : ''}
+              {formatNumber(points, 1)} p.p.
+            </span>
+            {points != null && (
+              <Sparkline
+                percentDelta={points}
+                label="Autossuficiência"
+                valueFormatter={formatPoints}
+                tone={pointsSeverity}
+                className="w-24"
+              />
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5">
           <span className="text-sm text-gray-600">Índice de saúde</span>
-          <span className={`text-sm font-semibold tabular-nums ${SEVERITY_TEXT[healthDeltaSeverity]}`}>
-            {healthDelta != null && healthDelta > 0 ? '+' : ''}
-            {formatNumber(healthDelta, 1)} pts
-          </span>
+          <div className="flex flex-col items-end gap-1">
+            <span className={`text-sm font-semibold tabular-nums ${SEVERITY_TEXT[healthDeltaSeverity]}`}>
+              {healthDelta != null && healthDelta > 0 ? '+' : ''}
+              {formatNumber(healthDelta, 1)} pts
+            </span>
+            {healthDelta != null && (
+              <Sparkline
+                percentDelta={healthDelta}
+                label="Índice de saúde"
+                valueFormatter={formatScorePoints}
+                tone={healthDeltaSeverity}
+                className="w-24"
+              />
+            )}
+          </div>
         </div>
       </div>
     </Card>

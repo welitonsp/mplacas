@@ -87,6 +87,57 @@ describe('ProductionHistorySection', () => {
     expect(screen.queryByText('Tentar novamente')).not.toBeInTheDocument()
   })
 
+  it('monta o gráfico mesmo com produção esperada indisponível, contanto que haja produção real registrada', () => {
+    const anomalyState: AnomalyFetchState = {
+      loading: false,
+      error: null,
+      data: {
+        plant_id: 'p1',
+        days_analyzed: 1,
+        current_streak_days: 0,
+        worst_level: 'NORMAL',
+        daily: [buildDaily({ actual_production_kwh: 40, expected_production_kwh: null })],
+      },
+    }
+    const expectedProduction: ExpectedDailyProduction = {
+      available: false,
+      reason: 'NO_PERFORMANCE_HISTORY',
+      referenceCompleteOn: null,
+    }
+
+    render(<ProductionHistorySection anomalyState={anomalyState} expectedProduction={expectedProduction} />)
+
+    // Não cai no fallback de texto "dados insuficientes" — o gráfico monta.
+    expect(screen.getByRole('slider')).toBeInTheDocument()
+    expect(screen.queryByText(/histórico de desempenho insuficiente/)).not.toBeInTheDocument()
+    // Sem a linha/legenda de "Esperado", já que a produção esperada não está disponível.
+    expect(screen.queryByText('Esperado')).not.toBeInTheDocument()
+  })
+
+  it('mostra o fallback de "dados insuficientes" quando não há produção real nenhuma e a esperada está indisponível', () => {
+    const anomalyState: AnomalyFetchState = {
+      loading: false,
+      error: null,
+      data: {
+        plant_id: 'p1',
+        days_analyzed: 1,
+        current_streak_days: 0,
+        worst_level: 'NORMAL',
+        daily: [buildDaily({ actual_production_kwh: null, expected_production_kwh: null })],
+      },
+    }
+    const expectedProduction: ExpectedDailyProduction = {
+      available: false,
+      reason: 'NO_PERFORMANCE_HISTORY',
+      referenceCompleteOn: null,
+    }
+
+    render(<ProductionHistorySection anomalyState={anomalyState} expectedProduction={expectedProduction} />)
+
+    expect(screen.getByText(/histórico de desempenho insuficiente/)).toBeInTheDocument()
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument()
+  })
+
   it('mostra mensagem de falha do sistema com opção de retry quando o histórico responde 500', () => {
     const anomalyState: AnomalyFetchState = { loading: false, data: null, error: 'SERVER_ERROR' }
     const onRetry = vi.fn()

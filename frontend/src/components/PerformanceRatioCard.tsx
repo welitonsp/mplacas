@@ -1,7 +1,9 @@
 import type { PerformanceUnavailableReason, PhotovoltaicPerformanceLatest } from '../lib/dashboard/photovoltaic-contracts'
 import { performanceUnavailableMessage, ratioToPercent } from '../lib/dashboard/photovoltaic-contracts'
+import { performanceSeverity } from '../lib/dashboard/visuals'
 import { formatNumber } from '../lib/format'
 import { Card } from './Card'
+import { Gauge } from './charts/Gauge'
 
 // PR (performance ratio) mede o quanto a usina produziu em relação ao que a
 // irradiância recebida permitiria, sem descontar o efeito da temperatura nas
@@ -36,21 +38,9 @@ export function PerformanceRatioCard({
   return (
     <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Performance ratio (PR)</p>
-      <div className="mt-2 grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-2xl font-semibold text-gray-900 tabular-nums">
-            {formatNumber(pr)}
-            <span className="ml-1 text-sm font-normal text-gray-500">%</span>
-          </p>
-          <p className="mt-1 text-xs text-gray-500">Bruto</p>
-        </div>
-        <div>
-          <p className="text-2xl font-semibold text-gray-900 tabular-nums">
-            {formatNumber(prCorrected)}
-            <span className="ml-1 text-sm font-normal text-gray-500">%</span>
-          </p>
-          <p className="mt-1 text-xs text-gray-500">Corrigido por temperatura</p>
-        </div>
+      <div className="mt-3 flex items-start justify-around gap-4">
+        <PrGauge value={pr} label="Bruto" />
+        <PrGauge value={prCorrected} label="Corrigido por temperatura" />
       </div>
       <p className="mt-3 text-xs text-gray-500">
         O PR bruto compara produção real com o que a irradiância do dia permitiria. O corrigido
@@ -58,5 +48,35 @@ export function PerformanceRatioCard({
         não são clima.
       </p>
     </Card>
+  )
+}
+
+// `value` chega como `null` quando o backend não conseguiu calcular a razão
+// (ex.: sem POA térmico modelado para o PR corrigido) — nesse caso não faz
+// sentido desenhar um anel de 0%, que sugeriria "performou zero", então
+// mostramos um placeholder neutro sem valor fabricado.
+function PrGauge({ value, label }: { value: number | null; label: string }) {
+  if (value === null) {
+    return (
+      <div className="inline-flex flex-col items-center" style={{ width: 72 }}>
+        <div
+          className="flex items-center justify-center rounded-full border-2 border-dashed border-[var(--color-chart-track)] text-sm font-semibold text-gray-500"
+          style={{ width: 72, height: 72 }}
+        >
+          —
+        </div>
+        <p className="mt-1 text-center text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+      </div>
+    )
+  }
+
+  return (
+    <Gauge
+      value={value}
+      label={label}
+      valueLabel={`${formatNumber(value, 0)}%`}
+      tone={performanceSeverity(value)}
+      size={72}
+    />
   )
 }

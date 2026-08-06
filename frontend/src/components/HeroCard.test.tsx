@@ -14,7 +14,7 @@ function buildDiagnostic(overrides: Partial<Diagnostic> = {}): Diagnostic {
 }
 
 describe('HeroCard', () => {
-  it('expõe a barra de saúde da usina com semântica ARIA de progressbar', () => {
+  it('expõe o gauge de saúde da usina com semântica ARIA e valor correto', () => {
     render(
       <HeroCard
         referenceMonth="2026-07"
@@ -24,18 +24,16 @@ describe('HeroCard', () => {
       />
     )
 
-    const progressbar = screen.getByRole('progressbar')
-    expect(progressbar).toHaveAttribute('aria-valuenow', '85')
-    expect(progressbar).toHaveAttribute('aria-valuemin', '0')
-    expect(progressbar).toHaveAttribute('aria-valuemax', '100')
+    const gauge = screen.getByRole('img')
+    expect(gauge).toHaveAttribute('aria-label', 'Saúde da usina: 85/100')
   })
 
-  it('não renderiza a barra quando o health score é nulo', () => {
+  it('não renderiza o gauge quando o health score é nulo', () => {
     render(
       <HeroCard referenceMonth="2026-07" headline="Sem dado" status="NORMAL" healthScore={null} />
     )
 
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
   it('o valor da saúde da usina usa tabular-nums (Etapa 1.5)', () => {
