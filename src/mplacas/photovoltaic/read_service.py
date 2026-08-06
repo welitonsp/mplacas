@@ -91,6 +91,8 @@ class PhotovoltaicSummary:
     reference_complete_on: date | None
     losses: tuple[DailyPvLossAssessmentRecord, ...] | None
     losses_unavailable_reason: str | None
+    expected_production: ExpectedDailyProduction | None
+    expected_production_unavailable_reason: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,6 +311,26 @@ async def get_summary(
         losses = None
         losses_reason = LOSSES_UNAVAILABLE_REASON
 
+    # ADR-068 section 2: reuse the performance/baseline records already
+    # loaded above — no additional query. Mirrors
+    # `resolve_expected_daily_production`, but without re-querying.
+    expected_production: ExpectedDailyProduction | None
+    expected_production_reason: str | None
+    if baseline is None:
+        expected_production = None
+        expected_production_reason = baseline_reason
+    else:
+        expected_production = calculate_expected_daily_production(
+            dc_capacity_kwp=performance.dc_capacity_kwp if performance is not None else None,
+            clear_sky_poa_p90_kwh_m2=baseline.clear_sky_poa_p90_kwh_m2,
+            baseline_median_performance_ratio=baseline.baseline_median_performance_ratio,
+        )
+        expected_production_reason = (
+            None
+            if expected_production is not None
+            else INCOMPLETE_EXPECTATION_INPUTS_REASON
+        )
+
     return PhotovoltaicSummary(
         plant_id=plant_id,
         performance=performance,
@@ -318,6 +340,8 @@ async def get_summary(
         reference_complete_on=reference_complete_on,
         losses=losses,
         losses_unavailable_reason=losses_reason,
+        expected_production=expected_production,
+        expected_production_unavailable_reason=expected_production_reason,
     )
 
 

@@ -143,4 +143,22 @@ async def summary(scoped: ReadPlant) -> dict[str, object]:
             else None
         ),
         "losses_unavailable_reason": result.losses_unavailable_reason,
+        "expected_daily_production_kwh": (
+            str(result.expected_production.expected_daily_production_kwh)
+            if result.expected_production is not None
+            else None
+        ),
+        "expected_daily_production_model_version": (
+            result.expected_production.model_version
+            if result.expected_production is not None
+            else None
+        ),
+        "expected_daily_production_nature": (
+            result.expected_production.nature
+            if result.expected_production is not None
+            else None
+        ),
+        "expected_daily_production_unavailable_reason": (
+            result.expected_production_unavailable_reason
+        ),
     }

@@ -272,6 +272,13 @@ def test_summary_always_returns_200_with_null_baseline_and_reason(seeded_app) ->
     assert body["reference_complete_on"] is not None
     assert body["losses"] is not None
     assert body["losses_unavailable_reason"] is None
+    # No baseline yet: the four expected-production fields (ADR-068
+    # section 3) are present, with the three data fields null and the
+    # reason mirroring the baseline's own reason.
+    assert body["expected_daily_production_kwh"] is None
+    assert body["expected_daily_production_model_version"] is None
+    assert body["expected_daily_production_nature"] is None
+    assert body["expected_daily_production_unavailable_reason"] == "REFERENCE_YEAR_INCOMPLETE"
 
 
 def test_summary_returns_200_with_all_blocks_null_for_new_plant(monkeypatch) -> None:
@@ -315,6 +322,124 @@ def test_summary_returns_200_with_all_blocks_null_for_new_plant(monkeypatch) -> 
     assert body["reference_complete_on"] is None
     assert body["losses"] is None
     assert body["losses_unavailable_reason"] == "NO_LOSS_ASSESSMENTS"
+    assert body["expected_daily_production_kwh"] is None
+    assert body["expected_daily_production_model_version"] is None
+    assert body["expected_daily_production_nature"] is None
+    assert body["expected_daily_production_unavailable_reason"] == "NO_PERFORMANCE_HISTORY"
+
+    asyncio.run(engine.dispose())
+    get_settings.cache_clear()
+
+
+def test_summary_returns_populated_expected_production_when_baseline_available(
+    monkeypatch,
+) -> None:
+    """ADR-068 section 3: the four fields carry real values, additively, when
+    a baseline and performance record are both available.
+    """
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
+    get_settings.cache_clear()
+
+    import asyncio
+
+    from mplacas.photovoltaic.db_models import SeasonalPvBaselineRecord
+    from mplacas.photovoltaic.seasonal_baseline import BASELINE_MODEL_VERSION
+
+    factory, engine = asyncio.run(_factory())
+    monkeypatch.setattr(db_session, "SessionFactory", factory)
+    monkeypatch.setattr(photovoltaic_router, "SessionFactory", factory)
+
+    async def _seed_with_baseline() -> tuple[uuid.UUID, uuid.UUID]:
+        async with factory() as session:
+            org_id = uuid.uuid4()
+            plant_id = uuid.uuid4()
+            session.add(
+                OrganizationRecord(
+                    id=org_id, name="Org3", slug=f"org3-{org_id.hex[:8]}", active=True
+                )
+            )
+            session.add(Plant(id=plant_id, organization_id=org_id, name="Plant3"))
+            session.add(
+                DailyPvPerformanceRecord(
+                    plant_id=plant_id,
+                    observation_date=date(2027, 7, 1),
+                    solar_model_version=SOLAR_MODEL_VERSION,
+                    performance_model_version=PERFORMANCE_MODEL_VERSION,
+                    climate_source="OPEN_METEO_ARCHIVE",
+                    performance_ratio_nature="IEC_61724_STYLE_AC_PR_MODELED_POA",
+                    availability_nature="CAPACITY_WEIGHTED_DAILY_REPORTING_PROXY",
+                    uncertainty_percent=None,
+                    uncertainty_nature="NOT_QUANTIFIED_SENSOR_CLASSES_UNAVAILABLE",
+                    measured_energy_kwh=Decimal("100.000"),
+                    dc_capacity_kwp=Decimal("100.000"),
+                    poa_irradiation_kwh_m2=Decimal("5.000"),
+                    final_yield_kwh_per_kwp=Decimal("1.000"),
+                    reference_yield_hours=Decimal("5.000"),
+                    performance_ratio=Decimal("0.8500"),
+                    temperature_corrected_performance_ratio=None,
+                    reporting_availability_ratio=Decimal("0.9800"),
+                    reporting_device_count=1,
+                    configured_device_count=1,
+                    reporting_capacity_kwp=Decimal("100.000"),
+                    configured_device_capacity_kwp=Decimal("100.000"),
+                    data_quality_status="FINAL",
+                    quality_flags=[],
+                    units_json={"performance_ratio": "ratio"},
+                    assumptions_json={},
+                )
+            )
+            session.add(
+                SeasonalPvBaselineRecord(
+                    plant_id=plant_id,
+                    observation_date=date(2027, 7, 1),
+                    baseline_model_version=BASELINE_MODEL_VERSION,
+                    performance_model_version=PERFORMANCE_MODEL_VERSION,
+                    metric_nature="TEMPERATURE_CORRECTED_PR_PREFERRED",
+                    clear_sky_index_nature="EMPIRICAL_SEASONAL_POA_P90",
+                    season_key="MONTH_07",
+                    reference_start_date=date(2026, 7, 1),
+                    reference_end_date=date(2027, 7, 1),
+                    baseline_sample_count=20,
+                    baseline_excluded_count=0,
+                    comparison_start_date=date(2027, 7, 2),
+                    comparison_sample_count=10,
+                    clear_sky_poa_p90_kwh_m2=Decimal("6.500"),
+                    target_clear_sky_index=Decimal("0.9500"),
+                    baseline_median_performance_ratio=Decimal("0.8500"),
+                    baseline_mad=Decimal("0.0100"),
+                    baseline_q10=Decimal("0.8300"),
+                    baseline_q90=Decimal("0.8700"),
+                    comparison_median_performance_ratio=Decimal("0.8000"),
+                    degradation_percent=Decimal("-5.88"),
+                    annualized_degradation_percent=Decimal("-5.90"),
+                    degradation_status="DEGRADED",
+                    quality_flags=[],
+                    assumptions_json={},
+                )
+            )
+            await session.commit()
+            return org_id, plant_id
+
+    org_id, plant_id = asyncio.run(_seed_with_baseline())
+    token = encode_access_token(uuid.uuid4(), org_id, OperationsRole.ADMIN.value)
+
+    client = TestClient(app)
+    response = client.get(
+        "/photovoltaic/summary",
+        headers=_auth(token),
+        params={"plant_id": str(plant_id)},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # dc_capacity_kwp (100.000) x clear_sky_poa_p90_kwh_m2 (6.500) x
+    # baseline_median_performance_ratio (0.8500) = 552.500
+    assert body["expected_daily_production_kwh"] == "552.500"
+    assert (
+        body["expected_daily_production_model_version"]
+        == "MPLACAS_EXPECTED_DAILY_PRODUCTION_V1"
+    )
+    assert body["expected_daily_production_nature"] == "SEASONAL_CLEAR_SKY_P90_ENVELOPE"
+    assert body["expected_daily_production_unavailable_reason"] is None
 
     asyncio.run(engine.dispose())
     get_settings.cache_clear()

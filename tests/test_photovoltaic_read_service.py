@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from mplacas.db.base import Base
@@ -421,6 +422,11 @@ async def test_get_summary_returns_all_blocks_null_for_new_plant() -> None:
         assert result.reference_complete_on is None
         assert result.losses is None
         assert result.losses_unavailable_reason == "NO_LOSS_ASSESSMENTS"
+        # ADR-068 section 3: the four expected-production fields are always
+        # present; when there is no baseline yet, the reason mirrors the
+        # baseline's own reason (never omitted, never invented).
+        assert result.expected_production is None
+        assert result.expected_production_unavailable_reason == "NO_PERFORMANCE_HISTORY"
     await engine.dispose()
 
 
@@ -457,6 +463,185 @@ async def test_get_summary_returns_populated_blocks_when_available() -> None:
         assert result.reference_complete_on is not None
         assert result.losses is not None
         assert result.losses_unavailable_reason is None
+        # No baseline yet, so the expected-production reason mirrors the
+        # baseline's reason rather than the fourth (inputs-incomplete) code.
+        assert result.expected_production is None
+        assert result.expected_production_unavailable_reason == "REFERENCE_YEAR_INCOMPLETE"
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_get_summary_returns_expected_production_when_baseline_available() -> None:
+    factory, engine = await _factory()
+    async with factory() as session:
+        plant = Plant(name="Plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        session.add(_performance_row(plant_id=plant.id, observation_date=date(2027, 7, 1)))
+        session.add(
+            _baseline_row(
+                plant_id=plant.id,
+                clear_sky_poa_p90_kwh_m2=Decimal("6.500"),
+                baseline_median_performance_ratio=Decimal("0.8500"),
+            )
+        )
+        await session.commit()
+
+        result = await get_summary(session, plant_id=plant.id, today=date(2027, 7, 1))
+        assert result.baseline is not None
+        assert result.expected_production is not None
+        assert result.expected_production_unavailable_reason is None
+        # dc_capacity_kwp (100.000) x clear_sky_poa_p90_kwh_m2 (6.500) x
+        # baseline_median_performance_ratio (0.8500) = 552.500 — same
+        # arithmetic exercised by `resolve_expected_daily_production`.
+        assert result.expected_production.expected_daily_production_kwh == Decimal(
+            "552.500"
+        )
+        assert (
+            result.expected_production.model_version
+            == "MPLACAS_EXPECTED_DAILY_PRODUCTION_V1"
+        )
+        assert (
+            result.expected_production.nature == "SEASONAL_CLEAR_SKY_P90_ENVELOPE"
+        )
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_get_summary_expected_production_incomplete_inputs_reason() -> None:
+    """Baseline present, but performance missing: fourth reason code.
+
+    Distinct from the three "no baseline yet" reasons — the baseline itself
+    resolved fine, but one of the three formula inputs (`dc_capacity_kwp`,
+    sourced from performance) did not.
+    """
+    factory, engine = await _factory()
+    async with factory() as session:
+        plant = Plant(name="Plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        session.add(_baseline_row(plant_id=plant.id, observation_date=date(2027, 7, 1)))
+        await session.commit()
+
+        result = await get_summary(session, plant_id=plant.id, today=date(2027, 7, 1))
+        assert result.baseline is not None
+        assert result.expected_production is None
+        assert (
+            result.expected_production_unavailable_reason
+            == INCOMPLETE_EXPECTATION_INPUTS_REASON
+        )
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_get_summary_expected_production_matches_frontend_formula() -> None:
+    """Regression test for ADR-068 section 3 / Validation item 3.
+
+    The frontend's removed `deriveExpectedDailyProduction`
+    (`photovoltaic-contracts.ts:274`) computed
+    ``dc_capacity_kwp * clear_sky_poa_p90_kwh_m2 * baseline_median_performance_ratio``
+    with plain floats and no rounding. The backend quantizes to `0.001` kWh
+    with `ROUND_HALF_UP` (ADR-068 section 3) — the two must agree within that
+    tolerance for the same inputs.
+    """
+    factory, engine = await _factory()
+    async with factory() as session:
+        plant = Plant(name="Plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        session.add(
+            _performance_row(
+                plant_id=plant.id,
+                observation_date=date(2027, 7, 1),
+            )
+        )
+        session.add(
+            _baseline_row(
+                plant_id=plant.id,
+                observation_date=date(2027, 7, 1),
+                clear_sky_poa_p90_kwh_m2=Decimal("6.437"),
+                baseline_median_performance_ratio=Decimal("0.8123"),
+            )
+        )
+        await session.commit()
+
+        result = await get_summary(session, plant_id=plant.id, today=date(2027, 7, 1))
+        assert result.expected_production is not None
+        assert result.performance is not None
+        assert result.baseline is not None
+
+        frontend_kwh = (
+            float(result.performance.dc_capacity_kwp)
+            * float(result.baseline.clear_sky_poa_p90_kwh_m2)
+            * float(result.baseline.baseline_median_performance_ratio)
+        )
+        backend_kwh = float(result.expected_production.expected_daily_production_kwh)
+        assert abs(backend_kwh - frontend_kwh) <= 0.001
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_get_summary_executes_no_additional_query_for_expected_production() -> None:
+    """ADR-068 section 8 (Etapa B): expressing the expectation must not add a
+    query beyond the three `get_summary` already ran (performance, baseline,
+    losses) — it reuses the records already loaded in the same session.
+    """
+    factory, engine = await _factory()
+    async with factory() as session:
+        plant = Plant(name="Plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        session.add(_performance_row(plant_id=plant.id, observation_date=date(2027, 7, 1)))
+        session.add(
+            _baseline_row(
+                plant_id=plant.id,
+                clear_sky_poa_p90_kwh_m2=Decimal("6.500"),
+                baseline_median_performance_ratio=Decimal("0.8500"),
+            )
+        )
+        session.add(
+            DailyPvLossAssessmentRecord(
+                plant_id=plant.id,
+                observation_date=date(2027, 7, 1),
+                category="COMMUNICATION",
+                evidence_level="NOT_DETECTED",
+                taxonomy_model_version=LOSS_TAXONOMY_MODEL_VERSION,
+                performance_model_version=PERFORMANCE_MODEL_VERSION,
+                baseline_model_version=None,
+                estimated_loss_percent=None,
+                evidence_codes=[],
+                limitation=None,
+                assumptions_json={},
+            )
+        )
+        await session.commit()
+        plant_id = plant.id
+
+    def _install_counter(session) -> list[int]:
+        calls: list[int] = []
+
+        def _listener(orm_execute_state):
+            calls.append(1)
+
+        event.listen(session.sync_session, "do_orm_execute", _listener)
+        return calls
+
+    # Baseline: the number of ORM-level `execute`/`scalar` calls made by the
+    # three pre-existing helper functions, called directly in sequence.
+    async with factory() as session:
+        calls = _install_counter(session)
+        await get_latest_performance(session, plant_id=plant_id)
+        await get_latest_baseline(session, plant_id=plant_id, today=date(2027, 7, 1))
+        await get_latest_losses(session, plant_id=plant_id)
+        baseline_query_count = len(calls)
+
+    async with factory() as session:
+        calls = _install_counter(session)
+        result = await get_summary(session, plant_id=plant_id, today=date(2027, 7, 1))
+        summary_query_count = len(calls)
+
+    assert result.expected_production is not None
+    assert summary_query_count == baseline_query_count
     await engine.dispose()
 
 
