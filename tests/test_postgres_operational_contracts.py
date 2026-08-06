@@ -147,7 +147,7 @@ async def test_migrated_schema_serves_real_readiness_contract(
         )
         revision = await session.scalar(text("SELECT version_num FROM alembic_version"))
 
-    assert revision == "20260803_0041"
+    assert revision == "20260805_0043"
     assert {
         "auth_sessions",
         "collection_tasks",
