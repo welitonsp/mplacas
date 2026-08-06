@@ -1,5 +1,6 @@
 import { API_URL } from '../env'
 import { TokenStore } from './auth'
+import { parsePlantsResponse, type Plant } from './dashboard/plant-contracts'
 
 type RefreshTokenGetter = () => string | null
 type RefreshTokenSetter = (token: string) => void
@@ -82,6 +83,23 @@ export async function fetchFinancialReturn(plantId: string): Promise<Response> {
 // `CapexRegistrationForm`).
 export async function fetchFinancialConfiguration(plantId: string): Promise<Response> {
   return apiFetch(`/plants/${encodeURIComponent(plantId)}/financial-configuration`)
+}
+
+// Lista de usinas da organização do principal autenticado (ADR-069, seção 4,
+// `GET /plants`) — base do seletor de usina (Etapa D) e do `PlantContext`
+// (Etapa C), nenhum dos dois implementado ainda. Diferente das demais funções
+// de fetch deste arquivo, já devolve os itens parseados em vez do `Response`
+// cru: não há estado de indisponibilidade específico por campo a preservar
+// aqui (como em `parsePhotovoltaicSummary`/`parseFinancialReturn`) — um payload
+// malformado ou um status não-200 são sempre erro, nunca um estado de negócio
+// a exibir.
+export async function fetchPlants(): Promise<Plant[]> {
+  const response = await apiFetch('/plants')
+  if (!response.ok) {
+    throw new Error(`Erro ao buscar usinas (${response.status}).`)
+  }
+  const parsed = parsePlantsResponse(await response.json())
+  return parsed.items
 }
 
 export interface FinancialConfigurationUpdatePayload {

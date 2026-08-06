@@ -15,7 +15,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!TokenStore.get())
   // Em memória, mesma vida útil de `refreshTokenRef` abaixo — nunca persistido
-  // em localStorage/sessionStorage, nunca derivado de decodificação do JWT.
+  // em armazenamento do navegador, nunca derivado de decodificação do JWT.
   const [username, setUsername] = useState<string | null>(null)
   const refreshTokenRef = useRef<string | null>(null)
 
