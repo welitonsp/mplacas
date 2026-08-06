@@ -14,6 +14,7 @@ from mplacas.auth.session_service import AuthSessionService
 from mplacas.core.config import get_settings
 from mplacas.core.principal import OperationsRole
 from mplacas.core.tenancy import AdminPrincipal, OrgAdminPrincipal, PlatformPrincipal
+from mplacas.db.models import Plant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_principal_context
 from mplacas.organizations.db_models import OrganizationRecord
@@ -49,24 +50,28 @@ def _organization_view(record: OrganizationRecord) -> dict[str, object]:
         "created_at": record.created_at,
         "telegram_chat_id": record.telegram_chat_id,
         "telegram_allowed_user_id": record.telegram_allowed_user_id,
+        "default_plant_id": str(record.default_plant_id)
+        if record.default_plant_id is not None
+        else None,
     }
 
 
 class OrganizationUpdateRequest(BaseModel):
-    """Partial update for an organization's Telegram linkage.
+    """Partial update for an organization's Telegram linkage and default plant.
 
-    Only ``telegram_chat_id`` and ``telegram_allowed_user_id`` are editable
-    here (name/slug/active are out of scope for this endpoint). A field
-    omitted from the request body is left untouched; a field sent explicitly
-    as ``null`` clears (unlinks) the corresponding column. Both fields default
-    to ``None``, and ``model_fields_set`` (Pydantic's own tracking of which
-    fields were present in the parsed payload) is what distinguishes
-    "omitted" from "sent as null" in ``update_organization`` below — not the
-    field's value itself.
+    Only ``telegram_chat_id``, ``telegram_allowed_user_id`` and
+    ``default_plant_id`` are editable here (name/slug/active are out of scope
+    for this endpoint). A field omitted from the request body is left
+    untouched; a field sent explicitly as ``null`` clears (unlinks) the
+    corresponding column. All fields default to ``None``, and
+    ``model_fields_set`` (Pydantic's own tracking of which fields were present
+    in the parsed payload) is what distinguishes "omitted" from "sent as
+    null" in ``update_organization`` below — not the field's value itself.
     """
 
     telegram_chat_id: int | None = None
     telegram_allowed_user_id: int | None = None
+    default_plant_id: uuid.UUID | None = None
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -371,6 +376,24 @@ async def update_organization(
             record.telegram_chat_id = payload.telegram_chat_id
         if "telegram_allowed_user_id" in fields_set:
             record.telegram_allowed_user_id = payload.telegram_allowed_user_id
+        if "default_plant_id" in fields_set:
+            if payload.default_plant_id is not None:
+                plant = await session.scalar(
+                    select(Plant.id).where(
+                        Plant.id == payload.default_plant_id,
+                        Plant.organization_id == record.id,
+                    )
+                )
+                if plant is None:
+                    # Plant does not exist, or belongs to another
+                    # organization: 404 either way, same convention as
+                    # ``_get_own_or_404`` above, so the response never
+                    # reveals whether a plant with that id exists elsewhere.
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="plant not found",
+                    )
+            record.default_plant_id = payload.default_plant_id
         try:
             await session.flush()
         except IntegrityError as exc:

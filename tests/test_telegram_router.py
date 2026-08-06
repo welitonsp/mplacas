@@ -24,6 +24,16 @@ class FakeScalarResult:
             return None
         return self._values[0]
 
+    def scalar(self):
+        # Used by ``_infer_single_plant_for_organization_in_session``'s
+        # ``organizations.default_plant_id`` lookup (ADR-069 § E.2), which
+        # runs *before* the plant-enumeration query these fixtures seed via
+        # ``scalars()``. These tests pre-date the default-plant feature and
+        # exercise the (c)/(d) fallback path, so no default is ever
+        # configured here — always ``None``, letting resolution fall through
+        # to the ``scalars()``-seeded enumeration below.
+        return None
+
 
 class FakeSession:
     """Fake session returning canned rows regardless of the statement shape.

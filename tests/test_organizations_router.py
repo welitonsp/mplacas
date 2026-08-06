@@ -738,3 +738,161 @@ def test_patch_organization_requires_admin_not_read(monkeypatch, tmp_path) -> No
         headers=_read_headers(org_id),
     )
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# ADR-069 E.2/E.5 -- PATCH /organizations/{id} default_plant_id
+# ---------------------------------------------------------------------------
+
+
+def _seed_plant(factory, organization_id: uuid.UUID, name: str = "Plant A") -> uuid.UUID:
+    import asyncio
+
+    from mplacas.db.models import Plant
+
+    async def _seed() -> uuid.UUID:
+        async with factory() as session:
+            plant_id = uuid.uuid4()
+            session.add(Plant(id=plant_id, organization_id=organization_id, name=name))
+            await session.flush()
+            await session.commit()
+            return plant_id
+
+    return asyncio.run(_seed())
+
+
+def test_patch_organization_sets_default_plant_id(monkeypatch, tmp_path) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+    plant_id = _seed_plant(factory, org_id)
+
+    response = client.patch(
+        f"/organizations/{org_id}",
+        json={"default_plant_id": str(plant_id)},
+        headers=_admin_headers(org_id),
+    )
+    assert response.status_code == 200
+    assert response.json()["default_plant_id"] == str(plant_id)
+
+    async def _fetch():
+        async with factory() as session:
+            return await session.get(OrganizationRecord, org_id)
+
+    record = asyncio.run(_fetch())
+    assert record is not None
+    assert record.default_plant_id == plant_id
+
+
+def test_patch_organization_default_plant_id_of_another_org_returns_404(
+    monkeypatch, tmp_path
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_a_id = _seed_org(factory)
+    org_b_id = _seed_org(factory)
+    plant_b_id = _seed_plant(factory, org_b_id, name="Plant B")
+
+    response = client.patch(
+        f"/organizations/{org_a_id}",
+        json={"default_plant_id": str(plant_b_id)},
+        headers=_admin_headers(org_a_id),
+    )
+    assert response.status_code == 404
+
+    async def _fetch():
+        async with factory() as session:
+            return await session.get(OrganizationRecord, org_a_id)
+
+    record = asyncio.run(_fetch())
+    assert record is not None
+    assert record.default_plant_id is None
+
+
+def test_patch_organization_default_plant_id_nonexistent_returns_404(
+    monkeypatch, tmp_path
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    response = client.patch(
+        f"/organizations/{org_id}",
+        json={"default_plant_id": str(uuid.uuid4())},
+        headers=_admin_headers(org_id),
+    )
+    assert response.status_code == 404
+
+
+def test_patch_organization_default_plant_id_malformed_uuid_returns_422(
+    monkeypatch, tmp_path
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+
+    response = client.patch(
+        f"/organizations/{org_id}",
+        json={"default_plant_id": "not-a-uuid"},
+        headers=_admin_headers(org_id),
+    )
+    assert response.status_code == 422
+
+
+def test_patch_organization_default_plant_id_null_clears_field(
+    monkeypatch, tmp_path
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+    plant_id = _seed_plant(factory, org_id)
+
+    first = client.patch(
+        f"/organizations/{org_id}",
+        json={"default_plant_id": str(plant_id)},
+        headers=_admin_headers(org_id),
+    )
+    assert first.status_code == 200
+    assert first.json()["default_plant_id"] == str(plant_id)
+
+    second = client.patch(
+        f"/organizations/{org_id}",
+        json={"default_plant_id": None},
+        headers=_admin_headers(org_id),
+    )
+    assert second.status_code == 200
+    assert second.json()["default_plant_id"] is None
+
+    async def _fetch():
+        async with factory() as session:
+            return await session.get(OrganizationRecord, org_id)
+
+    record = asyncio.run(_fetch())
+    assert record is not None
+    assert record.default_plant_id is None
+
+
+def test_patch_organization_default_plant_id_records_audit_event(
+    monkeypatch, tmp_path
+) -> None:
+    from mplacas.audit.db_models import AuditEventRecord
+
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id = _seed_org(factory)
+    plant_id = _seed_plant(factory, org_id)
+
+    response = client.patch(
+        f"/organizations/{org_id}",
+        json={"default_plant_id": str(plant_id)},
+        headers=_admin_headers(org_id),
+    )
+    assert response.status_code == 200
+
+    async def _fetch_events():
+        async with factory() as session:
+            return list(
+                await session.scalars(
+                    select(AuditEventRecord).where(
+                        AuditEventRecord.action == "organizations.update"
+                    )
+                )
+            )
+
+    events = asyncio.run(_fetch_events())
+    assert len(events) == 1
+    assert "default_plant_id" in events[0].details["fields_updated"]

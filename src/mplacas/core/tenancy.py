@@ -20,6 +20,7 @@ from mplacas.core.authorization import PlantScope
 from mplacas.core.principal import OperationsPrincipal
 from mplacas.db.models import Plant
 from mplacas.db.tenant_context import set_organization_context, set_tenant_context
+from mplacas.organizations.db_models import OrganizationRecord
 
 
 async def plant_scope_for_organization_in_session(
@@ -123,11 +124,44 @@ async def _infer_single_plant_for_organization_in_session(
 ) -> uuid.UUID:
     """Infer "the" plant for ``organization_id``, using the given ``session``.
 
+    Resolution order (see ADR-069 § E.3.2):
+
+    1. (Handled by callers, not here: an explicit ``plant_id`` never reaches
+       this function — see :func:`resolve_admin_plant_scope`.)
+    2. ``organizations.default_plant_id``, **revalidated** by joining
+       ``plants`` on both ``p.id = o.default_plant_id`` *and*
+       ``p.organization_id = o.id``. This join is what enforces the
+       invariant even without a composite foreign key: if the default were
+       ever to point at a plant belonging to a different organization (which
+       should never happen, but is not guaranteed by the schema alone), the
+       join simply does not match and resolution falls through to the next
+       step — the stale default is silently ignored, never leaked.
+    3. The organization's only plant, if it has exactly one (existing
+       fallback, preserved for organizations created before a default was
+       elected, or with no ``organization_id`` at all).
+    4. 409, now pointing callers at ``PATCH /organizations/{id}`` with
+       ``default_plant_id`` as the way to resolve it.
+
     Shared by :func:`_infer_single_plant_for_organization` (which opens a
     fresh session for callers that do not already hold one) and callers that
     already have an open session in scope (e.g. ``telegram.router``, which
     resolves the organization and the plant within the same session/request).
     """
+    if organization_id is not None:
+        default_result = await session.execute(
+            select(Plant.id)
+            .select_from(OrganizationRecord)
+            .join(
+                Plant,
+                (Plant.id == OrganizationRecord.default_plant_id)
+                & (Plant.organization_id == OrganizationRecord.id),
+            )
+            .where(OrganizationRecord.id == organization_id)
+        )
+        default_plant_id = default_result.scalar()
+        if default_plant_id is not None:
+            return default_plant_id
+
     query = select(Plant.id)
     if organization_id is not None:
         query = query.where(Plant.organization_id == organization_id)
@@ -138,11 +172,15 @@ async def _infer_single_plant_for_organization_in_session(
     if len(plant_ids) > 1:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="plant_id is required when more than one plant exists",
+            detail="plant_id is required when more than one plant exists; "
+            "set a default with PATCH /organizations/{id} "
+            "(default_plant_id) to avoid this",
         )
     raise HTTPException(
         status_code=status.HTTP_409_CONFLICT,
-        detail="plant_id is required when no plant can be inferred",
+        detail="plant_id is required when no plant can be inferred; "
+        "set a default with PATCH /organizations/{id} "
+        "(default_plant_id) to avoid this",
     )
 
 

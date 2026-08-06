@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from mplacas.core.tenancy import _infer_single_plant_for_organization_in_session
 from mplacas.db.rls_inventory import RLS_TABLES
 from mplacas.db.tenant_context import set_platform_context, set_tenant_context
 
@@ -357,4 +358,168 @@ async def test_application_rls_enforces_crud_and_every_ownership_chain() -> None
                 await connection.execute(text(f'DROP ROLE "{tenant_role}"'))
             if marker_created and platform_marker in existing_roles:
                 await connection.execute(text(f'DROP ROLE IF EXISTS "{platform_marker}"'))
+        await engine.dispose()
+
+
+@pytest.mark.postgres_integration
+@pytest.mark.asyncio
+async def test_infer_single_plant_join_across_organizations_and_plants_rls() -> None:
+    """ADR-069 SS E.7: ``_infer_single_plant_for_organization_in_session``
+
+    joins ``organizations`` and ``plants``, both RLS-protected, inside the
+    same transaction. This confirms both tables' policies accept the same
+    ``mplacas.organization_id`` GUC set via :func:`set_tenant_context`, that a
+    corrupted/foreign ``default_plant_id`` never leaks another organization's
+    plant under *real* RLS (mirroring the SQLite-only coverage in
+    ``tests/test_tenancy.py::
+    test_infer_plant_ignores_default_pointing_to_another_organizations_plant``),
+    and that the ``organizations`` RLS policy permits ``UPDATE`` of the
+    caller's own row -- not merely ``SELECT`` -- under the same tenant
+    context, since ``PATCH /organizations/{id}`` performs exactly that write.
+    """
+    url = os.getenv("MPLACAS_TEST_POSTGRES_URL")
+    if not url:
+        pytest.skip("MPLACAS_TEST_POSTGRES_URL is required")
+
+    suffix = uuid.uuid4().hex
+    tenant_role = f"mplacas_infer_tenant_{suffix}"
+    org_a, org_b = uuid.uuid4(), uuid.uuid4()
+    plant_a, plant_b = uuid.uuid4(), uuid.uuid4()
+    roles_created = False
+    engine = create_async_engine(url, pool_size=1, max_overflow=0)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(text(f'CREATE ROLE "{tenant_role}" NOLOGIN'))
+            roles_created = True
+            await connection.execute(
+                text(f'GRANT "{tenant_role}" TO CURRENT_USER WITH SET TRUE')
+            )
+            await connection.execute(
+                text(f'GRANT USAGE ON SCHEMA public TO "{tenant_role}"')
+            )
+            await connection.execute(
+                text(
+                    "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public "
+                    f'TO "{tenant_role}"'
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO organizations (id, name, slug, active) VALUES "
+                    "(:org_a, 'Infer A', :slug_a, true), "
+                    "(:org_b, 'Infer B', :slug_b, true)"
+                ),
+                {
+                    "org_a": org_a,
+                    "org_b": org_b,
+                    "slug_a": f"infer-a-{suffix}",
+                    "slug_b": f"infer-b-{suffix}",
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO plants (id, organization_id, name, timezone) VALUES "
+                    "(:plant_a, :org_a, 'Plant A', 'America/Sao_Paulo'), "
+                    "(:plant_b, :org_b, 'Plant B', 'America/Sao_Paulo')"
+                ),
+                {"plant_a": plant_a, "org_a": org_a, "plant_b": plant_b, "org_b": org_b},
+            )
+            await connection.execute(
+                text(
+                    "UPDATE organizations SET default_plant_id = :plant_a "
+                    "WHERE id = :org_a"
+                ),
+                {"plant_a": plant_a, "org_a": org_a},
+            )
+
+        # 1. Under organization A's tenant context, the JOIN across
+        # `organizations` and `plants` (both RLS-protected) resolves the
+        # valid default to A's own plant.
+        async with factory() as session:
+            await _set_local_role(session, tenant_role)
+            await set_tenant_context(session, org_a)
+            resolved = await _infer_single_plant_for_organization_in_session(
+                session, org_a
+            )
+            assert resolved == plant_a
+
+        # 2. Corrupt organization A's default to point at organization B's
+        # plant (bypassing the PATCH endpoint's ownership validation, as a
+        # superuser connection outside any tenant context). Under A's own
+        # tenant context, resolution must still never leak B's plant: the
+        # JOIN's ownership check (`plants.organization_id = organizations.id`)
+        # has to hold against real RLS, not just SQLite.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "UPDATE organizations SET default_plant_id = :plant_b "
+                    "WHERE id = :org_a"
+                ),
+                {"plant_b": plant_b, "org_a": org_a},
+            )
+        async with factory() as session:
+            await _set_local_role(session, tenant_role)
+            await set_tenant_context(session, org_a)
+            resolved = await _infer_single_plant_for_organization_in_session(
+                session, org_a
+            )
+            # Falls through to organization A's own (only) plant, never B's.
+            assert resolved == plant_a
+            assert resolved != plant_b
+
+        # 3. The `organizations` RLS policy must permit UPDATE of the
+        # caller's own row under `set_tenant_context`, not just SELECT --
+        # otherwise `PATCH /organizations/{id}` (which writes
+        # `default_plant_id` under this same GUC) would pass against SQLite
+        # and fail in production.
+        async with factory() as session:
+            await _set_local_role(session, tenant_role)
+            await set_tenant_context(session, org_a)
+            updated = await session.execute(
+                text(
+                    "UPDATE organizations SET default_plant_id = :plant_a "
+                    "WHERE id = :org_a RETURNING id"
+                ),
+                {"plant_a": plant_a, "org_a": org_a},
+            )
+            assert updated.scalar_one_or_none() == org_a
+            await session.commit()
+
+        # And organization A must never be able to update organization B's
+        # row under its own context -- RLS's WITH CHECK must reject the
+        # write, not merely allow a silent no-op.
+        async with factory() as session:
+            await _set_local_role(session, tenant_role)
+            await set_tenant_context(session, org_a)
+            blocked = await session.execute(
+                text(
+                    "UPDATE organizations SET default_plant_id = :plant_b "
+                    "WHERE id = :org_b RETURNING id"
+                ),
+                {"plant_b": plant_b, "org_b": org_b},
+            )
+            assert blocked.scalar_one_or_none() is None
+            await session.rollback()
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("DELETE FROM plants WHERE id = ANY(:ids)"),
+                {"ids": [plant_a, plant_b]},
+            )
+            await connection.execute(
+                text("DELETE FROM organizations WHERE id = ANY(:ids)"),
+                {"ids": [org_a, org_b]},
+            )
+            if roles_created:
+                existing = (
+                    await connection.execute(
+                        text("SELECT 1 FROM pg_roles WHERE rolname = :name"),
+                        {"name": tenant_role},
+                    )
+                ).scalar_one_or_none()
+                if existing:
+                    await connection.execute(text(f'DROP OWNED BY "{tenant_role}"'))
+                    await connection.execute(text(f'DROP ROLE "{tenant_role}"'))
         await engine.dispose()
