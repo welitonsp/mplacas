@@ -13,6 +13,7 @@ from mplacas.core.config import get_settings
 from mplacas.core.tenancy import AdminPlant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_principal_context
+from mplacas.photovoltaic.read_service import resolve_expected_daily_production
 
 router = APIRouter(
     prefix="/alerts",
@@ -29,7 +30,7 @@ def _destination_ref(chat_id: str) -> str:
 async def run_alerts(
     request: Request,
     scoped: AdminPlant,
-    expected_daily_production_kwh: Decimal = Query(gt=0),
+    expected_daily_production_kwh: Decimal | None = Query(default=None, gt=0),
     expected_cycle_production_kwh: Decimal | None = Query(default=None, gt=0),
     anomaly_days: int = Query(default=7, ge=1, le=90),
     minimum_severity: AlertSeverity = Query(default=AlertSeverity.WARNING),
@@ -51,6 +52,19 @@ async def run_alerts(
     )
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
+        if expected_daily_production_kwh is None:
+            # ADR-069 § E.11.5: `plant_id` was resolved to a single plant
+            # above (either explicit or inferred) — derive the expectation
+            # for that plant instead of requiring the caller to pass it.
+            resolution = await resolve_expected_daily_production(
+                session, plant_id=plant_id
+            )
+            if resolution.expected is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"unavailable_reason": resolution.unavailable_reason},
+                )
+            expected_daily_production_kwh = resolution.expected.expected_daily_production_kwh
         result = await run_operational_alert_pipeline(
             session,
             plant_id=plant_id,
