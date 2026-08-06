@@ -12,6 +12,7 @@ const SUMMARY: PhotovoltaicSummaryResponse = {
   reference_complete_on: null,
   losses: null,
   losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
+  expectedProduction: { available: false, reason: 'NO_PERFORMANCE_HISTORY', referenceCompleteOn: null },
 }
 
 describe('TechnicalPerformanceSection — camada técnica colapsável (Etapa 3.4)', () => {

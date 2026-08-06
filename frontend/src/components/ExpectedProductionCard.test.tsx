@@ -11,7 +11,16 @@ describe('ExpectedProductionCard', () => {
   })
 
   it('mostra o valor médio diário esperado quando disponível', () => {
-    render(<ExpectedProductionCard expectedProduction={{ available: true, kwh: 44.5 }} />)
+    render(
+      <ExpectedProductionCard
+        expectedProduction={{
+          available: true,
+          kwh: 44.5,
+          modelVersion: 'MPLACAS_EXPECTED_DAILY_PRODUCTION_V1',
+          nature: 'SEASONAL_CLEAR_SKY_P90_ENVELOPE',
+        }}
+      />
+    )
 
     expect(screen.getByText('Produção esperada (média diária)')).toBeInTheDocument()
     expect(screen.getByText('kWh/dia')).toBeInTheDocument()

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   baselineUnavailableMessage,
-  deriveExpectedDailyProduction,
   lossesUnavailableMessage,
   parsePhotovoltaicSummary,
   performanceUnavailableMessage,
@@ -43,6 +42,10 @@ function buildSummaryPayload(overrides: Record<string, unknown> = {}) {
     reference_complete_on: null,
     losses: buildLossItems(),
     losses_unavailable_reason: null,
+    expected_daily_production_kwh: '38.412',
+    expected_daily_production_model_version: 'MPLACAS_EXPECTED_DAILY_PRODUCTION_V1',
+    expected_daily_production_nature: 'SEASONAL_CLEAR_SKY_P90_ENVELOPE',
+    expected_daily_production_unavailable_reason: null,
     ...overrides,
   }
 }
@@ -123,6 +126,13 @@ describe('parsePhotovoltaicSummary', () => {
     expect(degradation?.estimated_loss_percent).toBeNull()
     expect(degradation?.limitation).toBe('Baseline insuficiente.')
     expect(summary.losses_unavailable_reason).toBeNull()
+
+    expect(summary.expectedProduction).toEqual({
+      available: true,
+      kwh: 38.412,
+      modelVersion: 'MPLACAS_EXPECTED_DAILY_PRODUCTION_V1',
+      nature: 'SEASONAL_CLEAR_SKY_P90_ENVELOPE',
+    })
   })
 
   it('não lança exceção quando performance vem null — produz estado indisponível tipado', () => {
@@ -169,43 +179,52 @@ describe('performanceUnavailableMessage / lossesUnavailableMessage', () => {
   })
 })
 
-describe('deriveExpectedDailyProduction', () => {
-  it('calcula kWh esperado a partir de dc_capacity_kwp × baseline sazonal', () => {
+describe('parsePhotovoltaicSummary — expectedProduction (ADR-068)', () => {
+  it('estrutura os quatro campos novos quando a produção esperada está disponível', () => {
     const summary = parsePhotovoltaicSummary(buildSummaryPayload())
-    const result = deriveExpectedDailyProduction(summary)
-    expect(result.available).toBe(true)
-    if (result.available) {
-      // 10 kWp * 5.5 kWh/m2 * 0.8 = 44
-      expect(result.kwh).toBeCloseTo(44, 6)
-    }
+    expect(summary.expectedProduction).toEqual({
+      available: true,
+      kwh: 38.412,
+      modelVersion: 'MPLACAS_EXPECTED_DAILY_PRODUCTION_V1',
+      nature: 'SEASONAL_CLEAR_SKY_P90_ENVELOPE',
+    })
   })
 
   it.each([
     ['NO_PERFORMANCE_HISTORY', null] as const,
     ['REFERENCE_YEAR_INCOMPLETE', '2027-03-14'] as const,
     ['INSUFFICIENT_SEASONAL_SAMPLES', null] as const,
-  ])('propaga o motivo %s quando o baseline está indisponível', (reason, referenceCompleteOn) => {
+    ['INCOMPLETE_EXPECTATION_INPUTS', null] as const,
+  ])(
+    'propaga o motivo %s quando o backend devolve os quatro campos como null + motivo',
+    (reason, referenceCompleteOn) => {
+      const summary = parsePhotovoltaicSummary(
+        buildSummaryPayload({
+          expected_daily_production_kwh: null,
+          expected_daily_production_model_version: null,
+          expected_daily_production_nature: null,
+          expected_daily_production_unavailable_reason: reason,
+          reference_complete_on: referenceCompleteOn,
+        })
+      )
+      expect(summary.expectedProduction).toEqual({
+        available: false,
+        reason,
+        referenceCompleteOn,
+      })
+    }
+  )
+
+  it('não inventa um número quando o kWh vem null mesmo sem um motivo explícito', () => {
     const summary = parsePhotovoltaicSummary(
       buildSummaryPayload({
-        baseline: null,
-        baseline_unavailable_reason: reason,
-        reference_complete_on: referenceCompleteOn,
+        expected_daily_production_kwh: null,
+        expected_daily_production_model_version: null,
+        expected_daily_production_nature: null,
+        expected_daily_production_unavailable_reason: null,
       })
     )
-    const result = deriveExpectedDailyProduction(summary)
-    expect(result.available).toBe(false)
-    if (!result.available) {
-      expect(result.reason).toBe(reason)
-      expect(result.referenceCompleteOn).toBe(referenceCompleteOn)
-    }
-  })
-
-  it('não inventa um número quando dc_capacity_kwp está ausente apesar do baseline existir', () => {
-    const summary = parsePhotovoltaicSummary(
-      buildSummaryPayload({ performance: null, performance_unavailable_reason: 'NO_PERFORMANCE_RESULTS' })
-    )
-    const result = deriveExpectedDailyProduction(summary)
-    expect(result.available).toBe(false)
+    expect(summary.expectedProduction.available).toBe(false)
   })
 })
 
@@ -218,5 +237,6 @@ describe('baselineUnavailableMessage', () => {
   it('produz uma mensagem específica para cada motivo', () => {
     expect(baselineUnavailableMessage('NO_PERFORMANCE_HISTORY', null)).toContain('histórico')
     expect(baselineUnavailableMessage('INSUFFICIENT_SEASONAL_SAMPLES', null)).toContain('sazonais')
+    expect(baselineUnavailableMessage('INCOMPLETE_EXPECTATION_INPUTS', null)).toContain('incompletos')
   })
 })

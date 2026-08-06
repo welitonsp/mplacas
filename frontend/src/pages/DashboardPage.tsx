@@ -12,7 +12,7 @@ import {
 import type { FinancialReturnResponse } from '../lib/dashboard/financial-return-contracts'
 import { parseFinancialReturn } from '../lib/dashboard/financial-return-contracts'
 import type { ExpectedDailyProduction, PhotovoltaicSummaryResponse } from '../lib/dashboard/photovoltaic-contracts'
-import { deriveExpectedDailyProduction, parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
+import { parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
 import { toNumber } from '../lib/format'
 import { SectionTitle } from '../components/SectionTitle'
 import { CurrencyCard } from '../components/CurrencyCard'
@@ -44,6 +44,7 @@ const FALLBACK_PV_SUMMARY: PhotovoltaicSummaryResponse = {
   reference_complete_on: null,
   losses: null,
   losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
+  expectedProduction: { available: false, reason: 'NO_PERFORMANCE_HISTORY', referenceCompleteOn: null },
 }
 
 export function DashboardPage() {
@@ -115,7 +116,7 @@ export function DashboardPage() {
         return
       }
       const summary = parsePhotovoltaicSummary(await response.json())
-      setExpectedProduction(deriveExpectedDailyProduction(summary))
+      setExpectedProduction(summary.expectedProduction)
       setPvSummary(summary)
     } catch {
       setExpectedProduction({

@@ -16,7 +16,12 @@ function buildDaily(overrides: Partial<AnomalyDailyPoint> = {}): AnomalyDailyPoi
   }
 }
 
-const AVAILABLE: ExpectedDailyProduction = { available: true, kwh: 44 }
+const AVAILABLE: ExpectedDailyProduction = {
+  available: true,
+  kwh: 44,
+  modelVersion: 'MPLACAS_EXPECTED_DAILY_PRODUCTION_V1',
+  nature: 'SEASONAL_CLEAR_SKY_P90_ENVELOPE',
+}
 
 describe('ProductionHistorySection', () => {
   it('mostra o percentual de desempenho e a legenda "Esperado" quando a produção esperada está disponível', () => {

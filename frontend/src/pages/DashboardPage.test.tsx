@@ -98,6 +98,13 @@ const photovoltaicSummaryPayload = {
     { category: 'UNEXPLAINED', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
   ],
   losses_unavailable_reason: null,
+  // ADR-068, seção 3: produção esperada diária calculada e quantizada no
+  // backend a partir dos mesmos registros de `performance`/`baseline` acima
+  // (10 kWp × 5.5 kWh/m² × 0.80 = 44.000 kWh/dia).
+  expected_daily_production_kwh: '44.000',
+  expected_daily_production_model_version: 'MPLACAS_EXPECTED_DAILY_PRODUCTION_V1',
+  expected_daily_production_nature: 'SEASONAL_CLEAR_SKY_P90_ENVELOPE',
+  expected_daily_production_unavailable_reason: null,
 }
 
 const anomalyPayload = {

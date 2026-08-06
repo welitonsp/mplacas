@@ -3,9 +3,10 @@ import { toNumber } from '../format'
 
 // A produção diária esperada usada como referência para o cálculo de anomalias
 // (GET /energy/anomalies/latest) deixou de ser uma constante fixa: vem do baseline
-// sazonal real da usina (`installed_power_kwp × baseline`), calculado no backend e
-// lido via `GET /photovoltaic/summary` — ver
-// `lib/dashboard/photovoltaic-contracts.ts::deriveExpectedDailyProduction`.
+// sazonal real da usina, calculado e quantizado inteiramente no backend
+// (`photovoltaic/expected_production.py`, ADR-068) e lido via
+// `GET /photovoltaic/summary` — ver
+// `lib/dashboard/photovoltaic-contracts.ts::parsePhotovoltaicSummary`.
 
 // Rendimento = produção real (kWh) / irradiância (kWh/m²) — kWh gerados por
 // cada kWh/m² de sol recebido. É a métrica que separa "problema na usina" de
