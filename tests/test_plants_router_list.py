@@ -212,3 +212,86 @@ def test_read_role_receives_200_not_rejected_for_needing_admin(seeded) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["count"] == 2
+
+
+def _set_default_plant(factory, organization_id: uuid.UUID, plant_id: uuid.UUID | None) -> None:
+    async def _run() -> None:
+        async with factory() as session:
+            organization = await session.get(OrganizationRecord, organization_id)
+            organization.default_plant_id = plant_id
+            await session.commit()
+
+    asyncio.run(_run())
+
+
+def test_organization_with_default_marks_exactly_that_plant(seeded) -> None:
+    _set_default_plant(seeded["factory"], seeded["org_a"], seeded["plant_a2"])
+
+    response = TestClient(app).get("/plants", headers=_bearer(seeded["org_a"]))
+    assert response.status_code == 200
+    body = response.json()
+    by_id = {item["id"]: item["is_default"] for item in body["items"]}
+    assert by_id[str(seeded["plant_a2"])] is True
+    assert by_id[str(seeded["plant_a1"])] is False
+
+
+def test_organization_without_default_marks_every_plant_false(seeded) -> None:
+    response = TestClient(app).get("/plants", headers=_bearer(seeded["org_a"]))
+    assert response.status_code == 200
+    body = response.json()
+    assert all(item["is_default"] is False for item in body["items"])
+
+
+def test_platform_static_key_resolves_is_default_per_organization(
+    seeded, monkeypatch
+) -> None:
+    _set_default_plant(seeded["factory"], seeded["org_a"], seeded["plant_a2"])
+    _set_default_plant(seeded["factory"], seeded["org_b"], seeded["plant_b1"])
+
+    monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-static-key")
+    get_settings.cache_clear()
+
+    response = TestClient(app).get(
+        "/plants", headers={"X-API-Key": "synthetic-static-key"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    by_id = {item["id"]: item["is_default"] for item in body["items"]}
+    assert by_id[str(seeded["plant_a2"])] is True
+    assert by_id[str(seeded["plant_a1"])] is False
+    assert by_id[str(seeded["plant_b1"])] is True
+
+
+def test_platform_static_key_does_not_explode_queries_resolving_defaults(
+    seeded, monkeypatch
+) -> None:
+    """One extra query resolves every organization's default, not one per item."""
+    _set_default_plant(seeded["factory"], seeded["org_a"], seeded["plant_a2"])
+
+    monkeypatch.setenv("MPLACAS_OPERATIONS_API_KEY", "synthetic-static-key")
+    get_settings.cache_clear()
+
+    statement_count = 0
+    from sqlalchemy import event
+
+    engine = _TEST_ENGINES[-1]
+
+    def _count(*args, **kwargs) -> None:
+        nonlocal statement_count
+        statement_count += 1
+
+    event.listen(engine.sync_engine, "before_cursor_execute", _count)
+    try:
+        response = TestClient(app).get(
+            "/plants", headers={"X-API-Key": "synthetic-static-key"}
+        )
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", _count)
+
+    assert response.status_code == 200
+    # Two application queries expected: the plants listing and the single
+    # bulk default-lookup across organizations — never one per plant/item
+    # (three plants across two organizations would mean 3+ if it were N+1).
+    assert statement_count <= 3, (
+        f"expected at most a small constant number of statements, got {statement_count}"
+    )

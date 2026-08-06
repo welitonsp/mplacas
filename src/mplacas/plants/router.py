@@ -15,11 +15,12 @@ from mplacas.core.tenancy import AdminPlantPath, ReadPlantPath, ReadPrincipal
 from mplacas.db.models import Device, Plant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_principal_context
+from mplacas.organizations.db_models import OrganizationRecord
 
 router = APIRouter(prefix="/plants", tags=["plants"])
 
 
-def _plant_list_item(plant: Plant) -> dict[str, object]:
+def _plant_list_item(plant: Plant, *, is_default: bool) -> dict[str, object]:
     return {
         "id": str(plant.id),
         "name": plant.name,
@@ -28,18 +29,27 @@ def _plant_list_item(plant: Plant) -> dict[str, object]:
             if plant.installed_power_kwp is not None
             else None
         ),
+        "is_default": is_default,
     }
 
 
 @router.get("")
 async def list_plants(principal: ReadPrincipal) -> dict[str, object]:
-    """List the plants visible to the caller (ADR-069, Etapa A).
+    """List the plants visible to the caller (ADR-069, Etapa A + E8).
 
     Filters by ``principal.organization_id`` when set — a static platform
     operational key has none, and lists across every organization, mirroring
     ``organizations.router.list_organizations``. Then intersects with
     ``principal.plant_scope``, since a persisted credential (ADR-043) may
     carry a scope restricted to a subset of the organization's plants.
+
+    Each item also carries ``is_default``, derived from
+    ``organizations.default_plant_id`` (ADR-069, § E.8). For a static
+    platform key, plants from multiple organizations are listed together, so
+    ``is_default`` is resolved per-plant against *its own* organization's
+    default — never a single global default — using one extra query that
+    fetches every relevant organization's ``default_plant_id`` in bulk,
+    avoiding an N+1 query per item.
     """
     async with SessionFactory() as session:
         await set_principal_context(session, principal)
@@ -47,8 +57,24 @@ async def list_plants(principal: ReadPrincipal) -> dict[str, object]:
         if principal.organization_id is not None:
             statement = statement.where(Plant.organization_id == principal.organization_id)
         plants = list(await session.scalars(statement))
+
+        organization_ids = {plant.organization_id for plant in plants}
+        default_plant_ids: dict[uuid.UUID, uuid.UUID | None] = {}
+        if organization_ids:
+            rows = await session.execute(
+                select(OrganizationRecord.id, OrganizationRecord.default_plant_id).where(
+                    OrganizationRecord.id.in_(organization_ids)
+                )
+            )
+            default_plant_ids = {row[0]: row[1] for row in rows.all()}
+
     items = [
-        _plant_list_item(plant) for plant in plants if principal.plant_scope.allows(plant.id)
+        _plant_list_item(
+            plant,
+            is_default=default_plant_ids.get(plant.organization_id) == plant.id,
+        )
+        for plant in plants
+        if principal.plant_scope.allows(plant.id)
     ]
     return {"count": len(items), "items": items}
 
