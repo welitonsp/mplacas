@@ -2,6 +2,11 @@
 
 ## Status
 
+**Implementado — 2026-08-06 (Etapas A-D).** Etapa E (remoção do parâmetro depreciado de
+`/energy/anomalies/latest`) fica pendente pelo prazo mínimo definido na seção 6 (segundo release
+após o deploy da Etapa D, nunca antes de 30 dias corridos) — rastreada como item de checklist, não
+como TODO no código. Etapa D revisada e aprovada pelo reviewer sem ressalvas.
+
 Aceito — 2026-08-05. Fórmula compartilhada entre `/photovoltaic/summary` e `/energy/anomalies/latest`
 aprovada; decisão de ignorar (não honrar) o parâmetro depreciado durante a janela de compatibilidade
 aprovada, já que a fórmula é preservada e o valor devolvido seria o mesmo; escopo negativo (não

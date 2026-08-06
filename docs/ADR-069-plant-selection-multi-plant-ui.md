@@ -2,6 +2,12 @@
 
 ## Status
 
+**Implementado — 2026-08-06.** Todas as sub-etapas (A, B, C, D, E1-E9) commitadas e revisadas.
+Reviewer obrigatório aprovou E1, E2, E4, E5, E7 e E9 (E7 exigiu uma rodada de correção antes da
+aprovação final — ver commit `71c580c`). Exceção formalizada: `run_collection` em `cloud_jobs.py`
+fica deliberadamente fora do fan-out da Etapa E9 (conta NEPViewer única/global sem campo de usina
+física — ver nota na sub-etapa E9). Pendente apenas de push/deploy em produção.
+
 Aceito — 2026-08-05. Todos os pontos de confirmação foram resolvidos, incluindo os quatro de § E.10:
 (1) fan-out para múltiplas usinas nos jobs de coleta/alerta/orquestração fica fora de escopo,
 adiado pra Etapa F — **revisado em 2026-08-06: o usuário decidiu o oposto; o fan-out foi promovido
