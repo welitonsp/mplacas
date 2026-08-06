@@ -24,6 +24,7 @@ from mplacas.intelligence.history_service import (
     EnergyHistoryNotFoundError,
     compare_latest_confirmed_cycles,
 )
+from mplacas.photovoltaic.read_service import resolve_expected_daily_production
 
 router = APIRouter(
     prefix="/energy",
@@ -307,16 +308,25 @@ async def latest_financial_return(scoped: ReadPlant) -> dict[str, object]:
 @router.get("/anomalies/latest")
 async def latest_energy_anomalies(
     scoped: ReadPlant,
-    expected_daily_production_kwh: Decimal = Query(..., gt=0),
+    expected_daily_production_kwh: Decimal | None = Query(default=None, gt=0, deprecated=True),
     days: int = Query(default=7, ge=1, le=90),
 ) -> dict[str, object]:
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
+        resolution = await resolve_expected_daily_production(session, plant_id=scoped.plant_id)
+        if resolution.expected is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "no expected daily production for this plant: "
+                    f"{resolution.unavailable_reason}"
+                ),
+            )
         try:
             result = await analyze_recent_persisted_anomalies(
                 session,
                 plant_id=scoped.plant_id,
-                expected_daily_production_kwh=expected_daily_production_kwh,
+                expected_daily_production_kwh=resolution.expected.expected_daily_production_kwh,
                 days=days,
             )
         except AnomalyDataNotFoundError as exc:
