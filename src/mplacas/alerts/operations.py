@@ -42,6 +42,8 @@ class AlertPipelineResult:
     anomaly_available: bool
     metrics: AlertPipelineMetrics
     job: AlertJobSummary
+    outcome: str = "evaluated"
+    unavailable_reason: str | None = None
 
 
 async def run_operational_alert_pipeline(

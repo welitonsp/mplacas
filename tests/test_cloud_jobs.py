@@ -266,7 +266,20 @@ def test_daily_pipeline_runs_all_plants_and_survives_one_failure(monkeypatch) ->
     get_settings.cache_clear()
 
 
-def test_daily_pipeline_skips_plant_without_derivable_expectation(monkeypatch) -> None:
+def test_daily_pipeline_runs_plant_without_derivable_expectation_but_skips_alerts(
+    monkeypatch,
+) -> None:
+    """ADR-069 § E9 correction.
+
+    A plant with no derivable expectation (e.g. no seasonal baseline yet)
+    must NOT be skipped entirely -- that would create a permanent deadlock:
+    no baseline -> no expectation -> plant skipped -> performance/baseline
+    step never runs -> no baseline forever. The plant must still go through
+    ``run_ledger_backed_daily_pipeline`` (which runs climate/POA,
+    performance and seasonal baseline); only alert dispatch is expected to
+    be suppressed downstream (inside the pipeline runtime itself) via
+    ``expected_daily_production_kwh=None``.
+    """
     plant_a = uuid.UUID("00000000-0000-0000-0000-0000000000c3")
     plant_b = uuid.UUID("00000000-0000-0000-0000-0000000000d4")
     _set_daily_pipeline_env(monkeypatch)
@@ -289,7 +302,8 @@ def test_daily_pipeline_skips_plant_without_derivable_expectation(monkeypatch) -
         _fake_expected_production_resolver({plant_a: None, plant_b: Decimal("9.0")}),
     )
 
-    # Skipping (no derivable expectation) is not a failure: no exception.
+    # No derivable expectation is not a failure: no exception, and both
+    # plants are attempted -- the pipeline still runs for plant A.
     cloud_jobs.asyncio.run(
         cloud_jobs.run_daily_pipeline(
             target_date="2026-07-15",
@@ -297,8 +311,11 @@ def test_daily_pipeline_skips_plant_without_derivable_expectation(monkeypatch) -
         )
     )
 
-    assert len(calls) == 1
-    assert calls[0]["plant_id"] == plant_b
+    assert len(calls) == 2
+    assert calls[0]["plant_id"] == plant_a
+    assert calls[0]["expected_daily_production_kwh"] is None
+    assert calls[1]["plant_id"] == plant_b
+    assert calls[1]["expected_daily_production_kwh"] == Decimal("9.0")
     get_settings.cache_clear()
 
 

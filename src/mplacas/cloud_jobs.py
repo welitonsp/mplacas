@@ -459,9 +459,19 @@ async def run_daily_pipeline(
     ``MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH`` is no longer read
     here: a single environment value cannot describe N differently-sized
     plants (ADR-068/ADR-069 § E.11.1 achado C). Each plant resolves its own
-    expectation via ``resolve_expected_daily_production``; a plant without a
-    derivable expectation is skipped (not failed) and logged, mirroring the
-    ``skipped`` outcome of the HTTP fan-out (§ E.11.5).
+    expectation via ``resolve_expected_daily_production``.
+
+    A plant without a derivable expectation is **not** skipped outright: the
+    climate/POA collection, performance calculation and seasonal baseline
+    steps still run for it (this is precisely how the baseline accumulates
+    the history it needs to eventually exist). Only the alert dispatch step
+    -- which requires the expectation to score anomaly severity -- is
+    skipped for that plant; ``run_daily_energy_pipeline`` handles this
+    itself when ``expected_daily_production_kwh`` is ``None``. Skipping the
+    whole plant here would create a permanent deadlock for any plant that
+    has never had a baseline: no baseline -> no expectation -> plant
+    skipped -> performance/baseline step never runs -> no baseline forever
+    (ADR-069 § E9 correction).
     """
     settings = get_settings()
     token = settings.telegram_bot_token
@@ -505,19 +515,25 @@ async def run_daily_pipeline(
                     resolution = await resolve_expected_daily_production(
                         session, plant_id=plant_id, today=resolved_date
                     )
+                    expected_daily_production_kwh: Decimal | None
                     if resolution.expected is None:
+                        # Do not skip the plant: only alert dispatch depends
+                        # on the expectation. Climate/POA, performance and
+                        # seasonal baseline must still run so the baseline
+                        # can eventually form -- see docstring above.
+                        expected_daily_production_kwh = None
                         logger.warning(
-                            "cloud_job_daily_pipeline_skipped",
+                            "cloud_job_daily_pipeline_alerts_skipped",
                             extra={
                                 "plant_id": str(plant_id),
                                 "plant_name": plant_name,
                                 "reason": resolution.unavailable_reason,
                             },
                         )
-                        continue
-                    expected_daily_production_kwh = (
-                        resolution.expected.expected_daily_production_kwh
-                    )
+                    else:
+                        expected_daily_production_kwh = (
+                            resolution.expected.expected_daily_production_kwh
+                        )
                     await run_ledger_backed_daily_pipeline(
                         session,
                         plant_id=plant_id,

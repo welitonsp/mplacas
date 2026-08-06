@@ -8,8 +8,13 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mplacas.alerts.job import AlertJobSummary
 from mplacas.alerts.models import AlertSeverity
-from mplacas.alerts.operations import AlertPipelineResult, run_operational_alert_pipeline
+from mplacas.alerts.operations import (
+    AlertPipelineMetrics,
+    AlertPipelineResult,
+    run_operational_alert_pipeline,
+)
 from mplacas.alerts.telegram import TelegramAlertProvider
 from mplacas.climate.collection_service import (
     ClimateCollectionResult,
@@ -32,6 +37,10 @@ from mplacas.photovoltaic.seasonal_baseline_service import (
 
 logger = logging.getLogger(__name__)
 
+ALERTS_SKIPPED_NO_EXPECTATION_REASON = (
+    "no derivable expected daily production for alerts"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class DailyEnergyPipelineResult:
@@ -52,7 +61,7 @@ async def run_daily_energy_pipeline(
     climate_provider: ClimateProvider,
     alert_provider: TelegramAlertProvider,
     alert_destination_ref: str,
-    expected_daily_production_kwh: Decimal,
+    expected_daily_production_kwh: Decimal | None,
     expected_cycle_production_kwh: Decimal | None = None,
     anomaly_days: int = 7,
     minimum_severity: AlertSeverity = AlertSeverity.WARNING,
@@ -62,8 +71,16 @@ async def run_daily_energy_pipeline(
 
     Alert delivery intents are persisted atomically with climate changes before
     the outbox dispatcher crosses the process boundary to Telegram.
+
+    ``expected_daily_production_kwh`` may be ``None`` when the plant has no
+    derivable expectation yet (e.g. it has no seasonal baseline). In that
+    case climate collection, performance calculation, seasonal baseline
+    calculation and loss taxonomy classification all run normally -- only
+    the alert dispatch step is skipped, since alert severity depends on the
+    expectation. This lets the baseline accumulate over successive runs
+    instead of being permanently starved (ADR-069 § E9 correction).
     """
-    if expected_daily_production_kwh <= 0:
+    if expected_daily_production_kwh is not None and expected_daily_production_kwh <= 0:
         raise ValueError("expected daily production must be positive")
     if expected_cycle_production_kwh is not None and expected_cycle_production_kwh <= 0:
         raise ValueError("expected cycle production must be positive")
@@ -152,22 +169,49 @@ async def run_daily_energy_pipeline(
         "daily_pipeline.alert_dispatch",
         **operation_fields,
     ) as alert_operation:
-        alerts = await run_operational_alert_pipeline(
-            session,
-            plant_id=plant_id,
-            provider=alert_provider,
-            destination_ref=alert_destination_ref,
-            expected_daily_production_kwh=expected_daily_production_kwh,
-            expected_cycle_production_kwh=expected_cycle_production_kwh,
-            anomaly_days=anomaly_days,
-            minimum_severity=minimum_severity,
-            outbox_max_attempts=outbox_max_attempts,
-        )
+        if expected_daily_production_kwh is None:
+            alerts = AlertPipelineResult(
+                plant_id=plant_id,
+                executive_available=False,
+                anomaly_available=False,
+                metrics=AlertPipelineMetrics(
+                    evaluated=0,
+                    sent=0,
+                    skipped=0,
+                    failed=0,
+                    duplicates=0,
+                    below_minimum_severity=0,
+                ),
+                job=AlertJobSummary(evaluated=0, sent=0, skipped=0, failed=0, results=()),
+                outcome="skipped",
+                unavailable_reason=ALERTS_SKIPPED_NO_EXPECTATION_REASON,
+            )
+            logger.info(
+                "daily_pipeline_alert_dispatch_skipped",
+                extra={
+                    "plant_id": str(plant_id),
+                    "target_date": target_date.isoformat(),
+                    "reason": ALERTS_SKIPPED_NO_EXPECTATION_REASON,
+                },
+            )
+        else:
+            alerts = await run_operational_alert_pipeline(
+                session,
+                plant_id=plant_id,
+                provider=alert_provider,
+                destination_ref=alert_destination_ref,
+                expected_daily_production_kwh=expected_daily_production_kwh,
+                expected_cycle_production_kwh=expected_cycle_production_kwh,
+                anomaly_days=anomaly_days,
+                minimum_severity=minimum_severity,
+                outbox_max_attempts=outbox_max_attempts,
+            )
         alert_operation.add_result(
             evaluated=alerts.metrics.evaluated,
             sent=alerts.metrics.sent,
             skipped=alerts.metrics.skipped,
             failed=alerts.metrics.failed,
+            outcome=alerts.outcome,
         )
     logger.info(
         "daily_energy_pipeline_completed",
@@ -192,6 +236,7 @@ async def run_daily_energy_pipeline(
             "alerts_evaluated": alerts.metrics.evaluated,
             "alerts_sent": alerts.metrics.sent,
             "alerts_failed": alerts.metrics.failed,
+            "alerts_outcome": alerts.outcome,
         },
     )
     return DailyEnergyPipelineResult(

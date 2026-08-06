@@ -45,7 +45,7 @@ async def run_ledger_backed_daily_pipeline(
     climate_provider: ClimateProvider,
     alert_provider: TelegramAlertProvider,
     alert_destination_ref: str,
-    expected_daily_production_kwh: Decimal,
+    expected_daily_production_kwh: Decimal | None,
     expected_cycle_production_kwh: Decimal | None = None,
     anomaly_days: int = 7,
     minimum_severity: AlertSeverity = AlertSeverity.WARNING,
@@ -138,6 +138,7 @@ async def run_ledger_backed_daily_pipeline(
             "alerts_evaluated": result.alerts.metrics.evaluated,
             "alerts_sent": result.alerts.metrics.sent,
             "alerts_failed": result.alerts.metrics.failed,
+            "alerts_outcome": result.alerts.outcome,
         },
     )
     return OperationalPipelineResult(
