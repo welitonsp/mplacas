@@ -16,6 +16,11 @@ export function Card({
   accent,
   padding = 'p-5',
   className = '',
+  // `hover:shadow-md` só faz sentido quando o card responde a interação
+  // (é clicável/expansível) — aplicado incondicionalmente antes, sinalizava
+  // "clicável" em cards que só exibem dado (ver acabamento de hierarquia
+  // visual do dashboard).
+  interactive = false,
   children,
   ...rest
 }: {
@@ -26,6 +31,7 @@ export function Card({
   // de `className` para nunca colidir com o `p-5` padrão na mesma cascata CSS.
   padding?: string
   className?: string
+  interactive?: boolean
   children: ReactNode
 } & React.HTMLAttributes<HTMLDivElement>) {
   const toneClass =
@@ -35,10 +41,11 @@ export function Card({
         ? 'bg-[var(--color-danger-light)] border-[var(--color-danger)]/30'
         : 'bg-white border-gray-200'
   const accentClass = accent ? `border-l-4 ${SEVERITY_BORDER_L[accent]}` : ''
+  const interactiveClass = interactive ? 'hover:shadow-md' : ''
 
   return (
     <div
-      className={`relative rounded-xl border ${dashed ? 'border-dashed' : ''} ${toneClass} ${padding} shadow-sm transition-shadow duration-150 hover:shadow-md ${accentClass} ${className}`
+      className={`relative rounded-xl border ${dashed ? 'border-dashed' : ''} ${toneClass} ${padding} shadow-sm transition-shadow duration-150 ${interactiveClass} ${accentClass} ${className}`
         .replace(/\s+/g, ' ')
         .trim()}
       {...rest}

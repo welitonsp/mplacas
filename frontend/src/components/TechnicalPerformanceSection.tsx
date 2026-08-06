@@ -65,21 +65,28 @@ export function TechnicalPerformanceSection({ summary }: { summary: Photovoltaic
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={expanded}
-        aria-controls={CONTENT_ID}
-        className="flex w-full items-center justify-between gap-2 rounded text-left text-sm font-semibold text-gray-700 mb-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
-      >
-        <span>Desempenho técnico</span>
-        <span className="flex items-center gap-1 text-xs font-medium text-[var(--color-brand-primary)]">
-          {expanded ? 'Ocultar desempenho técnico' : 'Ver desempenho técnico'}
-          <span aria-hidden="true" className={`transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`}>
-            ▾
+      {/* O cabeçalho clicável precisa aparecer no outline de headings da
+          página (é uma seção de mesmo nível que "Financeiro"/"Retorno do
+          investimento" em `DashboardPage`) — o `<button>` sozinho não conta
+          como heading para leitores de tela, então o `h2` o envolve sem
+          alterar `aria-expanded`/`aria-controls`/comportamento algum. */}
+      <h2 className="mb-3">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={expanded}
+          aria-controls={CONTENT_ID}
+          className="flex w-full items-center justify-between gap-2 rounded text-left text-base font-semibold text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+        >
+          <span>Desempenho técnico</span>
+          <span className="flex items-center gap-1 text-xs font-medium text-[var(--color-brand-primary)]">
+            {expanded ? 'Ocultar desempenho técnico' : 'Ver desempenho técnico'}
+            <span aria-hidden="true" className={`transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`}>
+              ▾
+            </span>
           </span>
-        </span>
-      </button>
+        </button>
+      </h2>
 
       <div id={CONTENT_ID} role="region" aria-label="Desempenho técnico" hidden={!expanded}>
         {summary === null ? (

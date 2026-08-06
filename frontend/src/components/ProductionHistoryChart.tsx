@@ -114,7 +114,10 @@ export function ProductionHistoryChart({
   const activeYieldInfo = yieldStats.days.find((d) => d.date === activeDay.date) ?? null
 
   return (
-    <Card>
+    // `interactive`: as barras do gráfico respondem a clique/foco (seleção do
+    // dia ativo abaixo) — o hover do card sinaliza essa interatividade, ao
+    // contrário dos cards de métrica só-leitura ao redor.
+    <Card interactive>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">

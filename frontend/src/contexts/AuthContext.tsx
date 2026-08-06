@@ -5,6 +5,7 @@ import { API_URL } from '../env'
 
 interface AuthContextValue {
   isAuthenticated: boolean
+  username: string | null
   login: (username: string, password: string) => Promise<void>
   logout: () => void
 }
@@ -13,6 +14,9 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!TokenStore.get())
+  // Em memória, mesma vida útil de `refreshTokenRef` abaixo — nunca persistido
+  // em localStorage/sessionStorage, nunca derivado de decodificação do JWT.
+  const [username, setUsername] = useState<string | null>(null)
   const refreshTokenRef = useRef<string | null>(null)
 
   const logout = useCallback(() => {
@@ -20,6 +24,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     TokenStore.clear()
     refreshTokenRef.current = null
     setIsAuthenticated(false)
+    setUsername(null)
 
     if (refreshToken) {
       void fetch(`${API_URL}/auth/logout`, {
@@ -62,10 +67,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     TokenStore.set(access_token)
     refreshTokenRef.current = refresh_token
     setIsAuthenticated(true)
+    setUsername(username)
   }, [])
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, username, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

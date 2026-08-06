@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useAuth } from '../contexts/AuthContext'
 import { apiFetch, fetchFinancialReturn, fetchPhotovoltaicSummary } from '../lib/api'
 import { PLANT_ID } from '../env'
 import type { AnomalyFetchState, FetchState } from '../lib/dashboard/contracts'
@@ -22,7 +21,6 @@ import { QualityBanner } from '../components/QualityBanner'
 import { TrendCard } from '../components/TrendCard'
 import { EnergyFlowDiagram } from '../components/EnergyFlowDiagram'
 import { ExpectedProductionCard } from '../components/ExpectedProductionCard'
-import { DashboardHeader } from '../components/DashboardHeader'
 import { DiagnosticsCard } from '../components/DiagnosticsCard'
 import { hasIncompleteDailyProduction } from '../components/EnergyProductionSection'
 import { EstimatedSavingsCard } from '../components/EstimatedSavingsCard'
@@ -30,6 +28,7 @@ import { FinancialReturnSection } from '../components/FinancialReturnSection'
 import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
 import { ProductionHistorySection } from '../components/ProductionHistorySection'
+import { RetryableError } from '../components/RetryableError'
 import { TechnicalPerformanceSection } from '../components/TechnicalPerformanceSection'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
@@ -48,7 +47,6 @@ const FALLBACK_PV_SUMMARY: PhotovoltaicSummaryResponse = {
 }
 
 export function DashboardPage() {
-  const { logout } = useAuth()
   const [state, setState] = useState<FetchState>({
     data: null,
     loading: true,
@@ -200,52 +198,43 @@ export function DashboardPage() {
   const diagnostics = data ? combineDiagnostics(data) : []
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <DashboardHeader onLogout={logout} />
-
-      <main className="mx-auto max-w-7xl 2xl:max-w-[96rem] px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-sm font-medium text-gray-600">Dashboard executivo</h2>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                void fetchData()
-                void fetchExpectedProduction()
-                void fetchFinancialReturnData()
-              }}
-              disabled={loading}
-              className="rounded text-xs text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] disabled:opacity-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
-            >
-              {loading ? 'Atualizando...' : 'Atualizar'}
-            </button>
-          </div>
-        </div>
-
-        {error && (
-          <div
-            role="alert"
-            className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--color-danger-light)] border border-[var(--color-danger)]/20 px-4 py-3 text-sm text-[var(--color-danger)]"
+    <>
+      {/* Sem `<h2>` isolado aqui: a casca do app (`AppHeader`) já identifica a
+          página, e um segundo título genérico logo abaixo era redundante —
+          só a barra de ação (botão "Atualizar") permanece. */}
+      <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-end">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              void fetchData()
+              void fetchExpectedProduction()
+              void fetchFinancialReturnData()
+            }}
+            disabled={loading}
+            className="rounded text-xs text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] disabled:opacity-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
           >
-            <span>{error}</span>
-            {/* Retry associado diretamente ao erro global (não só o link
-                "Atualizar" no topo da página, que existia mas não estava
-                visualmente ligado à mensagem — ver P2-08 na auditoria de
-                UI/UX). Mesmo padrão de `ProductionHistorySection` para o
-                erro de servidor do histórico de produção. */}
-            <button
-              type="button"
-              onClick={() => {
-                void fetchData()
-                void fetchExpectedProduction()
-              }}
-              className="shrink-0 rounded text-sm font-medium text-[var(--color-danger-text)] hover:underline transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)]"
-            >
-              Tentar novamente
-            </button>
-          </div>
-        )}
+            {loading ? 'Atualizando...' : 'Atualizar'}
+          </button>
+        </div>
+      </div>
 
-        {loading && !data && <MetricCardSkeletonGrid />}
+      {error && (
+        // Retry associado diretamente ao erro global (não só o link
+        // "Atualizar" no topo da página, que existia mas não estava
+        // visualmente ligado à mensagem — ver P2-08 na auditoria de
+        // UI/UX). Mesmo padrão de `ProductionHistorySection` para o
+        // erro de servidor do histórico de produção.
+        <RetryableError
+          message={error}
+          onRetry={() => {
+            void fetchData()
+            void fetchExpectedProduction()
+          }}
+          className="mb-6"
+        />
+      )}
+
+      {loading && !data && <MetricCardSkeletonGrid />}
 
         {data && indicators && quality && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
@@ -268,7 +257,7 @@ export function DashboardPage() {
                 da produção real vs. esperada. Já forma duas colunas reais a
                 partir de `md` (768px) — não só em `lg` (ver P1-04). */}
             <section className="md:col-span-4 lg:col-span-8 2xl:col-span-9">
-              <SectionTitle>Histórico de produção</SectionTitle>
+              <SectionTitle as="h2">Histórico de produção</SectionTitle>
               <ProductionHistorySection
                 anomalyState={anomalyState}
                 expectedProduction={expectedProduction}
@@ -277,7 +266,7 @@ export function DashboardPage() {
             </section>
 
             <section className="md:col-span-2 lg:col-span-4 2xl:col-span-3">
-              <SectionTitle>Produção real vs. esperada</SectionTitle>
+              <SectionTitle as="h2">Produção real vs. esperada</SectionTitle>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
                 <MetricCard
                   label="Produção no ciclo"
@@ -299,7 +288,7 @@ export function DashboardPage() {
                 fluxo (autoconsumo/injetada/importada não se repetem em mais
                 visuais — ver Etapa 5), detalhamento numérico e histórico. */}
             <section className="md:col-span-3 lg:col-span-7">
-              <SectionTitle>Fluxo de energia</SectionTitle>
+              <SectionTitle as="h2">Fluxo de energia</SectionTitle>
               <EnergyFlowDiagram
                 production={indicators.cycle_production_kwh}
                 selfConsumption={indicators.estimated_self_consumption_kwh}
@@ -318,7 +307,7 @@ export function DashboardPage() {
 
               {data.trend && (
                 <div className="mt-8">
-                  <SectionTitle>Tendência</SectionTitle>
+                  <SectionTitle as="h2">Tendência</SectionTitle>
                   <TrendCard trend={data.trend} />
                 </div>
               )}
@@ -332,7 +321,7 @@ export function DashboardPage() {
                 existindo em `components/` para reuso futuro, só não compõe
                 mais esta página. */}
             <section className="md:col-span-6 lg:col-span-12">
-              <SectionTitle>Indicadores percentuais</SectionTitle>
+              <SectionTitle as="h2">Indicadores percentuais</SectionTitle>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <MetricCard
                   label="Autossuficiência"
@@ -356,37 +345,59 @@ export function DashboardPage() {
                 visível, sem exceção para a economia quando a tarifa não está
                 registrada (ver EstimatedSavingsCard). */}
             <section className="md:col-span-6 lg:col-span-12">
-              <SectionTitle>Financeiro</SectionTitle>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <CurrencyCard label="Valor total da fatura" value={indicators.total_amount_brl} />
-                <CurrencyCard
-                  label="Componente energia da fatura"
-                  value={indicators.bill_energy_component_brl}
-                />
-                <CurrencyCard label="Iluminação pública" value={indicators.public_lighting_brl} />
-                <EstimatedSavingsCard
-                  value={indicators.estimated_savings_brl}
-                  unavailableReason={indicators.savings_unavailable_reason}
-                />
-                <MetricCard
-                  label="Tarifa com impostos"
-                  value={indicators.tariff_with_taxes_brl_kwh}
-                  unit="R$/kWh"
-                  maximumFractionDigits={6}
-                />
-                <MetricCard
-                  label="Tarifa sem impostos"
-                  value={indicators.tariff_without_taxes_brl_kwh}
-                  unit="R$/kWh"
-                  maximumFractionDigits={6}
-                />
-                <MetricCard label="Saldo de créditos" value={indicators.credit_balance_kwh} unit="kWh" />
-                <MetricCard
-                  label="Cobertura de créditos"
-                  value={indicators.credit_coverage_rate_percent}
-                  unit="%"
-                  barPercent={toNumber(indicators.credit_coverage_rate_percent)}
-                />
+              <SectionTitle as="h2">Financeiro</SectionTitle>
+              {/* Os mesmos oito cards de antes, reagrupados em três
+                  subseções rotuladas em vez de uma grade achatada — a
+                  hierarquia visual (fatura vs. tarifa vs. créditos) já
+                  existia na cabeça de quem lê, só não estava expressa na
+                  estrutura (acabamento de hierarquia do dashboard). */}
+              <div className="space-y-6">
+                <div>
+                  <SectionTitle>Custo do ciclo</SectionTitle>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <CurrencyCard label="Valor total da fatura" value={indicators.total_amount_brl} />
+                    <CurrencyCard
+                      label="Componente energia da fatura"
+                      value={indicators.bill_energy_component_brl}
+                    />
+                    <CurrencyCard label="Iluminação pública" value={indicators.public_lighting_brl} />
+                    <EstimatedSavingsCard
+                      value={indicators.estimated_savings_brl}
+                      unavailableReason={indicators.savings_unavailable_reason}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <SectionTitle>Tarifas</SectionTitle>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <MetricCard
+                      label="Tarifa com impostos"
+                      value={indicators.tariff_with_taxes_brl_kwh}
+                      unit="R$/kWh"
+                      maximumFractionDigits={6}
+                    />
+                    <MetricCard
+                      label="Tarifa sem impostos"
+                      value={indicators.tariff_without_taxes_brl_kwh}
+                      unit="R$/kWh"
+                      maximumFractionDigits={6}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <SectionTitle>Créditos de energia</SectionTitle>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <MetricCard label="Saldo de créditos" value={indicators.credit_balance_kwh} unit="kWh" />
+                    <MetricCard
+                      label="Cobertura de créditos"
+                      value={indicators.credit_coverage_rate_percent}
+                      unit="%"
+                      barPercent={toNumber(indicators.credit_coverage_rate_percent)}
+                    />
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -396,21 +407,12 @@ export function DashboardPage() {
                 mais estreito que o grid acima (o conteúdo é uma barra de progresso
                 mais dois blocos de texto, não uma grade de métricas). */}
             <section className="md:col-span-6 lg:col-span-12">
-              <SectionTitle>Retorno do investimento</SectionTitle>
+              <SectionTitle as="h2">Retorno do investimento</SectionTitle>
               {financialReturnError ? (
-                <div
-                  role="alert"
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--color-danger-light)] border border-[var(--color-danger)]/20 px-4 py-3 text-sm text-[var(--color-danger-text)]"
-                >
-                  <span>{financialReturnError}</span>
-                  <button
-                    type="button"
-                    onClick={() => void fetchFinancialReturnData()}
-                    className="shrink-0 rounded text-sm font-medium hover:underline transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)]"
-                  >
-                    Tentar novamente
-                  </button>
-                </div>
+                <RetryableError
+                  message={financialReturnError}
+                  onRetry={() => void fetchFinancialReturnData()}
+                />
               ) : (
                 <div className="max-w-xl">
                   <FinancialReturnSection
@@ -438,7 +440,6 @@ export function DashboardPage() {
             </section>
           </div>
         )}
-      </main>
-    </div>
+    </>
   )
 }

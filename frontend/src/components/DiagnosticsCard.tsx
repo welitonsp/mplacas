@@ -12,7 +12,7 @@ import { Card } from './Card'
 export function DiagnosticsCard({ diagnostics }: { diagnostics: Diagnostic[] }) {
   if (diagnostics.length === 0) {
     return (
-      <Card className="mt-4">
+      <Card>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnósticos</p>
         <p className="mt-3 text-sm text-gray-500">Nenhum diagnóstico neste ciclo.</p>
       </Card>
@@ -20,7 +20,7 @@ export function DiagnosticsCard({ diagnostics }: { diagnostics: Diagnostic[] }) 
   }
 
   return (
-    <Card className="mt-4">
+    <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnósticos</p>
       <ul className="mt-3 space-y-3">
         {diagnostics.map((diagnostic) => {

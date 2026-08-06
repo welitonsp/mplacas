@@ -142,10 +142,18 @@ async function renderDashboard(executiveOverride: unknown = executivePayload) {
   const { DashboardPage } = await import('./DashboardPage')
   const { AuthProvider } = await import('../contexts/AuthContext')
 
+  // `DashboardPage` não renderiza mais sua própria casca — o `<main>` (e o
+  // container/padding) agora vive em `AppShell` (Frente S). Os testes abaixo
+  // seguem verificando o conteúdo da página em relação a um `<main>`
+  // ancestral, então o harness precisa fornecer um, sem trazer `AppShell`
+  // inteiro (que exigiria mockar o menu de usuário) — só a estrutura mínima
+  // que os seletores usam.
   return render(
     <MemoryRouter>
       <AuthProvider>
-        <DashboardPage />
+        <main>
+          <DashboardPage />
+        </main>
       </AuthProvider>
     </MemoryRouter>
   )
@@ -183,20 +191,35 @@ describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
     expect(screen.queryByText('Origem do consumo')).not.toBeInTheDocument()
   })
 
-  it('a seção Financeiro tem exatamente um card por filho declarado no grid (Etapa 7)', async () => {
+  it('a seção Financeiro agrupa seus cards em três subgrupos rotulados, sem perder nenhum card (Frente H)', async () => {
     vi.resetModules()
     await renderDashboard()
 
     const financeiroTitle = await screen.findByText('Financeiro')
     const section = financeiroTitle.parentElement
     expect(section).not.toBeNull()
-    const grid = within(section as HTMLElement).getByText('Componente energia da fatura').closest('.grid')
-    expect(grid).not.toBeNull()
 
-    // Etapa 7 expandiu a seção — agora com múltiplas colunas em telas maiores,
-    // mas o número de filhos do grid ainda precisa bater com os cards
-    // efetivamente renderizados abaixo.
-    expect(grid!.children).toHaveLength(8)
+    // A grade achatada de 8 cards virou três subgrupos rotulados — "Custo do
+    // ciclo" (4 cards), "Tarifas" (2 cards) e "Créditos de energia" (2
+    // cards) — cada um com seu próprio grid, mas todos os 8 cards financeiros
+    // originais continuam presentes e visíveis dentro da seção.
+    const custoGrid = within(section as HTMLElement)
+      .getByText('Componente energia da fatura')
+      .closest('.grid')
+    expect(custoGrid).not.toBeNull()
+    expect(custoGrid!.children).toHaveLength(4)
+
+    const tarifasGrid = within(section as HTMLElement).getByText('Tarifa com impostos').closest('.grid')
+    expect(tarifasGrid).not.toBeNull()
+    expect(tarifasGrid!.children).toHaveLength(2)
+
+    const creditosGrid = within(section as HTMLElement).getByText('Saldo de créditos').closest('.grid')
+    expect(creditosGrid).not.toBeNull()
+    expect(creditosGrid!.children).toHaveLength(2)
+
+    expect(within(section as HTMLElement).getByText('Custo do ciclo')).toBeInTheDocument()
+    expect(within(section as HTMLElement).getByText('Tarifas')).toBeInTheDocument()
+    expect(within(section as HTMLElement).getByText('Créditos de energia')).toBeInTheDocument()
   })
 
   it('renderiza todos os valores financeiros novos com a unidade correta quando a fatura tem tarifa registrada', async () => {
