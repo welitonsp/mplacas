@@ -47,6 +47,7 @@ from opentelemetry.trace import Status, StatusCode
 from mplacas.orchestration.runtime import run_ledger_backed_daily_pipeline
 from mplacas.orchestration.db_models import PipelineExecutionStatus
 from mplacas.orchestration.status_service import get_latest_pipeline_execution
+from mplacas.photovoltaic.read_service import resolve_expected_daily_production
 
 logger = logging.getLogger(__name__)
 
@@ -221,13 +222,45 @@ def _handle_operational_watchdog(_args: argparse.Namespace) -> int:
 
 
 async def run_operational_watchdog(*, now: datetime | None = None) -> None:
-    """Fail closed when the daily pipeline heartbeat is unhealthy."""
-    settings = get_settings()
-    plant_name = settings.cloud_job_plant_name
-    if plant_name is None or not plant_name.strip():
-        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
-    plant_id = await _find_plant_id(plant_name)
+    """Fail closed when the daily pipeline heartbeat is unhealthy, for every plant.
+
+    ADR-069 § E9: iterates every plant of ``DEFAULT_ORGANIZATION_ID`` instead
+    of the single plant named by ``MPLACAS_CLOUD_JOB_PLANT_NAME``. One plant
+    being unhealthy does not skip the health check of the others; the job
+    still fails closed (non-zero exit) if any plant is unhealthy, after every
+    plant has been checked.
+    """
     current_time = now or datetime.now(UTC)
+    plants = await _list_organization_plants(DEFAULT_ORGANIZATION_ID)
+    if not plants:
+        raise RuntimeError("no plants found for the default organization")
+
+    problems: list[str] = []
+    for plant_id, plant_name in plants:
+        try:
+            await _check_plant_pipeline_health(
+                plant_id=plant_id, current_time=current_time
+            )
+        except RuntimeError as exc:
+            logger.error(
+                "cloud_job_operational_watchdog_plant_unhealthy",
+                extra={
+                    "plant_id": str(plant_id),
+                    "plant_name": plant_name,
+                    "error_code": type(exc).__name__,
+                },
+            )
+            problems.append(f"{plant_name} ({plant_id}): {exc}")
+
+    if problems:
+        raise RuntimeError(
+            "operational watchdog found unhealthy plant(s): " + "; ".join(problems)
+        )
+
+
+async def _check_plant_pipeline_health(
+    *, plant_id: uuid.UUID, current_time: datetime
+) -> None:
     async with SessionFactory() as session:
         await set_platform_context(session)
         latest = await get_latest_pipeline_execution(session, plant_id=plant_id)
@@ -269,6 +302,23 @@ async def run_collection(
     target_date: str | None,
     now: datetime | None = None,
 ) -> None:
+    """Collect daily solar production from the single configured NEPViewer account.
+
+    Deliberately **not** fanned out across the organization's plants (ADR-069
+    § E9 scoped the fan-out to ``run_daily_pipeline`` and
+    ``run_operational_watchdog``, which only read data already attributed to
+    a plant in the database). Collection is different: ``list_devices()``
+    returns the flat device list of one external NEPViewer account
+    (``MPLACAS_NEP_ACCOUNT``/``MPLACAS_NEP_PASSWORD``, both singular settings
+    with no per-plant credential), with no field distinguishing which
+    physical plant a device belongs to (see ``providers.base.SolarDevice``).
+    Looping this over every plant of the organization would not collect N
+    independent telemetry streams -- it would write the same single
+    account's devices and daily energy into every plant row once per
+    iteration, corrupting production data for any plant that is not the one
+    this account actually measures. ``MPLACAS_CLOUD_JOB_PLANT_NAME`` keeps
+    naming that one physical plant, exactly as before.
+    """
     settings = get_settings()
     plant_name = settings.cloud_job_plant_name
     if plant_name is None or not plant_name.strip():
@@ -397,15 +447,23 @@ async def run_daily_pipeline(
     target_date: str | None,
     now: datetime | None = None,
 ) -> None:
+    """Run the ledger-backed daily pipeline for every plant of the default org.
+
+    ADR-069 § E9: no longer resolves a single plant from
+    ``MPLACAS_CLOUD_JOB_PLANT_NAME``; iterates every plant belonging to
+    ``DEFAULT_ORGANIZATION_ID`` instead, sequentially, one new session (and
+    one commit/rollback boundary) per plant -- same discipline as the § E.11.4
+    HTTP fan-out. A failure on one plant is logged and does not stop the
+    others; the job exits non-zero at the end if any plant failed.
+
+    ``MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH`` is no longer read
+    here: a single environment value cannot describe N differently-sized
+    plants (ADR-068/ADR-069 § E.11.1 achado C). Each plant resolves its own
+    expectation via ``resolve_expected_daily_production``; a plant without a
+    derivable expectation is skipped (not failed) and logged, mirroring the
+    ``skipped`` outcome of the HTTP fan-out (§ E.11.5).
+    """
     settings = get_settings()
-    plant_name = settings.cloud_job_plant_name
-    if plant_name is None or not plant_name.strip():
-        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
-    plant_id = await _resolve_plant_id(plant_name)
-    expected_daily = _required_decimal(
-        settings.cloud_job_expected_daily_production_kwh,
-        "MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH",
-    )
     token = settings.telegram_bot_token
     chat_id = settings.telegram_alert_chat_id
     if token is None or not chat_id:
@@ -426,35 +484,89 @@ async def run_daily_pipeline(
         timeout_seconds=settings.request_timeout_seconds,
     )
 
-    logger.info(
-        "cloud_job_daily_pipeline_started",
-        extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
-    )
-    async with SessionFactory() as session:
-        await set_platform_context(session)
+    plants = await _list_organization_plants(DEFAULT_ORGANIZATION_ID)
+    if not plants:
+        raise RuntimeError("no plants found for the default organization")
+
+    failures: list[str] = []
+    for plant_id, plant_name in plants:
+        logger.info(
+            "cloud_job_daily_pipeline_started",
+            extra={
+                "plant_id": str(plant_id),
+                "plant_name": plant_name,
+                "target_date": resolved_date.isoformat(),
+            },
+        )
         try:
-            await run_ledger_backed_daily_pipeline(
-                session,
-                plant_id=plant_id,
-                target_date=resolved_date,
-                climate_provider=climate_provider,
-                alert_provider=alert_provider,
-                alert_destination_ref=_destination_ref(chat_id),
-                expected_daily_production_kwh=expected_daily,
-                expected_cycle_production_kwh=settings.cloud_job_expected_cycle_production_kwh,
-                anomaly_days=settings.cloud_job_anomaly_days,
-                minimum_severity=AlertSeverity.WARNING,
-                stale_lock_timeout_minutes=settings.pipeline_stale_lock_timeout_minutes,
-                outbox_max_attempts=settings.outbox_max_attempts,
+            async with SessionFactory() as session:
+                await set_platform_context(session)
+                try:
+                    resolution = await resolve_expected_daily_production(
+                        session, plant_id=plant_id, today=resolved_date
+                    )
+                    if resolution.expected is None:
+                        logger.warning(
+                            "cloud_job_daily_pipeline_skipped",
+                            extra={
+                                "plant_id": str(plant_id),
+                                "plant_name": plant_name,
+                                "reason": resolution.unavailable_reason,
+                            },
+                        )
+                        continue
+                    expected_daily_production_kwh = (
+                        resolution.expected.expected_daily_production_kwh
+                    )
+                    await run_ledger_backed_daily_pipeline(
+                        session,
+                        plant_id=plant_id,
+                        target_date=resolved_date,
+                        climate_provider=climate_provider,
+                        alert_provider=alert_provider,
+                        alert_destination_ref=_destination_ref(chat_id),
+                        expected_daily_production_kwh=expected_daily_production_kwh,
+                        expected_cycle_production_kwh=(
+                            settings.cloud_job_expected_cycle_production_kwh
+                        ),
+                        anomaly_days=settings.cloud_job_anomaly_days,
+                        minimum_severity=AlertSeverity.WARNING,
+                        stale_lock_timeout_minutes=(
+                            settings.pipeline_stale_lock_timeout_minutes
+                        ),
+                        outbox_max_attempts=settings.outbox_max_attempts,
+                    )
+                    await session.commit()
+                except Exception:
+                    # Commit even on failure: the runtime may have already
+                    # persisted a FAILED ledger row before raising, and that
+                    # state must survive so the watchdog observes it.
+                    await session.commit()
+                    raise
+            logger.info(
+                "cloud_job_daily_pipeline_completed",
+                extra={
+                    "plant_id": str(plant_id),
+                    "plant_name": plant_name,
+                    "target_date": resolved_date.isoformat(),
+                },
             )
-            await session.commit()
-        except Exception:
-            await session.commit()
-            raise
-    logger.info(
-        "cloud_job_daily_pipeline_completed",
-        extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
-    )
+        except Exception as exc:
+            logger.error(
+                "cloud_job_daily_pipeline_plant_failed",
+                extra={
+                    "plant_id": str(plant_id),
+                    "plant_name": plant_name,
+                    "target_date": resolved_date.isoformat(),
+                    "error_code": type(exc).__name__,
+                },
+            )
+            failures.append(f"{plant_name} ({plant_id}): {exc}")
+
+    if failures:
+        raise RuntimeError(
+            "daily pipeline failed for plant(s): " + "; ".join(failures)
+        )
 
 
 async def run_daily_digest(
@@ -577,18 +689,26 @@ async def _resolve_plant_id(plant_name: str) -> uuid.UUID:
     return plant_id
 
 
-async def _find_plant_id(plant_name: str) -> uuid.UUID:
-    """Resolve an existing plant without mutating state from the watchdog."""
+async def _list_organization_plants(
+    organization_id: uuid.UUID,
+) -> list[tuple[uuid.UUID, str]]:
+    """List every plant of ``organization_id``, ordered deterministically.
+
+    Ordered by ``Plant.name`` then ``Plant.id`` -- same tie-break as the
+    HTTP fan-out resolver (``core.tenancy.resolve_admin_plant_fanout``,
+    ADR-069 § E.11.3) -- so job runs process plants in a stable order across
+    executions. No cap on plant count: the Cloud Run Job runs with
+    ``--task-timeout 30m`` (ADR-069 § E.11.1 achado B), unlike the 60s HTTP
+    fan-out that needs ``fanout_max_plants``.
+    """
     async with SessionFactory() as session:
         await set_platform_context(session)
-        plant_ids = tuple(
-            await session.scalars(select(Plant.id).where(Plant.name == plant_name))
+        result = await session.execute(
+            select(Plant.id, Plant.name)
+            .where(Plant.organization_id == organization_id)
+            .order_by(Plant.name, Plant.id)
         )
-    if not plant_ids:
-        raise RuntimeError("configured cloud job plant was not found")
-    if len(plant_ids) > 1:
-        raise RuntimeError("configured cloud job plant name is ambiguous")
-    return plant_ids[0]
+        return [(row[0], row[1]) for row in result.all()]
 
 
 def _required_decimal(value: Decimal | None, env_name: str) -> Decimal:
