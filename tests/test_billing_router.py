@@ -148,9 +148,8 @@ def test_billing_confirmation_materializes_snapshot_before_commit(monkeypatch) -
         def __init__(self, session) -> None:
             self.session = session
 
-        async def get(self, record_id, *, plant_id):
+        async def get_by_id(self, record_id):
             assert record_id == bill_id
-            assert plant_id == record.plant_id
             return record
 
         async def confirm(self, target):

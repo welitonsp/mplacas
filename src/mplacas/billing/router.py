@@ -112,14 +112,21 @@ async def pending_bills(
 async def confirm_bill(
     request: Request,
     bill_id: uuid.UUID,
-    scoped: AdminPlant,
+    principal: AdminPrincipal,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
-        await set_principal_context(session, scoped.principal)
+        await set_principal_context(session, principal)
         repository = UtilityBillRepository(session)
-        record = await repository.get(bill_id, plant_id=scoped.plant_id)
+        record = await repository.get_by_id(bill_id)
         if record is None:
             raise HTTPException(status_code=404, detail="bill not found for plant")
+        # The plant is already on the bill row (ADR-069 § E.2 opção 5) — no
+        # plant_id is inferred or accepted from the caller, so a caller with
+        # a restricted PlantScope (or a different organization entirely)
+        # cannot confirm a bill outside its own scope. 404, not 403: same
+        # "do not reveal cross-tenant existence" convention used by
+        # resolve_read_plant / resolve_admin_plant_scope.
+        principal.require_plant_access(record.plant_id)
         try:
             await repository.confirm(record)
         except ValueError as exc:
@@ -160,14 +167,16 @@ async def confirm_bill(
 async def reject_bill(
     request: Request,
     bill_id: uuid.UUID,
-    scoped: AdminPlant,
+    principal: AdminPrincipal,
 ) -> dict[str, object]:
     async with SessionFactory() as session:
-        await set_principal_context(session, scoped.principal)
+        await set_principal_context(session, principal)
         repository = UtilityBillRepository(session)
-        record = await repository.get(bill_id, plant_id=scoped.plant_id)
+        record = await repository.get_by_id(bill_id)
         if record is None:
             raise HTTPException(status_code=404, detail="bill not found for plant")
+        # Same "derive plant from the record" rationale as confirm_bill above.
+        principal.require_plant_access(record.plant_id)
         try:
             await repository.reject(record)
         except ValueError as exc:

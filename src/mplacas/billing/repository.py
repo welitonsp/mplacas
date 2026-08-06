@@ -83,6 +83,16 @@ class UtilityBillRepository:
             return None
         return record
 
+    async def get_by_id(self, record_id: uuid.UUID) -> UtilityBillRecord | None:
+        """Fetch a bill by id alone, without filtering by a caller-supplied plant.
+
+        Used by handlers that derive the plant from the record itself (see
+        ADR-069 § E.2 opção 5, ``confirm_bill``/``reject_bill``): the caller
+        validates ``record.plant_id`` against its own scope *after* the
+        lookup, rather than passing a ``plant_id`` in as a filter.
+        """
+        return await self._session.get(UtilityBillRecord, record_id)
+
     async def list_pending(
         self,
         limit: int = 20,

@@ -133,6 +133,22 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
         "param — resolved via core.tenancy.resolve_admin_plant_scope(principal, "
         "payload.plant_id) using an injected AdminPrincipal"
     ),
+    # billing: ADR-069 § E.2 opção 5 / sub-etapa E4 — confirm/reject derive the
+    # plant from the bill record itself (looked up by bill_id), not from a
+    # plant_id supplied by the caller, so there is no plant_id to resolve via
+    # ReadPlant/AdminPlant. Validated via
+    # principal.require_plant_access(record.plant_id) after lookup — same
+    # pattern as the two reports/monthly/exports routes above.
+    ("POST", "/billing/{bill_id}/confirm"): (
+        "plant_id is derived from the persisted bill record (looked up by "
+        "bill_id), not from a query parameter — validated via "
+        "principal.require_plant_access(record.plant_id) after lookup"
+    ),
+    ("POST", "/billing/{bill_id}/reject"): (
+        "plant_id is derived from the persisted bill record (looked up by "
+        "bill_id), not from a query parameter — validated via "
+        "principal.require_plant_access(record.plant_id) after lookup"
+    ),
     # telegram: webhook has no OperationsPrincipal at all (authenticated via a
     # shared webhook secret header plus a per-organization
     # telegram_allowed_user_id, not an operational credential/bearer token),
