@@ -7,8 +7,8 @@ describe('Card', () => {
     render(<Card>conteúdo</Card>)
 
     const card = screen.getByText('conteúdo')
-    expect(card.className).toMatch(/rounded-xl/)
-    expect(card.className).toMatch(/border-gray-200/)
+    expect(card.className).toMatch(/rounded-2xl/)
+    expect(card.className).toMatch(/border-\[var\(--color-border\)\]/)
     expect(card.className).toMatch(/bg-white/)
     expect(card.className).not.toMatch(/border-dashed/)
   })
@@ -18,7 +18,7 @@ describe('Card', () => {
 
     const card = screen.getByText('conteúdo')
     expect(card.className).toMatch(/border-dashed/)
-    expect(card.className).toMatch(/border-gray-200/)
+    expect(card.className).toMatch(/border-\[var\(--color-border\)\]/)
   })
 
   it('tone="warning" usa os tokens de aviso, não cor cinza/vermelho crua', () => {
@@ -50,6 +50,6 @@ describe('Card', () => {
 
     const card = screen.getByText('conteúdo')
     expect(card.className).toMatch(/mt-4/)
-    expect(card.className).toMatch(/rounded-xl/)
+    expect(card.className).toMatch(/rounded-2xl/)
   })
 })
