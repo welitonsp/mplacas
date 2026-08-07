@@ -39,13 +39,13 @@ export function Card({
       ? 'bg-[var(--color-warning-light)] border-[var(--color-warning)]'
       : tone === 'danger'
         ? 'bg-[var(--color-danger-light)] border-[var(--color-danger)]/30'
-        : 'bg-white border-gray-200'
+        : 'bg-white border-[var(--color-border)]'
   const accentClass = accent ? `border-l-4 ${SEVERITY_BORDER_L[accent]}` : ''
-  const interactiveClass = interactive ? 'hover:shadow-md' : ''
+  const interactiveClass = interactive ? 'hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] hover:-translate-y-0.5' : ''
 
   return (
     <div
-      className={`relative rounded-xl border ${dashed ? 'border-dashed' : ''} ${toneClass} ${padding} shadow-sm transition-shadow duration-150 ${interactiveClass} ${accentClass} ${className}`
+      className={`relative rounded-2xl border ${dashed ? 'border-dashed' : ''} ${toneClass} ${padding} shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] transition-all duration-300 ease-out ${interactiveClass} ${accentClass} ${className}`
         .replace(/\s+/g, ' ')
         .trim()}
       {...rest}

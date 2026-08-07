@@ -1,14 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 :root {
-  --color-brand-primary: #1a56db;
-  --color-brand-primary-dark: #1e429f;
-  --color-brand-primary-light: #ebf5ff;
+  --color-brand-primary: #2563eb;
+  --color-brand-primary-dark: #1d4ed8;
+  --color-brand-primary-light: #eff6ff;
   --color-surface: #ffffff;
-  --color-surface-subtle: #f9fafb;
-  --color-border: #e5e7eb;
-  --color-text-primary: #111827;
-  --color-text-secondary: #6b7280;
+  --color-surface-subtle: #f8fafc;
+  --color-border: #e2e8f0;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
   --color-danger: #dc2626;
   --color-danger-light: #fef2f2;
   --color-success: #16a34a;
@@ -31,11 +32,11 @@
   /* Linha de referência/esperado dos gráficos (ex.: `ProductionHistoryChart`)
      — substitui `border-gray-400` (#9ca3af), que reprova o mínimo de 3:1 para
      elementos gráficos (WCAG 1.4.11, medido ~2,54:1). */
-  --color-chart-reference: #6b7280;
+  --color-chart-reference: #64748b;
   /* Trilho de barras de progresso/gráfico (ex.: `role="progressbar"`) —
      substitui `bg-gray-100`, que também não garante 3:1 contra os
      preenchimentos de severidade. */
-  --color-chart-track: #e5e7eb;
+  --color-chart-track: #e2e8f0;
   /* Dado quantitativo/categórico (irradiância, rendimento) — NÃO é severidade.
      Roxo escolhido deliberadamente fora do eixo success(verde)/warning(âmbar)/
      danger(vermelho) para não sugerir "bom/ruim" num valor que é só uma medida
@@ -43,7 +44,7 @@
   --color-data-secondary: #7c3aed;
   --color-data-secondary-light: #f5f3ff;
 
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

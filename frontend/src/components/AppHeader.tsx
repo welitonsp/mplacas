@@ -40,7 +40,7 @@ export function AppHeader() {
   }, [menuOpen])
 
   return (
-    <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
+    <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-[var(--color-border)] shadow-sm">
       <div className="mx-auto max-w-7xl 2xl:max-w-[96rem] px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <BrandMark className="h-7 w-auto text-[var(--color-brand-primary)] flex-shrink-0" />
