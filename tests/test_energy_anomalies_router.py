@@ -240,7 +240,11 @@ def test_wrong_client_supplied_expectation_is_ignored(resolvable_plant) -> None:
     assert wrong_response.json()["daily"][0]["expected_production_kwh"] == "90.000"
 
 
-def test_404_with_unavailable_reason_when_expectation_cannot_be_resolved(monkeypatch) -> None:
+def test_404_when_no_daily_production_is_collected_at_all(monkeypatch) -> None:
+    """Legit 404: zero days of persisted production for the requested period,
+    regardless of whether an expectation can be resolved. Unaffected by the
+    fix that stopped 404ing the *entire* request just because the seasonal
+    baseline/expectation is unavailable (see the 200 test below)."""
     monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
     get_settings.cache_clear()
 
@@ -270,9 +274,72 @@ def test_404_with_unavailable_reason_when_expectation_cannot_be_resolved(monkeyp
         params={"plant_id": str(plant_id)},
     )
     assert response.status_code == 404
-    assert response.json() == {
-        "detail": "no expected daily production for this plant: NO_PERFORMANCE_HISTORY"
-    }
+    assert response.json() == {"detail": "daily production not found for requested period"}
+
+    get_settings.cache_clear()
+
+
+def test_200_with_null_level_when_production_exists_but_no_expectation_available(
+    monkeypatch,
+) -> None:
+    """A plant with real, persisted daily production but no resolvable
+    seasonal baseline/expectation must still return the production series
+    (200), not hide it behind a 404 — only the severity assessment per day
+    is unavailable (`level: null`)."""
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
+    get_settings.cache_clear()
+
+    factory = asyncio.run(_factory())
+    monkeypatch.setattr(db_session, "SessionFactory", factory)
+    monkeypatch.setattr(anomalies_router, "SessionFactory", factory)
+
+    org_id = uuid.uuid4()
+    plant_id = uuid.uuid4()
+    today = date.today()
+
+    async def _seed_plant_without_baseline() -> None:
+        async with factory() as session:
+            session.add(
+                OrganizationRecord(
+                    id=org_id, name="Org", slug=f"org-{org_id.hex[:8]}", active=True
+                )
+            )
+            session.add(Plant(id=plant_id, organization_id=org_id, name="Usina sem baseline"))
+            await session.flush()
+            device = Device(plant_id=plant_id, serial_number=f"DEV-{plant_id.hex[:8]}")
+            session.add(device)
+            await session.flush()
+            session.add(
+                DailyEnergy(
+                    device_id=device.id,
+                    production_date=today,
+                    energy_kwh=Decimal("90.000"),
+                    status=DataStatus.CONSOLIDATED,
+                )
+            )
+            await session.commit()
+
+    asyncio.run(_seed_plant_without_baseline())
+
+    client = TestClient(app)
+    response = client.get(
+        "/energy/anomalies/latest",
+        headers=_bearer(org_id),
+        params={"plant_id": str(plant_id), "days": 1},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["worst_level"] is None
+    assert body["current_streak_days"] == 0
+    assert body["expected_unavailable_reason"] == "NO_PERFORMANCE_HISTORY"
+    assert len(body["daily"]) == 1
+    day = body["daily"][0]
+    assert day["actual_production_kwh"] == "90.000"
+    assert day["expected_production_kwh"] is None
+    assert day["level"] is None
+    assert day["deviation_kwh"] is None
+    assert day["deviation_percent"] is None
+    assert day["diagnostics"] == []
 
     get_settings.cache_clear()
 

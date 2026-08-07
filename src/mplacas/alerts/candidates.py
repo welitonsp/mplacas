@@ -57,22 +57,30 @@ def anomaly_alert_candidate(
         AnomalyLevel.ANOMALY: 2,
         AnomalyLevel.CRITICAL: 3,
     }
-    representative = max(
-        summary.daily,
-        key=lambda item: severity_order[item.assessment.level],
+    worst_level = summary.worst_level
+    if worst_level is None:
+        raise ValueError("anomaly summary has no worst_level to build an alert from")
+    assessed_daily = [
+        (item, item.assessment) for item in summary.daily if item.assessment is not None
+    ]
+    if not assessed_daily:
+        raise ValueError("anomaly summary has no assessed days to build an alert from")
+    _representative, representative_assessment = max(
+        assessed_daily,
+        key=lambda pair: severity_order[pair[1].level],
     )
-    if not representative.assessment.diagnostics:
+    if not representative_assessment.diagnostics:
         raise ValueError("anomaly assessment has no diagnostics to build an alert from")
-    diagnostic = representative.assessment.diagnostics[0]
+    diagnostic = representative_assessment.diagnostics[0]
     message = diagnostic.message
     if summary.current_streak_days:
         message = f"{message} Sequência atual: {summary.current_streak_days} dia(s)."
     return AlertCandidate(
         fingerprint=(
             f"anomaly:{summary.plant_id}:{summary.end_date}:"
-            f"{summary.worst_level.value}:{summary.current_streak_days}"
+            f"{worst_level.value}:{summary.current_streak_days}"
         ),
-        severity=_anomaly_severity(summary.worst_level),
+        severity=_anomaly_severity(worst_level),
         title="Análise recente de produção solar",
         message=message,
         recommended_action=diagnostic.recommended_action,
@@ -89,6 +97,6 @@ def build_alert_candidates(
     candidates: list[AlertCandidate] = []
     if executive is not None:
         candidates.append(executive_alert_candidate(executive, occurred_at=occurred_at))
-    if anomalies is not None:
+    if anomalies is not None and anomalies.worst_level is not None:
         candidates.append(anomaly_alert_candidate(anomalies, occurred_at=occurred_at))
     return tuple(candidates)

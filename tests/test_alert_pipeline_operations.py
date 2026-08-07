@@ -5,7 +5,11 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
-from mplacas.alerts.candidates import anomaly_alert_candidate, executive_alert_candidate
+from mplacas.alerts.candidates import (
+    anomaly_alert_candidate,
+    build_alert_candidates,
+    executive_alert_candidate,
+)
 from mplacas.alerts.models import AlertSeverity
 from mplacas.alerts.router import _destination_ref
 from mplacas.intelligence.anomaly_engine import (
@@ -65,6 +69,24 @@ def test_anomaly_candidate_uses_worst_diagnostic_and_streak() -> None:
     assert candidate.fingerprint == f"anomaly:{plant_id}:2026-07-13:CRITICAL:3"
     assert "Sequência atual: 3 dia(s)." in candidate.message
     assert candidate.recommended_action == "Verificar o sistema fotovoltaico."
+
+
+def test_build_alert_candidates_skips_anomaly_when_worst_level_is_none() -> None:
+    """`worst_level=None` (expectation unavailable for the whole window) must
+    be a silent skip, mirroring `alerts/operations.py:80-81` — never a
+    fabricated severity and never an exception."""
+    plant_id = uuid.UUID("00000000-0000-0000-0000-000000000021")
+    summary = SimpleNamespace(
+        plant_id=plant_id,
+        end_date=date(2026, 7, 13),
+        worst_level=None,
+        current_streak_days=0,
+        daily=(SimpleNamespace(assessment=None),),
+    )
+
+    candidates = build_alert_candidates(executive=None, anomalies=summary)
+
+    assert candidates == ()
 
 
 def test_destination_reference_is_deterministic_and_does_not_expose_chat_id() -> None:

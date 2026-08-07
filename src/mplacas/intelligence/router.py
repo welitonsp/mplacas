@@ -145,35 +145,45 @@ def _serialize_anomalies(result) -> dict[str, object]:
         },
         "days_analyzed": result.days_analyzed,
         "current_streak_days": result.current_streak_days,
-        "worst_level": result.worst_level.value,
+        "worst_level": result.worst_level.value if result.worst_level is not None else None,
+        "expected_unavailable_reason": result.expected_unavailable_reason,
         "daily": [
             {
                 "date": item.observation_date.isoformat(),
                 "actual_production_kwh": str(item.actual_production_kwh),
-                "expected_production_kwh": str(item.expected_production_kwh),
+                "expected_production_kwh": (
+                    str(item.expected_production_kwh)
+                    if item.expected_production_kwh is not None
+                    else None
+                ),
                 "irradiation_kwh_m2": (
                     str(item.irradiation_kwh_m2) if item.irradiation_kwh_m2 is not None else None
                 ),
-                "level": item.assessment.level.value,
+                "level": item.assessment.level.value if item.assessment is not None else None,
                 "deviation_kwh": (
                     str(item.assessment.deviation_kwh)
-                    if item.assessment.deviation_kwh is not None
+                    if item.assessment is not None and item.assessment.deviation_kwh is not None
                     else None
                 ),
                 "deviation_percent": (
                     str(item.assessment.deviation_percent)
-                    if item.assessment.deviation_percent is not None
+                    if item.assessment is not None
+                    and item.assessment.deviation_percent is not None
                     else None
                 ),
-                "diagnostics": [
-                    {
-                        "code": diagnostic.code,
-                        "level": diagnostic.level.value,
-                        "message": diagnostic.message,
-                        "recommended_action": diagnostic.recommended_action,
-                    }
-                    for diagnostic in item.assessment.diagnostics
-                ],
+                "diagnostics": (
+                    [
+                        {
+                            "code": diagnostic.code,
+                            "level": diagnostic.level.value,
+                            "message": diagnostic.message,
+                            "recommended_action": diagnostic.recommended_action,
+                        }
+                        for diagnostic in item.assessment.diagnostics
+                    ]
+                    if item.assessment is not None
+                    else []
+                ),
             }
             for item in result.daily
         ],
@@ -314,20 +324,17 @@ async def latest_energy_anomalies(
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
         resolution = await resolve_expected_daily_production(session, plant_id=scoped.plant_id)
-        if resolution.expected is None:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    "no expected daily production for this plant: "
-                    f"{resolution.unavailable_reason}"
-                ),
-            )
         try:
             result = await analyze_recent_persisted_anomalies(
                 session,
                 plant_id=scoped.plant_id,
-                expected_daily_production_kwh=resolution.expected.expected_daily_production_kwh,
+                expected_daily_production_kwh=(
+                    resolution.expected.expected_daily_production_kwh
+                    if resolution.expected is not None
+                    else None
+                ),
                 days=days,
+                expected_unavailable_reason=resolution.unavailable_reason,
             )
         except AnomalyDataNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

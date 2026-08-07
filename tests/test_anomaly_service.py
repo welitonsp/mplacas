@@ -283,6 +283,85 @@ async def test_median_reaches_beyond_the_realistic_seven_day_operations_window()
 
 
 @pytest.mark.asyncio
+async def test_rejects_explicit_non_positive_expected_production() -> None:
+    """`None` (expectation unavailable) is not a programming error, but an
+    explicit non-positive value passed by a caller still is."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as session:
+        plant = Plant(name="Guard synthetic plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.commit()
+
+        with pytest.raises(ValueError, match="greater than zero"):
+            await analyze_recent_persisted_anomalies(
+                session,
+                plant_id=plant.id,
+                expected_daily_production_kwh=Decimal("0"),
+                days=7,
+                end_date=date(2026, 7, 12),
+            )
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_none_expected_production_returns_unassessed_series_without_error() -> None:
+    """A plant with real, persisted daily production but no resolvable
+    seasonal baseline must still return the full production series: every
+    day carries `assessment=None`, `worst_level` is `None`, and the streak
+    is not counted — no exception, no fabricated severity."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as session:
+        plant = Plant(name="No-expectation synthetic plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        device = Device(plant_id=plant.id, serial_number="SYNTHETIC-NO-EXPECTATION-001")
+        session.add(device)
+        await session.flush()
+
+        last_day = date(2026, 7, 12)
+        first_day = last_day - timedelta(days=6)
+        for offset in range(7):
+            current_day = first_day + timedelta(days=offset)
+            session.add(
+                DailyEnergy(
+                    device_id=device.id,
+                    production_date=current_day,
+                    energy_kwh=Decimal("10"),
+                    status=DataStatus.CONSOLIDATED,
+                )
+            )
+        await session.commit()
+
+        result = await analyze_recent_persisted_anomalies(
+            session,
+            plant_id=plant.id,
+            expected_daily_production_kwh=None,
+            days=7,
+            end_date=last_day,
+            expected_unavailable_reason="NO_PERFORMANCE_HISTORY",
+        )
+
+        assert result.days_analyzed == 7
+        assert result.worst_level is None
+        assert result.current_streak_days == 0
+        assert result.expected_unavailable_reason == "NO_PERFORMANCE_HISTORY"
+        assert all(item.assessment is None for item in result.daily)
+        assert all(item.expected_production_kwh is None for item in result.daily)
+        assert all(item.actual_production_kwh == Decimal("10") for item in result.daily)
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_rejects_period_without_persisted_production() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as connection:

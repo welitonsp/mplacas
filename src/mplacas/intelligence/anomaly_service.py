@@ -38,9 +38,9 @@ class AnomalyDataNotFoundError(LookupError):
 class DailyPersistedAnomaly:
     observation_date: date
     actual_production_kwh: Decimal
-    expected_production_kwh: Decimal
+    expected_production_kwh: Decimal | None
     irradiation_kwh_m2: Decimal | None
-    assessment: DailyAnomalyAssessment
+    assessment: DailyAnomalyAssessment | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,8 +50,9 @@ class PersistedAnomalySummary:
     end_date: date
     days_analyzed: int
     current_streak_days: int
-    worst_level: AnomalyLevel
+    worst_level: AnomalyLevel | None
     daily: tuple[DailyPersistedAnomaly, ...]
+    expected_unavailable_reason: str | None = None
 
 
 def _severity(level: AnomalyLevel) -> int:
@@ -67,11 +68,12 @@ async def analyze_recent_persisted_anomalies(
     session: AsyncSession,
     *,
     plant_id: uuid.UUID,
-    expected_daily_production_kwh: Decimal,
+    expected_daily_production_kwh: Decimal | None,
     days: int = 7,
     end_date: date | None = None,
+    expected_unavailable_reason: str | None = None,
 ) -> PersistedAnomalySummary:
-    if expected_daily_production_kwh <= 0:
+    if expected_daily_production_kwh is not None and expected_daily_production_kwh <= 0:
         raise ValueError("expected daily production must be greater than zero")
     if not 1 <= days <= 90:
         raise ValueError("days must be between 1 and 90")
@@ -140,6 +142,18 @@ async def analyze_recent_persisted_anomalies(
         historical_values = irradiation_values[:historical_count]
         irradiation_median = median(historical_values) if historical_values else None
 
+        if expected_daily_production_kwh is None:
+            daily.append(
+                DailyPersistedAnomaly(
+                    observation_date=current_day,
+                    actual_production_kwh=actual,
+                    expected_production_kwh=None,
+                    irradiation_kwh_m2=irradiation,
+                    assessment=None,
+                )
+            )
+            continue
+
         assessment = assess_daily_performance(
             DailyPerformanceInput(
                 actual_production_kwh=actual,
@@ -160,9 +174,12 @@ async def analyze_recent_persisted_anomalies(
             )
         )
 
-    worst = max((item.assessment.level for item in daily), key=_severity)
+    assessed_levels = [item.assessment.level for item in daily if item.assessment is not None]
+    worst = max(assessed_levels, key=_severity) if assessed_levels else None
     streak = 0
     for item in reversed(daily):
+        if item.assessment is None:
+            break
         if item.assessment.level in {AnomalyLevel.ANOMALY, AnomalyLevel.CRITICAL}:
             streak += 1
         else:
@@ -176,4 +193,5 @@ async def analyze_recent_persisted_anomalies(
         current_streak_days=streak,
         worst_level=worst,
         daily=tuple(daily),
+        expected_unavailable_reason=expected_unavailable_reason,
     )
