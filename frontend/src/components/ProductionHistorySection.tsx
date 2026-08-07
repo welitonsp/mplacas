@@ -34,34 +34,12 @@ export function ProductionHistorySection({
     )
   }
 
-  // Produção esperada indisponível (ver os três motivos em
-  // `photovoltaic-contracts.ts`, ex.: baseline sazonal exige 366 dias de
-  // histórico). Isso não significa que não exista produção real registrada —
-  // o card de "produção esperada indisponível" só faz sentido quando também
-  // não há dado de produção real nenhum. Havendo produção real, o gráfico
-  // monta do mesmo jeito (sem a linha de comparação "esperado" — ver
-  // `ProductionHistoryChart`/`expectedAvailable`), em vez de esconder um dado
-  // que o usuário já tem (ver diagnóstico do architect).
-  if (!expectedProduction.available) {
-    const hasActualProduction =
-      anomalyState.data?.daily.some((d) => toNumber(d.actual_production_kwh) != null) ?? false
-
-    if (!hasActualProduction) {
-      return (
-        <Card>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-            Histórico de produção diária
-          </p>
-          <p className="mt-4 text-sm text-gray-500">
-            {baselineUnavailableMessage(expectedProduction.reason, expectedProduction.referenceCompleteOn)}
-          </p>
-        </Card>
-      )
-    }
-  }
-
   // 404: ainda não há dado diário coletado para este período — estado esperado
-  // (usina nova, backfill pendente), não é uma falha do sistema.
+  // (usina nova, backfill pendente), não é uma falha do sistema. Verificado
+  // ANTES do bloco de "expectativa indisponível" abaixo: um erro de
+  // fetch (404/500) precisa da mensagem específica dele, não da mensagem de
+  // motivo de baseline — que só faz sentido quando o payload de anomalias
+  // efetivamente chegou (200) e disse que não há expectativa.
   if (anomalyState.error === 'NOT_FOUND') {
     return (
       <Card>
@@ -112,6 +90,44 @@ export function ProductionHistorySection({
     )
   }
 
+  // Disponibilidade da expectativa derivada do PRÓPRIO payload de anomalias
+  // (`expected_unavailable_reason`), não mais de `expectedProduction`
+  // (`/photovoltaic/summary`, uma chamada de API separada) — as duas
+  // acabavam divergindo entre si, ver contrato de `GET
+  // /energy/anomalies/latest`. `expectedProduction` continua usado só para o
+  // TEXTO específico do motivo (`baselineUnavailableMessage`), que reusa o
+  // mesmo vocabulário de motivo do backend (`_derive_baseline_unavailable_reason`).
+  const expectedAvailable = anomalyState.data.expected_unavailable_reason == null
+
+  // Produção esperada indisponível (ver os três motivos em
+  // `photovoltaic-contracts.ts`, ex.: baseline sazonal exige 366 dias de
+  // histórico). Isso não significa que não exista produção real registrada —
+  // o card de "produção esperada indisponível" só faz sentido quando também
+  // não há dado de produção real nenhum. Havendo produção real, o gráfico
+  // monta do mesmo jeito (sem a linha de comparação "esperado" — ver
+  // `ProductionHistoryChart`/`expectedAvailable`), em vez de esconder um dado
+  // que o usuário já tem (ver diagnóstico do architect).
+  if (!expectedAvailable) {
+    const hasActualProduction = anomalyState.data.daily.some(
+      (d) => toNumber(d.actual_production_kwh) != null
+    )
+
+    if (!hasActualProduction) {
+      return (
+        <Card>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+            Histórico de produção diária
+          </p>
+          <p className="mt-4 text-sm text-gray-500">
+            {expectedProduction.available
+              ? baselineUnavailableMessage('NO_PERFORMANCE_HISTORY', null)
+              : baselineUnavailableMessage(expectedProduction.reason, expectedProduction.referenceCompleteOn)}
+          </p>
+        </Card>
+      )
+    }
+  }
+
   const hasIrradiation = anomalyState.data.daily.some((d) => toNumber(d.irradiation_kwh_m2) != null)
 
   return (
@@ -119,7 +135,7 @@ export function ProductionHistorySection({
       <ProductionHistoryChart
         daily={anomalyState.data.daily}
         currentStreakDays={anomalyState.data.current_streak_days}
-        expectedAvailable={expectedProduction.available}
+        expectedAvailable={expectedAvailable}
       />
       <YieldCard daily={anomalyState.data.daily} />
     </div>

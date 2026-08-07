@@ -68,6 +68,14 @@ export const LEVEL_LABEL: Record<AnomalyLevel, string> = {
   CRITICAL: 'Crítico',
 }
 
+// Rótulo textual pareado com `levelSeverity`: `null` vira uma frase explícita
+// ("Sem expectativa"), nunca `undefined`/uma chave ausente no objeto acima —
+// evitar isso é o que faz `LEVEL_LABEL[activeDay.level]` quebrar quando o dia
+// não tem severidade calculável (ver `AnomalyDailyPoint.level`).
+export function levelLabel(level: AnomalyLevel | null): string {
+  return level === null ? 'Sem expectativa' : LEVEL_LABEL[level]
+}
+
 // Mesmos limiares usados em intelligence/energy_engine.py para o desvio do ciclo
 // vs. produção esperada: < 70% = PRODUCTION_WELL_BELOW_EXPECTED (CRITICAL/danger),
 // < 85% = PRODUCTION_BELOW_EXPECTED (WARNING), >= 85% = dentro do esperado (success).
@@ -81,7 +89,11 @@ export function performanceSeverity(percent: number): Severity {
 // NORMAL = produção dentro do esperado (bom). ATTENTION = desvio leve.
 // ANOMALY/CRITICAL = desvio relevante — mesma cor de alerta para os dois,
 // diferenciados pelo rótulo textual (ver LEVEL_LABEL), sem inventar um quinto tom.
-export function levelSeverity(level: AnomalyLevel): Severity {
+// `null` = sem expectativa disponível pra calcular severidade nesse dia (ex.:
+// usina sem baseline sazonal ainda, mas com produção real coletada) — tom
+// neutro, nunca um "bom"/"ruim" fabricado a partir de um dado ausente.
+export function levelSeverity(level: AnomalyLevel | null): Severity {
+  if (level === null) return 'neutral'
   if (level === 'NORMAL') return 'success'
   if (level === 'ATTENTION') return 'warning'
   return 'danger'

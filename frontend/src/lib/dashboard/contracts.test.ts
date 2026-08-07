@@ -3,6 +3,7 @@ import {
   classifyAnomalyErrorStatus,
   combineDiagnostics,
   latestNonNullProductionDate,
+  parseAnomalyDashboard,
   parseExecutiveDashboard,
   type AnomalyDailyPoint,
   type ExecutiveDashboardResponse,
@@ -148,6 +149,69 @@ describe('parseExecutiveDashboard — diagnostics', () => {
     })
 
     expect(() => parseExecutiveDashboard(payload)).toThrow()
+  })
+})
+
+function buildAnomalyPayload(overrides: Record<string, unknown> = {}): unknown {
+  return {
+    plant_id: 'plant-1',
+    days_analyzed: 2,
+    current_streak_days: 0,
+    worst_level: 'ATTENTION',
+    expected_unavailable_reason: null,
+    daily: [buildDaily()],
+    ...overrides,
+  }
+}
+
+describe('parseAnomalyDashboard — contrato novo (200 sempre, campos por dia nulos sem expectativa)', () => {
+  it('aceita level: null em um dia sem expectativa disponível, sem lançar erro', () => {
+    const payload = buildAnomalyPayload({
+      daily: [
+        {
+          date: '2026-07-30',
+          actual_production_kwh: 40,
+          expected_production_kwh: null,
+          level: null,
+          deviation_percent: null,
+          irradiation_kwh_m2: null,
+        },
+      ],
+    })
+
+    const result = parseAnomalyDashboard(payload)
+
+    expect(result.daily[0].level).toBeNull()
+    expect(result.daily[0].expected_production_kwh).toBeNull()
+    expect(result.daily[0].actual_production_kwh).toBe(40)
+  })
+
+  it('aceita worst_level: null quando nenhum dia teve expectativa avaliável', () => {
+    const payload = buildAnomalyPayload({ worst_level: null })
+
+    const result = parseAnomalyDashboard(payload)
+
+    expect(result.worst_level).toBeNull()
+  })
+
+  it('aceita expected_unavailable_reason presente (string) e ausente (chave omitida)', () => {
+    const withReason = parseAnomalyDashboard(
+      buildAnomalyPayload({ expected_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE' })
+    )
+    expect(withReason.expected_unavailable_reason).toBe('REFERENCE_YEAR_INCOMPLETE')
+
+    const payloadWithoutKey = buildAnomalyPayload()
+    delete (payloadWithoutKey as Record<string, unknown>).expected_unavailable_reason
+    const withoutKey = parseAnomalyDashboard(payloadWithoutKey)
+    expect(withoutKey.expected_unavailable_reason).toBeNull()
+  })
+
+  it('ainda rejeita level fora do vocabulário conhecido (nem null, nem um AnomalyLevel válido)', () => {
+    const payload = buildAnomalyPayload({
+      daily: [{ ...buildDaily(), level: 'UNKNOWN_LEVEL' }],
+    })
+
+    expect(() => parseAnomalyDashboard(payload)).toThrow()
   })
 })
 

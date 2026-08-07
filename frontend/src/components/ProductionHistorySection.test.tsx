@@ -16,6 +16,21 @@ function buildDaily(overrides: Partial<AnomalyDailyPoint> = {}): AnomalyDailyPoi
   }
 }
 
+function buildAnomalyData(overrides: {
+  daily?: AnomalyDailyPoint[]
+  expectedUnavailableReason?: string | null
+  worstLevel?: AnomalyDailyPoint['level']
+} = {}) {
+  return {
+    plant_id: 'p1',
+    days_analyzed: 1,
+    current_streak_days: 0,
+    worst_level: overrides.worstLevel ?? 'NORMAL',
+    expected_unavailable_reason: overrides.expectedUnavailableReason ?? null,
+    daily: overrides.daily ?? [buildDaily()],
+  }
+}
+
 const AVAILABLE: ExpectedDailyProduction = {
   available: true,
   kwh: 44,
@@ -28,13 +43,7 @@ describe('ProductionHistorySection', () => {
     const anomalyState: AnomalyFetchState = {
       loading: false,
       error: null,
-      data: {
-        plant_id: 'p1',
-        days_analyzed: 1,
-        current_streak_days: 0,
-        worst_level: 'NORMAL',
-        daily: [buildDaily()],
-      },
+      data: buildAnomalyData(),
     }
 
     render(<ProductionHistorySection anomalyState={anomalyState} expectedProduction={AVAILABLE} />)
@@ -48,9 +57,22 @@ describe('ProductionHistorySection', () => {
     ['REFERENCE_YEAR_INCOMPLETE', '2027-03-14', /disponível a partir de 14\/03\/2027/] as const,
     ['INSUFFICIENT_SEASONAL_SAMPLES', null, /amostras sazonais insuficientes/] as const,
   ])(
-    'mostra a mensagem específica para %s e não renderiza percentual nem linha tracejada',
+    'mostra a mensagem específica para %s e não renderiza percentual nem linha tracejada (payload de anomalias chegou, sem expectativa e sem produção real nenhuma)',
     (reason, referenceCompleteOn, expectedMessage) => {
-      const anomalyState: AnomalyFetchState = { loading: false, data: null, error: null }
+      // Contrato novo: `/energy/anomalies/latest` responde 200 sempre — o
+      // caso "sem expectativa" chega como payload com `expected_unavailable_reason`
+      // preenchido, não mais como `data: null`/`error: null` (esse combo não
+      // é mais produzido por `DashboardPage`, que agora busca anomalias
+      // independente do baseline sazonal).
+      const anomalyState: AnomalyFetchState = {
+        loading: false,
+        error: null,
+        data: buildAnomalyData({
+          expectedUnavailableReason: reason,
+          worstLevel: null,
+          daily: [buildDaily({ actual_production_kwh: null, expected_production_kwh: null, level: null, deviation_percent: null })],
+        }),
+      }
       const expectedProduction: ExpectedDailyProduction = {
         available: false,
         reason,
@@ -88,16 +110,17 @@ describe('ProductionHistorySection', () => {
   })
 
   it('monta o gráfico mesmo com produção esperada indisponível, contanto que haja produção real registrada', () => {
+    // `expected_unavailable_reason` presente no PRÓPRIO payload de anomalias
+    // (não mais dependente de `expectedProduction` concordar em separado) —
+    // ver contrato novo de `GET /energy/anomalies/latest`.
     const anomalyState: AnomalyFetchState = {
       loading: false,
       error: null,
-      data: {
-        plant_id: 'p1',
-        days_analyzed: 1,
-        current_streak_days: 0,
-        worst_level: 'NORMAL',
-        daily: [buildDaily({ actual_production_kwh: 40, expected_production_kwh: null })],
-      },
+      data: buildAnomalyData({
+        expectedUnavailableReason: 'NO_PERFORMANCE_HISTORY',
+        worstLevel: null,
+        daily: [buildDaily({ actual_production_kwh: 40, expected_production_kwh: null, level: null, deviation_percent: null })],
+      }),
     }
     const expectedProduction: ExpectedDailyProduction = {
       available: false,
@@ -118,13 +141,11 @@ describe('ProductionHistorySection', () => {
     const anomalyState: AnomalyFetchState = {
       loading: false,
       error: null,
-      data: {
-        plant_id: 'p1',
-        days_analyzed: 1,
-        current_streak_days: 0,
-        worst_level: 'NORMAL',
-        daily: [buildDaily({ actual_production_kwh: null, expected_production_kwh: null })],
-      },
+      data: buildAnomalyData({
+        expectedUnavailableReason: 'NO_PERFORMANCE_HISTORY',
+        worstLevel: null,
+        daily: [buildDaily({ actual_production_kwh: null, expected_production_kwh: null, level: null, deviation_percent: null })],
+      }),
     }
     const expectedProduction: ExpectedDailyProduction = {
       available: false,
@@ -136,6 +157,29 @@ describe('ProductionHistorySection', () => {
 
     expect(screen.getByText(/histórico de desempenho insuficiente/)).toBeInTheDocument()
     expect(screen.queryByRole('slider')).not.toBeInTheDocument()
+  })
+
+  it('deriva expectedAvailable do payload de anomalias, não de expectedProduction, mesmo quando as duas fontes divergem', () => {
+    // `expectedProduction` (de `/photovoltaic/summary`) diz que está
+    // disponível, mas o payload de anomalias (fonte real usada pelo gráfico)
+    // diz que não está — a seção precisa seguir o payload de anomalias, não
+    // fabricar a linha "Esperado" com base numa segunda chamada de API que
+    // pode divergir dela.
+    const anomalyState: AnomalyFetchState = {
+      loading: false,
+      error: null,
+      data: buildAnomalyData({
+        expectedUnavailableReason: 'REFERENCE_YEAR_INCOMPLETE',
+        worstLevel: null,
+        daily: [buildDaily({ actual_production_kwh: 40, expected_production_kwh: null, level: null, deviation_percent: null })],
+      }),
+    }
+
+    render(<ProductionHistorySection anomalyState={anomalyState} expectedProduction={AVAILABLE} />)
+
+    expect(screen.getByRole('slider')).toBeInTheDocument()
+    expect(screen.queryByText('Esperado')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Desempenho:/)).not.toBeInTheDocument()
   })
 
   it('mostra mensagem de falha do sistema com opção de retry quando o histórico responde 500', () => {

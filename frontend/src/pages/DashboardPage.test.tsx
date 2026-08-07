@@ -117,11 +117,33 @@ const photovoltaicSummaryPayload = {
   expected_daily_production_unavailable_reason: null,
 }
 
+// Usina nova (o caso real do bug corrigido nesta etapa): produção real já é
+// coletada, mas o primeiro ano de referência ainda não fechou — sem baseline
+// sazonal, `expectedProduction.available` é `false` em `/photovoltaic/summary`.
+// Usado para provar que `fetchAnomalies` não fica preso esperando por este
+// resultado (ver `DashboardPage — histórico de produção não depende mais do
+// baseline sazonal` abaixo).
+const fallbackPhotovoltaicSummaryPayload = {
+  plant_id: 'plant-1',
+  performance: null,
+  performance_unavailable_reason: 'NO_PERFORMANCE_RESULTS',
+  baseline: null,
+  baseline_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE',
+  reference_complete_on: '2027-03-14',
+  losses: null,
+  losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
+  expected_daily_production_kwh: null,
+  expected_daily_production_model_version: null,
+  expected_daily_production_nature: null,
+  expected_daily_production_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE',
+}
+
 const anomalyPayload = {
   plant_id: 'plant-1',
   days_analyzed: 3,
   current_streak_days: 2,
   worst_level: 'ATTENTION',
+  expected_unavailable_reason: null,
   daily: [
     {
       date: '2026-07-29',
@@ -581,5 +603,141 @@ describe('DashboardPage — re-busca dados quando a usina ativa muda (ADR-069, E
     await waitFor(() => {
       expect(executiveCallsPlantIds).toEqual([singlePlant.id, secondPlant.id])
     })
+  })
+})
+
+describe('DashboardPage — histórico de produção não depende mais do baseline sazonal (contrato 200 sempre)', () => {
+  it('busca /energy/anomalies/latest assim que há plantId, sem esperar expectedProduction.available e sem o parâmetro deprecated na query', async () => {
+    vi.resetModules()
+    const anomalyCallPaths: string[] = []
+
+    vi.doMock('../lib/api', () => ({
+      apiFetch: vi.fn(async (path: string) => {
+        if (path.startsWith('/energy/executive/latest')) return jsonResponse(executivePayload)
+        if (path.startsWith('/energy/anomalies/latest')) {
+          anomalyCallPaths.push(path)
+          return jsonResponse(anomalyPayload)
+        }
+        throw new Error(`unexpected apiFetch path in test: ${path}`)
+      }),
+      // `/photovoltaic/summary` responde SEM baseline (usina nova) — a busca
+      // de anomalias não pode esperar por esse resultado.
+      fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(fallbackPhotovoltaicSummaryPayload)),
+      fetchFinancialReturn: vi.fn(async () =>
+        jsonResponse({
+          plant_id: 'plant-1',
+          investment_amount_brl: null,
+          investment_recorded_on: null,
+          commissioned_on: null,
+          accumulated_savings_brl: null,
+          average_monthly_savings_brl: null,
+          cycles_counted: null,
+          cycles_expected: null,
+          roi_percent: null,
+          payback_projection_months: null,
+          unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+          payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+        })
+      ),
+      fetchPlants: vi.fn(async () => [singlePlant]),
+      configureApi: vi.fn(),
+    }))
+
+    const { DashboardPage } = await import('./DashboardPage')
+    const { AuthProvider } = await import('../contexts/AuthContext')
+    const { PlantProvider } = await import('../contexts/PlantContext')
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <PlantProvider>
+            <main>
+              <DashboardPage />
+            </main>
+          </PlantProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(anomalyCallPaths.length).toBeGreaterThan(0)
+    })
+    expect(anomalyCallPaths[0]).not.toContain('expected_daily_production_kwh')
+  })
+
+  it('mostra o gráfico de histórico com produção real, sem linha "Esperado" e sem cair no fallback de dados insuficientes, quando a usina tem produção real mas não tem baseline sazonal', async () => {
+    vi.resetModules()
+
+    const noBaselineAnomalyPayload = {
+      plant_id: 'plant-1',
+      days_analyzed: 1,
+      current_streak_days: 0,
+      worst_level: null,
+      expected_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE',
+      daily: [
+        {
+          date: '2026-07-30',
+          actual_production_kwh: 40,
+          expected_production_kwh: null,
+          level: null,
+          deviation_percent: null,
+          irradiation_kwh_m2: null,
+        },
+      ],
+    }
+
+    vi.doMock('../lib/api', () => ({
+      apiFetch: vi.fn(async (path: string) => {
+        if (path.startsWith('/energy/executive/latest')) return jsonResponse(executivePayload)
+        if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(noBaselineAnomalyPayload)
+        throw new Error(`unexpected apiFetch path in test: ${path}`)
+      }),
+      fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(fallbackPhotovoltaicSummaryPayload)),
+      fetchFinancialReturn: vi.fn(async () =>
+        jsonResponse({
+          plant_id: 'plant-1',
+          investment_amount_brl: null,
+          investment_recorded_on: null,
+          commissioned_on: null,
+          accumulated_savings_brl: null,
+          average_monthly_savings_brl: null,
+          cycles_counted: null,
+          cycles_expected: null,
+          roi_percent: null,
+          payback_projection_months: null,
+          unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+          payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+        })
+      ),
+      fetchPlants: vi.fn(async () => [singlePlant]),
+      configureApi: vi.fn(),
+    }))
+
+    const { DashboardPage } = await import('./DashboardPage')
+    const { AuthProvider } = await import('../contexts/AuthContext')
+    const { PlantProvider } = await import('../contexts/PlantContext')
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <PlantProvider>
+            <main>
+              <DashboardPage />
+            </main>
+          </PlantProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    )
+
+    const sectionTitle = await screen.findByText('Histórico de produção')
+    const section = sectionTitle.parentElement as HTMLElement
+
+    await waitFor(() => {
+      expect(within(section).getByRole('slider')).toBeInTheDocument()
+    })
+    expect(within(section).getByText('40 kWh')).toBeInTheDocument()
+    expect(within(section).queryByText('Esperado')).not.toBeInTheDocument()
+    expect(within(section).queryByText(/histórico de desempenho insuficiente/)).not.toBeInTheDocument()
+    expect(within(section).queryByText(/primeiro ano de referência/)).not.toBeInTheDocument()
   })
 })

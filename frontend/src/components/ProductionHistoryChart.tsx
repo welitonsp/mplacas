@@ -3,10 +3,10 @@ import type { AnomalyDailyPoint } from '../lib/dashboard/contracts'
 import { clampPercent, formatNumber, formatShortDate, toNumber } from '../lib/format'
 import {
   ANOMALY_LEGEND,
-  LEVEL_LABEL,
   SEVERITY_BAR,
   SEVERITY_DOT,
   SEVERITY_TEXT,
+  levelLabel,
   levelSeverity,
   performanceSeverity,
 } from '../lib/dashboard/visuals'
@@ -87,14 +87,43 @@ export function ProductionHistoryChart({
 
   // % de desempenho do período: soma do real dividido pela soma do esperado no
   // conjunto de dias exibido — derivado do array `daily` já em mãos, sem cálculo
-  // novo no backend (ver instrução da tarefa).
-  const totalActual = daily.reduce((sum, d) => sum + (toNumber(d.actual_production_kwh) ?? 0), 0)
-  const totalExpected = daily.reduce((sum, d) => sum + (toNumber(d.expected_production_kwh) ?? 0), 0)
+  // novo no backend (ver instrução da tarefa). Soma só os dias em que AMBOS
+  // real e esperado existem — somar `0` para um dia sem expectativa (`?? 0`)
+  // produziria um "esperado total" falso menor que o real, distorcendo o
+  // percentual pra cima sem nenhum dado a mais (ver diagnóstico do architect).
+  const { totalActual, totalExpected } = daily.reduce(
+    (acc, d) => {
+      const actual = toNumber(d.actual_production_kwh)
+      const expected = toNumber(d.expected_production_kwh)
+      if (actual == null || expected == null) return acc
+      return { totalActual: acc.totalActual + actual, totalExpected: acc.totalExpected + expected }
+    },
+    { totalActual: 0, totalExpected: 0 }
+  )
   const performancePercent = totalExpected > 0 ? (totalActual / totalExpected) * 100 : null
+
+  // Pelo menos um dia sem expectativa disponível (`level: null`) — as barras
+  // desses dias renderizam em tom neutro (ver `levelSeverity`); a legenda
+  // ganha uma entrada explícita pra essa cor não aparecer sem explicação
+  // (regra de acessibilidade: cor nunca sozinha, sempre com rótulo).
+  const hasUnassessedDay = daily.some((d) => d.level === null)
 
   const activeIndex = selectedIndex ?? daily.length - 1
   const activeDay = daily[activeIndex]
   const activeSeverity = levelSeverity(activeDay.level)
+
+  // Texto acessível do dia ativo: quando `expected_production_kwh` é `null`
+  // (sem expectativa disponível pra esse dia), a frase NÃO pode dizer "0 kWh
+  // esperados" nem citar um nível — isso fabricaria um valor e uma severidade
+  // que o backend explicitamente não calculou (ver `AnomalyDailyPoint.level`).
+  function buildDayValueText(day: AnomalyDailyPoint): string {
+    const actualText = `${formatNumber(toNumber(day.actual_production_kwh) ?? 0)} kWh produzidos`
+    const expected = toNumber(day.expected_production_kwh)
+    if (expected == null || day.level === null) return `${formatShortDate(day.date)}: ${actualText}.`
+    return `${formatShortDate(day.date)}: ${actualText} de ${formatNumber(expected)} kWh esperados. Nível: ${levelLabel(
+      day.level
+    )}.`
+  }
 
   function moveSelection(delta: number) {
     const next = Math.min(daily.length - 1, Math.max(0, activeIndex + delta))
@@ -174,6 +203,12 @@ export function ProductionHistoryChart({
               {item.label}
             </span>
           ))}
+          {hasUnassessedDay && (
+            <span className="inline-flex items-center gap-1">
+              <span className={`h-2 w-2 rounded-full ${SEVERITY_DOT.neutral}`} />
+              Sem expectativa
+            </span>
+          )}
           {hasExpected && (
             <span className="inline-flex items-center gap-1">
               <span className="h-0 w-3 border-t border-dashed border-[var(--color-chart-reference)]" />
@@ -278,11 +313,7 @@ export function ProductionHistoryChart({
                 aria-valuemin={0}
                 aria-valuemax={daily.length - 1}
                 aria-valuenow={activeIndex}
-                aria-valuetext={`${formatShortDate(activeDay.date)}: ${formatNumber(
-                  toNumber(activeDay.actual_production_kwh) ?? 0
-                )} kWh produzidos de ${formatNumber(
-                  toNumber(activeDay.expected_production_kwh) ?? 0
-                )} kWh esperados. Nível: ${LEVEL_LABEL[activeDay.level]}.`}
+                aria-valuetext={buildDayValueText(activeDay)}
                 onKeyDown={handleChartKeyDown}
               >
                 {daily.map((d, i) => {
@@ -341,12 +372,18 @@ export function ProductionHistoryChart({
             {formatNumber(activeDay.actual_production_kwh)} kWh
           </strong>
         </span>
-        <span>
-          Esperado:{' '}
-          <strong className="text-gray-900 tabular-nums">
-            {formatNumber(activeDay.expected_production_kwh)} kWh
-          </strong>
-        </span>
+        {/* Sem cláusula "Esperado" quando `expected_production_kwh` é `null`
+            (sem expectativa disponível pra esse dia) — nunca "0 kWh
+            esperados" fabricado, mesmo princípio de `LatestDailyProductionCard`
+            para o mesmo caso. */}
+        {activeDay.expected_production_kwh != null && (
+          <span>
+            Esperado:{' '}
+            <strong className="text-gray-900 tabular-nums">
+              {formatNumber(activeDay.expected_production_kwh)} kWh
+            </strong>
+          </span>
+        )}
         {activeDay.deviation_percent != null && (
           <span className={`tabular-nums ${SEVERITY_TEXT[activeSeverity]}`}>
             Desvio: {formatNumber(activeDay.deviation_percent, 1)}%
@@ -354,7 +391,7 @@ export function ProductionHistoryChart({
         )}
         <span className={`inline-flex items-center gap-1 font-medium ${SEVERITY_TEXT[activeSeverity]}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${SEVERITY_DOT[activeSeverity]}`} />
-          {LEVEL_LABEL[activeDay.level]}
+          {levelLabel(activeDay.level)}
         </span>
         {activeIrradiation != null && (
           <span>

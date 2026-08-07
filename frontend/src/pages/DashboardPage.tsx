@@ -68,10 +68,14 @@ export function DashboardPage() {
     loading: true,
     error: null,
   })
-  // `null` = ainda carregando o baseline sazonal. `/energy/anomalies/latest`
-  // exige um `expected_daily_production_kwh` numérico positivo (ver
-  // `intelligence/router.py`), então só disparamos essa busca depois de saber se
-  // a usina tem baseline defensável — nunca inventamos um número de preenchimento.
+  // `null` = ainda carregando o baseline sazonal (`/photovoltaic/summary`).
+  // Usado só para alimentar `TechnicalPerformanceSection` e as mensagens de
+  // motivo específico de indisponibilidade — desde a mudança de contrato de
+  // `/energy/anomalies/latest` (200 sempre, campos por dia `null` sem
+  // expectativa), `fetchAnomalies` NÃO depende mais deste estado: é buscado
+  // assim que há `plantId`, independente do baseline sazonal já existir (ver
+  // usina com produção real mas sem baseline — o card de histórico não pode
+  // mais ficar preso esperando um dado que talvez nunca chegue).
   const [expectedProduction, setExpectedProduction] = useState<ExpectedDailyProduction | null>(null)
   // `null` = ainda carregando `/photovoltaic/summary` (mesma requisição de
   // `fetchExpectedProduction` — guardamos o resumo inteiro aqui para alimentar
@@ -181,13 +185,17 @@ export function DashboardPage() {
     }
   }, [plantId])
 
-  const fetchAnomalies = useCallback(async (expectedDailyProductionKwh: number) => {
+  const fetchAnomalies = useCallback(async () => {
     if (!plantId) return
     setAnomalyState((prev) => ({ ...prev, loading: true }))
     try {
+      // `expected_daily_production_kwh` saiu da query string: o backend marca
+      // o parâmetro `deprecated=True` e o ignora (ver `intelligence/router.py`)
+      // — o endpoint agora resolve a expectativa sozinho e devolve `200`
+      // sempre, com campos por dia `null` quando não há expectativa disponível
+      // (ver `AnomalyDailyPoint.level`/`expected_unavailable_reason`).
       const response = await apiFetch(
-        `/energy/anomalies/latest?plant_id=${encodeURIComponent(plantId)}` +
-          `&expected_daily_production_kwh=${expectedDailyProductionKwh}&days=90`
+        `/energy/anomalies/latest?plant_id=${encodeURIComponent(plantId)}&days=90`
       )
       if (!response.ok) {
         // 404 (sem dado diário ainda) e 5xx (algo quebrou) recebem mensagens
@@ -210,24 +218,12 @@ export function DashboardPage() {
     void fetchExpectedProduction()
     void fetchFinancialReturnData()
     void fetchMonthlyHistoryData()
-  }, [fetchData, fetchExpectedProduction, fetchFinancialReturnData, fetchMonthlyHistoryData])
-
-  // O histórico de produção/anomalias só é buscado depois que sabemos a produção
-  // esperada real da usina — sem ela o endpoint de anomalias não tem contra o que
-  // comparar o dia (ver `fetchAnomalies` acima). `plantId` entra nas dependências
-  // porque `fetchAnomalies` é recriado quando a usina ativa muda (ADR-069).
-  useEffect(() => {
-    if (expectedProduction === null) return
-    if (expectedProduction.available) {
-      void fetchAnomalies(expectedProduction.kwh)
-    } else {
-      setAnomalyState({ data: null, loading: false, error: null })
-    }
-  }, [expectedProduction, fetchAnomalies, plantId])
+    void fetchAnomalies()
+  }, [fetchData, fetchExpectedProduction, fetchFinancialReturnData, fetchMonthlyHistoryData, fetchAnomalies])
 
   const retryAnomalies = useCallback(() => {
-    if (expectedProduction?.available) void fetchAnomalies(expectedProduction.kwh)
-  }, [expectedProduction, fetchAnomalies])
+    void fetchAnomalies()
+  }, [fetchAnomalies])
 
   const { data, loading, error, lastUpdated } = state
   const indicators = data?.current_cycle.indicators
@@ -299,6 +295,7 @@ export function DashboardPage() {
               void fetchExpectedProduction()
               void fetchFinancialReturnData()
               void fetchMonthlyHistoryData()
+              void fetchAnomalies()
             }}
             disabled={loading}
             className="rounded text-xs text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] disabled:opacity-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"

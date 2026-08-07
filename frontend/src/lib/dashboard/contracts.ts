@@ -112,7 +112,11 @@ export interface AnomalyDailyPoint {
   date: string
   actual_production_kwh: MetricValue
   expected_production_kwh: MetricValue
-  level: AnomalyLevel
+  // `null` quando não há expectativa disponível pra calcular severidade nesse
+  // dia (ex.: usina sem baseline sazonal ainda) — estado legítimo, distinto de
+  // campo malformado. Nunca fabricar um nível a partir de um dia sem
+  // expectativa (ver `intelligence/anomaly_service.py::analyze_recent_persisted_anomalies`).
+  level: AnomalyLevel | null
   deviation_percent: MetricValue
   // Preenchido só quando a usina tem coordenadas configuradas (coleta Open-Meteo
   // ativa). Em qualquer organização nova vem `null` — todo consumidor deste campo
@@ -124,7 +128,17 @@ export interface AnomalyDashboardResponse {
   plant_id: string
   days_analyzed: number
   current_streak_days: number
-  worst_level: AnomalyLevel
+  // `null` quando nenhum dia do período teve expectativa disponível pra
+  // calcular severidade (ver `expected_unavailable_reason` abaixo) — não é o
+  // mesmo caso de "sem dado nenhum" (esse continua sendo 404, ver
+  // `AnomalyFetchError`).
+  worst_level: AnomalyLevel | null
+  // Motivo pelo qual a produção esperada não está disponível pra este
+  // período (mesmo vocabulário de `BaselineUnavailableReason`, ver
+  // `photovoltaic-contracts.ts` — `resolve_expected_daily_production` reusa
+  // `_derive_baseline_unavailable_reason` no backend). `null` = expectativa
+  // disponível.
+  expected_unavailable_reason: string | null
   daily: AnomalyDailyPoint[]
 }
 
@@ -285,8 +299,24 @@ function optionalTrend(source: Record<string, unknown>): ExecutiveTrend | null {
   }
 }
 
-function requireAnomalyLevel(source: Record<string, unknown>, key: string): AnomalyLevel {
+// Tolera a chave ausente (`undefined`) além de `null` — mesmo padrão de
+// `photovoltaic-contracts.ts::optionalString`, usado aqui só para
+// `expected_unavailable_reason` porque payloads de teste anteriores a este
+// campo (e clientes antigos em cache) não o emitem; a chave ausente não deve
+// ser tratada como resposta malformada.
+function optionalStringOrMissing(source: Record<string, unknown>, key: string): string | null {
   const value = source[key]
+  if (value === undefined || value === null) return null
+  if (typeof value === 'string' && value.trim() !== '') return value
+  throw new Error(`Resposta inválida da API: ${key}`)
+}
+
+// `null` é um valor válido e explícito (sem expectativa pra calcular
+// severidade nesse dia/período) — só valores fora do vocabulário conhecido
+// (nem `null`, nem um `AnomalyLevel` válido) contam como campo malformado.
+function optionalAnomalyLevel(source: Record<string, unknown>, key: string): AnomalyLevel | null {
+  const value = source[key]
+  if (value === null) return null
   if (typeof value !== 'string' || !ANOMALY_LEVELS.has(value)) {
     throw new Error(`Resposta inválida da API: ${key}`)
   }
@@ -299,7 +329,7 @@ export function parseAnomalyDaily(value: unknown): AnomalyDailyPoint {
     date: requireString(value, 'date'),
     actual_production_kwh: metricValue(value, 'actual_production_kwh'),
     expected_production_kwh: metricValue(value, 'expected_production_kwh'),
-    level: requireAnomalyLevel(value, 'level'),
+    level: optionalAnomalyLevel(value, 'level'),
     deviation_percent: metricValue(value, 'deviation_percent'),
     irradiation_kwh_m2: metricValue(value, 'irradiation_kwh_m2'),
   }
@@ -313,7 +343,8 @@ export function parseAnomalyDashboard(payload: unknown): AnomalyDashboardRespons
     plant_id: requireString(payload, 'plant_id'),
     days_analyzed: numberValue(payload, 'days_analyzed'),
     current_streak_days: numberValue(payload, 'current_streak_days'),
-    worst_level: requireAnomalyLevel(payload, 'worst_level'),
+    worst_level: optionalAnomalyLevel(payload, 'worst_level'),
+    expected_unavailable_reason: optionalStringOrMissing(payload, 'expected_unavailable_reason'),
     daily: daily.map(parseAnomalyDaily),
   }
 }

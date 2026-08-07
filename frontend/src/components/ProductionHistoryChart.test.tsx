@@ -93,6 +93,69 @@ describe('ProductionHistoryChart — teclado e semântica ARIA', () => {
   })
 })
 
+describe('ProductionHistoryChart — dia sem expectativa (level: null)', () => {
+  it('renderiza sem lançar erro e usa tom neutro para o dia com level: null', () => {
+    const dailyWithNullLevel: AnomalyDailyPoint[] = [
+      buildDaily('2026-07-01', 10, { expected_production_kwh: null, level: null, deviation_percent: null }),
+      buildDaily('2026-07-02', 20),
+      buildDaily('2026-07-03', 30),
+    ]
+
+    render(<ProductionHistoryChart daily={dailyWithNullLevel} currentStreakDays={0} />)
+
+    // A legenda ganha uma entrada explícita pra explicar o tom neutro — cor
+    // nunca aparece sem rótulo (regra de acessibilidade).
+    expect(screen.getByText('Sem expectativa')).toBeInTheDocument()
+  })
+
+  it('o aria-label do dia ativo não menciona "esperado" nem fabrica um nível quando expected_production_kwh é null', () => {
+    const dailyWithNullLevel: AnomalyDailyPoint[] = [
+      buildDaily('2026-07-01', 10),
+      buildDaily('2026-07-02', 20),
+      buildDaily('2026-07-03', 40, { expected_production_kwh: null, level: null, deviation_percent: null }),
+    ]
+
+    render(<ProductionHistoryChart daily={dailyWithNullLevel} currentStreakDays={0} />)
+
+    const slider = screen.getByRole('slider')
+    expect(slider).toHaveAttribute('aria-valuetext', '03/07: 40 kWh produzidos.')
+    expect(slider.getAttribute('aria-valuetext')).not.toMatch(/esperado/i)
+  })
+
+  it('o painel de detalhe do dia ativo não mostra "Esperado" quando o valor é null, mas mostra o nível em tom neutro ("Sem expectativa")', () => {
+    const dailyWithNullLevel: AnomalyDailyPoint[] = [
+      buildDaily('2026-07-01', 10),
+      buildDaily('2026-07-02', 20),
+      buildDaily('2026-07-03', 40, { expected_production_kwh: null, level: null, deviation_percent: null }),
+    ]
+
+    render(<ProductionHistoryChart daily={dailyWithNullLevel} currentStreakDays={0} />)
+
+    expect(screen.getByText('40 kWh')).toBeInTheDocument()
+    expect(screen.queryByText(/Esperado:/)).not.toBeInTheDocument()
+    // Aparece duas vezes: uma na legenda (explicando a cor) e outra como
+    // rótulo de nível do dia ativo no painel de detalhe.
+    expect(screen.getAllByText('Sem expectativa').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('não soma zero fabricado nos dias sem expectativa ao calcular o percentual de desempenho do período', () => {
+    // Só o dia 2 tem par completo (actual=20, expected=50) — desempenho =
+    // 20/50 = 40%. Se os dias sem expectativa contribuíssem com `expected=0`,
+    // o total esperado cairia pra 50 (igual), mas se contribuíssem só no
+    // `actual` sem entrar no `expected`, o percentual ficaria inflado
+    // (60/50 = 120%) em vez dos 40% corretos.
+    const mixedDaily: AnomalyDailyPoint[] = [
+      buildDaily('2026-07-01', 10, { expected_production_kwh: null, level: null, deviation_percent: null }),
+      buildDaily('2026-07-02', 20, { expected_production_kwh: 50 }),
+      buildDaily('2026-07-03', 30, { expected_production_kwh: null, level: null, deviation_percent: null }),
+    ]
+
+    render(<ProductionHistoryChart daily={mixedDaily} currentStreakDays={0} />)
+
+    expect(screen.getByText(/Desempenho: 40%/)).toBeInTheDocument()
+  })
+})
+
 describe('ProductionHistoryChart — eixo Y e linha de "Esperado"', () => {
   it('mostra o eixo Y com rótulos numéricos de 0, metade e máximo, baseados no maxValue real', () => {
     // maxValue = max(actual, expected) do conjunto (expected=50 em todo dia) * 1.1 = 55.

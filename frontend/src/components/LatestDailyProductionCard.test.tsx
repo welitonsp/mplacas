@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import type { AnomalyDashboardResponse, AnomalyFetchState } from '../lib/dashboard/contracts'
+import { levelSeverity } from '../lib/dashboard/visuals'
 import { LatestDailyProductionCard } from './LatestDailyProductionCard'
 
 function daily(overrides: Partial<AnomalyDashboardResponse> = {}): AnomalyFetchState {
@@ -10,6 +11,7 @@ function daily(overrides: Partial<AnomalyDashboardResponse> = {}): AnomalyFetchS
       days_analyzed: 2,
       current_streak_days: 0,
       worst_level: 'NORMAL',
+      expected_unavailable_reason: null,
       daily: [
         {
           date: '2026-08-04',
@@ -104,6 +106,32 @@ describe('LatestDailyProductionCard', () => {
 
     expect(screen.getByText('Produção de 04/08/2026 vs. esperada')).toBeInTheDocument()
     expect(screen.getByText('38 kWh')).toBeInTheDocument()
+  })
+
+  it('usa tom neutro (nunca sucesso/atenção/perigo fabricado) quando o último dia tem level: null', () => {
+    render(
+      <LatestDailyProductionCard
+        anomalyState={daily({
+          daily: [
+            {
+              date: '2026-08-05',
+              actual_production_kwh: 40,
+              expected_production_kwh: null,
+              level: null,
+              deviation_percent: null,
+              irradiation_kwh_m2: null,
+            },
+          ],
+        })}
+      />
+    )
+
+    expect(levelSeverity(null)).toBe('neutral')
+    expect(screen.getByText('40 kWh')).toBeInTheDocument()
+    // Sem tick/desvio fabricado quando o esperado também é null (mesmo
+    // princípio já coberto acima) — o tom neutro acompanha a ausência de
+    // severidade calculável, não o valor numérico ausente sozinho.
+    expect(screen.queryByTestId('bullet-target-tick')).not.toBeInTheDocument()
   })
 
   it('mostra estado indisponível explícito quando não há nenhum dia com produção real coletada', () => {

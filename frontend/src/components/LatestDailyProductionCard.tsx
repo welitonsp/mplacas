@@ -53,8 +53,12 @@ export function LatestDailyProductionCard({
   }
 
   // `expected_production_kwh` pode vir `null` mesmo com produção real presente
-  // (ex.: usina sem coordenadas configuradas nesse dia) — `Bullet` já trata
-  // `target: null` desenhando só a barra real, sem tick e sem desvio fabricado.
+  // (ex.: usina sem baseline sazonal, ou sem coordenadas configuradas nesse
+  // dia) — `Bullet` já trata `target: null` desenhando só a barra real, sem
+  // tick e sem desvio fabricado. `level` acompanha o mesmo caso: quando vem
+  // `null` (sem expectativa pra calcular severidade), `levelSeverity` devolve
+  // `'neutral'` — mesmo tom neutro tratado em `ProductionHistoryChart`, nunca
+  // uma severidade fabricada a partir de um dado ausente.
   const expectedValue = toNumber(latestPoint.expected_production_kwh)
   const tone = levelSeverity(latestPoint.level)
 
