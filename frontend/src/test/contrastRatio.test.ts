@@ -1,31 +1,23 @@
 import { describe, expect, it } from 'vitest'
+import { DARK_TOKENS, LIGHT_TOKENS, type DesignTokenName } from './designTokens'
 
 // Cálculo real de contraste WCAG 2.2 (fórmula de luminância relativa, não um
 // número hardcoded) — ver Etapa 1.1 do roteiro de UI/UX
-// (docs/UI_UX_IMPLEMENTATION_ROADMAP_2026-08-04.md) e a medição original em
-// docs/UI_UX_AUDIT_2026-08-04.md (P1-03).
+// (docs/UI_UX_IMPLEMENTATION_ROADMAP_2026-08-04.md), a medição original em
+// docs/UI_UX_AUDIT_2026-08-04.md (P1-03), e a extensão para dois temas em
+// docs/ADR-071-dark-mode.md (Decisão 4/5/7 — dark mode, tokens de tema).
 //
-// Os hex abaixo espelham literalmente os tokens declarados em `src/index.css`
-// (mesmo padrão de `GRID_HEX` em `lib/dashboard/visuals.ts`: uma cópia
-// documentada, não uma leitura em runtime do CSS — `import.meta.glob(...,
-// { query: '?raw' })` não funciona para `.css` neste projeto porque o
-// Vitest intercepta e mocka todo import de `.css`, inclusive com `?raw`,
-// antes mesmo de o Vite processar a query — verificado experimentalmente).
-// Se um destes hex mudar em `index.css`, ele PRECISA mudar aqui também — é
-// exatamente o tipo de deriva que este teste deve pegar: se o valor não for
-// atualizado dos dois lados, o índice fica correto mas divorciado do CSS
-// real, e a próxima alteração de paleta que reintroduzir uma falha de AA
-// ainda vai estourar aqui porque o cálculo é feito de verdade, não apenas
-// declarado como "ok".
-const TOKENS = {
-  '--color-success-text': '#15803d',
-  '--color-warning-text': '#b45309',
-  '--color-danger-text': '#b91c1c',
-  '--color-danger': '#dc2626',
-  '--color-success': '#16a34a',
-  '--color-warning': '#d97706',
-  '--color-chart-reference': '#6b7280',
-} as const
+// Os hex vêm de `./designTokens.ts` (LIGHT_TOKENS/DARK_TOKENS), que espelham
+// literalmente `src/index.css` (`:root` e `:root[data-theme="dark"]`) — mesmo
+// padrão de `GRID_HEX` em `lib/dashboard/visuals.ts`: uma cópia documentada,
+// não uma leitura em runtime do CSS (`import.meta.glob(..., { query: '?raw'
+// })` não funciona para `.css` neste projeto porque o Vitest intercepta e
+// mocka todo import de `.css`, inclusive com `?raw`, antes mesmo de o Vite
+// processar a query — verificado experimentalmente). Se um destes hex mudar
+// em `index.css`, ele PRECISA mudar em `designTokens.ts` também — é
+// exatamente o tipo de deriva que este teste deve pegar (fechou, por
+// construção, a deriva já encontrada entre `--color-chart-reference`
+// `#6b7280` neste teste e `#64748b` em `index.css`, ver ADR-071 Contexto).
 
 function hexToRgb(hex: string): [number, number, number] {
   const value = hex.replace('#', '')
@@ -54,40 +46,123 @@ function contrastRatio(hexA: string, hexB: string): number {
   return (lighter + 0.05) / (darker + 0.05)
 }
 
-const WHITE = '#ffffff'
+const LIGHT_BG = {
+  surface: LIGHT_TOKENS['--color-surface'],
+  surfaceSubtle: LIGHT_TOKENS['--color-surface-subtle'],
+}
+const DARK_BG = {
+  surface: DARK_TOKENS['--color-surface'],
+  surfaceSubtle: DARK_TOKENS['--color-surface-subtle'],
+}
 
-describe('contraste WCAG 2.2 — calculado por fórmula (luminância relativa), não hardcoded', () => {
-  // Texto normal exige 4.5:1 (WCAG 1.4.3 AA). Estes são exatamente os pares
-  // que reprovavam na auditoria original (--color-success/--color-warning
-  // usados como texto), agora substituídos pelos tokens -text em SEVERITY_TEXT.
-  it.each([
-    ['--color-success-text', TOKENS['--color-success-text'], WHITE],
-    ['--color-warning-text', TOKENS['--color-warning-text'], WHITE],
-    ['--color-danger-text', TOKENS['--color-danger-text'], WHITE],
-  ])('%s sobre branco atende 4.5:1 (texto normal, WCAG 1.4.3 AA)', (_name, foreground, background) => {
-    const ratio = contrastRatio(foreground, background)
+// Pares "texto normal" obrigatórios pelo ADR-071 (Decisão 4/5/Validação):
+// text-primary, text-secondary, os três `-text` de severidade,
+// chart-reference, data-secondary, brand-primary, e a escala gray-500 a
+// gray-900 (gray-400 é tratado à parte, ver bloco dedicado abaixo — é uma
+// exceção conhecida, não uma regressão).
+const TEXT_PAIRS: Array<[string, DesignTokenName]> = [
+  ['text-primary', '--color-text-primary'],
+  ['text-secondary', '--color-text-secondary'],
+  ['success-text', '--color-success-text'],
+  ['warning-text', '--color-warning-text'],
+  ['danger-text', '--color-danger-text'],
+  ['chart-reference', '--color-chart-reference'],
+  ['data-secondary', '--color-data-secondary'],
+  ['brand-primary', '--color-brand-primary'],
+  ['gray-500', '--color-gray-500'],
+  ['gray-600', '--color-gray-600'],
+  ['gray-700', '--color-gray-700'],
+  ['gray-800', '--color-gray-800'],
+  ['gray-900', '--color-gray-900'],
+]
+
+// Tokens de PREENCHIMENTO (badge/barra/ponto — nunca `color` de texto, ver
+// comentário em `index.css`), exigem só 3:1 (WCAG 1.4.11, elemento gráfico).
+// `--color-chart-track` fica de fora deliberadamente: é o trilho/fundo do
+// gráfico, não o elemento que carrega significado (ADR-071 Decisão 4 marca
+// esse par com "—", sem exigência de contraste).
+const FILL_PAIRS: Array<[string, DesignTokenName]> = [
+  ['success', '--color-success'],
+  ['warning', '--color-warning'],
+  ['danger', '--color-danger'],
+]
+
+// Padrão de "badge": texto `-text` sobre o próprio fundo `-light` da mesma
+// cor (SEVERITY_BG + SEVERITY_TEXT em `lib/dashboard/visuals.ts`) — exige
+// 4.5:1 como qualquer texto normal. Números batem exatamente com
+// ADR-071 Decisão 5 para o tema escuro.
+const TEXT_ON_OWN_LIGHT_BG_PAIRS: Array<[string, DesignTokenName, DesignTokenName]> = [
+  ['success-text sobre success-light', '--color-success-text', '--color-success-light'],
+  ['warning-text sobre warning-light', '--color-warning-text', '--color-warning-light'],
+  ['danger-text sobre danger-light', '--color-danger-text', '--color-danger-light'],
+  ['data-secondary sobre data-secondary-light', '--color-data-secondary', '--color-data-secondary-light'],
+]
+
+describe.each([
+  ['claro', LIGHT_TOKENS, LIGHT_BG] as const,
+  ['escuro', DARK_TOKENS, DARK_BG] as const,
+])('contraste WCAG 2.2 — tema %s (calculado por fórmula, não hardcoded)', (_themeName, tokens, bg) => {
+  it.each(TEXT_PAIRS)(
+    '%s sobre --color-surface atende 4.5:1 (texto normal, WCAG 1.4.3 AA)',
+    (_label, tokenName) => {
+      const ratio = contrastRatio(tokens[tokenName], bg.surface)
+      expect(ratio).toBeGreaterThanOrEqual(4.5)
+    },
+  )
+
+  it.each(TEXT_PAIRS)(
+    '%s sobre --color-surface-subtle atende 4.5:1 (texto normal, WCAG 1.4.3 AA)',
+    (_label, tokenName) => {
+      const ratio = contrastRatio(tokens[tokenName], bg.surfaceSubtle)
+      expect(ratio).toBeGreaterThanOrEqual(4.5)
+    },
+  )
+
+  it.each(FILL_PAIRS)(
+    '%s (preenchimento) sobre --color-surface atende 3:1 (elemento gráfico, WCAG 1.4.11)',
+    (_label, tokenName) => {
+      const ratio = contrastRatio(tokens[tokenName], bg.surface)
+      expect(ratio).toBeGreaterThanOrEqual(3)
+    },
+  )
+
+  it.each(TEXT_ON_OWN_LIGHT_BG_PAIRS)('%s atende 4.5:1 (texto normal, padrão de badge)', (_label, textToken, bgToken) => {
+    const ratio = contrastRatio(tokens[textToken], tokens[bgToken])
     expect(ratio).toBeGreaterThanOrEqual(4.5)
   })
 
-  // Elemento gráfico (linha/borda que carrega informação) exige 3:1
-  // (WCAG 1.4.11) — é o token que substituiu `border-gray-400` na linha de
-  // referência "Esperado" do gráfico de produção diária.
-  it('--color-chart-reference sobre branco atende 3:1 (elemento gráfico, WCAG 1.4.11)', () => {
-    const ratio = contrastRatio(TOKENS['--color-chart-reference'], WHITE)
-    expect(ratio).toBeGreaterThanOrEqual(3)
+  // Regressão documentada do achado original: os tokens de PREENCHIMENTO
+  // (--color-success/--color-warning) continuam abaixo de 4.5:1 no tema
+  // claro — é esperado, porque eles não são mais usados como `text-*` (só
+  // como fundo de badge/barra, ver SEVERITY_BG/SEVERITY_BAR em
+  // visuals.ts). No tema escuro isso NÃO se repete por desenho: a Decisão 5
+  // do ADR-071 escolheu tons de preenchimento mais claros/saturados no
+  // escuro (ambos passam de 4.5:1 lá), então este bloco só roda no claro.
+})
+
+it.each([
+  ['success', '--color-success'] as const,
+  ['warning', '--color-warning'] as const,
+])(
+  '--color-%s (preenchimento) permanece abaixo de 4.5:1 no tema claro — não deve virar texto',
+  (_name, tokenName) => {
+    const ratio = contrastRatio(LIGHT_TOKENS[tokenName], LIGHT_BG.surface)
+    expect(ratio).toBeLessThan(4.5)
+  },
+)
+
+describe('--color-gray-400 — exceção conhecida (banida como texto por nome, não por valor calculado)', () => {
+  // `colorContrast.test.tsx` já bane `text-gray-400`/`border-gray-400`/
+  // `placeholder-gray-400` por nome de classe, nos dois temas (ADR-071
+  // Decisão 7) — precisamente porque no tema claro o valor calculado
+  // reprova 4.5:1 (pré-existente, não introduzido por este ADR).
+  it('não atende 4.5:1 no tema claro contra --color-surface (por isso é banido por nome)', () => {
+    const ratio = contrastRatio(LIGHT_TOKENS['--color-gray-400'], LIGHT_BG.surface)
+    expect(ratio).toBeLessThan(4.5)
   })
 
-  // Regressão documentada do achado original: os tokens de PREENCHIMENTO
-  // (--color-success/--color-warning) continuam abaixo de 4.5:1 — é esperado,
-  // porque eles não são mais usados como `text-*` (só como fundo de badge/
-  // barra — ver SEVERITY_BG/SEVERITY_BAR em visuals.ts, que continuam
-  // intocados). Se algum componente voltar a usar `--color-success` como cor
-  // de texto, é a variante `-text` (testada acima) que deve ser usada.
-  it.each([
-    ['--color-success', TOKENS['--color-success']],
-    ['--color-warning', TOKENS['--color-warning']],
-  ])('%s (preenchimento) permanece abaixo de 4.5:1 — não deve virar texto', (_name, foreground) => {
-    const ratio = contrastRatio(foreground, WHITE)
-    expect(ratio).toBeLessThan(4.5)
+  it('atende 4.5:1 no tema escuro contra --color-surface (ADR-071 Decisão 4) — mesmo assim continua banido como texto por nome, regra igual nos dois temas', () => {
+    const ratio = contrastRatio(DARK_TOKENS['--color-gray-400'], DARK_BG.surface)
+    expect(ratio).toBeGreaterThanOrEqual(4.5)
   })
 })

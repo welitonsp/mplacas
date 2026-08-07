@@ -51,6 +51,53 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Tema escuro opcional — ADR-071. Bloco aditivo, fora de qualquer @layer, para
+   sobrepor tanto o :root claro acima quanto a paleta padrão do Tailwind v4
+   (declarada em `@layer theme`) sem !important — ver ADR-071 Decisão 3 para a
+   explicação de cascata. Nada no app ainda lê/escreve `data-theme` (Fase 2/3
+   do ADR); este bloco só existe para já ficar disponível quando isso ocorrer.
+   Valores calculados/documentados em docs/ADR-071-dark-mode.md (Decisão 4/5) —
+   não recalcule aqui, só espelhe. Os hex correspondentes também vivem em
+   `frontend/src/test/designTokens.ts` (DARK_TOKENS) para o teste de
+   contraste (ADR-071 Decisão 7); se um valor mudar aqui, precisa mudar nos
+   dois lugares. `--color-white`/`--color-black`/`--color-slate-*`/
+   `--color-blue-*`/`--color-indigo-*`/`--color-cyan-*`/`--color-rose-*`
+   deliberadamente NÃO são redefinidos aqui (ADR-071 Decisão 3). */
+:root[data-theme="dark"] {
+  --color-brand-primary: #5b8def;
+  --color-brand-primary-dark: #8fb8ff;
+  --color-brand-primary-light: #132038;
+  --color-surface: #111a2b;
+  --color-surface-subtle: #0a0f1c;
+  --color-border: #2a3648;
+  --color-text-primary: #eef1f7;
+  --color-text-secondary: #9aa7bc;
+  --color-danger: #ef4444;
+  --color-danger-light: #2a1414;
+  --color-success: #22c55e;
+  --color-success-light: #0f2417;
+  --color-warning: #f59e0b;
+  --color-warning-light: #271b0a;
+  --color-success-text: #4ade80;
+  --color-warning-text: #fbbf24;
+  --color-danger-text: #f87171;
+  --color-chart-reference: #8291a8;
+  --color-chart-track: #263144;
+  --color-data-secondary: #c4b5fd;
+  --color-data-secondary-light: #1e1b33;
+
+  --color-gray-50: #0d1420;
+  --color-gray-100: #161f30;
+  --color-gray-200: #212c40;
+  --color-gray-300: #3a4760;
+  --color-gray-400: #78839a;
+  --color-gray-500: #93a0b5;
+  --color-gray-600: #b7c1d1;
+  --color-gray-700: #d3dae5;
+  --color-gray-800: #e6eaf1;
+  --color-gray-900: #f3f5f9;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
