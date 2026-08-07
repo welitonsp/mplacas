@@ -164,37 +164,109 @@ const anomalyPayload = {
   ],
 }
 
-function installApiMock(executiveOverride: unknown = executivePayload) {
+// Retorno do investimento indisponível (CAPEX nunca registrado) — payload
+// default de `fetchFinancialReturn` para todos os testes que não são
+// especificamente sobre a seção de retorno do investimento (extraído de 4
+// blocos de mock idênticos que existiam antes da Etapa 0, um por `vi.doMock`
+// inline).
+const financialReturnUnavailablePayload = {
+  plant_id: 'plant-1',
+  investment_amount_brl: null,
+  investment_recorded_on: null,
+  commissioned_on: null,
+  accumulated_savings_brl: null,
+  average_monthly_savings_brl: null,
+  cycles_counted: null,
+  cycles_expected: null,
+  roi_percent: null,
+  payback_projection_months: null,
+  unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+  payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+}
+
+// Histórico de produção por ciclo de faturamento (`GET /reports/monthly/history`,
+// ver `lib/dashboard/monthly-history-contracts.ts`) — payload default de
+// `fetchMonthlyProductionHistory` (Etapa 0: nenhum dos 4 blocos de mock
+// pré-existentes incluía esta função, então `MonthlyProductionSection`
+// renderizava o banner de erro capturado pelo `catch` de
+// `fetchMonthlyHistoryData` em todo teste da página, sem nenhuma asserção
+// notando isso). 3 ciclos em ordem cronológica, o último com uma lacuna de
+// telemetria (`missing_days: 3`) para exercitar o selo "dados parciais" no
+// fluxo real da página.
+const monthlyHistoryPayload = {
+  plant_id: 'plant-1',
+  limit: 12,
+  cycles_returned: 3,
+  cycles: [
+    {
+      reference_month: '2026-03',
+      bill_id: '33333333-3333-3333-3333-333333333333',
+      status: 'STABLE',
+      production_kwh: '980.00',
+      quality: { missing_days: 0, provisional_days: 0, incomplete_days: 0, unavailable_days: 0 },
+    },
+    {
+      reference_month: '2026-04',
+      bill_id: '44444444-4444-4444-4444-444444444444',
+      status: 'STABLE',
+      production_kwh: '1050.00',
+      quality: { missing_days: 0, provisional_days: 1, incomplete_days: 0, unavailable_days: 0 },
+    },
+    {
+      reference_month: '2026-05',
+      bill_id: '55555555-5555-5555-5555-555555555555',
+      status: 'STABLE',
+      production_kwh: '500.00',
+      quality: { missing_days: 3, provisional_days: 0, incomplete_days: 0, unavailable_days: 0 },
+    },
+  ],
+}
+
+// Helper único de mock de `../lib/api` (Etapa 0: antes existiam 4 blocos
+// `vi.doMock('../lib/api', ...)` divergentes — este `installApiMock` mais o
+// `renderDashboard` abaixo, mais 3 blocos inline em testes específicos — cada
+// um redefinindo os 6 exports do módulo do zero, sem nenhum incluir
+// `fetchMonthlyProductionHistory`). Todos os pontos de mock da suíte passam a
+// chamar esta função: os testes felizes usam só o default de cada export: os
+// poucos testes que precisam de um comportamento diferente (contagem de
+// chamadas, path/plant_id capturado, payload alternativo) sobrescrevem
+// exatamente o export que importa via `overrides`, sem duplicar os outros 5.
+interface ApiMockOverrides {
+  // Atalho para o caso mais comum (só o corpo de `/energy/executive/latest`
+  // muda) — equivalente ao antigo parâmetro posicional de `installApiMock`/
+  // `renderDashboard`. Ignorado se `apiFetch` também for informado.
+  executivePayload?: unknown
+  apiFetch?: (path: string, init?: RequestInit) => Promise<Response>
+  fetchPhotovoltaicSummary?: (plantId: string) => Promise<Response>
+  fetchFinancialReturn?: (plantId: string) => Promise<Response>
+  fetchMonthlyProductionHistory?: (plantId: string, limit?: number) => Promise<Response>
+  fetchPlants?: () => Promise<unknown[]>
+  configureApi?: (...args: unknown[]) => void
+}
+
+function installApiMock(overrides: ApiMockOverrides = {}) {
+  const executiveOverride = overrides.executivePayload ?? executivePayload
   vi.doMock('../lib/api', () => ({
-    apiFetch: vi.fn(async (path: string) => {
-      if (path.startsWith('/energy/executive/latest')) return jsonResponse(executiveOverride)
-      if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(anomalyPayload)
-      throw new Error(`unexpected apiFetch path in test: ${path}`)
-    }),
-    fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
-    fetchFinancialReturn: vi.fn(async () =>
-      jsonResponse({
-        plant_id: 'plant-1',
-        investment_amount_brl: null,
-        investment_recorded_on: null,
-        commissioned_on: null,
-        accumulated_savings_brl: null,
-        average_monthly_savings_brl: null,
-        cycles_counted: null,
-        cycles_expected: null,
-        roi_percent: null,
-        payback_projection_months: null,
-        unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-        payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-      })
-    ),
-    fetchPlants: vi.fn(async () => [singlePlant]),
-    configureApi: vi.fn(),
+    apiFetch:
+      overrides.apiFetch ??
+      vi.fn(async (path: string) => {
+        if (path.startsWith('/energy/executive/latest')) return jsonResponse(executiveOverride)
+        if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(anomalyPayload)
+        throw new Error(`unexpected apiFetch path in test: ${path}`)
+      }),
+    fetchPhotovoltaicSummary:
+      overrides.fetchPhotovoltaicSummary ?? vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
+    fetchFinancialReturn:
+      overrides.fetchFinancialReturn ?? vi.fn(async () => jsonResponse(financialReturnUnavailablePayload)),
+    fetchMonthlyProductionHistory:
+      overrides.fetchMonthlyProductionHistory ?? vi.fn(async () => jsonResponse(monthlyHistoryPayload)),
+    fetchPlants: overrides.fetchPlants ?? vi.fn(async () => [singlePlant]),
+    configureApi: overrides.configureApi ?? vi.fn(),
   }))
 }
 
 async function renderDashboard(executiveOverride: unknown = executivePayload) {
-  installApiMock(executiveOverride)
+  installApiMock({ executivePayload: executiveOverride })
   const { DashboardPage } = await import('./DashboardPage')
   const { AuthProvider } = await import('../contexts/AuthContext')
   const { PlantProvider } = await import('../contexts/PlantContext')
@@ -451,7 +523,7 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
   it('mostra "Tentar novamente" junto do erro e refaz o fetch ao clicar', async () => {
     vi.resetModules()
     let executiveCalls = 0
-    vi.doMock('../lib/api', () => ({
+    installApiMock({
       apiFetch: vi.fn(async (path: string) => {
         if (path.startsWith('/energy/executive/latest')) {
           executiveCalls += 1
@@ -461,26 +533,7 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
         if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(anomalyPayload)
         throw new Error(`unexpected apiFetch path in test: ${path}`)
       }),
-      fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
-      fetchFinancialReturn: vi.fn(async () =>
-        jsonResponse({
-          plant_id: 'plant-1',
-          investment_amount_brl: null,
-          investment_recorded_on: null,
-          commissioned_on: null,
-          accumulated_savings_brl: null,
-          average_monthly_savings_brl: null,
-          cycles_counted: null,
-          cycles_expected: null,
-          roi_percent: null,
-          payback_projection_months: null,
-          unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-          payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-        })
-      ),
-      fetchPlants: vi.fn(async () => [singlePlant]),
-      configureApi: vi.fn(),
-    }))
+    })
 
     const { DashboardPage } = await import('./DashboardPage')
     const { AuthProvider } = await import('../contexts/AuthContext')
@@ -540,7 +593,7 @@ describe('DashboardPage — re-busca dados quando a usina ativa muda (ADR-069, E
     }
     const executiveCallsPlantIds: string[] = []
 
-    vi.doMock('../lib/api', () => ({
+    installApiMock({
       apiFetch: vi.fn(async (path: string) => {
         if (path.startsWith('/energy/executive/latest')) {
           const url = new URL(path, 'https://example.test')
@@ -550,26 +603,8 @@ describe('DashboardPage — re-busca dados quando a usina ativa muda (ADR-069, E
         if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(anomalyPayload)
         throw new Error(`unexpected apiFetch path in test: ${path}`)
       }),
-      fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
-      fetchFinancialReturn: vi.fn(async () =>
-        jsonResponse({
-          plant_id: 'plant-1',
-          investment_amount_brl: null,
-          investment_recorded_on: null,
-          commissioned_on: null,
-          accumulated_savings_brl: null,
-          average_monthly_savings_brl: null,
-          cycles_counted: null,
-          cycles_expected: null,
-          roi_percent: null,
-          payback_projection_months: null,
-          unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-          payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-        })
-      ),
       fetchPlants: vi.fn(async () => [singlePlant, secondPlant]),
-      configureApi: vi.fn(),
-    }))
+    })
 
     const { DashboardPage } = await import('./DashboardPage')
     const { AuthProvider } = await import('../contexts/AuthContext')
@@ -611,7 +646,7 @@ describe('DashboardPage — histórico de produção não depende mais do baseli
     vi.resetModules()
     const anomalyCallPaths: string[] = []
 
-    vi.doMock('../lib/api', () => ({
+    installApiMock({
       apiFetch: vi.fn(async (path: string) => {
         if (path.startsWith('/energy/executive/latest')) return jsonResponse(executivePayload)
         if (path.startsWith('/energy/anomalies/latest')) {
@@ -623,25 +658,7 @@ describe('DashboardPage — histórico de produção não depende mais do baseli
       // `/photovoltaic/summary` responde SEM baseline (usina nova) — a busca
       // de anomalias não pode esperar por esse resultado.
       fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(fallbackPhotovoltaicSummaryPayload)),
-      fetchFinancialReturn: vi.fn(async () =>
-        jsonResponse({
-          plant_id: 'plant-1',
-          investment_amount_brl: null,
-          investment_recorded_on: null,
-          commissioned_on: null,
-          accumulated_savings_brl: null,
-          average_monthly_savings_brl: null,
-          cycles_counted: null,
-          cycles_expected: null,
-          roi_percent: null,
-          payback_projection_months: null,
-          unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-          payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-        })
-      ),
-      fetchPlants: vi.fn(async () => [singlePlant]),
-      configureApi: vi.fn(),
-    }))
+    })
 
     const { DashboardPage } = await import('./DashboardPage')
     const { AuthProvider } = await import('../contexts/AuthContext')
@@ -686,32 +703,14 @@ describe('DashboardPage — histórico de produção não depende mais do baseli
       ],
     }
 
-    vi.doMock('../lib/api', () => ({
+    installApiMock({
       apiFetch: vi.fn(async (path: string) => {
         if (path.startsWith('/energy/executive/latest')) return jsonResponse(executivePayload)
         if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(noBaselineAnomalyPayload)
         throw new Error(`unexpected apiFetch path in test: ${path}`)
       }),
       fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(fallbackPhotovoltaicSummaryPayload)),
-      fetchFinancialReturn: vi.fn(async () =>
-        jsonResponse({
-          plant_id: 'plant-1',
-          investment_amount_brl: null,
-          investment_recorded_on: null,
-          commissioned_on: null,
-          accumulated_savings_brl: null,
-          average_monthly_savings_brl: null,
-          cycles_counted: null,
-          cycles_expected: null,
-          roi_percent: null,
-          payback_projection_months: null,
-          unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-          payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-        })
-      ),
-      fetchPlants: vi.fn(async () => [singlePlant]),
-      configureApi: vi.fn(),
-    }))
+    })
 
     const { DashboardPage } = await import('./DashboardPage')
     const { AuthProvider } = await import('../contexts/AuthContext')
@@ -739,5 +738,73 @@ describe('DashboardPage — histórico de produção não depende mais do baseli
     expect(within(section).queryByText('Esperado')).not.toBeInTheDocument()
     expect(within(section).queryByText(/histórico de desempenho insuficiente/)).not.toBeInTheDocument()
     expect(within(section).queryByText(/primeiro ano de referência/)).not.toBeInTheDocument()
+  })
+})
+
+describe('DashboardPage — seção "Produção por ciclo de faturamento" (Etapa 0)', () => {
+  it('renderiza as barras do histórico de ciclos, não o banner de erro (nenhum mock de ../lib/api anterior incluía fetchMonthlyProductionHistory)', async () => {
+    vi.resetModules()
+    await renderDashboard()
+
+    const sectionTitle = await screen.findByText('Produção por ciclo de faturamento')
+    const section = sectionTitle.closest('section') as HTMLElement
+
+    // Antes da Etapa 0, `fetchMonthlyProductionHistory` não existia em
+    // nenhum mock de `../lib/api` — chamá-la lançava um `TypeError`
+    // capturado por `fetchMonthlyHistoryData`, que fazia esta seção
+    // renderizar `RetryableError` (`role="alert"`) em vez do `BarList` real.
+    await waitFor(() => {
+      expect(within(section).queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    // Os 3 ciclos de `monthlyHistoryPayload` (default de `installApiMock`)
+    // aparecem como barras reais, em ordem cronológica, com o valor formatado.
+    expect(within(section).getAllByRole('progressbar')).toHaveLength(3)
+    expect(within(section).getByText('mar/26')).toBeInTheDocument()
+    expect(within(section).getByText('abr/26')).toBeInTheDocument()
+    expect(within(section).getByText('mai/26')).toBeInTheDocument()
+    expect(within(section).getByText('980 kWh')).toBeInTheDocument()
+    expect(within(section).getByText('1.050 kWh')).toBeInTheDocument()
+    expect(within(section).getByText('500 kWh')).toBeInTheDocument()
+
+    // mai/26 tem missing_days: 3 no payload — único ciclo com o selo de
+    // dados parciais.
+    expect(within(section).getAllByText('dados parciais')).toHaveLength(1)
+  })
+
+  it('mostra RetryableError (não as barras) quando fetchMonthlyProductionHistory falha, sem travar o resto do dashboard', async () => {
+    vi.resetModules()
+    installApiMock({
+      fetchMonthlyProductionHistory: vi.fn(async () => jsonResponse({ error: 'boom' }, 500)),
+    })
+
+    const { DashboardPage } = await import('./DashboardPage')
+    const { AuthProvider } = await import('../contexts/AuthContext')
+    const { PlantProvider } = await import('../contexts/PlantContext')
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <PlantProvider>
+            <main>
+              <DashboardPage />
+            </main>
+          </PlantProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    )
+
+    const sectionTitle = await screen.findByText('Produção por ciclo de faturamento')
+    const section = sectionTitle.closest('section') as HTMLElement
+
+    await waitFor(() => {
+      expect(within(section).getByRole('alert')).toBeInTheDocument()
+    })
+    expect(within(section).getByRole('alert')).toHaveTextContent(
+      /Erro ao buscar histórico de produção/
+    )
+
+    // O erro isolado desta seção não trava o restante da página.
+    expect(await screen.findByText('Financeiro')).toBeInTheDocument()
   })
 })
