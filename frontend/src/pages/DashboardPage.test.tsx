@@ -234,9 +234,11 @@ const monthlyHistoryPayload = {
 interface ApiMockOverrides {
   // Atalho para o caso mais comum (só o corpo de `/energy/executive/latest`
   // muda) — equivalente ao antigo parâmetro posicional de `installApiMock`/
-  // `renderDashboard`. Ignorado se `apiFetch` também for informado.
+  // `renderDashboard`. Ignorado se `fetchExecutiveDashboard` também for
+  // informado.
   executivePayload?: unknown
-  apiFetch?: (path: string, init?: RequestInit) => Promise<Response>
+  fetchExecutiveDashboard?: (plantId: string) => Promise<Response>
+  fetchAnomalyHistory?: (plantId: string, days?: number) => Promise<Response>
   fetchPhotovoltaicSummary?: (plantId: string) => Promise<Response>
   fetchFinancialReturn?: (plantId: string) => Promise<Response>
   fetchMonthlyProductionHistory?: (plantId: string, limit?: number) => Promise<Response>
@@ -247,13 +249,10 @@ interface ApiMockOverrides {
 function installApiMock(overrides: ApiMockOverrides = {}) {
   const executiveOverride = overrides.executivePayload ?? executivePayload
   vi.doMock('../lib/api', () => ({
-    apiFetch:
-      overrides.apiFetch ??
-      vi.fn(async (path: string) => {
-        if (path.startsWith('/energy/executive/latest')) return jsonResponse(executiveOverride)
-        if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(anomalyPayload)
-        throw new Error(`unexpected apiFetch path in test: ${path}`)
-      }),
+    fetchExecutiveDashboard:
+      overrides.fetchExecutiveDashboard ?? vi.fn(async () => jsonResponse(executiveOverride)),
+    fetchAnomalyHistory:
+      overrides.fetchAnomalyHistory ?? vi.fn(async () => jsonResponse(anomalyPayload)),
     fetchPhotovoltaicSummary:
       overrides.fetchPhotovoltaicSummary ?? vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
     fetchFinancialReturn:
@@ -524,14 +523,10 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
     vi.resetModules()
     let executiveCalls = 0
     installApiMock({
-      apiFetch: vi.fn(async (path: string) => {
-        if (path.startsWith('/energy/executive/latest')) {
-          executiveCalls += 1
-          if (executiveCalls === 1) return jsonResponse({ error: 'boom' }, 500)
-          return jsonResponse(executivePayload)
-        }
-        if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(anomalyPayload)
-        throw new Error(`unexpected apiFetch path in test: ${path}`)
+      fetchExecutiveDashboard: vi.fn(async () => {
+        executiveCalls += 1
+        if (executiveCalls === 1) return jsonResponse({ error: 'boom' }, 500)
+        return jsonResponse(executivePayload)
       }),
     })
 
@@ -594,14 +589,9 @@ describe('DashboardPage — re-busca dados quando a usina ativa muda (ADR-069, E
     const executiveCallsPlantIds: string[] = []
 
     installApiMock({
-      apiFetch: vi.fn(async (path: string) => {
-        if (path.startsWith('/energy/executive/latest')) {
-          const url = new URL(path, 'https://example.test')
-          executiveCallsPlantIds.push(url.searchParams.get('plant_id') ?? '')
-          return jsonResponse(executivePayload)
-        }
-        if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(anomalyPayload)
-        throw new Error(`unexpected apiFetch path in test: ${path}`)
+      fetchExecutiveDashboard: vi.fn(async (plantId: string) => {
+        executiveCallsPlantIds.push(plantId)
+        return jsonResponse(executivePayload)
       }),
       fetchPlants: vi.fn(async () => [singlePlant, secondPlant]),
     })
@@ -642,19 +632,12 @@ describe('DashboardPage — re-busca dados quando a usina ativa muda (ADR-069, E
 })
 
 describe('DashboardPage — histórico de produção não depende mais do baseline sazonal (contrato 200 sempre)', () => {
-  it('busca /energy/anomalies/latest assim que há plantId, sem esperar expectedProduction.available e sem o parâmetro deprecated na query', async () => {
+  it('busca /energy/anomalies/latest assim que há plantId, sem esperar expectedProduction.available e sem parâmetros extras (ex.: o antigo expected_daily_production_kwh)', async () => {
     vi.resetModules()
-    const anomalyCallPaths: string[] = []
+    const fetchAnomalyHistoryMock = vi.fn(async () => jsonResponse(anomalyPayload))
 
     installApiMock({
-      apiFetch: vi.fn(async (path: string) => {
-        if (path.startsWith('/energy/executive/latest')) return jsonResponse(executivePayload)
-        if (path.startsWith('/energy/anomalies/latest')) {
-          anomalyCallPaths.push(path)
-          return jsonResponse(anomalyPayload)
-        }
-        throw new Error(`unexpected apiFetch path in test: ${path}`)
-      }),
+      fetchAnomalyHistory: fetchAnomalyHistoryMock,
       // `/photovoltaic/summary` responde SEM baseline (usina nova) — a busca
       // de anomalias não pode esperar por esse resultado.
       fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(fallbackPhotovoltaicSummaryPayload)),
@@ -677,9 +660,12 @@ describe('DashboardPage — histórico de produção não depende mais do baseli
     )
 
     await waitFor(() => {
-      expect(anomalyCallPaths.length).toBeGreaterThan(0)
+      expect(fetchAnomalyHistoryMock).toHaveBeenCalled()
     })
-    expect(anomalyCallPaths[0]).not.toContain('expected_daily_production_kwh')
+    // A página chama só com `plantId` — nenhum segundo argumento (como o
+    // antigo `expected_daily_production_kwh`) é passado; `days` fica a
+    // cargo do default de `fetchAnomalyHistory` em `lib/api.ts`.
+    expect(fetchAnomalyHistoryMock).toHaveBeenCalledWith(singlePlant.id)
   })
 
   it('mostra o gráfico de histórico com produção real, sem linha "Esperado" e sem cair no fallback de dados insuficientes, quando a usina tem produção real mas não tem baseline sazonal', async () => {
@@ -704,11 +690,7 @@ describe('DashboardPage — histórico de produção não depende mais do baseli
     }
 
     installApiMock({
-      apiFetch: vi.fn(async (path: string) => {
-        if (path.startsWith('/energy/executive/latest')) return jsonResponse(executivePayload)
-        if (path.startsWith('/energy/anomalies/latest')) return jsonResponse(noBaselineAnomalyPayload)
-        throw new Error(`unexpected apiFetch path in test: ${path}`)
-      }),
+      fetchAnomalyHistory: vi.fn(async () => jsonResponse(noBaselineAnomalyPayload)),
       fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(fallbackPhotovoltaicSummaryPayload)),
     })
 

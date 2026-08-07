@@ -56,6 +56,23 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   return fetch(`${API_URL}${path}`, { ...init, headers: retryHeaders })
 }
 
+// Dashboard executivo do ciclo de faturamento atual (`GET /energy/executive/latest`) —
+// headline, status, indicadores e diagnósticos do ciclo em curso (ver `contracts.ts`,
+// `parseExecutiveDashboard`).
+export async function fetchExecutiveDashboard(plantId: string): Promise<Response> {
+  return apiFetch(`/energy/executive/latest?plant_id=${encodeURIComponent(plantId)}`)
+}
+
+// Histórico de anomalias de produção diária (`GET /energy/anomalies/latest`).
+// `expected_daily_production_kwh` saiu da query string: o backend marca o
+// parâmetro `deprecated=True` e o ignora (ver `intelligence/router.py`) — o
+// endpoint agora resolve a expectativa sozinho e devolve `200` sempre, com
+// campos por dia `null` quando não há expectativa disponível (ver
+// `AnomalyDailyPoint.level`/`expected_unavailable_reason`).
+export async function fetchAnomalyHistory(plantId: string, days = 90): Promise<Response> {
+  return apiFetch(`/energy/anomalies/latest?plant_id=${encodeURIComponent(plantId)}&days=${days}`)
+}
+
 // Leitura composta da modelagem fotovoltaica (performance + baseline sazonal +
 // perdas) para uma usina, em uma única requisição (ver ADR-065, seção 4,
 // `GET /photovoltaic/summary`). Sempre 200 quando a usina está no escopo do

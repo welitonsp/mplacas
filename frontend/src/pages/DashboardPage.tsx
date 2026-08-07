@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { apiFetch, fetchFinancialReturn, fetchMonthlyProductionHistory, fetchPhotovoltaicSummary } from '../lib/api'
+import {
+  fetchAnomalyHistory,
+  fetchExecutiveDashboard,
+  fetchFinancialReturn,
+  fetchMonthlyProductionHistory,
+  fetchPhotovoltaicSummary,
+} from '../lib/api'
 import { usePlant } from '../contexts/PlantContext'
 import type { AnomalyFetchState, FetchState } from '../lib/dashboard/contracts'
 import {
@@ -100,9 +106,7 @@ export function DashboardPage() {
     if (!plantId) return
     setState((prev) => ({ ...prev, loading: true, error: null }))
     try {
-      const response = await apiFetch(
-        `/energy/executive/latest?plant_id=${encodeURIComponent(plantId)}`
-      )
+      const response = await fetchExecutiveDashboard(plantId)
       if (!response.ok) {
         if (response.status === 401) {
           // apiFetch already attempted refresh; if still 401 the user was logged out.
@@ -189,14 +193,7 @@ export function DashboardPage() {
     if (!plantId) return
     setAnomalyState((prev) => ({ ...prev, loading: true }))
     try {
-      // `expected_daily_production_kwh` saiu da query string: o backend marca
-      // o parâmetro `deprecated=True` e o ignora (ver `intelligence/router.py`)
-      // — o endpoint agora resolve a expectativa sozinho e devolve `200`
-      // sempre, com campos por dia `null` quando não há expectativa disponível
-      // (ver `AnomalyDailyPoint.level`/`expected_unavailable_reason`).
-      const response = await apiFetch(
-        `/energy/anomalies/latest?plant_id=${encodeURIComponent(plantId)}&days=90`
-      )
+      const response = await fetchAnomalyHistory(plantId)
       if (!response.ok) {
         // 404 (sem dado diário ainda) e 5xx (algo quebrou) recebem mensagens
         // diferentes em `ProductionHistorySection` — ver `classifyAnomalyErrorStatus`.
