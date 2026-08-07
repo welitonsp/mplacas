@@ -74,6 +74,19 @@ export async function fetchFinancialReturn(plantId: string): Promise<Response> {
   return apiFetch(`/energy/financial-return/latest?plant_id=${encodeURIComponent(plantId)}`)
 }
 
+// Histórico de produção por ciclo de faturamento (`GET /reports/monthly/history`).
+// Só devolve ciclos já fechados com fatura confirmada — nunca um ciclo "em curso" —
+// e uma usina sem nenhum ciclo fechado recebe `200` com `cycles: []`, nunca 404.
+// Mesma convenção de sempre-200-dentro-do-escopo das demais leituras deste arquivo.
+export async function fetchMonthlyProductionHistory(
+  plantId: string,
+  limit = 12
+): Promise<Response> {
+  return apiFetch(
+    `/reports/monthly/history?plant_id=${encodeURIComponent(plantId)}&limit=${limit}`
+  )
+}
+
 // Configuração financeira (CAPEX) da usina (ADR-067,
 // `GET/PATCH /plants/{plant_id}/financial-configuration`). `GET` usa `ReadPlantPath`,
 // `PATCH` usa `AdminPlantPath` — um chamador com credencial READ recebe 403 do

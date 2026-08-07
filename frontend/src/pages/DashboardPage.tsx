@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { apiFetch, fetchFinancialReturn, fetchPhotovoltaicSummary } from '../lib/api'
+import { apiFetch, fetchFinancialReturn, fetchMonthlyProductionHistory, fetchPhotovoltaicSummary } from '../lib/api'
 import { usePlant } from '../contexts/PlantContext'
 import type { AnomalyFetchState, FetchState } from '../lib/dashboard/contracts'
 import {
@@ -11,6 +11,8 @@ import {
 } from '../lib/dashboard/contracts'
 import type { FinancialReturnResponse } from '../lib/dashboard/financial-return-contracts'
 import { parseFinancialReturn } from '../lib/dashboard/financial-return-contracts'
+import type { MonthlyProductionHistoryResponse } from '../lib/dashboard/monthly-history-contracts'
+import { parseMonthlyProductionHistory } from '../lib/dashboard/monthly-history-contracts'
 import type { ExpectedDailyProduction, PhotovoltaicSummaryResponse } from '../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
 import { formatCurrency, formatNumber, toNumber } from '../lib/format'
@@ -28,6 +30,7 @@ import { FinancialReturnSection } from '../components/FinancialReturnSection'
 import { LatestDailyProductionCard } from '../components/LatestDailyProductionCard'
 import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
+import { MonthlyProductionSection } from '../components/MonthlyProductionSection'
 import { ProductionHistorySection } from '../components/ProductionHistorySection'
 import { RetryableError } from '../components/RetryableError'
 import { TechnicalPerformanceSection } from '../components/TechnicalPerformanceSection'
@@ -80,6 +83,14 @@ export function DashboardPage() {
   // `FinancialReturnSection` — os dois nunca se confundem.
   const [financialReturn, setFinancialReturn] = useState<FinancialReturnResponse | null>(null)
   const [financialReturnError, setFinancialReturnError] = useState<string | null>(null)
+  // `null` = ainda carregando `/reports/monthly/history` (histórico de
+  // produção por ciclo de faturamento). Mesmo padrão de `financialReturn`/
+  // `financialReturnError` acima: erro de rede/servidor isolado num estado
+  // próprio, para não travar o resto do dashboard se essa chamada falhar.
+  const [monthlyHistory, setMonthlyHistory] = useState<MonthlyProductionHistoryResponse | null>(
+    null
+  )
+  const [monthlyHistoryError, setMonthlyHistoryError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!plantId) return
@@ -153,6 +164,23 @@ export function DashboardPage() {
     }
   }, [plantId])
 
+  const fetchMonthlyHistoryData = useCallback(async () => {
+    if (!plantId) return
+    setMonthlyHistoryError(null)
+    try {
+      const response = await fetchMonthlyProductionHistory(plantId)
+      if (!response.ok) {
+        if (response.status === 401) return
+        throw new Error(`Erro ao buscar histórico de produção (${response.status}).`)
+      }
+      setMonthlyHistory(parseMonthlyProductionHistory(await response.json()))
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Erro ao buscar histórico de produção.'
+      setMonthlyHistoryError(message)
+    }
+  }, [plantId])
+
   const fetchAnomalies = useCallback(async (expectedDailyProductionKwh: number) => {
     if (!plantId) return
     setAnomalyState((prev) => ({ ...prev, loading: true }))
@@ -181,7 +209,8 @@ export function DashboardPage() {
     void fetchData()
     void fetchExpectedProduction()
     void fetchFinancialReturnData()
-  }, [fetchData, fetchExpectedProduction, fetchFinancialReturnData])
+    void fetchMonthlyHistoryData()
+  }, [fetchData, fetchExpectedProduction, fetchFinancialReturnData, fetchMonthlyHistoryData])
 
   // O histórico de produção/anomalias só é buscado depois que sabemos a produção
   // esperada real da usina — sem ela o endpoint de anomalias não tem contra o que
@@ -269,6 +298,7 @@ export function DashboardPage() {
               void fetchData()
               void fetchExpectedProduction()
               void fetchFinancialReturnData()
+              void fetchMonthlyHistoryData()
             }}
             disabled={loading}
             className="rounded text-xs text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] disabled:opacity-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
@@ -311,6 +341,23 @@ export function DashboardPage() {
                 diagnostics={diagnostics}
               />
               <QualityBanner quality={quality} />
+            </section>
+
+            {/* Produção por ciclo de faturamento (12 ciclos fechados) — leitura
+                do grosso pro fino: o resumo mensal primeiro, o histórico
+                diário de 90 dias (bloco seguinte) depois. Erro desta seção é
+                isolado (`monthlyHistoryError`) e não trava o resto do
+                dashboard se a chamada falhar. */}
+            <section className="md:col-span-6 lg:col-span-12">
+              <SectionTitle as="h2">Produção por ciclo de faturamento</SectionTitle>
+              {monthlyHistoryError ? (
+                <RetryableError
+                  message={monthlyHistoryError}
+                  onRetry={() => void fetchMonthlyHistoryData()}
+                />
+              ) : (
+                <MonthlyProductionSection history={monthlyHistory} />
+              )}
             </section>
 
             {/* Histórico de produção diária — bloco maior (gráfico), ao lado
