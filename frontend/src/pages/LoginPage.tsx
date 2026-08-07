@@ -54,10 +54,12 @@ export function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-slate-950 font-sans">
-      {/* Background animado / Mesh Gradient moderno (Estilo Stripe/Vercel) */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[60%] rounded-full bg-blue-600/20 mix-blend-screen filter blur-[100px] animate-pulse"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[70%] rounded-full bg-indigo-600/20 mix-blend-screen filter blur-[120px]"></div>
-      <div className="absolute top-[20%] right-[10%] w-[30%] h-[40%] rounded-full bg-cyan-400/10 mix-blend-screen filter blur-[100px] animate-pulse delay-1000"></div>
+      {/* Background animado / Mesh Gradient moderno (Estilo Stripe/Vercel) —
+          puramente decorativo, oculto de leitores de tela; animação respeita
+          prefers-reduced-motion via motion-reduce:animate-none. */}
+      <div aria-hidden="true" className="absolute top-[-10%] left-[-10%] w-[50%] h-[60%] rounded-full bg-blue-600/20 mix-blend-screen filter blur-[100px] animate-pulse motion-reduce:animate-none"></div>
+      <div aria-hidden="true" className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[70%] rounded-full bg-indigo-600/20 mix-blend-screen filter blur-[120px]"></div>
+      <div aria-hidden="true" className="absolute top-[20%] right-[10%] w-[30%] h-[40%] rounded-full bg-cyan-400/10 mix-blend-screen filter blur-[100px] animate-pulse delay-1000 motion-reduce:animate-none"></div>
 
       <div className="relative z-10 w-full max-w-6xl flex flex-col lg:flex-row items-center justify-between gap-12 px-6 py-12">
         
@@ -79,7 +81,7 @@ export function LoginPage() {
             {BENEFITS.map((benefit) => (
               <li key={benefit} className="flex items-center gap-3 text-slate-300 font-medium">
                 <div className="flex-shrink-0 h-6 w-6 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
-                  <svg viewBox="0 0 20 20" className="h-4 w-4 text-blue-400" fill="currentColor">
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 text-blue-400" fill="currentColor">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
                 </div>
@@ -116,7 +118,9 @@ export function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={loading}
-                className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl px-5 py-3.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/80 focus:border-blue-500 transition-all duration-300 disabled:opacity-50"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? errorId : undefined}
+                className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl px-5 py-3.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-primary)] focus:border-[var(--color-brand-primary)] transition-all duration-300 disabled:opacity-50"
                 placeholder="Seu usuário"
               />
             </div>
@@ -134,13 +138,17 @@ export function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
-                  className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl px-5 py-3.5 pr-16 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/80 focus:border-blue-500 transition-all duration-300 disabled:opacity-50"
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? errorId : undefined}
+                  className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl px-5 py-3.5 pr-16 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-primary)] focus:border-[var(--color-brand-primary)] transition-all duration-300 disabled:opacity-50"
                   placeholder="••••••••"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((prev) => !prev)}
-                  className="absolute inset-y-0 right-2 flex items-center justify-center px-4 text-xs font-bold text-slate-400 hover:text-white transition-colors focus:outline-none"
+                  aria-pressed={showPassword}
+                  disabled={loading}
+                  className="absolute inset-y-0 right-2 flex min-w-[44px] items-center justify-center px-4 text-xs font-bold text-slate-400 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded-xl disabled:opacity-50"
                 >
                   {showPassword ? 'Ocultar' : 'Mostrar'}
                 </button>
@@ -156,7 +164,7 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-4 text-sm font-bold text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] hover:shadow-[0_0_30px_rgba(37,99,235,0.6)] hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 transition-all duration-300 disabled:opacity-50 disabled:transform-none transform hover:-translate-y-1"
+              className="w-full mt-4 rounded-2xl bg-gradient-to-r from-[var(--color-brand-primary)] to-indigo-600 px-4 py-4 text-sm font-bold text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] hover:shadow-[0_0_30px_rgba(37,99,235,0.6)] hover:from-[var(--color-brand-primary-dark)] hover:to-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition-all duration-300 disabled:opacity-50 disabled:transform-none transform hover:-translate-y-1"
             >
               {loading ? 'Entrando...' : 'Entrar no Painel'}
             </button>
