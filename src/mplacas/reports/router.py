@@ -19,6 +19,11 @@ from mplacas.reports.exporters import (
     build_monthly_report_pdf,
     build_monthly_report_xlsx,
 )
+from mplacas.reports.history_service import (
+    DEFAULT_HISTORY_CYCLES,
+    MAX_HISTORY_CYCLES,
+    load_monthly_production_history,
+)
 from mplacas.reports.serialization import (
     monthly_report_to_csv,
     serialize_monthly_report,
@@ -166,6 +171,27 @@ async def latest_monthly_report_xlsx(
         media_type=XLSX_MEDIA_TYPE,
         headers=_download_headers(filename, snapshot=snapshot),
     )
+
+
+@router.get("/monthly/history")
+async def monthly_report_history(
+    response: Response,
+    scoped: ReadPlant,
+    limit: int = Query(default=DEFAULT_HISTORY_CYCLES, ge=1, le=MAX_HISTORY_CYCLES),
+) -> dict[str, object]:
+    # Unlike /monthly/latest, this endpoint never materializes a snapshot: it
+    # is a strict read of already-closed cycles for a chart, so a plant with
+    # no confirmed bill yet returns 200 with cycles: [], never 404.
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        payload = await load_monthly_production_history(
+            session,
+            plant_id=scoped.plant_id,
+            plant_scope=scoped.principal.plant_scope,
+            limit=limit,
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return payload
 
 
 # ---------------------------------------------------------------------------

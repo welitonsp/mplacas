@@ -174,6 +174,33 @@ class MonthlyReportSnapshotRepository:
         ).all()
         return tuple(_to_snapshot(record) for record in records)
 
+    async def list_recent_for_plant(
+        self, *, plant_id: uuid.UUID, limit: int
+    ) -> tuple[MonthlyReportSnapshot, ...]:
+        """The ``limit`` most recent snapshots for ``plant_id``, oldest first.
+
+        Strict read of already-materialized snapshots (ADR-038): never
+        materializes anything new. Separate from :meth:`list_for_plant`
+        (which has no limit and is relied on by
+        ``intelligence.financial_return_service`` to sum the plant's full
+        history) so that adding a bounded query here carries no risk of
+        regressing the ROI calculation.
+        """
+        if not self._plant_scope.allows(plant_id):
+            return ()
+        records = (
+            await self._session.scalars(
+                select(MonthlyReportSnapshotRecord)
+                .where(MonthlyReportSnapshotRecord.plant_id == plant_id)
+                .order_by(
+                    desc(MonthlyReportSnapshotRecord.reference_month),
+                    desc(MonthlyReportSnapshotRecord.created_at),
+                )
+                .limit(limit)
+            )
+        ).all()
+        return tuple(_to_snapshot(record) for record in reversed(records))
+
     async def create(self, report: MonthlyEnergyReport) -> MonthlyReportSnapshot:
         if not self._plant_scope.allows(report.plant_id):
             raise PermissionError("plant is outside the report snapshot scope")
