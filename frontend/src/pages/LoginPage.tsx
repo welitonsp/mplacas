@@ -55,46 +55,52 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-gray-50">
+    <div className="min-h-screen grid lg:grid-cols-2 bg-[var(--color-surface-subtle)]">
       {/* Painel decorativo — some em telas pequenas, só a marca reduzida
           permanece visível acima do formulário. */}
-      <div className="hidden lg:flex flex-col justify-center px-16 py-12 bg-gradient-to-br from-[var(--color-brand-primary)] to-[var(--color-brand-primary-dark)] text-white">
-        <BrandMark className="h-10 w-auto text-white" />
-        <h2 className="mt-10 text-3xl font-semibold leading-tight">
-          Energia solar explicada com dados auditáveis.
-        </h2>
-        <p className="mt-4 text-base text-white/80 max-w-md">
-          Acompanhe a operação da sua usina com indicadores claros e
-          rastreáveis, do painel à conta de luz.
-        </p>
-        <ul className="mt-8 space-y-3">
-          {BENEFITS.map((benefit) => (
-            <li key={benefit} className="flex items-center gap-2 text-sm text-white/90">
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 20 20"
-                className="h-5 w-5 flex-shrink-0"
-                fill="none"
-              >
-                <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M6 10.5l2.5 2.5L14 7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              {benefit}
-            </li>
-          ))}
-        </ul>
+      <div className="hidden lg:flex flex-col justify-center px-16 py-12 bg-gradient-to-br from-[var(--color-brand-primary)] to-[var(--color-brand-primary-dark)] text-white relative overflow-hidden">
+        {/* Glow effect sutil no background */}
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-white/10 rounded-full mix-blend-overlay filter blur-3xl opacity-50"></div>
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-900/40 rounded-full mix-blend-multiply filter blur-3xl"></div>
+        
+        <div className="relative z-10">
+          <BrandMark className="h-10 w-auto text-white" />
+          <h2 className="mt-10 text-4xl font-bold leading-tight tracking-tight">
+            Energia solar explicada com dados auditáveis.
+          </h2>
+          <p className="mt-6 text-lg text-blue-50 max-w-md font-medium">
+            Acompanhe a operação da sua usina com indicadores claros e
+            rastreáveis, do painel à conta de luz.
+          </p>
+          <ul className="mt-10 space-y-4">
+            {BENEFITS.map((benefit) => (
+              <li key={benefit} className="flex items-center gap-3 text-base text-blue-50 font-medium">
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 20 20"
+                  className="h-6 w-6 flex-shrink-0 text-blue-200"
+                  fill="none"
+                >
+                  <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M6 10.5l2.5 2.5L14 7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {benefit}
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
 
       <div className="flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-sm">
-          <div className="mb-6 flex justify-center lg:hidden">
-            <BrandMark className="h-8 w-auto text-[var(--color-brand-primary)]" />
+          <div className="mb-8 flex justify-center lg:hidden">
+            <BrandMark className="h-10 w-auto text-[var(--color-brand-primary)]" />
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-            <div className="mb-8 text-center">
-              <h1 className="text-2xl font-semibold text-gray-900 hidden lg:block">Mplacas</h1>
-              <p className="mt-1 text-sm text-gray-500">Acesse sua conta para continuar</p>
+          <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-[var(--color-border)] p-10">
+            <div className="mb-10 text-center">
+              <h1 className="text-3xl font-bold text-slate-800 tracking-tight hidden lg:block">Mplacas</h1>
+              <p className="mt-2 text-sm text-slate-500 font-medium">Acesse sua conta para continuar</p>
             </div>
 
             {sessionEnded && (
