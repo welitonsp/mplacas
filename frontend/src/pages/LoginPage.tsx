@@ -23,8 +23,7 @@ export function LoginPage() {
   const sessionEnded =
     (location.state as { reason?: string } | null)?.reason === 'SESSION_ENDED'
 
-  // Redirecionamento declarativo — evitar `navigate()` durante o render, que é
-  // um efeito colateral inválido nesse ponto do ciclo de vida do componente.
+  // Redirecionamento declarativo
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />
   }
@@ -43,7 +42,6 @@ export function LoginPage() {
       await login(username, password)
       navigate('/dashboard', { replace: true })
     } catch (err) {
-      // Display safe error messages only — no stack traces or internal details
       if (err instanceof Error) {
         setError(err.message)
       } else {
@@ -55,139 +53,114 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-[var(--color-surface-subtle)]">
-      {/* Painel decorativo — some em telas pequenas, só a marca reduzida
-          permanece visível acima do formulário. */}
-      <div className="hidden lg:flex flex-col justify-center px-16 py-12 bg-gradient-to-br from-[var(--color-brand-primary)] to-[var(--color-brand-primary-dark)] text-white relative overflow-hidden">
-        {/* Glow effect sutil no background */}
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-white/10 rounded-full mix-blend-overlay filter blur-3xl opacity-50"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-900/40 rounded-full mix-blend-multiply filter blur-3xl"></div>
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-slate-950 font-sans">
+      {/* Background animado / Mesh Gradient moderno (Estilo Stripe/Vercel) */}
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[60%] rounded-full bg-blue-600/20 mix-blend-screen filter blur-[100px] animate-pulse"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[70%] rounded-full bg-indigo-600/20 mix-blend-screen filter blur-[120px]"></div>
+      <div className="absolute top-[20%] right-[10%] w-[30%] h-[40%] rounded-full bg-cyan-400/10 mix-blend-screen filter blur-[100px] animate-pulse delay-1000"></div>
+
+      <div className="relative z-10 w-full max-w-6xl flex flex-col lg:flex-row items-center justify-between gap-12 px-6 py-12">
         
-        <div className="relative z-10">
-          <BrandMark className="h-10 w-auto text-white" />
-          <h2 className="mt-10 text-4xl font-bold leading-tight tracking-tight">
-            Energia solar explicada com dados auditáveis.
-          </h2>
-          <p className="mt-6 text-lg text-blue-50 max-w-md font-medium">
-            Acompanhe a operação da sua usina com indicadores claros e
-            rastreáveis, do painel à conta de luz.
+        {/* Painel de Apresentação (Esquerda) */}
+        <div className="flex-1 w-full text-center lg:text-left space-y-8">
+          <div className="inline-flex items-center justify-center lg:justify-start gap-3">
+            <BrandMark className="h-10 w-auto text-blue-400" />
+            <span className="text-2xl font-bold text-white tracking-tight">Mplacas</span>
+          </div>
+          
+          <h1 className="text-5xl lg:text-7xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400 tracking-tight leading-tight">
+            Inteligência <br/> Solar.
+          </h1>
+          <p className="text-lg lg:text-xl text-slate-400 font-medium max-w-lg mx-auto lg:mx-0 leading-relaxed">
+            Tenha controle total sobre a operação da sua usina com dados auditáveis e indicadores financeiros em tempo real.
           </p>
-          <ul className="mt-10 space-y-4">
+
+          <ul className="mt-8 space-y-4 max-w-md mx-auto lg:mx-0 text-left">
             {BENEFITS.map((benefit) => (
-              <li key={benefit} className="flex items-center gap-3 text-base text-blue-50 font-medium">
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 20 20"
-                  className="h-6 w-6 flex-shrink-0 text-blue-200"
-                  fill="none"
-                >
-                  <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M6 10.5l2.5 2.5L14 7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+              <li key={benefit} className="flex items-center gap-3 text-slate-300 font-medium">
+                <div className="flex-shrink-0 h-6 w-6 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
+                  <svg viewBox="0 0 20 20" className="h-4 w-4 text-blue-400" fill="currentColor">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
                 {benefit}
               </li>
             ))}
           </ul>
         </div>
-      </div>
 
-      <div className="flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 flex justify-center lg:hidden">
-            <BrandMark className="h-10 w-auto text-[var(--color-brand-primary)]" />
+        {/* Card de Login (Direita - Glassmorphism Premium) */}
+        <div className="w-full max-w-md bg-white/5 backdrop-blur-2xl border border-white/10 p-10 rounded-[2.5rem] shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]">
+          <div className="mb-8 text-center lg:text-left">
+            <h2 className="text-2xl font-bold text-white tracking-tight">Acesso ao Painel</h2>
+            <p className="text-slate-400 mt-2 text-sm font-medium">Insira suas credenciais para continuar</p>
           </div>
 
-          <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-[var(--color-border)] p-10">
-            <div className="mb-10 text-center">
-              <h1 className="text-3xl font-bold text-slate-800 tracking-tight hidden lg:block">Mplacas</h1>
-              <p className="mt-2 text-sm text-slate-500 font-medium">Acesse sua conta para continuar</p>
+          {sessionEnded && (
+            <div role="status" className="mb-6 rounded-2xl bg-rose-500/10 border border-rose-500/20 px-4 py-3 text-sm text-rose-300 font-medium">
+              Sua sessão foi encerrada. Entre novamente.
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} noValidate className="space-y-5">
+            <div>
+              <label htmlFor="username" className="block text-sm font-semibold text-slate-300 mb-2">
+                Usuário
+              </label>
+              <input
+                id="username"
+                type="text"
+                autoComplete="username"
+                autoFocus
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                disabled={loading}
+                className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl px-5 py-3.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/80 focus:border-blue-500 transition-all duration-300 disabled:opacity-50"
+                placeholder="Seu usuário"
+              />
             </div>
 
-            {sessionEnded && (
-              <div
-                role="status"
-                className="mb-4 rounded-lg bg-gray-100 border border-gray-200 px-3 py-2 text-sm text-gray-700"
-              >
-                Sua sessão foi encerrada. Entre novamente.
+            <div>
+              <label htmlFor="password" className="block text-sm font-semibold text-slate-300 mb-2">
+                Senha
+              </label>
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl px-5 py-3.5 pr-16 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/80 focus:border-blue-500 transition-all duration-300 disabled:opacity-50"
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-2 flex items-center justify-center px-4 text-xs font-bold text-slate-400 hover:text-white transition-colors focus:outline-none"
+                >
+                  {showPassword ? 'Ocultar' : 'Mostrar'}
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <div id={errorId} role="alert" className="rounded-2xl bg-rose-500/10 border border-rose-500/20 px-4 py-3 text-sm text-rose-300 font-medium">
+                {error}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} noValidate className="space-y-4">
-              <div>
-                <label
-                  htmlFor="username"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Usuário
-                </label>
-                <input
-                  id="username"
-                  type="text"
-                  autoComplete="username"
-                  autoFocus
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  disabled={loading}
-                  aria-invalid={error ? true : undefined}
-                  aria-describedby={error ? errorId : undefined}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-500 transition-colors duration-150 focus:border-[var(--color-brand-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-primary)] focus-visible:ring-2 disabled:opacity-50"
-                  placeholder="seu.usuario"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
-                  Senha
-                </label>
-                <div className="relative">
-                  <input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={loading}
-                    aria-invalid={error ? true : undefined}
-                    aria-describedby={error ? errorId : undefined}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-16 text-sm text-gray-900 placeholder-gray-500 transition-colors duration-150 focus:border-[var(--color-brand-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-primary)] focus-visible:ring-2 disabled:opacity-50"
-                    placeholder="••••••••"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    aria-pressed={showPassword}
-                    disabled={loading}
-                    className="absolute inset-y-0 right-0 flex items-center justify-center min-w-[44px] px-3 text-xs font-medium text-gray-600 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded-r-lg disabled:opacity-50"
-                  >
-                    {showPassword ? 'Ocultar' : 'Mostrar'}
-                  </button>
-                </div>
-              </div>
-
-              {error && (
-                <div
-                  id={errorId}
-                  role="alert"
-                  className="rounded-lg bg-[var(--color-danger-light)] border border-[var(--color-danger)]/30 px-3 py-2 text-sm text-[var(--color-danger)]"
-                >
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full rounded-lg bg-[var(--color-brand-primary)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-brand-primary-dark)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-primary)] focus:ring-offset-2 focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
-              >
-                {loading ? 'Entrando...' : 'Entrar'}
-              </button>
-            </form>
-          </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full mt-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-4 text-sm font-bold text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] hover:shadow-[0_0_30px_rgba(37,99,235,0.6)] hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 transition-all duration-300 disabled:opacity-50 disabled:transform-none transform hover:-translate-y-1"
+            >
+              {loading ? 'Entrando...' : 'Entrar no Painel'}
+            </button>
+          </form>
         </div>
       </div>
     </div>
