@@ -30,7 +30,7 @@ export function PlantSelector() {
         id={selectId}
         value={plantId ?? ''}
         onChange={(event) => selectPlant(event.target.value)}
-        className="max-w-[16rem] truncate rounded border border-gray-200 bg-white py-1 pl-2 pr-6 text-sm text-gray-700 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+        className="max-w-[16rem] truncate rounded border border-gray-200 bg-[var(--color-surface)] py-1 pl-2 pr-6 text-sm text-gray-700 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
       >
         {plants.map((plant) => (
           <option key={plant.id} value={plant.id}>

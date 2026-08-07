@@ -40,7 +40,7 @@ export function AppHeader() {
   }, [menuOpen])
 
   return (
-    <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-[var(--color-border)] shadow-sm">
+    <header className="sticky top-0 z-30 bg-[var(--color-surface)]/80 backdrop-blur-md border-b border-[var(--color-border)] shadow-sm">
       <div className="mx-auto max-w-7xl 2xl:max-w-[96rem] px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <BrandMark className="h-7 w-auto text-[var(--color-brand-primary)] flex-shrink-0" />
@@ -74,7 +74,7 @@ export function AppHeader() {
             <div
               id={menuId}
               role="menu"
-              className="absolute right-0 mt-2 w-48 rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+              className="absolute right-0 mt-2 w-48 rounded-lg border border-gray-200 bg-[var(--color-surface)] py-1 shadow-lg"
             >
               {username && (
                 <div className="px-3 py-2 text-sm font-medium text-gray-900 border-b border-gray-100">

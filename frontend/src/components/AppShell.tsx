@@ -11,7 +11,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-[var(--color-surface-subtle)] text-[var(--color-text-primary)]">
       <a
         href={`#${MAIN_ID}`}
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-gray-900 focus:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-[var(--color-surface)] focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-gray-900 focus:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
       >
         Pular para o conteúdo
       </a>

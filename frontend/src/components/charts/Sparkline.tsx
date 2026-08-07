@@ -10,7 +10,7 @@ const TONE_BG_VAR: Record<ChartTone, string> = {
 // Cor do eixo central (delta zero) — sempre neutra/escura, mesmo padrão do
 // tick de meta em `Bullet` (não é um dos tokens de severidade, é referência
 // de escala).
-const AXIS_COLOR = '#9ca3af'
+const AXIS_COLOR = 'var(--color-gray-400)'
 
 // Altura mínima de barra do projeto (ver skill chart-standards) — barras de
 // 6-8px lêem como decoração, não dado.

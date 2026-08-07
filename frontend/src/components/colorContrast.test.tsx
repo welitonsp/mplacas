@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 // frontend-design). Usa `import.meta.glob` com `query: '?raw'` em vez de
 // `node:fs` para não exigir `@types/node` (não instalado neste projeto) e
 // continuar funcionando tanto no Vitest quanto no `vite build`/`tsc -b`.
-const componentSources = import.meta.glob('./*.tsx', {
+const componentSources = import.meta.glob('./**/*.tsx', {
   query: '?raw',
   import: 'default',
   eager: true,

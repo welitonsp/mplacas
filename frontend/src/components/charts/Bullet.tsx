@@ -4,7 +4,7 @@ import type { ChartTone } from './Gauge'
 // tokens de severidade (`Gauge`/`BarList` reservam essas cores para o
 // preenchimento da barra em si). Mantido como constante local para não
 // inventar um token novo em `index.css` para um único traço de 2px.
-const TARGET_TICK_COLOR = '#111827'
+const TARGET_TICK_COLOR = 'var(--color-gray-900)'
 
 const TONE_BG_VAR: Record<ChartTone, string> = {
   success: 'var(--color-success-text)',
@@ -119,7 +119,7 @@ export function Bullet({
           />
         )}
       </div>
-      <div className="flex items-center justify-between text-[11px] text-gray-400 tabular-nums" aria-hidden="true">
+      <div className="flex items-center justify-between text-[11px] text-gray-500 tabular-nums" aria-hidden="true">
         <span>0</span>
         <span>{formatValue(effectiveMax)}</span>
       </div>

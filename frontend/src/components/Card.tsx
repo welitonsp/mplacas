@@ -39,7 +39,7 @@ export function Card({
       ? 'bg-[var(--color-warning-light)] border-[var(--color-warning)]'
       : tone === 'danger'
         ? 'bg-[var(--color-danger-light)] border-[var(--color-danger)]/30'
-        : 'bg-white border-[var(--color-border)]'
+        : 'bg-[var(--color-surface)] border-[var(--color-border)]'
   const accentClass = accent ? `border-l-4 ${SEVERITY_BORDER_L[accent]}` : ''
   const interactiveClass = interactive ? 'hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] hover:-translate-y-0.5' : ''
 

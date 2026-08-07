@@ -11,7 +11,7 @@ export function SectionTitle({
   id?: string
 }) {
   return (
-    <Heading id={id} className="mb-4 text-base font-bold text-slate-800 tracking-tight">
+    <Heading id={id} className="mb-4 text-base font-bold text-gray-800 tracking-tight">
       {children}
     </Heading>
   )

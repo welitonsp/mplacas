@@ -276,7 +276,7 @@ export function DashboardPage() {
   // estado vazio explícito, zero chamadas de dados disparadas.
   if (!plantId || plants.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white px-6 py-10 text-center text-sm text-gray-600">
+      <div className="rounded-lg border border-gray-200 bg-[var(--color-surface)] px-6 py-10 text-center text-sm text-gray-600">
         Nenhuma usina cadastrada para esta conta ainda.
       </div>
     )
@@ -482,7 +482,7 @@ export function DashboardPage() {
                       antes de decompor — ver skill `financial-visualization`. */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
                     {billTotalAmount != null && billEnergyComponent != null && billPublicLighting != null ? (
-                      <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="rounded-lg border border-gray-200 bg-[var(--color-surface)] p-4">
                         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                           Valor total da fatura
                         </p>
