@@ -206,6 +206,8 @@ jobs:
           retention-days: 30
       - name: Type check
         run: npm run type-check
+      - name: Tests
+        run: npm test
       - name: Build
         env:
           # These are non-sensitive build-time configuration values included in the
