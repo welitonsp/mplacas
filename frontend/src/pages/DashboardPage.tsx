@@ -8,7 +8,7 @@ import {
 } from '../lib/api'
 import { usePlant } from '../contexts/PlantContext'
 import { usePlantResource } from '../hooks/usePlantResource'
-import type { AnomalyFetchState, FetchState } from '../lib/dashboard/contracts'
+import type { AnomalyFetchState } from '../lib/dashboard/contracts'
 import {
   classifyAnomalyErrorStatus,
   combineDiagnostics,
@@ -18,7 +18,7 @@ import {
 } from '../lib/dashboard/contracts'
 import { parseFinancialReturn } from '../lib/dashboard/financial-return-contracts'
 import { parseMonthlyProductionHistory } from '../lib/dashboard/monthly-history-contracts'
-import type { ExpectedDailyProduction, PhotovoltaicSummaryResponse } from '../lib/dashboard/photovoltaic-contracts'
+import type { PhotovoltaicSummaryResponse } from '../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
 import { formatCurrency, formatNumber, toNumber } from '../lib/format'
 import { SectionTitle } from '../components/SectionTitle'
@@ -62,30 +62,40 @@ function fallbackPvSummary(plantId: string): PhotovoltaicSummaryResponse {
 
 export function DashboardPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
-  const [state, setState] = useState<FetchState>({
-    data: null,
-    loading: true,
-    error: null,
-    lastUpdated: null,
+  // `null` (`.data`) = ainda carregando `/energy/executive/latest`. Migrado para
+  // `usePlantResource` (Etapa 4): o hook cobre a mesma proteção de race
+  // condition/troca de usina que o fetch manual anterior fazia à mão. Erro de
+  // rede/servidor fica em `executive.error` (mensagem fixa, sem sufixo de status
+  // HTTP — o detalhe vai para o console via o próprio hook, mesma política de
+  // `financialReturn`/`monthlyHistory` abaixo).
+  const executive = usePlantResource({
+    plantId,
+    fetcher: fetchExecutiveDashboard,
+    parse: parseExecutiveDashboard,
+    errorMessage: 'Erro ao buscar dados.',
   })
   const [anomalyState, setAnomalyState] = useState<AnomalyFetchState>({
     data: null,
     loading: true,
     error: null,
   })
-  // `null` = ainda carregando o baseline sazonal (`/photovoltaic/summary`).
-  // Usado só para alimentar `TechnicalPerformanceSection` e as mensagens de
-  // motivo específico de indisponibilidade — desde a mudança de contrato de
+  // `null` (`.data`) = ainda carregando `/photovoltaic/summary`. Migrado para
+  // `usePlantResource` (Etapa 4) — desde a mudança de contrato de
   // `/energy/anomalies/latest` (200 sempre, campos por dia `null` sem
-  // expectativa), `fetchAnomalies` NÃO depende mais deste estado: é buscado
-  // assim que há `plantId`, independente do baseline sazonal já existir (ver
-  // usina com produção real mas sem baseline — o card de histórico não pode
-  // mais ficar preso esperando um dado que talvez nunca chegue).
-  const [expectedProduction, setExpectedProduction] = useState<ExpectedDailyProduction | null>(null)
-  // `null` = ainda carregando `/photovoltaic/summary` (mesma requisição de
-  // `fetchExpectedProduction` — guardamos o resumo inteiro aqui para alimentar
-  // `TechnicalPerformanceSection` sem uma segunda chamada de rede).
-  const [pvSummary, setPvSummary] = useState<PhotovoltaicSummaryResponse | null>(null)
+  // expectativa), `fetchAnomalies` NÃO depende deste recurso: é buscado assim
+  // que há `plantId`, independente do baseline sazonal já existir (ver usina
+  // com produção real mas sem baseline — o card de histórico não pode ficar
+  // preso esperando um dado que talvez nunca chegue). `errorMessage` aqui só
+  // alimenta o `console.error` do hook: esta seção nunca expõe o erro na tela
+  // — em caso de falha, a derivação de `pvSummary`/`expectedProduction` logo
+  // abaixo das guardas de render cai em `fallbackPvSummary`, que já traz um
+  // motivo de indisponibilidade explícito por bloco.
+  const pvSummaryResource = usePlantResource({
+    plantId,
+    fetcher: fetchPhotovoltaicSummary,
+    parse: parsePhotovoltaicSummary,
+    errorMessage: 'Erro ao buscar resumo fotovoltaico.',
+  })
   // `null` (`.data`) = ainda carregando `/energy/financial-return/latest` (ADR-067).
   // Migrado para `usePlantResource` (Etapa 3): o hook cobre a mesma proteção de
   // race condition/troca de usina que o fetch manual anterior fazia à mão. Erro de
@@ -111,59 +121,6 @@ export function DashboardPage() {
     errorMessage: 'Erro ao buscar histórico de produção.',
   })
 
-  const fetchData = useCallback(async () => {
-    if (!plantId) return
-    setState((prev) => ({ ...prev, loading: true, error: null }))
-    try {
-      const response = await fetchExecutiveDashboard(plantId)
-      if (!response.ok) {
-        if (response.status === 401) {
-          // apiFetch already attempted refresh; if still 401 the user was logged out.
-          return
-        }
-        throw new Error(`Erro ao buscar dados (${response.status}).`)
-      }
-      const data = parseExecutiveDashboard(await response.json())
-      setState({ data, loading: false, error: null, lastUpdated: new Date() })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro desconhecido ao buscar dados.'
-      setState((prev) => ({ ...prev, loading: false, error: message }))
-    }
-  }, [plantId])
-
-  const fetchExpectedProduction = useCallback(async () => {
-    if (!plantId) return
-    setExpectedProduction(null)
-    setPvSummary(null)
-    try {
-      const response = await fetchPhotovoltaicSummary(plantId)
-      if (!response.ok) {
-        if (response.status === 401) return
-        // Sessão expirada à parte, um erro aqui não deve travar o resto do
-        // dashboard — o histórico de produção e a seção de desempenho técnico
-        // passam a mostrar o motivo de indisponibilidade específico assim que
-        // souberem que não há dado, em vez de ficar carregando para sempre.
-        setExpectedProduction({
-          available: false,
-          reason: 'NO_PERFORMANCE_HISTORY',
-          referenceCompleteOn: null,
-        })
-        setPvSummary(fallbackPvSummary(plantId))
-        return
-      }
-      const summary = parsePhotovoltaicSummary(await response.json())
-      setExpectedProduction(summary.expectedProduction)
-      setPvSummary(summary)
-    } catch {
-      setExpectedProduction({
-        available: false,
-        reason: 'NO_PERFORMANCE_HISTORY',
-        referenceCompleteOn: null,
-      })
-      setPvSummary(fallbackPvSummary(plantId))
-    }
-  }, [plantId])
-
   const fetchAnomalies = useCallback(async () => {
     if (!plantId) return
     setAnomalyState((prev) => ({ ...prev, loading: true }))
@@ -185,19 +142,22 @@ export function DashboardPage() {
     }
   }, [plantId])
 
-  // `financialReturn`/`monthlyHistory` não precisam de chamada explícita aqui —
-  // `usePlantResource` já dispara a busca sozinho a cada mudança de `plantId`.
+  // `executive`/`pvSummaryResource`/`financialReturn`/`monthlyHistory` não
+  // precisam de chamada explícita aqui — `usePlantResource` já dispara a busca
+  // sozinho a cada mudança de `plantId`. Só `fetchAnomalies` continua manual
+  // (migração para `usePlantResource` fica para uma etapa futura).
   useEffect(() => {
-    void fetchData()
-    void fetchExpectedProduction()
     void fetchAnomalies()
-  }, [fetchData, fetchExpectedProduction, fetchAnomalies])
+  }, [fetchAnomalies])
 
   const retryAnomalies = useCallback(() => {
     void fetchAnomalies()
   }, [fetchAnomalies])
 
-  const { data, loading, error, lastUpdated } = state
+  const data = executive.data
+  const loading = executive.status === 'loading'
+  const error = executive.error
+  const lastUpdated = executive.lastUpdated
   const indicators = data?.current_cycle.indicators
   const quality = data?.current_cycle.quality
   // Autossuficiência e dependência da rede são complementares (somam 100%) —
@@ -254,6 +214,16 @@ export function DashboardPage() {
     )
   }
 
+  // A partir daqui `plantId` está estreitado para `string` pelas guardas
+  // acima — só agora é seguro chamar `fallbackPvSummary(plantId)` (Etapa 4).
+  // Cai no fallback só quando `pvSummaryResource.status === 'error'`:
+  // enquanto `'loading'` (inclusive num refetch da MESMA usina, que preserva
+  // o `data` anterior em vez de zerar — ver `usePlantResource`), `pvSummary`
+  // reflete o `data` já resolvido ou `null` enquanto a primeira resposta
+  // ainda não chegou, nunca o fallback prematuramente.
+  const pvSummary = pvSummaryResource.status === 'error' ? fallbackPvSummary(plantId) : pvSummaryResource.data
+  const expectedProduction = pvSummary?.expectedProduction ?? null
+
   return (
     <>
       {/* Sem `<h2>` isolado aqui: a casca do app (`AppHeader`) já identifica a
@@ -263,8 +233,8 @@ export function DashboardPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => {
-              void fetchData()
-              void fetchExpectedProduction()
+              executive.refetch()
+              pvSummaryResource.refetch()
               void fetchAnomalies()
               monthlyHistory.refetch()
               financialReturn.refetch()
@@ -285,10 +255,7 @@ export function DashboardPage() {
         // erro de servidor do histórico de produção.
         <RetryableError
           message={error}
-          onRetry={() => {
-            void fetchData()
-            void fetchExpectedProduction()
-          }}
+          onRetry={executive.refetch}
           className="mb-6"
         />
       )}
