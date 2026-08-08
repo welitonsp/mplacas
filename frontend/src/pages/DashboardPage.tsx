@@ -19,9 +19,8 @@ import { parseFinancialReturn } from '../lib/dashboard/financial-return-contract
 import { parseMonthlyProductionHistory } from '../lib/dashboard/monthly-history-contracts'
 import type { PhotovoltaicSummaryResponse } from '../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
-import { formatCurrency, formatNumber, toNumber } from '../lib/format'
+import { formatNumber, toNumber } from '../lib/format'
 import { SectionTitle } from '../components/SectionTitle'
-import { CurrencyCard } from '../components/CurrencyCard'
 import { StackedBar } from '../components/charts/StackedBar'
 import { HeroCard } from '../components/HeroCard'
 import { QualityBanner } from '../components/QualityBanner'
@@ -29,8 +28,7 @@ import { TrendCard } from '../components/TrendCard'
 import { EnergyFlowDiagram } from '../components/EnergyFlowDiagram'
 import { DiagnosticsCard } from '../components/DiagnosticsCard'
 import { hasIncompleteDailyProduction } from '../components/EnergyProductionSection'
-import { EstimatedSavingsCard } from '../components/EstimatedSavingsCard'
-import { FinancialReturnSection } from '../components/FinancialReturnSection'
+import { FinancialSection } from '../components/FinancialSection'
 import { LatestDailyProductionCard } from '../components/LatestDailyProductionCard'
 import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
@@ -181,20 +179,10 @@ export function DashboardPage() {
   // (ver seção "Indicadores percentuais" abaixo).
   const selfSufficiencyPercent = toNumber(indicators?.self_sufficiency_rate_percent ?? null)
   const gridDependencyPercent = toNumber(indicators?.grid_dependency_rate_percent ?? null)
-  // Decomposição da fatura (Parte C): `bill_energy_component_brl` é definido
-  // no backend como `total_amount_brl - public_lighting_brl` (clamped em 0,
-  // ver intelligence/energy_engine.py::analyze_energy_cycle) — a soma dos
-  // dois sempre reconstrói o total, então "resto" existe só para cobrir um
-  // eventual encargo futuro não capturado por essas duas categorias, nunca
-  // para absorver uma inconsistência de parser. Se qualquer um dos três
-  // valores vier `null`, mantém os `CurrencyCard` separados.
-  const billTotalAmount = toNumber(indicators?.total_amount_brl ?? null)
-  const billEnergyComponent = toNumber(indicators?.bill_energy_component_brl ?? null)
-  const billPublicLighting = toNumber(indicators?.public_lighting_brl ?? null)
-  const billOtherCharges =
-    billTotalAmount != null && billEnergyComponent != null && billPublicLighting != null
-      ? billTotalAmount - billEnergyComponent - billPublicLighting
-      : null
+  // A decomposição da fatura (total/energia/iluminação pública) e o restante
+  // do bloco financeiro (custo do ciclo, tarifas, créditos, retorno do
+  // investimento) vivem em `FinancialSection` (Etapa 7) — só o `indicators`
+  // do ciclo corrente e o recurso `financialReturn` cruzam a fronteira.
   const latestDataDate = anomalyState.data ? latestNonNullProductionDate(anomalyState.data.daily) : null
   // Calculado uma única vez e reusado pelo chip do Hero (`AttentionSummary`,
   // ver Etapa 1.7) e pela lista completa (`DiagnosticsCard`) — mesma lista,
@@ -405,125 +393,12 @@ export function DashboardPage() {
               )}
             </section>
 
-            {/* Bloco 3 — "Quanto custou?": financeiro completo (Etapa 7).
-                Valores em R$ (total da fatura, componente de energia,
-                iluminação pública, economia estimada), tarifas em R$/kWh e
-                saldo/cobertura de créditos — cada card com unidade sempre
-                visível, sem exceção para a economia quando a tarifa não está
-                registrada (ver EstimatedSavingsCard). */}
-            <section className="md:col-span-6 lg:col-span-12">
-              <SectionTitle as="h2">Financeiro</SectionTitle>
-              {/* Os mesmos oito cards de antes, reagrupados em três
-                  subseções rotuladas em vez de uma grade achatada — a
-                  hierarquia visual (fatura vs. tarifa vs. créditos) já
-                  existia na cabeça de quem lê, só não estava expressa na
-                  estrutura (acabamento de hierarquia do dashboard). */}
-              <div className="space-y-6">
-                <div>
-                  <SectionTitle>Custo do ciclo</SectionTitle>
-                  {/* Decomposição da fatura (energia + iluminação pública [+
-                      outros encargos, quando a soma não fecha em cima dos
-                      dois conhecidos]) — antes eram três `CurrencyCard`
-                      soltos sem nenhuma indicação visual de que compunham o
-                      mesmo total. Validado contra o parser real
-                      (`bill_energy_component_brl = total_amount_brl -
-                      public_lighting_brl`, ver `intelligence/energy_engine.py`)
-                      antes de decompor — ver skill `financial-visualization`. */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-                    {billTotalAmount != null && billEnergyComponent != null && billPublicLighting != null ? (
-                      <div className="rounded-lg border border-gray-200 bg-[var(--color-surface)] p-4">
-                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                          Valor total da fatura
-                        </p>
-                        <p className="mt-1 mb-3 text-2xl font-semibold text-gray-900 tabular-nums">
-                          {formatCurrency(billTotalAmount)}
-                        </p>
-                        <StackedBar
-                          segments={[
-                            { label: 'Componente energia', value: billEnergyComponent, tone: 'neutral' },
-                            { label: 'Iluminação pública', value: billPublicLighting, tone: 'warning' },
-                            ...(billOtherCharges != null && billOtherCharges > 0.005
-                              ? [{ label: 'Outros encargos', value: billOtherCharges, tone: 'danger' as const }]
-                              : []),
-                          ]}
-                          total={billTotalAmount}
-                          valueFormatter={formatCurrency}
-                        />
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:col-span-2">
-                        <CurrencyCard label="Valor total da fatura" value={indicators.total_amount_brl} />
-                        <CurrencyCard
-                          label="Componente energia da fatura"
-                          value={indicators.bill_energy_component_brl}
-                        />
-                        <CurrencyCard label="Iluminação pública" value={indicators.public_lighting_brl} />
-                      </div>
-                    )}
-                    <EstimatedSavingsCard
-                      value={indicators.estimated_savings_brl}
-                      unavailableReason={indicators.savings_unavailable_reason}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <SectionTitle>Tarifas</SectionTitle>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <MetricCard
-                      label="Tarifa com impostos"
-                      value={indicators.tariff_with_taxes_brl_kwh}
-                      unit="R$/kWh"
-                      maximumFractionDigits={6}
-                    />
-                    <MetricCard
-                      label="Tarifa sem impostos"
-                      value={indicators.tariff_without_taxes_brl_kwh}
-                      unit="R$/kWh"
-                      maximumFractionDigits={6}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <SectionTitle>Créditos de energia</SectionTitle>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <MetricCard label="Saldo de créditos" value={indicators.credit_balance_kwh} unit="kWh" />
-                    <MetricCard
-                      label="Cobertura de créditos"
-                      value={indicators.credit_coverage_rate_percent}
-                      unit="%"
-                      barPercent={toNumber(indicators.credit_coverage_rate_percent)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* Retorno do investimento (ADR-067, Etapa E): CAPEX, ROI acumulado e
-                projeção de payback, logo depois do Bloco 3 ("Quanto custou?") —
-                mesma pergunta financeira, num horizonte mais longo. Card único,
-                mais estreito que o grid acima (o conteúdo é uma barra de progresso
-                mais dois blocos de texto, não uma grade de métricas). */}
-            <section className="md:col-span-6 lg:col-span-12">
-              <SectionTitle as="h2">Retorno do investimento</SectionTitle>
-              {financialReturn.error ? (
-                <RetryableError
-                  message={financialReturn.error}
-                  onRetry={financialReturn.refetch}
-                />
-              ) : (
-                plantId && (
-                  <div className="max-w-xl">
-                    <FinancialReturnSection
-                      financialReturn={financialReturn.data}
-                      plantId={plantId}
-                      onInvestmentRegistered={financialReturn.refetch}
-                    />
-                  </div>
-                )
-              )}
-            </section>
+            {/* Bloco 3 — "Quanto custou? Qual o retorno?": financeiro
+                completo, extraído para `FinancialSection` (Etapa 7) — custo
+                do ciclo, tarifas, créditos e retorno do investimento juntos,
+                dois `<section>` irmãos dentro do mesmo componente (ver
+                comentário em `FinancialSection.tsx`). */}
+            <FinancialSection indicators={indicators} financialReturn={financialReturn} plantId={plantId} />
 
             {/* Bloco próprio — "Como está o desempenho técnico?": PR, PR
                 corrigido por temperatura, yield específico, disponibilidade de

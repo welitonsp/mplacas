@@ -61,23 +61,6 @@ const executivePayload = {
   trend: null,
 }
 
-// Variante do payload executivo sem tarifa registrada na fatura do ciclo —
-// usada para garantir que a economia estimada nunca aparece como "R$ 0,00"
-// (ver EstimatedSavingsCard e intelligence/energy_engine.py).
-const executivePayloadWithoutTariff = {
-  ...executivePayload,
-  current_cycle: {
-    ...executivePayload.current_cycle,
-    indicators: {
-      ...executivePayload.current_cycle.indicators,
-      tariff_with_taxes_brl_kwh: null,
-      tariff_without_taxes_brl_kwh: null,
-      estimated_savings_brl: null,
-      savings_unavailable_reason: 'TARIFF_NOT_AVAILABLE',
-    },
-  },
-}
-
 const photovoltaicSummaryPayload = {
   plant_id: 'plant-1',
   performance: {
@@ -328,37 +311,40 @@ describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
     expect(screen.queryByText('Origem do consumo')).not.toBeInTheDocument()
   })
 
-  it('a seção Financeiro agrupa seus cards em três subgrupos rotulados, sem perder nenhum card (Frente H)', async () => {
+  // Etapa 7: o conteúdo detalhado do bloco financeiro (decomposição da
+  // fatura, três subgrupos "Custo do ciclo"/"Tarifas"/"Créditos de energia",
+  // regra de nunca mostrar R$ 0,00 de economia sem tarifa registrada, estado
+  // de erro do retorno do investimento) foi extraído para `FinancialSection`
+  // e a cobertura exaustiva foi junto — ver `FinancialSection.test.tsx`. O
+  // teste abaixo é o mínimo de integração que continua fazendo sentido aqui:
+  // prova que `DashboardPage` passa os dados certos (`indicators` do ciclo
+  // corrente, o recurso `financialReturn`) para a seção extraída, e que ela
+  // aparece no lugar certo da página (duas seções irmãs, "Financeiro" e
+  // "Retorno do investimento").
+  it('passa os dados do ciclo e do retorno do investimento para a FinancialSection extraída (Etapa 7)', async () => {
     vi.resetModules()
     await renderDashboard()
 
     const financeiroTitle = await screen.findByText('Financeiro')
-    const section = financeiroTitle.parentElement
-    expect(section).not.toBeNull()
+    const section = financeiroTitle.parentElement as HTMLElement
 
-    // A grade achatada de 8 cards virou três subgrupos rotulados — "Custo do
-    // ciclo" (decomposição da fatura em `StackedBar` + economia estimada),
-    // "Tarifas" (2 cards) e "Créditos de energia" (2 cards) — todos os 8
-    // valores financeiros originais continuam presentes e visíveis dentro da
-    // seção, só que os três primeiros (total, energia, iluminação) agora
-    // compõem uma única barra em vez de três cards soltos (ver Etapa 5).
-    const custoGrid = within(section as HTMLElement)
-      .getByText('Valor total da fatura')
-      .closest('.grid')
-    expect(custoGrid).not.toBeNull()
-    expect(custoGrid!.children).toHaveLength(2)
+    expect(within(section).getByText('Custo do ciclo')).toBeInTheDocument()
+    expect(within(section).getByText('Tarifas')).toBeInTheDocument()
+    expect(within(section).getByText('Créditos de energia')).toBeInTheDocument()
 
-    const tarifasGrid = within(section as HTMLElement).getByText('Tarifa com impostos').closest('.grid')
-    expect(tarifasGrid).not.toBeNull()
-    expect(tarifasGrid!.children).toHaveLength(2)
+    // Um valor de cada subgrupo, prova de que `indicators` chega intacto à
+    // seção extraída.
+    expect(within(section).getByText(/R\$\s*420,71/)).toBeInTheDocument()
+    expect(within(section).getByText(/0,85/)).toBeInTheDocument()
+    expect(within(section).getByText(/63,98/)).toBeInTheDocument()
 
-    const creditosGrid = within(section as HTMLElement).getByText('Saldo de créditos').closest('.grid')
-    expect(creditosGrid).not.toBeNull()
-    expect(creditosGrid!.children).toHaveLength(2)
-
-    expect(within(section as HTMLElement).getByText('Custo do ciclo')).toBeInTheDocument()
-    expect(within(section as HTMLElement).getByText('Tarifas')).toBeInTheDocument()
-    expect(within(section as HTMLElement).getByText('Créditos de energia')).toBeInTheDocument()
+    // "Retorno do investimento" é uma seção irmã de "Financeiro", dentro do
+    // mesmo componente (`FinancialSection`) — continua aparecendo na página
+    // (o texto se repete no `<h2>` da seção e no rótulo interno do card de
+    // `FinancialReturnSection`; a busca é restrita ao heading).
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+    ).toBeInTheDocument()
   })
 
   it('unifica autossuficiência e dependência da rede em uma única StackedBar de 2 segmentos somando 100%', async () => {
@@ -377,69 +363,6 @@ describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
     expect(screen.getByText('Dependência da rede')).toBeInTheDocument()
     expect(screen.getAllByText('77,7%').length).toBeGreaterThan(0)
     expect(screen.getAllByText('22,3%').length).toBeGreaterThan(0)
-  })
-
-  it('renderiza todos os valores financeiros novos com a unidade correta quando a fatura tem tarifa registrada', async () => {
-    vi.resetModules()
-    await renderDashboard()
-
-    await screen.findByText('Financeiro')
-
-    expect(screen.getByText('Valor total da fatura')).toBeInTheDocument()
-    expect(screen.getByText(/R\$\s*420,71/)).toBeInTheDocument()
-
-    expect(screen.getByText('Iluminação pública')).toBeInTheDocument()
-    expect(screen.getByText(/R\$\s*30,21/)).toBeInTheDocument()
-
-    // Decomposição da fatura: `StackedBar` com energia + iluminação pública,
-    // sem um terceiro segmento "Outros encargos" porque, no mock,
-    // energia + iluminação já reconstrói o total exatamente (mesma garantia
-    // do backend real — ver `intelligence/energy_engine.py`).
-    expect(screen.getByText('Componente energia')).toBeInTheDocument()
-    expect(screen.getByText(/R\$\s*390,50/)).toBeInTheDocument()
-    expect(screen.queryByText('Outros encargos')).not.toBeInTheDocument()
-
-    const billBar = screen.getByRole('img', { name: /Total R\$\s*420,71/ })
-    expect(billBar).toHaveAttribute(
-      'aria-label',
-      expect.stringContaining('Componente energia R$ 390,50'),
-    )
-    expect(billBar).toHaveAttribute(
-      'aria-label',
-      expect.stringContaining('Iluminação pública R$ 30,21'),
-    )
-
-    const tariffWithTaxesLabel = screen.getByText('Tarifa com impostos')
-    const tariffWithTaxesCard = tariffWithTaxesLabel.closest('div') as HTMLElement
-    expect(within(tariffWithTaxesCard).getByText(/0,85/)).toBeInTheDocument()
-    expect(within(tariffWithTaxesCard).getByText('R$/kWh')).toBeInTheDocument()
-
-    const tariffWithoutTaxesLabel = screen.getByText('Tarifa sem impostos')
-    const tariffWithoutTaxesCard = tariffWithoutTaxesLabel.closest('div') as HTMLElement
-    expect(within(tariffWithoutTaxesCard).getByText(/^0,6$/)).toBeInTheDocument()
-    expect(within(tariffWithoutTaxesCard).getByText('R$/kWh')).toBeInTheDocument()
-
-    expect(screen.getByText('Saldo de créditos')).toBeInTheDocument()
-    expect(screen.getByText(/63,98/)).toBeInTheDocument()
-
-    expect(screen.getByText('Cobertura de créditos')).toBeInTheDocument()
-
-    expect(screen.getByText('Economia estimada')).toBeInTheDocument()
-    expect(screen.getByText(/R\$\s*120,40/)).toBeInTheDocument()
-  })
-
-  it('nunca mostra R$ 0,00 de economia quando a fatura não tem tarifa registrada — mostra mensagem explícita', async () => {
-    vi.resetModules()
-    await renderDashboard(executivePayloadWithoutTariff)
-
-    await screen.findByText('Financeiro')
-    const savingsLabel = await screen.findByText('Economia estimada')
-    const savingsCard = savingsLabel.closest('div') as HTMLElement
-
-    expect(within(savingsCard).queryByText(/R\$\s*0,00/)).not.toBeInTheDocument()
-    expect(
-      within(savingsCard).getByText(/fatura deste ciclo não tem a tarifa com impostos registrada/)
-    ).toBeInTheDocument()
   })
 
   it('mostra o status de anomalia (streak) dentro do histórico de produção, não mais duplicado ao lado (Etapa 1.4)', async () => {
