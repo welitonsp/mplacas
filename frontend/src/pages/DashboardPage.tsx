@@ -7,6 +7,7 @@ import {
   fetchPhotovoltaicSummary,
 } from '../lib/api'
 import { usePlant } from '../contexts/PlantContext'
+import { usePlantResource } from '../hooks/usePlantResource'
 import type { AnomalyFetchState, FetchState } from '../lib/dashboard/contracts'
 import {
   classifyAnomalyErrorStatus,
@@ -15,9 +16,7 @@ import {
   parseAnomalyDashboard,
   parseExecutiveDashboard,
 } from '../lib/dashboard/contracts'
-import type { FinancialReturnResponse } from '../lib/dashboard/financial-return-contracts'
 import { parseFinancialReturn } from '../lib/dashboard/financial-return-contracts'
-import type { MonthlyProductionHistoryResponse } from '../lib/dashboard/monthly-history-contracts'
 import { parseMonthlyProductionHistory } from '../lib/dashboard/monthly-history-contracts'
 import type { ExpectedDailyProduction, PhotovoltaicSummaryResponse } from '../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
@@ -87,20 +86,30 @@ export function DashboardPage() {
   // `fetchExpectedProduction` — guardamos o resumo inteiro aqui para alimentar
   // `TechnicalPerformanceSection` sem uma segunda chamada de rede).
   const [pvSummary, setPvSummary] = useState<PhotovoltaicSummaryResponse | null>(null)
-  // `null` = ainda carregando `/energy/financial-return/latest` (ADR-067). Erro de
-  // rede/servidor fica em `financialReturnError`, separado do estado de
-  // indisponibilidade de negócio (`unavailable_reason`), que é tratado dentro de
-  // `FinancialReturnSection` — os dois nunca se confundem.
-  const [financialReturn, setFinancialReturn] = useState<FinancialReturnResponse | null>(null)
-  const [financialReturnError, setFinancialReturnError] = useState<string | null>(null)
-  // `null` = ainda carregando `/reports/monthly/history` (histórico de
-  // produção por ciclo de faturamento). Mesmo padrão de `financialReturn`/
-  // `financialReturnError` acima: erro de rede/servidor isolado num estado
-  // próprio, para não travar o resto do dashboard se essa chamada falhar.
-  const [monthlyHistory, setMonthlyHistory] = useState<MonthlyProductionHistoryResponse | null>(
-    null
-  )
-  const [monthlyHistoryError, setMonthlyHistoryError] = useState<string | null>(null)
+  // `null` (`.data`) = ainda carregando `/energy/financial-return/latest` (ADR-067).
+  // Migrado para `usePlantResource` (Etapa 3): o hook cobre a mesma proteção de
+  // race condition/troca de usina que o fetch manual anterior fazia à mão. Erro de
+  // rede/servidor fica em `financialReturn.error` (mensagem fixa, sem sufixo de
+  // status HTTP — o detalhe vai para o console via o próprio hook), separado do
+  // estado de indisponibilidade de negócio (`unavailable_reason`), que é tratado
+  // dentro de `FinancialReturnSection` — os dois nunca se confundem.
+  const financialReturn = usePlantResource({
+    plantId,
+    fetcher: fetchFinancialReturn,
+    parse: parseFinancialReturn,
+    errorMessage: 'Erro ao buscar retorno do investimento.',
+  })
+  // `null` (`.data`) = ainda carregando `/reports/monthly/history` (histórico de
+  // produção por ciclo de faturamento). Mesmo padrão de `financialReturn` acima.
+  // `fetcher` precisa de um wrapper porque `fetchMonthlyProductionHistory` recebe
+  // `limit` como segundo parâmetro, que a assinatura de `usePlantResource.fetcher`
+  // não conhece.
+  const monthlyHistory = usePlantResource({
+    plantId,
+    fetcher: (id: string) => fetchMonthlyProductionHistory(id, 12),
+    parse: parseMonthlyProductionHistory,
+    errorMessage: 'Erro ao buscar histórico de produção.',
+  })
 
   const fetchData = useCallback(async () => {
     if (!plantId) return
@@ -155,40 +164,6 @@ export function DashboardPage() {
     }
   }, [plantId])
 
-  const fetchFinancialReturnData = useCallback(async () => {
-    if (!plantId) return
-    setFinancialReturnError(null)
-    try {
-      const response = await fetchFinancialReturn(plantId)
-      if (!response.ok) {
-        if (response.status === 401) return
-        throw new Error(`Erro ao buscar retorno do investimento (${response.status}).`)
-      }
-      setFinancialReturn(parseFinancialReturn(await response.json()))
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Erro ao buscar retorno do investimento.'
-      setFinancialReturnError(message)
-    }
-  }, [plantId])
-
-  const fetchMonthlyHistoryData = useCallback(async () => {
-    if (!plantId) return
-    setMonthlyHistoryError(null)
-    try {
-      const response = await fetchMonthlyProductionHistory(plantId)
-      if (!response.ok) {
-        if (response.status === 401) return
-        throw new Error(`Erro ao buscar histórico de produção (${response.status}).`)
-      }
-      setMonthlyHistory(parseMonthlyProductionHistory(await response.json()))
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Erro ao buscar histórico de produção.'
-      setMonthlyHistoryError(message)
-    }
-  }, [plantId])
-
   const fetchAnomalies = useCallback(async () => {
     if (!plantId) return
     setAnomalyState((prev) => ({ ...prev, loading: true }))
@@ -210,13 +185,13 @@ export function DashboardPage() {
     }
   }, [plantId])
 
+  // `financialReturn`/`monthlyHistory` não precisam de chamada explícita aqui —
+  // `usePlantResource` já dispara a busca sozinho a cada mudança de `plantId`.
   useEffect(() => {
     void fetchData()
     void fetchExpectedProduction()
-    void fetchFinancialReturnData()
-    void fetchMonthlyHistoryData()
     void fetchAnomalies()
-  }, [fetchData, fetchExpectedProduction, fetchFinancialReturnData, fetchMonthlyHistoryData, fetchAnomalies])
+  }, [fetchData, fetchExpectedProduction, fetchAnomalies])
 
   const retryAnomalies = useCallback(() => {
     void fetchAnomalies()
@@ -290,9 +265,9 @@ export function DashboardPage() {
             onClick={() => {
               void fetchData()
               void fetchExpectedProduction()
-              void fetchFinancialReturnData()
-              void fetchMonthlyHistoryData()
               void fetchAnomalies()
+              monthlyHistory.refetch()
+              financialReturn.refetch()
             }}
             disabled={loading}
             className="rounded text-xs text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] disabled:opacity-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
@@ -340,17 +315,17 @@ export function DashboardPage() {
             {/* Produção por ciclo de faturamento (12 ciclos fechados) — leitura
                 do grosso pro fino: o resumo mensal primeiro, o histórico
                 diário de 90 dias (bloco seguinte) depois. Erro desta seção é
-                isolado (`monthlyHistoryError`) e não trava o resto do
+                isolado (`monthlyHistory.error`) e não trava o resto do
                 dashboard se a chamada falhar. */}
             <section className="md:col-span-6 lg:col-span-12">
               <SectionTitle as="h2">Produção por ciclo de faturamento</SectionTitle>
-              {monthlyHistoryError ? (
+              {monthlyHistory.error ? (
                 <RetryableError
-                  message={monthlyHistoryError}
-                  onRetry={() => void fetchMonthlyHistoryData()}
+                  message={monthlyHistory.error}
+                  onRetry={monthlyHistory.refetch}
                 />
               ) : (
-                <MonthlyProductionSection history={monthlyHistory} />
+                <MonthlyProductionSection history={monthlyHistory.data} />
               )}
             </section>
 
@@ -555,18 +530,18 @@ export function DashboardPage() {
                 mais dois blocos de texto, não uma grade de métricas). */}
             <section className="md:col-span-6 lg:col-span-12">
               <SectionTitle as="h2">Retorno do investimento</SectionTitle>
-              {financialReturnError ? (
+              {financialReturn.error ? (
                 <RetryableError
-                  message={financialReturnError}
-                  onRetry={() => void fetchFinancialReturnData()}
+                  message={financialReturn.error}
+                  onRetry={financialReturn.refetch}
                 />
               ) : (
                 plantId && (
                   <div className="max-w-xl">
                     <FinancialReturnSection
-                      financialReturn={financialReturn}
+                      financialReturn={financialReturn.data}
                       plantId={plantId}
-                      onInvestmentRegistered={() => void fetchFinancialReturnData()}
+                      onInvestmentRegistered={financialReturn.refetch}
                     />
                   </div>
                 )

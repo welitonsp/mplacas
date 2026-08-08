@@ -782,8 +782,11 @@ describe('DashboardPage — seção "Produção por ciclo de faturamento" (Etapa
     await waitFor(() => {
       expect(within(section).getByRole('alert')).toBeInTheDocument()
     })
+    // Mensagem fixa vinda de `usePlantResource` (Etapa 3) — sem sufixo de status
+    // HTTP: o detalhe técnico vai para o console, nunca para a tela (mesma
+    // política de `ErrorBoundary.tsx`).
     expect(within(section).getByRole('alert')).toHaveTextContent(
-      /Erro ao buscar histórico de produção/
+      'Erro ao buscar histórico de produção.'
     )
 
     // O erro isolado desta seção não trava o restante da página.
