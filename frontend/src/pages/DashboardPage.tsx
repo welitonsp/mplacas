@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useState } from 'react'
 import {
   fetchAnomalyHistory,
   fetchExecutiveDashboard,
@@ -8,7 +7,7 @@ import {
 } from '../lib/api'
 import { usePlant } from '../contexts/PlantContext'
 import { usePlantResource } from '../hooks/usePlantResource'
-import type { AnomalyFetchState } from '../lib/dashboard/contracts'
+import type { AnomalyDashboardResponse, AnomalyFetchError, AnomalyFetchState } from '../lib/dashboard/contracts'
 import {
   classifyAnomalyErrorStatus,
   combineDiagnostics,
@@ -74,22 +73,40 @@ export function DashboardPage() {
     parse: parseExecutiveDashboard,
     errorMessage: 'Erro ao buscar dados.',
   })
-  const [anomalyState, setAnomalyState] = useState<AnomalyFetchState>({
-    data: null,
-    loading: true,
-    error: null,
+  // `null` (`.data`) = ainda carregando `/energy/anomalies/latest`. Migrado para
+  // `usePlantResource` (Etapa 5) — desde a mudança de contrato deste endpoint
+  // (200 sempre, campos por dia `null` sem expectativa), este recurso NÃO
+  // depende de `pvSummaryResource` abaixo: é buscado assim que há `plantId`,
+  // independente do baseline sazonal já existir (ver usina com produção real
+  // mas sem baseline — o card de histórico não pode ficar preso esperando um
+  // dado que talvez nunca chegue). `classifyError` reusa `classifyAnomalyErrorStatus`
+  // (já testado isoladamente em `contracts.test.ts`): 404 vira `'NOT_FOUND'`, 5xx
+  // vira `'SERVER_ERROR'`, e 401 já volta `null` de dentro da própria função —
+  // falha silenciosa, mesma política de antes (`apiFetch` já tentou refresh; se
+  // falhou, o usuário está sendo deslogado, não há nada a comunicar aqui). Falha
+  // de rede/contrato (`kind !== 'http'`) cai no mesmo `'SERVER_ERROR'`, mesma
+  // categoria de "algo quebrou" que um 5xx no comportamento anterior.
+  const anomalies = usePlantResource<AnomalyDashboardResponse, AnomalyFetchError>({
+    plantId,
+    fetcher: fetchAnomalyHistory,
+    parse: parseAnomalyDashboard,
+    classifyError: (failure) =>
+      failure.kind === 'http' ? classifyAnomalyErrorStatus(failure.status) : 'SERVER_ERROR',
   })
+  // Adapta o resultado de `usePlantResource` de volta ao shape `AnomalyFetchState`
+  // que `ProductionHistorySection`/`LatestDailyProductionCard` já esperam — o
+  // contrato de prop desses dois componentes (e seus testes) não muda nesta etapa.
+  const anomalyState: AnomalyFetchState = {
+    data: anomalies.data,
+    loading: anomalies.status === 'loading',
+    error: anomalies.error,
+  }
   // `null` (`.data`) = ainda carregando `/photovoltaic/summary`. Migrado para
-  // `usePlantResource` (Etapa 4) — desde a mudança de contrato de
-  // `/energy/anomalies/latest` (200 sempre, campos por dia `null` sem
-  // expectativa), `fetchAnomalies` NÃO depende deste recurso: é buscado assim
-  // que há `plantId`, independente do baseline sazonal já existir (ver usina
-  // com produção real mas sem baseline — o card de histórico não pode ficar
-  // preso esperando um dado que talvez nunca chegue). `errorMessage` aqui só
-  // alimenta o `console.error` do hook: esta seção nunca expõe o erro na tela
-  // — em caso de falha, a derivação de `pvSummary`/`expectedProduction` logo
-  // abaixo das guardas de render cai em `fallbackPvSummary`, que já traz um
-  // motivo de indisponibilidade explícito por bloco.
+  // `usePlantResource` (Etapa 4). `errorMessage` aqui só alimenta o
+  // `console.error` do hook: esta seção nunca expõe o erro na tela — em caso
+  // de falha, a derivação de `pvSummary`/`expectedProduction` logo abaixo das
+  // guardas de render cai em `fallbackPvSummary`, que já traz um motivo de
+  // indisponibilidade explícito por bloco.
   const pvSummaryResource = usePlantResource({
     plantId,
     fetcher: fetchPhotovoltaicSummary,
@@ -120,39 +137,6 @@ export function DashboardPage() {
     parse: parseMonthlyProductionHistory,
     errorMessage: 'Erro ao buscar histórico de produção.',
   })
-
-  const fetchAnomalies = useCallback(async () => {
-    if (!plantId) return
-    setAnomalyState((prev) => ({ ...prev, loading: true }))
-    try {
-      const response = await fetchAnomalyHistory(plantId)
-      if (!response.ok) {
-        // 404 (sem dado diário ainda) e 5xx (algo quebrou) recebem mensagens
-        // diferentes em `ProductionHistorySection` — ver `classifyAnomalyErrorStatus`.
-        // 401 continua silencioso: `apiFetch` já tentou refresh, e se falhou o
-        // usuário está sendo deslogado, não há nada a comunicar aqui.
-        setAnomalyState({ data: null, loading: false, error: classifyAnomalyErrorStatus(response.status) })
-        return
-      }
-      const data = parseAnomalyDashboard(await response.json())
-      setAnomalyState({ data, loading: false, error: null })
-    } catch {
-      // Falha de rede: mesma categoria de "algo quebrou" que um 5xx.
-      setAnomalyState({ data: null, loading: false, error: 'SERVER_ERROR' })
-    }
-  }, [plantId])
-
-  // `executive`/`pvSummaryResource`/`financialReturn`/`monthlyHistory` não
-  // precisam de chamada explícita aqui — `usePlantResource` já dispara a busca
-  // sozinho a cada mudança de `plantId`. Só `fetchAnomalies` continua manual
-  // (migração para `usePlantResource` fica para uma etapa futura).
-  useEffect(() => {
-    void fetchAnomalies()
-  }, [fetchAnomalies])
-
-  const retryAnomalies = useCallback(() => {
-    void fetchAnomalies()
-  }, [fetchAnomalies])
 
   const data = executive.data
   const loading = executive.status === 'loading'
@@ -235,7 +219,7 @@ export function DashboardPage() {
             onClick={() => {
               executive.refetch()
               pvSummaryResource.refetch()
-              void fetchAnomalies()
+              anomalies.refetch()
               monthlyHistory.refetch()
               financialReturn.refetch()
             }}
@@ -304,7 +288,7 @@ export function DashboardPage() {
               <ProductionHistorySection
                 anomalyState={anomalyState}
                 expectedProduction={expectedProduction}
-                onRetry={retryAnomalies}
+                onRetry={anomalies.refetch}
               />
             </section>
 
