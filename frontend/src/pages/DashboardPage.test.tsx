@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { jsonResponse, photovoltaicSummaryPayload, singlePlant } from '../test/dashboardFixtures'
+import { anomalyPayload, executivePayload, jsonResponse, singlePlant } from '../test/dashboardFixtures'
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
 // módulo — não há `.env.local` no ambiente de teste (ver `LoginPage.test.tsx`).
@@ -9,134 +9,16 @@ vi.mock('../env', () => ({
   API_URL: 'https://api.example.test',
 }))
 
-const executivePayload = {
-  plant_id: 'plant-1',
-  status: 'ATTENTION',
-  headline: 'Ciclo requer acompanhamento; índice de saúde 70/100.',
-  priority_actions: ['Revisar consumo importado'],
-  current_cycle: {
-    reference_month: '2026-07',
-    quality: { missing_days: 0, provisional_days: 0, incomplete_days: 0, unavailable_days: 0 },
-    indicators: {
-      cycle_production_kwh: 500,
-      imported_kwh: 120,
-      injected_kwh: 80,
-      estimated_self_consumption_kwh: 420,
-      estimated_total_consumption_kwh: 540,
-      self_consumption_rate_percent: 84,
-      self_sufficiency_rate_percent: 77.7,
-      grid_dependency_rate_percent: 22.3,
-      exported_generation_rate_percent: 16,
-      credit_coverage_rate_percent: 100,
-      // Consistente com a fórmula real do backend: bill_energy_component_brl
-      // = total_amount_brl - public_lighting_brl (ver
-      // intelligence/energy_engine.py::analyze_energy_cycle) — 420.71 - 30.21.
-      bill_energy_component_brl: 390.5,
-      health_score: 70,
-      total_amount_brl: 420.71,
-      public_lighting_brl: 30.21,
-      tariff_with_taxes_brl_kwh: 0.85,
-      tariff_without_taxes_brl_kwh: 0.6,
-      credit_balance_kwh: 63.98,
-      estimated_savings_brl: 120.4,
-      savings_unavailable_reason: null,
-    },
-    diagnostics: [],
-  },
-  trend: null,
-}
-
-// `photovoltaicSummaryPayload` (resposta completa de `/photovoltaic/summary`)
-// mora em `../test/dashboardFixtures.ts` desde a Etapa 2 do ADR-072 (extraída
-// para ser reusada por `TechnicalPage.test.tsx`) — importada no topo deste
-// arquivo. Esta página ainda a consome via `installApiMock` abaixo, para
-// derivar `expectedProduction` (usado por `ProductionHistorySection`, que só
-// migra para o módulo Produção na Etapa 4).
-
-// Usina nova (o caso real do bug corrigido nesta etapa): produção real já é
-// coletada, mas o primeiro ano de referência ainda não fechou — sem baseline
-// sazonal, `expectedProduction.available` é `false` em `/photovoltaic/summary`.
-// Usado para provar que `fetchAnomalies` não fica preso esperando por este
-// resultado (ver `DashboardPage — histórico de produção não depende mais do
-// baseline sazonal` abaixo).
-const fallbackPhotovoltaicSummaryPayload = {
-  plant_id: 'plant-1',
-  performance: null,
-  performance_unavailable_reason: 'NO_PERFORMANCE_RESULTS',
-  baseline: null,
-  baseline_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE',
-  reference_complete_on: '2027-03-14',
-  losses: null,
-  losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
-  expected_daily_production_kwh: null,
-  expected_daily_production_model_version: null,
-  expected_daily_production_nature: null,
-  expected_daily_production_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE',
-}
-
-const anomalyPayload = {
-  plant_id: 'plant-1',
-  days_analyzed: 3,
-  current_streak_days: 2,
-  worst_level: 'ATTENTION',
-  expected_unavailable_reason: null,
-  daily: [
-    {
-      date: '2026-07-29',
-      actual_production_kwh: 38,
-      expected_production_kwh: 44,
-      level: 'ATTENTION',
-      deviation_percent: -13.6,
-      irradiation_kwh_m2: null,
-    },
-    {
-      date: '2026-07-30',
-      actual_production_kwh: 40,
-      expected_production_kwh: 44,
-      level: 'NORMAL',
-      deviation_percent: -9,
-      irradiation_kwh_m2: null,
-    },
-  ],
-}
-
-// Histórico de produção por ciclo de faturamento (`GET /reports/monthly/history`,
-// ver `lib/dashboard/monthly-history-contracts.ts`) — payload default de
-// `fetchMonthlyProductionHistory` (Etapa 0: nenhum dos 4 blocos de mock
-// pré-existentes incluía esta função, então `MonthlyProductionSection`
-// renderizava o banner de erro capturado pelo `catch` de
-// `fetchMonthlyHistoryData` em todo teste da página, sem nenhuma asserção
-// notando isso). 3 ciclos em ordem cronológica, o último com uma lacuna de
-// telemetria (`missing_days: 3`) para exercitar o selo "dados parciais" no
-// fluxo real da página.
-const monthlyHistoryPayload = {
-  plant_id: 'plant-1',
-  limit: 12,
-  cycles_returned: 3,
-  cycles: [
-    {
-      reference_month: '2026-03',
-      bill_id: '33333333-3333-3333-3333-333333333333',
-      status: 'STABLE',
-      production_kwh: '980.00',
-      quality: { missing_days: 0, provisional_days: 0, incomplete_days: 0, unavailable_days: 0 },
-    },
-    {
-      reference_month: '2026-04',
-      bill_id: '44444444-4444-4444-4444-444444444444',
-      status: 'STABLE',
-      production_kwh: '1050.00',
-      quality: { missing_days: 0, provisional_days: 1, incomplete_days: 0, unavailable_days: 0 },
-    },
-    {
-      reference_month: '2026-05',
-      bill_id: '55555555-5555-5555-5555-555555555555',
-      status: 'STABLE',
-      production_kwh: '500.00',
-      quality: { missing_days: 3, provisional_days: 0, incomplete_days: 0, unavailable_days: 0 },
-    },
-  ],
-}
+// `executivePayload`/`anomalyPayload` moram em `../test/dashboardFixtures.ts`
+// desde as Etapas 3-4 do ADR-072 (extraídos para serem reusados por
+// `FinancialPage.test.tsx`/`ProductionPage.test.tsx`) — importados no topo
+// deste arquivo. `DashboardPage` (agora só o módulo Visão Geral, ADR-072
+// Etapa 4) continua buscando os dois: `executive` para o corpo principal e
+// `anomalies` só para `latestDataDate` (consumido pelo `HeroCard`) — o
+// restante do que `anomalies` alimentava (histórico diário, produção do
+// último dia, produção por ciclo de faturamento) migrou para
+// `pages/dashboard/ProductionPage.tsx`, que tem sua própria instância desses
+// recursos (`ProductionPage.test.tsx` cobre esses casos agora).
 
 // Helper único de mock de `../lib/api` (Etapa 0: antes existiam 4 blocos
 // `vi.doMock('../lib/api', ...)` divergentes — este `installApiMock` mais o
@@ -147,9 +29,11 @@ const monthlyHistoryPayload = {
 // poucos testes que precisam de um comportamento diferente (contagem de
 // chamadas, path/plant_id capturado, payload alternativo) sobrescrevem
 // exatamente o export que importa via `overrides`, sem duplicar os outros.
-// `fetchFinancialReturn` saiu deste mock na Etapa 3 do ADR-072: `DashboardPage`
-// não busca mais este recurso (a seção financeira migrou para `FinancialPage`,
-// ver `pages/dashboard/FinancialPage.test.tsx` para a cobertura equivalente).
+// `fetchFinancialReturn` saiu deste mock na Etapa 3 do ADR-072 (seção
+// financeira migrada para `FinancialPage`); `fetchPhotovoltaicSummary` e
+// `fetchMonthlyProductionHistory` saíram na Etapa 4 (seção de produção
+// migrada para `ProductionPage`) — `DashboardPage` não importa mais nenhum
+// dos dois.
 interface ApiMockOverrides {
   // Atalho para o caso mais comum (só o corpo de `/energy/executive/latest`
   // muda) — equivalente ao antigo parâmetro posicional de `installApiMock`/
@@ -158,8 +42,6 @@ interface ApiMockOverrides {
   executivePayload?: unknown
   fetchExecutiveDashboard?: (plantId: string) => Promise<Response>
   fetchAnomalyHistory?: (plantId: string, days?: number) => Promise<Response>
-  fetchPhotovoltaicSummary?: (plantId: string) => Promise<Response>
-  fetchMonthlyProductionHistory?: (plantId: string, limit?: number) => Promise<Response>
   fetchPlants?: () => Promise<unknown[]>
   configureApi?: (...args: unknown[]) => void
 }
@@ -171,10 +53,6 @@ function installApiMock(overrides: ApiMockOverrides = {}) {
       overrides.fetchExecutiveDashboard ?? vi.fn(async () => jsonResponse(executiveOverride)),
     fetchAnomalyHistory:
       overrides.fetchAnomalyHistory ?? vi.fn(async () => jsonResponse(anomalyPayload)),
-    fetchPhotovoltaicSummary:
-      overrides.fetchPhotovoltaicSummary ?? vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
-    fetchMonthlyProductionHistory:
-      overrides.fetchMonthlyProductionHistory ?? vi.fn(async () => jsonResponse(monthlyHistoryPayload)),
     fetchPlants: overrides.fetchPlants ?? vi.fn(async () => [singlePlant]),
     configureApi: overrides.configureApi ?? vi.fn(),
   }))
@@ -210,31 +88,18 @@ async function renderDashboard(executiveOverride: unknown = executivePayload) {
 }
 
 describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
-  it('compara a produção real do último dia vs. a esperada do mesmo dia em um único bullet chart', async () => {
-    vi.resetModules()
-    await renderDashboard()
-
-    // `anomalyPayload.daily` traz dois dias; o mais recente (2026-07-30) tem
-    // actual_production_kwh=40 e expected_production_kwh=44 — mesma escala
-    // diária, não mais o total do ciclo (500 kWh) comparado com uma média.
-    const sectionTitle = await screen.findByText('Produção do último dia vs. esperada')
-    const section = sectionTitle.closest('section') as HTMLElement
-
-    expect(within(section).getByText('40 kWh')).toBeInTheDocument()
-    expect(within(section).getByText(/esperado 44 kWh/)).toBeInTheDocument()
-    // (40 - 44) / 44 * 100 ≈ -9,1%
-    expect(within(section).getByText(/-9,1%/)).toBeInTheDocument()
-
-    // A produção total do ciclo (500 kWh) não desapareceu — continua visível
-    // no nó "Produção" do diagrama de fluxo de energia.
-    expect(screen.queryByText('Produção no ciclo')).not.toBeInTheDocument()
-  })
+  // ADR-072 Etapa 4: o teste do bullet chart "Produção do último dia vs.
+  // esperada" e o teste do streak dentro de "Histórico de produção" foram
+  // removidos daqui — as duas seções migraram para
+  // `pages/dashboard/ProductionPage.tsx`. Cobertura equivalente do bullet
+  // chart já existe em `components/LatestDailyProductionCard.test.tsx`
+  // ("compara a produção real do último dia com dado contra a esperada do
+  // mesmo dia"); o streak dentro do histórico ganhou um teste dedicado em
+  // `pages/dashboard/ProductionPage.test.tsx`.
 
   it('autoconsumo/injetada/importada aparecem em um único componente de visualização (EnergyFlowDiagram)', async () => {
     vi.resetModules()
     await renderDashboard()
-
-    await screen.findByText('Produção do último dia vs. esperada')
 
     // O diagrama de fluxo é o único visual mantido — os outros dois visuais
     // redundantes (composição em barra e donut de origem do consumo) não
@@ -271,31 +136,16 @@ describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
     expect(screen.getAllByText('77,7%').length).toBeGreaterThan(0)
     expect(screen.getAllByText('22,3%').length).toBeGreaterThan(0)
   })
-
-  it('mostra o status de anomalia (streak) dentro do histórico de produção, não mais duplicado ao lado (Etapa 1.4)', async () => {
-    vi.resetModules()
-    await renderDashboard()
-
-    const sectionTitle = await screen.findByText('Histórico de produção')
-    const section = sectionTitle.parentElement as HTMLElement
-
-    await waitFor(() => {
-      expect(within(section).getByText(/dias seguidos com produção abaixo do esperado/)).toBeInTheDocument()
-    })
-  })
 })
 
 describe('DashboardPage — desredundância (Etapa 1.4)', () => {
-  it('a frase de streak de anomalia aparece exatamente uma vez na página', async () => {
-    vi.resetModules()
-    await renderDashboard()
-
-    await screen.findByText('Indicadores percentuais')
-
-    await waitFor(() => {
-      expect(screen.getAllByText(/dias seguidos com produção abaixo do esperado/)).toHaveLength(1)
-    })
-  })
+  // ADR-072 Etapa 4: "a frase de streak de anomalia aparece exatamente uma
+  // vez na página" foi removido — deixou de fazer sentido depois que a
+  // página deixou de renderizar o histórico de produção (onde a frase
+  // aparecia). A asserção de unicidade "na página inteira" era específica do
+  // `DashboardPage` monolítico (ver ADR-072, seção "Negativas": um teste
+  // cruzando os 4 módulos ficaria a cargo de uma etapa futura de
+  // consolidação, se a duplicação entre módulos precisar ser reverificada).
 
   it('não renderiza mais a seção "Energia e produção" (redundante com o diagrama de fluxo)', async () => {
     vi.resetModules()
@@ -385,17 +235,15 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
 
   // Etapa 6: antes, o retry do erro global refazia só o fetch executivo
   // (`executive.refetch`) — os outros recursos ficavam presos no estado
-  // antigo mesmo depois do usuário pedir para tentar de novo. Prova que os 4
-  // recursos que restam neste módulo (`executive`, `anomalies`,
-  // `pvSummaryResource`, `monthlyHistory`) são refeitos juntos (`refreshAll`),
-  // não só o que errou. Reduzido de 5 para 4 na Etapa 3 do ADR-072:
-  // `financialReturn` saiu deste módulo (migrado para `FinancialPage`).
-  it('refaz os 4 fetches (não só o executivo) ao clicar em "Tentar novamente" no erro global', async () => {
+  // antigo mesmo depois do usuário pedir para tentar de novo. Prova que os 2
+  // recursos que restam neste módulo (`executive`, `anomalies`) são refeitos
+  // juntos (`refreshAll`), não só o que errou. Reduzido de 4 para 2 na Etapa
+  // 4 do ADR-072: `pvSummaryResource`/`monthlyHistory` saíram deste módulo
+  // (migrados para `ProductionPage`).
+  it('refaz os 2 fetches (não só o executivo) ao clicar em "Tentar novamente" no erro global', async () => {
     vi.resetModules()
     let executiveCalls = 0
     const fetchAnomalyHistoryMock = vi.fn(async () => jsonResponse(anomalyPayload))
-    const fetchPhotovoltaicSummaryMock = vi.fn(async () => jsonResponse(photovoltaicSummaryPayload))
-    const fetchMonthlyProductionHistoryMock = vi.fn(async () => jsonResponse(monthlyHistoryPayload))
     installApiMock({
       fetchExecutiveDashboard: vi.fn(async () => {
         executiveCalls += 1
@@ -403,8 +251,6 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
         return jsonResponse(executivePayload)
       }),
       fetchAnomalyHistory: fetchAnomalyHistoryMock,
-      fetchPhotovoltaicSummary: fetchPhotovoltaicSummaryMock,
-      fetchMonthlyProductionHistory: fetchMonthlyProductionHistoryMock,
     })
 
     const { DashboardPage } = await import('./DashboardPage')
@@ -423,8 +269,6 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
     await findByRole('alert')
     await waitFor(() => {
       expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(1)
-      expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(1)
-      expect(fetchMonthlyProductionHistoryMock).toHaveBeenCalledTimes(1)
     })
 
     const retryButton = getByRole('button', { name: 'Tentar novamente' })
@@ -434,8 +278,6 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
     expect(executiveCalls).toBe(2)
     await waitFor(() => {
       expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(2)
-      expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(2)
-      expect(fetchMonthlyProductionHistoryMock).toHaveBeenCalledTimes(2)
     })
   })
 })
@@ -463,219 +305,11 @@ describe('DashboardPage — grid real no breakpoint md (Etapa 1.2)', () => {
   })
 })
 
-describe('DashboardPage — re-busca dados quando a usina ativa muda (ADR-069, Etapa C)', () => {
-  it('refaz as chamadas de dados com o novo plant_id quando o PlantContext resolve outra usina', async () => {
-    vi.resetModules()
-
-    const secondPlant = {
-      id: '00000000-0000-0000-0000-000000000002',
-      name: 'Segunda usina',
-      installedPowerKwp: null,
-    }
-    const executiveCallsPlantIds: string[] = []
-
-    installApiMock({
-      fetchExecutiveDashboard: vi.fn(async (plantId: string) => {
-        executiveCallsPlantIds.push(plantId)
-        return jsonResponse(executivePayload)
-      }),
-      fetchPlants: vi.fn(async () => [singlePlant, secondPlant]),
-    })
-
-    const { DashboardPage } = await import('./DashboardPage')
-    const { AuthProvider } = await import('../contexts/AuthContext')
-    const { PlantProvider, usePlant } = await import('../contexts/PlantContext')
-
-    function PlantSwitcher() {
-      const { selectPlant } = usePlant()
-      return (
-        <button onClick={() => selectPlant(secondPlant.id)}>trocar-usina</button>
-      )
-    }
-
-    render(
-      <MemoryRouter>
-        <AuthProvider>
-          <PlantProvider>
-            <PlantSwitcher />
-            <main>
-              <DashboardPage />
-            </main>
-          </PlantProvider>
-        </AuthProvider>
-      </MemoryRouter>
-    )
-
-    await screen.findByText('Indicadores percentuais')
-    expect(executiveCallsPlantIds).toEqual([singlePlant.id])
-
-    screen.getByRole('button', { name: 'trocar-usina' }).click()
-
-    await waitFor(() => {
-      expect(executiveCallsPlantIds).toEqual([singlePlant.id, secondPlant.id])
-    })
-  })
-})
-
-describe('DashboardPage — histórico de produção não depende mais do baseline sazonal (contrato 200 sempre)', () => {
-  it('busca /energy/anomalies/latest assim que há plantId, sem esperar expectedProduction.available e sem parâmetros extras (ex.: o antigo expected_daily_production_kwh)', async () => {
-    vi.resetModules()
-    const fetchAnomalyHistoryMock = vi.fn(async () => jsonResponse(anomalyPayload))
-
-    installApiMock({
-      fetchAnomalyHistory: fetchAnomalyHistoryMock,
-      // `/photovoltaic/summary` responde SEM baseline (usina nova) — a busca
-      // de anomalias não pode esperar por esse resultado.
-      fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(fallbackPhotovoltaicSummaryPayload)),
-    })
-
-    const { DashboardPage } = await import('./DashboardPage')
-    const { AuthProvider } = await import('../contexts/AuthContext')
-    const { PlantProvider } = await import('../contexts/PlantContext')
-
-    render(
-      <MemoryRouter>
-        <AuthProvider>
-          <PlantProvider>
-            <main>
-              <DashboardPage />
-            </main>
-          </PlantProvider>
-        </AuthProvider>
-      </MemoryRouter>
-    )
-
-    await waitFor(() => {
-      expect(fetchAnomalyHistoryMock).toHaveBeenCalled()
-    })
-    // A página chama só com `plantId` — nenhum segundo argumento (como o
-    // antigo `expected_daily_production_kwh`) é passado; `days` fica a
-    // cargo do default de `fetchAnomalyHistory` em `lib/api.ts`.
-    expect(fetchAnomalyHistoryMock).toHaveBeenCalledWith(singlePlant.id)
-  })
-
-  it('mostra o gráfico de histórico com produção real, sem linha "Esperado" e sem cair no fallback de dados insuficientes, quando a usina tem produção real mas não tem baseline sazonal', async () => {
-    vi.resetModules()
-
-    const noBaselineAnomalyPayload = {
-      plant_id: 'plant-1',
-      days_analyzed: 1,
-      current_streak_days: 0,
-      worst_level: null,
-      expected_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE',
-      daily: [
-        {
-          date: '2026-07-30',
-          actual_production_kwh: 40,
-          expected_production_kwh: null,
-          level: null,
-          deviation_percent: null,
-          irradiation_kwh_m2: null,
-        },
-      ],
-    }
-
-    installApiMock({
-      fetchAnomalyHistory: vi.fn(async () => jsonResponse(noBaselineAnomalyPayload)),
-      fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(fallbackPhotovoltaicSummaryPayload)),
-    })
-
-    const { DashboardPage } = await import('./DashboardPage')
-    const { AuthProvider } = await import('../contexts/AuthContext')
-    const { PlantProvider } = await import('../contexts/PlantContext')
-
-    render(
-      <MemoryRouter>
-        <AuthProvider>
-          <PlantProvider>
-            <main>
-              <DashboardPage />
-            </main>
-          </PlantProvider>
-        </AuthProvider>
-      </MemoryRouter>
-    )
-
-    const sectionTitle = await screen.findByText('Histórico de produção')
-    const section = sectionTitle.parentElement as HTMLElement
-
-    await waitFor(() => {
-      expect(within(section).getByRole('slider')).toBeInTheDocument()
-    })
-    expect(within(section).getByText('40 kWh')).toBeInTheDocument()
-    expect(within(section).queryByText('Esperado')).not.toBeInTheDocument()
-    expect(within(section).queryByText(/histórico de desempenho insuficiente/)).not.toBeInTheDocument()
-    expect(within(section).queryByText(/primeiro ano de referência/)).not.toBeInTheDocument()
-  })
-})
-
-describe('DashboardPage — seção "Produção por ciclo de faturamento" (Etapa 0)', () => {
-  it('renderiza as barras do histórico de ciclos, não o banner de erro (nenhum mock de ../lib/api anterior incluía fetchMonthlyProductionHistory)', async () => {
-    vi.resetModules()
-    await renderDashboard()
-
-    const sectionTitle = await screen.findByText('Produção por ciclo de faturamento')
-    const section = sectionTitle.closest('section') as HTMLElement
-
-    // Antes da Etapa 0, `fetchMonthlyProductionHistory` não existia em
-    // nenhum mock de `../lib/api` — chamá-la lançava um `TypeError`
-    // capturado por `fetchMonthlyHistoryData`, que fazia esta seção
-    // renderizar `RetryableError` (`role="alert"`) em vez do `BarList` real.
-    await waitFor(() => {
-      expect(within(section).queryByRole('alert')).not.toBeInTheDocument()
-    })
-
-    // Os 3 ciclos de `monthlyHistoryPayload` (default de `installApiMock`)
-    // aparecem como barras reais, em ordem cronológica, com o valor formatado.
-    expect(within(section).getAllByRole('progressbar')).toHaveLength(3)
-    expect(within(section).getByText('mar/26')).toBeInTheDocument()
-    expect(within(section).getByText('abr/26')).toBeInTheDocument()
-    expect(within(section).getByText('mai/26')).toBeInTheDocument()
-    expect(within(section).getByText('980 kWh')).toBeInTheDocument()
-    expect(within(section).getByText('1.050 kWh')).toBeInTheDocument()
-    expect(within(section).getByText('500 kWh')).toBeInTheDocument()
-
-    // mai/26 tem missing_days: 3 no payload — único ciclo com o selo de
-    // dados parciais.
-    expect(within(section).getAllByText('dados parciais')).toHaveLength(1)
-  })
-
-  it('mostra RetryableError (não as barras) quando fetchMonthlyProductionHistory falha, sem travar o resto do dashboard', async () => {
-    vi.resetModules()
-    installApiMock({
-      fetchMonthlyProductionHistory: vi.fn(async () => jsonResponse({ error: 'boom' }, 500)),
-    })
-
-    const { DashboardPage } = await import('./DashboardPage')
-    const { AuthProvider } = await import('../contexts/AuthContext')
-    const { PlantProvider } = await import('../contexts/PlantContext')
-
-    render(
-      <MemoryRouter>
-        <AuthProvider>
-          <PlantProvider>
-            <main>
-              <DashboardPage />
-            </main>
-          </PlantProvider>
-        </AuthProvider>
-      </MemoryRouter>
-    )
-
-    const sectionTitle = await screen.findByText('Produção por ciclo de faturamento')
-    const section = sectionTitle.closest('section') as HTMLElement
-
-    await waitFor(() => {
-      expect(within(section).getByRole('alert')).toBeInTheDocument()
-    })
-    // Mensagem fixa vinda de `usePlantResource` (Etapa 3) — sem sufixo de status
-    // HTTP: o detalhe técnico vai para o console, nunca para a tela (mesma
-    // política de `ErrorBoundary.tsx`).
-    expect(within(section).getByRole('alert')).toHaveTextContent(
-      'Erro ao buscar histórico de produção.'
-    )
-
-    // O erro isolado desta seção não trava o restante da página.
-    expect(await screen.findByText('Indicadores percentuais')).toBeInTheDocument()
-  })
-})
+// ADR-072 Etapa 4: os três `describe` a seguir foram migrados por inteiro
+// para `pages/dashboard/ProductionPage.test.tsx` — "re-busca dados quando a
+// usina ativa muda" (lá com cobertura ampliada para os 3 recursos do módulo
+// Produção), "histórico de produção não depende mais do baseline sazonal" (2
+// testes) e a seção "Produção por ciclo de faturamento" (2 testes). O
+// conteúdo que os três exercitavam (`ProductionHistorySection`,
+// `LatestDailyProductionCard`, `MonthlyProductionSection`) não é mais
+// renderizado por `DashboardPage`.

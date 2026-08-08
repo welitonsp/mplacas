@@ -1,11 +1,12 @@
 // Fixtures de teste compartilhadas entre `DashboardPage.test.tsx` (a suíte
-// legada, ainda cobrindo as 2 rotas de módulo não migradas) e os testes dos
-// módulos já extraídos dela (ADR-072, Etapas 2-3). Cada etapa de migração move
+// legada, ainda cobrindo a rota de Visão Geral não migrada) e os testes dos
+// módulos já extraídos dela (ADR-072, Etapas 2-4). Cada etapa de migração move
 // para cá só o mock do recurso que o módulo correspondente realmente passa a
 // usar — nada é adicionado por antecipação para um recurso que nenhum módulo
 // migrado ainda consome (`/photovoltaic/summary` para o módulo Técnico, Etapa 2;
 // `/energy/executive/latest` e `/energy/financial-return/latest` para o módulo
-// Financeiro, Etapa 3).
+// Financeiro, Etapa 3; `/energy/anomalies/latest` e
+// `/reports/monthly/history` para o módulo Produção, Etapa 4).
 
 // Constrói uma `Response` JSON — mesmo helper usado por todo ponto de mock de
 // `../lib/api` na suíte (`DashboardPage.test.tsx` e os testes de módulo).
@@ -131,4 +132,91 @@ export const financialReturnUnavailablePayload = {
   payback_projection_months: null,
   unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
   payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+}
+
+// Resposta de exemplo para `GET /energy/anomalies/latest` — usada pelo módulo
+// Produção (`ProductionPage.test.tsx`, ADR-072 Etapa 4) e ainda por
+// `DashboardPage.test.tsx`, que continua dependendo deste recurso só para
+// `latestDataDate` (consumido pelo `HeroCard`). Dois dias, o mais recente
+// (2026-07-30) com produção real abaixo do esperado (`ATTENTION`) — mesmos
+// valores usados pelos dois arquivos de teste, que testam o mesmo contrato de
+// resposta.
+export const anomalyPayload = {
+  plant_id: 'plant-1',
+  days_analyzed: 3,
+  current_streak_days: 2,
+  worst_level: 'ATTENTION',
+  expected_unavailable_reason: null,
+  daily: [
+    {
+      date: '2026-07-29',
+      actual_production_kwh: 38,
+      expected_production_kwh: 44,
+      level: 'ATTENTION',
+      deviation_percent: -13.6,
+      irradiation_kwh_m2: null,
+    },
+    {
+      date: '2026-07-30',
+      actual_production_kwh: 40,
+      expected_production_kwh: 44,
+      level: 'NORMAL',
+      deviation_percent: -9,
+      irradiation_kwh_m2: null,
+    },
+  ],
+}
+
+// `/photovoltaic/summary` sem baseline sazonal (usina nova: produção real já
+// é coletada, mas o primeiro ano de referência ainda não fechou) — usada pelo
+// módulo Produção para provar que a busca de anomalias não depende deste
+// resultado (ver `ProductionPage.test.tsx`, testes "histórico de produção não
+// depende mais do baseline sazonal").
+export const fallbackPhotovoltaicSummaryPayload = {
+  plant_id: 'plant-1',
+  performance: null,
+  performance_unavailable_reason: 'NO_PERFORMANCE_RESULTS',
+  baseline: null,
+  baseline_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE',
+  reference_complete_on: '2027-03-14',
+  losses: null,
+  losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
+  expected_daily_production_kwh: null,
+  expected_daily_production_model_version: null,
+  expected_daily_production_nature: null,
+  expected_daily_production_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE',
+}
+
+// Histórico de produção por ciclo de faturamento (`GET /reports/monthly/history`,
+// ver `lib/dashboard/monthly-history-contracts.ts`) — payload default de
+// `fetchMonthlyProductionHistory` para o módulo Produção. 3 ciclos em ordem
+// cronológica, o último com uma lacuna de telemetria (`missing_days: 3`) para
+// exercitar o selo "dados parciais" no fluxo real do módulo.
+export const monthlyHistoryPayload = {
+  plant_id: 'plant-1',
+  limit: 12,
+  cycles_returned: 3,
+  cycles: [
+    {
+      reference_month: '2026-03',
+      bill_id: '33333333-3333-3333-3333-333333333333',
+      status: 'STABLE',
+      production_kwh: '980.00',
+      quality: { missing_days: 0, provisional_days: 0, incomplete_days: 0, unavailable_days: 0 },
+    },
+    {
+      reference_month: '2026-04',
+      bill_id: '44444444-4444-4444-4444-444444444444',
+      status: 'STABLE',
+      production_kwh: '1050.00',
+      quality: { missing_days: 0, provisional_days: 1, incomplete_days: 0, unavailable_days: 0 },
+    },
+    {
+      reference_month: '2026-05',
+      bill_id: '55555555-5555-5555-5555-555555555555',
+      status: 'STABLE',
+      production_kwh: '500.00',
+      quality: { missing_days: 3, provisional_days: 0, incomplete_days: 0, unavailable_days: 0 },
+    },
+  ],
 }

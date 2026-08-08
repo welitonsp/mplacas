@@ -7,6 +7,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { DashboardLayout } from './pages/dashboard/DashboardLayout'
 import { DashboardIndexRedirect } from './pages/dashboard/DashboardIndexRedirect'
 import { FinancialPage } from './pages/dashboard/FinancialPage'
+import { ProductionPage } from './pages/dashboard/ProductionPage'
 import { TechnicalPage } from './pages/dashboard/TechnicalPage'
 import { DASHBOARD_MODULE_SEGMENTS, DASHBOARD_ROOT_PATH } from './routes'
 
@@ -31,13 +32,13 @@ export function App() {
             }
           >
             <Route index element={<DashboardIndexRedirect />} />
-            {/* Etapa 1 (ADR-072): as rotas de Visão Geral/Produção ainda
-                renderizam o `DashboardPage` atual, sem nenhuma mudança de
-                conteúdo — a divisão em `OverviewPage`/`ProductionPage` é
-                etapa futura (Etapas 4-5). Técnico (Etapa 2) e Financeiro
-                (Etapa 3) já migraram para módulo próprio. */}
+            {/* Etapa 1 (ADR-072): a rota de Visão Geral ainda renderiza o
+                `DashboardPage` atual, sem nenhuma mudança de conteúdo — a
+                extração de `OverviewPage` é a etapa final da migração (Etapa
+                5). Técnico (Etapa 2), Financeiro (Etapa 3) e Produção (Etapa
+                4) já migraram para módulo próprio. */}
             <Route path={DASHBOARD_MODULE_SEGMENTS.overview} element={<DashboardPage />} />
-            <Route path={DASHBOARD_MODULE_SEGMENTS.production} element={<DashboardPage />} />
+            <Route path={DASHBOARD_MODULE_SEGMENTS.production} element={<ProductionPage />} />
             <Route path={DASHBOARD_MODULE_SEGMENTS.financial} element={<FinancialPage />} />
             <Route path={DASHBOARD_MODULE_SEGMENTS.technical} element={<TechnicalPage />} />
             <Route path="*" element={<DashboardIndexRedirect />} />
