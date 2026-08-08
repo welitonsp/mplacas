@@ -1,7 +1,6 @@
 import {
   fetchAnomalyHistory,
   fetchExecutiveDashboard,
-  fetchFinancialReturn,
   fetchMonthlyProductionHistory,
   fetchPhotovoltaicSummary,
 } from '../lib/api'
@@ -15,7 +14,6 @@ import {
   parseAnomalyDashboard,
   parseExecutiveDashboard,
 } from '../lib/dashboard/contracts'
-import { parseFinancialReturn } from '../lib/dashboard/financial-return-contracts'
 import { parseMonthlyProductionHistory } from '../lib/dashboard/monthly-history-contracts'
 import type { PhotovoltaicSummaryResponse } from '../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary } from '../lib/dashboard/photovoltaic-contracts'
@@ -28,7 +26,6 @@ import { TrendCard } from '../components/TrendCard'
 import { EnergyFlowDiagram } from '../components/EnergyFlowDiagram'
 import { DiagnosticsCard } from '../components/DiagnosticsCard'
 import { hasIncompleteDailyProduction } from '../components/EnergyProductionSection'
-import { FinancialSection } from '../components/FinancialSection'
 import { LatestDailyProductionCard } from '../components/LatestDailyProductionCard'
 import { MetricCard } from '../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
@@ -67,7 +64,7 @@ export function DashboardPage() {
   // condition/troca de usina que o fetch manual anterior fazia à mão. Erro de
   // rede/servidor fica em `executive.error` (mensagem fixa, sem sufixo de status
   // HTTP — o detalhe vai para o console via o próprio hook, mesma política de
-  // `financialReturn`/`monthlyHistory` abaixo).
+  // `monthlyHistory` abaixo).
   const executive = usePlantResource({
     plantId,
     fetcher: fetchExecutiveDashboard,
@@ -114,21 +111,8 @@ export function DashboardPage() {
     parse: parsePhotovoltaicSummary,
     errorMessage: 'Erro ao buscar resumo fotovoltaico.',
   })
-  // `null` (`.data`) = ainda carregando `/energy/financial-return/latest` (ADR-067).
-  // Migrado para `usePlantResource` (Etapa 3): o hook cobre a mesma proteção de
-  // race condition/troca de usina que o fetch manual anterior fazia à mão. Erro de
-  // rede/servidor fica em `financialReturn.error` (mensagem fixa, sem sufixo de
-  // status HTTP — o detalhe vai para o console via o próprio hook), separado do
-  // estado de indisponibilidade de negócio (`unavailable_reason`), que é tratado
-  // dentro de `FinancialReturnSection` — os dois nunca se confundem.
-  const financialReturn = usePlantResource({
-    plantId,
-    fetcher: fetchFinancialReturn,
-    parse: parseFinancialReturn,
-    errorMessage: 'Erro ao buscar retorno do investimento.',
-  })
   // `null` (`.data`) = ainda carregando `/reports/monthly/history` (histórico de
-  // produção por ciclo de faturamento). Mesmo padrão de `financialReturn` acima.
+  // produção por ciclo de faturamento). Mesmo padrão de `pvSummaryResource` acima.
   // `fetcher` precisa de um wrapper porque `fetchMonthlyProductionHistory` recebe
   // `limit` como segundo parâmetro, que a assinatura de `usePlantResource.fetcher`
   // não conhece.
@@ -139,19 +123,20 @@ export function DashboardPage() {
     errorMessage: 'Erro ao buscar histórico de produção.',
   })
 
-  // Refetch único para os 5 recursos (Etapa 6) — usado tanto pelo botão
+  // Refetch único para os 4 recursos que restam neste módulo (Etapa 6,
+  // reduzido de 5 para 4 na Etapa 3 do ADR-072 com a saída de
+  // `financialReturn`, migrado para `FinancialPage`) — usado tanto pelo botão
   // "Atualizar" quanto pelo `RetryableError` do erro global. Antes, o botão
-  // já refazia os 5 na mão (repetido inline) e o banner de erro global só
-  // refazia o executivo, deixando os outros 4 recursos presos no estado
-  // antigo mesmo depois do usuário pedir para tentar de novo.
+  // já refazia os recursos na mão (repetido inline) e o banner de erro global
+  // só refazia o executivo, deixando os outros presos no estado antigo mesmo
+  // depois do usuário pedir para tentar de novo.
   const refreshAll = () => {
     executive.refetch()
     anomalies.refetch()
     pvSummaryResource.refetch()
-    financialReturn.refetch()
     monthlyHistory.refetch()
   }
-  // Combinado dos 5 recursos — usado pelo `disabled`/texto "Atualizando..."
+  // Combinado dos 4 recursos — usado pelo `disabled`/texto "Atualizando..."
   // do botão "Atualizar" (o nome `loading` é preservado de propósito: o
   // teste `DashboardPage.focusVisible.test.tsx` casa a fonte literal do
   // JSX do botão mais abaixo (ver ternário loading/"Atualizando"/"Atualizar");
@@ -161,7 +146,6 @@ export function DashboardPage() {
     executive.status === 'loading' ||
     anomalies.status === 'loading' ||
     pvSummaryResource.status === 'loading' ||
-    financialReturn.status === 'loading' ||
     monthlyHistory.status === 'loading'
 
   const data = executive.data
@@ -182,10 +166,6 @@ export function DashboardPage() {
   // (ver seção "Indicadores percentuais" abaixo).
   const selfSufficiencyPercent = toNumber(indicators?.self_sufficiency_rate_percent ?? null)
   const gridDependencyPercent = toNumber(indicators?.grid_dependency_rate_percent ?? null)
-  // A decomposição da fatura (total/energia/iluminação pública) e o restante
-  // do bloco financeiro (custo do ciclo, tarifas, créditos, retorno do
-  // investimento) vivem em `FinancialSection` (Etapa 7) — só o `indicators`
-  // do ciclo corrente e o recurso `financialReturn` cruzam a fronteira.
   const latestDataDate = anomalyState.data ? latestNonNullProductionDate(anomalyState.data.daily) : null
   // Calculado uma única vez e reusado pelo chip do Hero (`AttentionSummary`,
   // ver Etapa 1.7) e pela lista completa (`DiagnosticsCard`) — mesma lista,
@@ -396,12 +376,13 @@ export function DashboardPage() {
               )}
             </section>
 
-            {/* Bloco 3 — "Quanto custou? Qual o retorno?": financeiro
-                completo, extraído para `FinancialSection` (Etapa 7) — custo
-                do ciclo, tarifas, créditos e retorno do investimento juntos,
-                dois `<section>` irmãos dentro do mesmo componente (ver
-                comentário em `FinancialSection.tsx`). */}
-            <FinancialSection indicators={indicators} financialReturn={financialReturn} plantId={plantId} />
+            {/* Bloco 3 — "Quanto custou? Qual o retorno?" (financeiro
+                completo: custo do ciclo, tarifas, créditos e retorno do
+                investimento) migrou para o módulo próprio em
+                `pages/dashboard/FinancialPage.tsx` (ADR-072, Etapa 3) — não
+                aparece mais aqui, para não duplicar entre as rotas
+                `/dashboard/financeiro` e esta página (ainda servindo as
+                outras 2 rotas até as próximas etapas migrarem). */}
 
             {/* O bloco "Como está o desempenho técnico?" (PR, yield
                 específico, disponibilidade de reporte, degradação e
@@ -409,7 +390,7 @@ export function DashboardPage() {
                 `pages/dashboard/TechnicalPage.tsx` (ADR-072, Etapa 2) — não
                 aparece mais aqui, para não duplicar entre as rotas
                 `/dashboard/tecnico` e esta página (ainda servindo as outras
-                3 rotas até as próximas etapas migrarem). */}
+                2 rotas até as próximas etapas migrarem). */}
           </div>
         )}
     </>

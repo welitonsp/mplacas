@@ -100,26 +100,6 @@ const anomalyPayload = {
   ],
 }
 
-// Retorno do investimento indisponível (CAPEX nunca registrado) — payload
-// default de `fetchFinancialReturn` para todos os testes que não são
-// especificamente sobre a seção de retorno do investimento (extraído de 4
-// blocos de mock idênticos que existiam antes da Etapa 0, um por `vi.doMock`
-// inline).
-const financialReturnUnavailablePayload = {
-  plant_id: 'plant-1',
-  investment_amount_brl: null,
-  investment_recorded_on: null,
-  commissioned_on: null,
-  accumulated_savings_brl: null,
-  average_monthly_savings_brl: null,
-  cycles_counted: null,
-  cycles_expected: null,
-  roi_percent: null,
-  payback_projection_months: null,
-  unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-  payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
-}
-
 // Histórico de produção por ciclo de faturamento (`GET /reports/monthly/history`,
 // ver `lib/dashboard/monthly-history-contracts.ts`) — payload default de
 // `fetchMonthlyProductionHistory` (Etapa 0: nenhum dos 4 blocos de mock
@@ -166,7 +146,10 @@ const monthlyHistoryPayload = {
 // chamar esta função: os testes felizes usam só o default de cada export: os
 // poucos testes que precisam de um comportamento diferente (contagem de
 // chamadas, path/plant_id capturado, payload alternativo) sobrescrevem
-// exatamente o export que importa via `overrides`, sem duplicar os outros 5.
+// exatamente o export que importa via `overrides`, sem duplicar os outros.
+// `fetchFinancialReturn` saiu deste mock na Etapa 3 do ADR-072: `DashboardPage`
+// não busca mais este recurso (a seção financeira migrou para `FinancialPage`,
+// ver `pages/dashboard/FinancialPage.test.tsx` para a cobertura equivalente).
 interface ApiMockOverrides {
   // Atalho para o caso mais comum (só o corpo de `/energy/executive/latest`
   // muda) — equivalente ao antigo parâmetro posicional de `installApiMock`/
@@ -176,7 +159,6 @@ interface ApiMockOverrides {
   fetchExecutiveDashboard?: (plantId: string) => Promise<Response>
   fetchAnomalyHistory?: (plantId: string, days?: number) => Promise<Response>
   fetchPhotovoltaicSummary?: (plantId: string) => Promise<Response>
-  fetchFinancialReturn?: (plantId: string) => Promise<Response>
   fetchMonthlyProductionHistory?: (plantId: string, limit?: number) => Promise<Response>
   fetchPlants?: () => Promise<unknown[]>
   configureApi?: (...args: unknown[]) => void
@@ -191,8 +173,6 @@ function installApiMock(overrides: ApiMockOverrides = {}) {
       overrides.fetchAnomalyHistory ?? vi.fn(async () => jsonResponse(anomalyPayload)),
     fetchPhotovoltaicSummary:
       overrides.fetchPhotovoltaicSummary ?? vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
-    fetchFinancialReturn:
-      overrides.fetchFinancialReturn ?? vi.fn(async () => jsonResponse(financialReturnUnavailablePayload)),
     fetchMonthlyProductionHistory:
       overrides.fetchMonthlyProductionHistory ?? vi.fn(async () => jsonResponse(monthlyHistoryPayload)),
     fetchPlants: overrides.fetchPlants ?? vi.fn(async () => [singlePlant]),
@@ -264,41 +244,15 @@ describe('DashboardPage — reorganização em três blocos (Etapa 5)', () => {
     expect(screen.queryByText('Origem do consumo')).not.toBeInTheDocument()
   })
 
-  // Etapa 7: o conteúdo detalhado do bloco financeiro (decomposição da
-  // fatura, três subgrupos "Custo do ciclo"/"Tarifas"/"Créditos de energia",
-  // regra de nunca mostrar R$ 0,00 de economia sem tarifa registrada, estado
-  // de erro do retorno do investimento) foi extraído para `FinancialSection`
-  // e a cobertura exaustiva foi junto — ver `FinancialSection.test.tsx`. O
-  // teste abaixo é o mínimo de integração que continua fazendo sentido aqui:
-  // prova que `DashboardPage` passa os dados certos (`indicators` do ciclo
-  // corrente, o recurso `financialReturn`) para a seção extraída, e que ela
-  // aparece no lugar certo da página (duas seções irmãs, "Financeiro" e
-  // "Retorno do investimento").
-  it('passa os dados do ciclo e do retorno do investimento para a FinancialSection extraída (Etapa 7)', async () => {
-    vi.resetModules()
-    await renderDashboard()
-
-    const financeiroTitle = await screen.findByText('Financeiro')
-    const section = financeiroTitle.parentElement as HTMLElement
-
-    expect(within(section).getByText('Custo do ciclo')).toBeInTheDocument()
-    expect(within(section).getByText('Tarifas')).toBeInTheDocument()
-    expect(within(section).getByText('Créditos de energia')).toBeInTheDocument()
-
-    // Um valor de cada subgrupo, prova de que `indicators` chega intacto à
-    // seção extraída.
-    expect(within(section).getByText(/R\$\s*420,71/)).toBeInTheDocument()
-    expect(within(section).getByText(/0,85/)).toBeInTheDocument()
-    expect(within(section).getByText(/63,98/)).toBeInTheDocument()
-
-    // "Retorno do investimento" é uma seção irmã de "Financeiro", dentro do
-    // mesmo componente (`FinancialSection`) — continua aparecendo na página
-    // (o texto se repete no `<h2>` da seção e no rótulo interno do card de
-    // `FinancialReturnSection`; a busca é restrita ao heading).
-    expect(
-      await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
-    ).toBeInTheDocument()
-  })
+  // Etapa 7 (histórico): o conteúdo detalhado do bloco financeiro
+  // (decomposição da fatura, subgrupos "Custo do ciclo"/"Tarifas"/"Créditos
+  // de energia", retorno do investimento) foi extraído para `FinancialSection`
+  // nesta página, e cobria aqui um teste mínimo de integração (`indicators`/
+  // `financialReturn` chegando intactos à seção extraída). ADR-072, Etapa 3:
+  // `FinancialSection` saiu de `DashboardPage` de vez, migrada para o módulo
+  // `pages/dashboard/FinancialPage.tsx` — a cobertura equivalente (payload
+  // executivo/retorno do investimento chegando intactos à seção) agora vive
+  // em `FinancialPage.test.tsx`, não mais aqui.
 
   it('unifica autossuficiência e dependência da rede em uma única StackedBar de 2 segmentos somando 100%', async () => {
     vi.resetModules()
@@ -336,7 +290,7 @@ describe('DashboardPage — desredundância (Etapa 1.4)', () => {
     vi.resetModules()
     await renderDashboard()
 
-    await screen.findByText('Financeiro')
+    await screen.findByText('Indicadores percentuais')
 
     await waitFor(() => {
       expect(screen.getAllByText(/dias seguidos com produção abaixo do esperado/)).toHaveLength(1)
@@ -347,7 +301,7 @@ describe('DashboardPage — desredundância (Etapa 1.4)', () => {
     vi.resetModules()
     await renderDashboard()
 
-    await screen.findByText('Financeiro')
+    await screen.findByText('Indicadores percentuais')
 
     expect(screen.queryByText('Energia e produção')).not.toBeInTheDocument()
     // Os mesmos fatos continuam visíveis, só que uma única vez, no diagrama de fluxo.
@@ -358,7 +312,7 @@ describe('DashboardPage — desredundância (Etapa 1.4)', () => {
     vi.resetModules()
     await renderDashboard()
 
-    await screen.findByText('Financeiro')
+    await screen.findByText('Indicadores percentuais')
 
     // `EnergyProductionSection` (removida da composição na Etapa 1.4) usava
     // exatamente estes quatro rótulos em cards isolados — se algum deles
@@ -425,21 +379,22 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
     const retryButton = getByRole('button', { name: 'Tentar novamente' })
     retryButton.click()
 
-    await findByText('Financeiro')
+    await findByText('Indicadores percentuais')
     expect(executiveCalls).toBe(2)
   })
 
   // Etapa 6: antes, o retry do erro global refazia só o fetch executivo
-  // (`executive.refetch`) — os outros 4 recursos ficavam presos no estado
-  // antigo mesmo depois do usuário pedir para tentar de novo. Prova que os 5
-  // recursos (`executive`, `anomalies`, `pvSummaryResource`, `financialReturn`,
-  // `monthlyHistory`) são refeitos juntos (`refreshAll`), não só o que errou.
-  it('refaz os 5 fetches (não só o executivo) ao clicar em "Tentar novamente" no erro global', async () => {
+  // (`executive.refetch`) — os outros recursos ficavam presos no estado
+  // antigo mesmo depois do usuário pedir para tentar de novo. Prova que os 4
+  // recursos que restam neste módulo (`executive`, `anomalies`,
+  // `pvSummaryResource`, `monthlyHistory`) são refeitos juntos (`refreshAll`),
+  // não só o que errou. Reduzido de 5 para 4 na Etapa 3 do ADR-072:
+  // `financialReturn` saiu deste módulo (migrado para `FinancialPage`).
+  it('refaz os 4 fetches (não só o executivo) ao clicar em "Tentar novamente" no erro global', async () => {
     vi.resetModules()
     let executiveCalls = 0
     const fetchAnomalyHistoryMock = vi.fn(async () => jsonResponse(anomalyPayload))
     const fetchPhotovoltaicSummaryMock = vi.fn(async () => jsonResponse(photovoltaicSummaryPayload))
-    const fetchFinancialReturnMock = vi.fn(async () => jsonResponse(financialReturnUnavailablePayload))
     const fetchMonthlyProductionHistoryMock = vi.fn(async () => jsonResponse(monthlyHistoryPayload))
     installApiMock({
       fetchExecutiveDashboard: vi.fn(async () => {
@@ -449,7 +404,6 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
       }),
       fetchAnomalyHistory: fetchAnomalyHistoryMock,
       fetchPhotovoltaicSummary: fetchPhotovoltaicSummaryMock,
-      fetchFinancialReturn: fetchFinancialReturnMock,
       fetchMonthlyProductionHistory: fetchMonthlyProductionHistoryMock,
     })
 
@@ -470,19 +424,17 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
     await waitFor(() => {
       expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(1)
       expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(1)
-      expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(1)
       expect(fetchMonthlyProductionHistoryMock).toHaveBeenCalledTimes(1)
     })
 
     const retryButton = getByRole('button', { name: 'Tentar novamente' })
     retryButton.click()
 
-    await findByText('Financeiro')
+    await findByText('Indicadores percentuais')
     expect(executiveCalls).toBe(2)
     await waitFor(() => {
       expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(2)
       expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(2)
-      expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(2)
       expect(fetchMonthlyProductionHistoryMock).toHaveBeenCalledTimes(2)
     })
   })
@@ -493,7 +445,7 @@ describe('DashboardPage — grid real no breakpoint md (Etapa 1.2)', () => {
     vi.resetModules()
     const { container } = await renderDashboard()
 
-    await screen.findByText('Financeiro')
+    await screen.findByText('Indicadores percentuais')
 
     const sections = Array.from(container.querySelectorAll('main > div.grid > section'))
     expect(sections.length).toBeGreaterThan(0)
@@ -554,7 +506,7 @@ describe('DashboardPage — re-busca dados quando a usina ativa muda (ADR-069, E
       </MemoryRouter>
     )
 
-    await screen.findByText('Financeiro')
+    await screen.findByText('Indicadores percentuais')
     expect(executiveCallsPlantIds).toEqual([singlePlant.id])
 
     screen.getByRole('button', { name: 'trocar-usina' }).click()
@@ -724,6 +676,6 @@ describe('DashboardPage — seção "Produção por ciclo de faturamento" (Etapa
     )
 
     // O erro isolado desta seção não trava o restante da página.
-    expect(await screen.findByText('Financeiro')).toBeInTheDocument()
+    expect(await screen.findByText('Indicadores percentuais')).toBeInTheDocument()
   })
 })
