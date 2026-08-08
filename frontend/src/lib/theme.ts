@@ -33,6 +33,22 @@ export function applyTheme(theme: Theme): void {
 }
 
 /**
+ * Lê a preferência atualmente persistida, nos três estados que o controle de
+ * UI (Fase 3, `AppHeader`) precisa distinguir. Ausência da chave, ou valor
+ * inválido (lixo, versão antiga etc.), é `'system'` — mesmo critério de
+ * fallback de `resolveInitialTheme`, mas devolvendo a preferência (três
+ * estados: qual opção marcar como atual), não o tema já resolvido (dois
+ * estados: o que pintar na tela).
+ */
+export function getThemePreference(): ThemePreference {
+  const saved = window.localStorage.getItem(STORAGE_KEY)
+  if (saved === 'light' || saved === 'dark') {
+    return saved
+  }
+  return 'system'
+}
+
+/**
  * Persiste a escolha explícita do usuário (Decisão 1 do ADR). `'system'` não
  * grava um terceiro valor — remove a chave, já que ausência da chave já
  * significa "seguir o SO", mesmo espírito de só persistir preferência não
