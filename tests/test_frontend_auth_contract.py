@@ -33,6 +33,11 @@ _ALLOWED_KEYS = {
         "UI preference (whether the technical performance section starts "
         "expanded) — not sensitive, no credential/token value"
     ),
+    "mplacas:theme": (
+        "UI preference (explicit light/dark theme override; absence of the "
+        "key means 'follow the OS preference', ADR-071) — not sensitive, no "
+        "credential/token value"
+    ),
 }
 
 _KEY_CALL = re.compile(
