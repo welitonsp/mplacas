@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { AppShell } from './AppShell'
 import { useAuth } from '../contexts/AuthContext'
 import { usePlant } from '../contexts/PlantContext'
@@ -25,6 +25,39 @@ vi.mocked(usePlant).mockReturnValue({
   loading: false,
   error: null,
   selectPlant: vi.fn(),
+})
+
+describe('AppShell — slot subnav (ADR-072, Etapa 1)', () => {
+  it('sem subnav, não renderiza nada extra entre o header e o <main>', () => {
+    const { container } = render(
+      <AppShell>
+        <p>conteúdo</p>
+      </AppShell>
+    )
+
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    expect(container.querySelector('header + main')).not.toBeNull()
+  })
+
+  it('com subnav, renderiza entre o header e o <main> — não dentro do <main>', () => {
+    render(
+      <AppShell subnav={<nav aria-label="Seções do painel">sub-navegação</nav>}>
+        <p>conteúdo</p>
+      </AppShell>
+    )
+
+    const nav = screen.getByRole('navigation', { name: 'Seções do painel' })
+    expect(nav).toBeInTheDocument()
+
+    const main = screen.getByRole('main')
+    expect(main).not.toContainElement(nav)
+
+    const header = document.querySelector('header')
+    expect(header).not.toBeNull()
+    // Ordem no DOM: header, depois subnav, depois main.
+    expect(header!.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(nav.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
 })
 
 describe('AppShell — skip link', () => {
