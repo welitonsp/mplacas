@@ -10,7 +10,12 @@ const componentSources = import.meta.glob('./*.tsx', {
   import: 'default',
   eager: true,
 }) as Record<string, string>
-const pageSources = import.meta.glob('../pages/*.tsx', {
+// `../pages/*.tsx` (não recursivo) não alcançava `src/pages/dashboard/*.tsx`
+// — os 4 módulos do painel (`OverviewPage`, `ProductionPage`, `FinancialPage`,
+// `TechnicalPage`, ver ADR-072) ficaram fora deste guard desde que foram
+// criados. Corrigido para `**/*.tsx` (mesma correção aplicada em
+// `colorContrast.test.tsx`, ADR-072 Etapa 6).
+const pageSources = import.meta.glob('../pages/**/*.tsx', {
   query: '?raw',
   import: 'default',
   eager: true,

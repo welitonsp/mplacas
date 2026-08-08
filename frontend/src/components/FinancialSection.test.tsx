@@ -62,7 +62,7 @@ function buildFinancialReturn(
 
 describe('FinancialSection', () => {
   it('agrupa os cards em três subgrupos rotulados (Custo do ciclo, Tarifas, Créditos de energia), sem perder nenhum card (Frente H)', () => {
-    render(
+    const { container } = render(
       <FinancialSection
         indicators={buildIndicators()}
         financialReturn={buildFinancialReturn()}
@@ -70,8 +70,12 @@ describe('FinancialSection', () => {
       />
     )
 
-    const financeiroTitle = screen.getByText('Financeiro')
-    const section = financeiroTitle.parentElement as HTMLElement
+    // `FinancialSection` não tem mais heading "Financeiro" isolado (ADR-072,
+    // Etapa 6 — o módulo que a hospeda já expõe esse texto como `<h1>` da
+    // rota, ver `FinancialSection.tsx`) — a primeira `<section>` (das duas
+    // que o componente devolve como irmãs) é a de "Custo do ciclo"/
+    // "Tarifas"/"Créditos de energia".
+    const section = container.querySelector('section') as HTMLElement
 
     const custoGrid = within(section).getByText('Valor total da fatura').closest('.grid')
     expect(custoGrid).not.toBeNull()

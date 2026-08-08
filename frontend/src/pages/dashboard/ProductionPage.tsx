@@ -1,6 +1,7 @@
 import { fetchAnomalyHistory, fetchMonthlyProductionHistory, fetchPhotovoltaicSummary } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
+import { useModuleTitle } from '../../hooks/useModuleTitle'
 import type { AnomalyDashboardResponse, AnomalyFetchError, AnomalyFetchState } from '../../lib/dashboard/contracts'
 import { classifyAnomalyErrorStatus, parseAnomalyDashboard } from '../../lib/dashboard/contracts'
 import { parseMonthlyProductionHistory } from '../../lib/dashboard/monthly-history-contracts'
@@ -11,6 +12,7 @@ import { LatestDailyProductionCard } from '../../components/LatestDailyProductio
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { MonthlyProductionSection } from '../../components/MonthlyProductionSection'
 import { ProductionHistorySection } from '../../components/ProductionHistorySection'
+import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
@@ -45,6 +47,9 @@ function fallbackPvSummary(plantId: string): PhotovoltaicSummaryResponse {
 // `DashboardPage.tsx` antes desta etapa.
 export function ProductionPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
+  // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
+  // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
+  const headingRef = useModuleTitle('Produção')
 
   // `null` (`.data`) = ainda carregando `/energy/anomalies/latest`. Contrato
   // 200 sempre (campos por dia `null` sem expectativa) — este recurso NÃO
@@ -97,6 +102,22 @@ export function ProductionPage() {
     errorMessage: 'Erro ao buscar histórico de produção.',
   })
 
+  // Refetch único para os 3 recursos deste módulo — usado pelo botão
+  // "Atualizar" (`RefreshBar`). Erros de cada recurso continuam isolados por
+  // seção (ver `monthlyHistory.error`/`RetryableError` de anomalias abaixo) —
+  // este botão só força uma nova tentativa dos 3 ao mesmo tempo.
+  const refreshAll = () => {
+    anomalies.refetch()
+    pvSummaryResource.refetch()
+    monthlyHistory.refetch()
+  }
+  // Combinado dos 3 recursos — usado pelo `disabled`/texto "Atualizando..."
+  // do `RefreshBar`.
+  const loading =
+    anomalies.status === 'loading' ||
+    pvSummaryResource.status === 'loading' ||
+    monthlyHistory.status === 'loading'
+
   // Enquanto a lista de usinas (`PlantContext`) ainda carrega, nenhuma
   // requisição deste módulo foi disparada — mesmo esqueleto de carregamento
   // usado por `DashboardPage`/`FinancialPage`/`TechnicalPage` para o mesmo
@@ -137,43 +158,52 @@ export function ProductionPage() {
   const expectedProduction = pvSummary?.expectedProduction ?? null
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
-      {/* Produção por ciclo de faturamento (12 ciclos fechados) — leitura do
-          grosso pro fino: o resumo mensal primeiro, o histórico diário de 90
-          dias (bloco seguinte) depois. Erro desta seção é isolado
-          (`monthlyHistory.error`) e não trava o resto do módulo se a chamada
-          falhar. */}
-      <section className="md:col-span-6 lg:col-span-12">
-        <SectionTitle as="h2">Produção por ciclo de faturamento</SectionTitle>
-        {monthlyHistory.error ? (
-          <RetryableError
-            message={monthlyHistory.error}
-            onRetry={monthlyHistory.refetch}
+    <>
+      {/* `<h1>` próprio do módulo (ADR-072, Etapa 6) — ver o mesmo comentário
+          em `OverviewPage.tsx`. */}
+      <h1 ref={headingRef} tabIndex={-1} className="mb-1 text-xl font-bold text-gray-900 tracking-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded">
+        Produção
+      </h1>
+      <RefreshBar onRefresh={refreshAll} loading={loading} />
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
+        {/* Produção por ciclo de faturamento (12 ciclos fechados) — leitura do
+            grosso pro fino: o resumo mensal primeiro, o histórico diário de 90
+            dias (bloco seguinte) depois. Erro desta seção é isolado
+            (`monthlyHistory.error`) e não trava o resto do módulo se a chamada
+            falhar. */}
+        <section className="md:col-span-6 lg:col-span-12">
+          <SectionTitle as="h2">Produção por ciclo de faturamento</SectionTitle>
+          {monthlyHistory.error ? (
+            <RetryableError
+              message={monthlyHistory.error}
+              onRetry={monthlyHistory.refetch}
+            />
+          ) : (
+            <MonthlyProductionSection history={monthlyHistory.data} />
+          )}
+        </section>
+
+        {/* Histórico de produção diária — bloco maior (gráfico), ao lado da
+            produção real vs. esperada. */}
+        <section className="md:col-span-4 lg:col-span-8 2xl:col-span-9">
+          <SectionTitle as="h2">Histórico de produção</SectionTitle>
+          <ProductionHistorySection
+            anomalyState={anomalyState}
+            expectedProduction={expectedProduction}
+            onRetry={anomalies.refetch}
           />
-        ) : (
-          <MonthlyProductionSection history={monthlyHistory.data} />
-        )}
-      </section>
+        </section>
 
-      {/* Histórico de produção diária — bloco maior (gráfico), ao lado da
-          produção real vs. esperada. */}
-      <section className="md:col-span-4 lg:col-span-8 2xl:col-span-9">
-        <SectionTitle as="h2">Histórico de produção</SectionTitle>
-        <ProductionHistorySection
-          anomalyState={anomalyState}
-          expectedProduction={expectedProduction}
-          onRetry={anomalies.refetch}
-        />
-      </section>
-
-      <section className="md:col-span-2 lg:col-span-4 2xl:col-span-3">
-        <SectionTitle as="h2">Produção do último dia vs. esperada</SectionTitle>
-        {/* Compara o último dia com dado diário coletado (real vs. esperado,
-            mesma escala kWh/dia) — não o total do ciclo (~30 dias) contra uma
-            média diária. A produção do ciclo continua visível no nó
-            "Produção" de `EnergyFlowDiagram`, na Visão Geral. */}
-        <LatestDailyProductionCard anomalyState={anomalyState} className="h-full" />
-      </section>
-    </div>
+        <section className="md:col-span-2 lg:col-span-4 2xl:col-span-3">
+          <SectionTitle as="h2">Produção do último dia vs. esperada</SectionTitle>
+          {/* Compara o último dia com dado diário coletado (real vs. esperado,
+              mesma escala kWh/dia) — não o total do ciclo (~30 dias) contra uma
+              média diária. A produção do ciclo continua visível no nó
+              "Produção" de `EnergyFlowDiagram`, na Visão Geral. */}
+          <LatestDailyProductionCard anomalyState={anomalyState} className="h-full" />
+        </section>
+      </div>
+    </>
   )
 }

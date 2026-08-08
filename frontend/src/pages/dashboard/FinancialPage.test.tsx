@@ -82,13 +82,21 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
 
     await renderFinancialPage()
 
-    expect(screen.queryByText('Financeiro')).not.toBeInTheDocument()
+    // O `<h1>` do módulo (ADR-072, Etapa 6) aparece assim que o módulo monta
+    // (depois de `PlantContext` resolver a usina, daí o `await findByRole`)
+    // — deixou de ser sinal de dado carregado (era o único jeito de achar o
+    // texto "Financeiro" antes desta etapa, quando só vinha de dentro de
+    // `FinancialSection`). O conteúdo real (gated por `data && indicators`)
+    // continua esperando `/energy/executive/latest`.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Financeiro' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { level: 2, name: 'Retorno do investimento' })
+    ).not.toBeInTheDocument()
 
     resolveFetch(jsonResponse(executivePayload))
 
-    await screen.findByText('Financeiro')
     expect(
-      screen.getByRole('heading', { level: 2, name: 'Retorno do investimento' })
+      await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
     ).toBeInTheDocument()
     expect(screen.getByText(/R\$\s*420,71/)).toBeInTheDocument()
   })
@@ -105,11 +113,13 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('Erro ao buscar dados.')
-    expect(screen.queryByText('Financeiro')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { level: 2, name: 'Retorno do investimento' })
+    ).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }))
 
-    await screen.findByText('Financeiro')
+    await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
     expect(fetchExecutiveMock).toHaveBeenCalledTimes(2)
   })
 

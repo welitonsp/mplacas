@@ -54,7 +54,13 @@ export function FinancialSection({
           economia quando a tarifa não está registrada (ver
           EstimatedSavingsCard). */}
       <section className="md:col-span-6 lg:col-span-12">
-        <SectionTitle as="h2">Financeiro</SectionTitle>
+        {/* Sem heading "Financeiro" isolado aqui (ADR-072, Etapa 6): o módulo
+            que hospeda este componente (`pages/dashboard/FinancialPage.tsx`)
+            já expõe "Financeiro" como `<h1>` da rota — um segundo heading com
+            o mesmo texto logo abaixo seria redundante (mesmo raciocínio já
+            aplicado em `OverviewPage`) e ambíguo para `getByText`/leitor de
+            tela. As três subseções abaixo passam a ser `h2`, direto sob o
+            `h1` do módulo (antes eram `h3`, sob o `h2` "Financeiro" removido). */}
         {/* Os mesmos oito cards de antes, reagrupados em três subseções
             rotuladas em vez de uma grade achatada — a hierarquia visual
             (fatura vs. tarifa vs. créditos) já existia na cabeça de quem lê,
@@ -62,7 +68,7 @@ export function FinancialSection({
             dashboard). */}
         <div className="space-y-6">
           <div>
-            <SectionTitle>Custo do ciclo</SectionTitle>
+            <SectionTitle as="h2">Custo do ciclo</SectionTitle>
             {/* Decomposição da fatura (energia + iluminação pública [+
                 outros encargos, quando a soma não fecha em cima dos dois
                 conhecidos]) — antes eram três `CurrencyCard` soltos sem
@@ -110,7 +116,7 @@ export function FinancialSection({
           </div>
 
           <div>
-            <SectionTitle>Tarifas</SectionTitle>
+            <SectionTitle as="h2">Tarifas</SectionTitle>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <MetricCard
                 label="Tarifa com impostos"
@@ -128,7 +134,7 @@ export function FinancialSection({
           </div>
 
           <div>
-            <SectionTitle>Créditos de energia</SectionTitle>
+            <SectionTitle as="h2">Créditos de energia</SectionTitle>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <MetricCard label="Saldo de créditos" value={indicators.credit_balance_kwh} unit="kWh" />
               <MetricCard

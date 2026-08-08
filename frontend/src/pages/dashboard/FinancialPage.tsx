@@ -1,10 +1,12 @@
 import { fetchExecutiveDashboard, fetchFinancialReturn } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
+import { useModuleTitle } from '../../hooks/useModuleTitle'
 import { parseExecutiveDashboard } from '../../lib/dashboard/contracts'
 import { parseFinancialReturn } from '../../lib/dashboard/financial-return-contracts'
 import { FinancialSection } from '../../components/FinancialSection'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
+import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 
 // Módulo Financeiro (ADR-072, Etapa 3) — dois recursos (ver ADR seção 2):
@@ -16,6 +18,9 @@ import { RetryableError } from '../../components/RetryableError'
 // `status`/`trend`/diagnósticos, que pertencem à Visão Geral (Etapa 5).
 export function FinancialPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
+  // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
+  // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
+  const headingRef = useModuleTitle('Financeiro')
 
   const executive = usePlantResource({
     plantId,
@@ -33,6 +38,18 @@ export function FinancialPage() {
     parse: parseFinancialReturn,
     errorMessage: 'Erro ao buscar retorno do investimento.',
   })
+
+  // Refetch único para os 2 recursos deste módulo — usado pelo botão
+  // "Atualizar" (`RefreshBar`). O erro do recurso executivo continua com seu
+  // próprio retry no banner global (`RetryableError` abaixo); este botão só
+  // força uma nova tentativa dos 2 recursos ao mesmo tempo.
+  const refreshAll = () => {
+    executive.refetch()
+    financialReturn.refetch()
+  }
+  // Combinado dos 2 recursos — usado pelo `disabled`/texto "Atualizando..."
+  // do `RefreshBar`.
+  const loading = executive.status === 'loading' || financialReturn.status === 'loading'
 
   // Enquanto a lista de usinas (`PlantContext`) ainda carrega, nenhuma
   // requisição deste módulo foi disparada — mesmo esqueleto de carregamento
@@ -69,6 +86,14 @@ export function FinancialPage() {
 
   return (
     <>
+      {/* `<h1>` próprio do módulo (ADR-072, Etapa 6) — ver o mesmo comentário
+          em `OverviewPage.tsx`. Sempre visível (inclusive durante erro/
+          carregamento do recurso executivo), igual aos outros 3 módulos. */}
+      <h1 ref={headingRef} tabIndex={-1} className="mb-1 text-xl font-bold text-gray-900 tracking-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded">
+        Financeiro
+      </h1>
+      <RefreshBar onRefresh={refreshAll} loading={loading} />
+
       {executive.error && (
         <RetryableError
           message={executive.error}

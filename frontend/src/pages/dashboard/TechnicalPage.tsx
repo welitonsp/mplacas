@@ -1,9 +1,11 @@
 import { fetchPhotovoltaicSummary } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
+import { useModuleTitle } from '../../hooks/useModuleTitle'
 import type { PhotovoltaicSummaryResponse } from '../../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary } from '../../lib/dashboard/photovoltaic-contracts'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
+import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 import { TechnicalPerformanceSection } from '../../components/TechnicalPerformanceSection'
 
@@ -35,6 +37,9 @@ function fallbackPvSummary(plantId: string): PhotovoltaicSummaryResponse {
 // divulgação progressiva.
 export function TechnicalPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
+  // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
+  // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
+  const headingRef = useModuleTitle('Técnico')
 
   const pvSummaryResource = usePlantResource({
     plantId,
@@ -80,6 +85,18 @@ export function TechnicalPage() {
   // chegou, nunca o fallback prematuramente (mesmo comportamento de
   // `DashboardPage`).
   const pvSummary = pvSummaryResource.status === 'error' ? fallbackPvSummary(plantId) : pvSummaryResource.data
+  const loading = pvSummaryResource.status === 'loading'
 
-  return <TechnicalPerformanceSection summary={pvSummary} />
+  return (
+    <>
+      {/* `<h1>` próprio do módulo (ADR-072, Etapa 6) — ver o mesmo comentário
+          em `OverviewPage.tsx`. */}
+      <h1 ref={headingRef} tabIndex={-1} className="mb-1 text-xl font-bold text-gray-900 tracking-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded">
+        Técnico
+      </h1>
+      <RefreshBar onRefresh={pvSummaryResource.refetch} loading={loading} />
+
+      <TechnicalPerformanceSection summary={pvSummary} />
+    </>
+  )
 }

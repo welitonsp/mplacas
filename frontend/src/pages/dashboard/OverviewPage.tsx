@@ -10,6 +10,7 @@ import {
   parseExecutiveDashboard,
 } from '../../lib/dashboard/contracts'
 import { formatNumber, toNumber } from '../../lib/format'
+import { useModuleTitle } from '../../hooks/useModuleTitle'
 import { SectionTitle } from '../../components/SectionTitle'
 import { StackedBar } from '../../components/charts/StackedBar'
 import { HeroCard } from '../../components/HeroCard'
@@ -20,6 +21,7 @@ import { DiagnosticsCard } from '../../components/DiagnosticsCard'
 import { hasIncompleteDailyProduction } from '../../components/EnergyProductionSection'
 import { MetricCard } from '../../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
+import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 
 // Módulo Visão Geral (ADR-072, Etapa 5) — dois recursos (ver ADR seção 2):
@@ -30,6 +32,9 @@ import { RetryableError } from '../../components/RetryableError'
 // restava em `DashboardPage.tsx` antes desta etapa (agora removido, ver ADR).
 export function OverviewPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
+  // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
+  // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
+  const headingRef = useModuleTitle('Visão Geral')
   // `null` (`.data`) = ainda carregando `/energy/executive/latest`. O hook
   // cobre a mesma proteção de race condition/troca de usina que o fetch
   // manual anterior fazia à mão. Erro de rede/servidor fica em
@@ -131,22 +136,17 @@ export function OverviewPage() {
 
   return (
     <>
-      {/* Sem `<h2>` isolado aqui: a casca do app (`AppHeader`) já identifica a
-          página, e um segundo título genérico logo abaixo era redundante —
-          só a barra de ação (botão "Atualizar") permanece. Extração para um
-          `RefreshBar` compartilhado entre módulos fica para a Etapa 6
-          (ADR-072) — não antecipada aqui. */}
-      <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-end">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={refreshAll}
-            disabled={loading}
-            className="rounded text-xs text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] disabled:opacity-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
-          >
-            {loading ? 'Atualizando...' : 'Atualizar'}
-          </button>
-        </div>
-      </div>
+      {/* `<h1>` próprio do módulo (ADR-072, Etapa 6) — alvo do foco/título por
+          rota (`useModuleTitle`), essencial para leitor de tela perceber a
+          troca de "página" entre os 4 módulos (navegação client-side não
+          reseta o foco sozinha). `tabIndex={-1}`: focável via `.focus()`,
+          fora da ordem normal de tabulação. A casca do app (`AppHeader`)
+          identifica o produto, não a rota atual — por isso um heading por
+          módulo deixou de ser redundante. */}
+      <h1 ref={headingRef} tabIndex={-1} className="mb-1 text-xl font-bold text-gray-900 tracking-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded">
+        Visão Geral
+      </h1>
+      <RefreshBar onRefresh={refreshAll} loading={loading} />
 
       {error && (
         // Retry associado diretamente ao erro global (não só o link
