@@ -552,6 +552,64 @@ describe('DashboardPage — erro global tem retry associado (Etapa 1.6c)', () =>
     await findByText('Financeiro')
     expect(executiveCalls).toBe(2)
   })
+
+  // Etapa 6: antes, o retry do erro global refazia só o fetch executivo
+  // (`executive.refetch`) — os outros 4 recursos ficavam presos no estado
+  // antigo mesmo depois do usuário pedir para tentar de novo. Prova que os 5
+  // recursos (`executive`, `anomalies`, `pvSummaryResource`, `financialReturn`,
+  // `monthlyHistory`) são refeitos juntos (`refreshAll`), não só o que errou.
+  it('refaz os 5 fetches (não só o executivo) ao clicar em "Tentar novamente" no erro global', async () => {
+    vi.resetModules()
+    let executiveCalls = 0
+    const fetchAnomalyHistoryMock = vi.fn(async () => jsonResponse(anomalyPayload))
+    const fetchPhotovoltaicSummaryMock = vi.fn(async () => jsonResponse(photovoltaicSummaryPayload))
+    const fetchFinancialReturnMock = vi.fn(async () => jsonResponse(financialReturnUnavailablePayload))
+    const fetchMonthlyProductionHistoryMock = vi.fn(async () => jsonResponse(monthlyHistoryPayload))
+    installApiMock({
+      fetchExecutiveDashboard: vi.fn(async () => {
+        executiveCalls += 1
+        if (executiveCalls === 1) return jsonResponse({ error: 'boom' }, 500)
+        return jsonResponse(executivePayload)
+      }),
+      fetchAnomalyHistory: fetchAnomalyHistoryMock,
+      fetchPhotovoltaicSummary: fetchPhotovoltaicSummaryMock,
+      fetchFinancialReturn: fetchFinancialReturnMock,
+      fetchMonthlyProductionHistory: fetchMonthlyProductionHistoryMock,
+    })
+
+    const { DashboardPage } = await import('./DashboardPage')
+    const { AuthProvider } = await import('../contexts/AuthContext')
+    const { PlantProvider } = await import('../contexts/PlantContext')
+    const { getByRole, findByRole, findByText } = render(
+      <MemoryRouter>
+        <AuthProvider>
+          <PlantProvider>
+            <DashboardPage />
+          </PlantProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    )
+
+    await findByRole('alert')
+    await waitFor(() => {
+      expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(1)
+      expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(1)
+      expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(1)
+      expect(fetchMonthlyProductionHistoryMock).toHaveBeenCalledTimes(1)
+    })
+
+    const retryButton = getByRole('button', { name: 'Tentar novamente' })
+    retryButton.click()
+
+    await findByText('Financeiro')
+    expect(executiveCalls).toBe(2)
+    await waitFor(() => {
+      expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(2)
+      expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(2)
+      expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(2)
+      expect(fetchMonthlyProductionHistoryMock).toHaveBeenCalledTimes(2)
+    })
+  })
 })
 
 describe('DashboardPage — grid real no breakpoint md (Etapa 1.2)', () => {

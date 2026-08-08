@@ -138,8 +138,40 @@ export function DashboardPage() {
     errorMessage: 'Erro ao buscar histórico de produção.',
   })
 
+  // Refetch único para os 5 recursos (Etapa 6) — usado tanto pelo botão
+  // "Atualizar" quanto pelo `RetryableError` do erro global. Antes, o botão
+  // já refazia os 5 na mão (repetido inline) e o banner de erro global só
+  // refazia o executivo, deixando os outros 4 recursos presos no estado
+  // antigo mesmo depois do usuário pedir para tentar de novo.
+  const refreshAll = () => {
+    executive.refetch()
+    anomalies.refetch()
+    pvSummaryResource.refetch()
+    financialReturn.refetch()
+    monthlyHistory.refetch()
+  }
+  // Combinado dos 5 recursos — usado pelo `disabled`/texto "Atualizando..."
+  // do botão "Atualizar" (o nome `loading` é preservado de propósito: o
+  // teste `DashboardPage.focusVisible.test.tsx` casa a fonte literal do
+  // JSX do botão mais abaixo (ver ternário loading/"Atualizando"/"Atualizar");
+  // renomear a variável quebraria o teste sem nenhuma mudança de
+  // comportamento real).
+  const loading =
+    executive.status === 'loading' ||
+    anomalies.status === 'loading' ||
+    pvSummaryResource.status === 'loading' ||
+    financialReturn.status === 'loading' ||
+    monthlyHistory.status === 'loading'
+
   const data = executive.data
-  const loading = executive.status === 'loading'
+  // Usado só pelo esqueleto de carregamento do bloco principal (linha
+  // `{loading && !data && ...}` abaixo) — continua amarrado especificamente
+  // ao recurso executivo, que é quem preenche `data`. Não confundir com
+  // `loading` (combinado, Etapa 6) usado pelo botão "Atualizar": os dois têm
+  // propósitos diferentes e podem divergir (ex.: executivo já respondeu com
+  // erro mas outro recurso ainda está em voo — o esqueleto não deve
+  // reaparecer por cima do banner de erro global).
+  const executiveLoading = executive.status === 'loading'
   const error = executive.error
   const lastUpdated = executive.lastUpdated
   const indicators = data?.current_cycle.indicators
@@ -216,13 +248,7 @@ export function DashboardPage() {
       <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-end">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => {
-              executive.refetch()
-              pvSummaryResource.refetch()
-              anomalies.refetch()
-              monthlyHistory.refetch()
-              financialReturn.refetch()
-            }}
+            onClick={refreshAll}
             disabled={loading}
             className="rounded text-xs text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] disabled:opacity-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
           >
@@ -239,12 +265,12 @@ export function DashboardPage() {
         // erro de servidor do histórico de produção.
         <RetryableError
           message={error}
-          onRetry={executive.refetch}
+          onRetry={refreshAll}
           className="mb-6"
         />
       )}
 
-      {loading && !data && <MetricCardSkeletonGrid />}
+      {executiveLoading && !data && <MetricCardSkeletonGrid />}
 
         {data && indicators && quality && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
