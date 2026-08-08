@@ -1,51 +1,56 @@
-import { fetchAnomalyHistory, fetchExecutiveDashboard } from '../lib/api'
-import { usePlant } from '../contexts/PlantContext'
-import { usePlantResource } from '../hooks/usePlantResource'
-import type { AnomalyDashboardResponse, AnomalyFetchError } from '../lib/dashboard/contracts'
+import { fetchAnomalyHistory, fetchExecutiveDashboard } from '../../lib/api'
+import { usePlant } from '../../contexts/PlantContext'
+import { usePlantResource } from '../../hooks/usePlantResource'
+import type { AnomalyDashboardResponse, AnomalyFetchError } from '../../lib/dashboard/contracts'
 import {
   classifyAnomalyErrorStatus,
   combineDiagnostics,
   latestNonNullProductionDate,
   parseAnomalyDashboard,
   parseExecutiveDashboard,
-} from '../lib/dashboard/contracts'
-import { formatNumber, toNumber } from '../lib/format'
-import { SectionTitle } from '../components/SectionTitle'
-import { StackedBar } from '../components/charts/StackedBar'
-import { HeroCard } from '../components/HeroCard'
-import { QualityBanner } from '../components/QualityBanner'
-import { TrendCard } from '../components/TrendCard'
-import { EnergyFlowDiagram } from '../components/EnergyFlowDiagram'
-import { DiagnosticsCard } from '../components/DiagnosticsCard'
-import { hasIncompleteDailyProduction } from '../components/EnergyProductionSection'
-import { MetricCard } from '../components/MetricCard'
-import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
-import { RetryableError } from '../components/RetryableError'
+} from '../../lib/dashboard/contracts'
+import { formatNumber, toNumber } from '../../lib/format'
+import { SectionTitle } from '../../components/SectionTitle'
+import { StackedBar } from '../../components/charts/StackedBar'
+import { HeroCard } from '../../components/HeroCard'
+import { QualityBanner } from '../../components/QualityBanner'
+import { TrendCard } from '../../components/TrendCard'
+import { EnergyFlowDiagram } from '../../components/EnergyFlowDiagram'
+import { DiagnosticsCard } from '../../components/DiagnosticsCard'
+import { hasIncompleteDailyProduction } from '../../components/EnergyProductionSection'
+import { MetricCard } from '../../components/MetricCard'
+import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
+import { RetryableError } from '../../components/RetryableError'
 
-export function DashboardPage() {
+// Módulo Visão Geral (ADR-072, Etapa 5) — dois recursos (ver ADR seção 2):
+// `executive` (`/energy/executive/latest`) e `anomalies`
+// (`/energy/anomalies/latest`, usado só para `latestDataDate`). Renderiza
+// Hero+QualityBanner, EnergyFlowDiagram, StackedBar de indicadores
+// percentuais, DiagnosticsCard e TrendCard — exatamente o conteúdo que
+// restava em `DashboardPage.tsx` antes desta etapa (agora removido, ver ADR).
+export function OverviewPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
-  // `null` (`.data`) = ainda carregando `/energy/executive/latest`. Migrado para
-  // `usePlantResource` (Etapa 4): o hook cobre a mesma proteção de race
-  // condition/troca de usina que o fetch manual anterior fazia à mão. Erro de
-  // rede/servidor fica em `executive.error` (mensagem fixa, sem sufixo de status
-  // HTTP — o detalhe vai para o console via o próprio hook, mesma política de
-  // `anomalies` abaixo).
+  // `null` (`.data`) = ainda carregando `/energy/executive/latest`. O hook
+  // cobre a mesma proteção de race condition/troca de usina que o fetch
+  // manual anterior fazia à mão. Erro de rede/servidor fica em
+  // `executive.error` (mensagem fixa, sem sufixo de status HTTP — o detalhe
+  // vai para o console via o próprio hook, mesma política de `anomalies`
+  // abaixo).
   const executive = usePlantResource({
     plantId,
     fetcher: fetchExecutiveDashboard,
     parse: parseExecutiveDashboard,
     errorMessage: 'Erro ao buscar dados.',
   })
-  // `null` (`.data`) = ainda carregando `/energy/anomalies/latest`. Migrado para
-  // `usePlantResource` (Etapa 5) — desde a mudança de contrato deste endpoint
-  // (200 sempre, campos por dia `null` sem expectativa), este recurso NÃO
-  // depende de nenhum outro: é buscado assim que há `plantId`. ADR-072 (Etapa
-  // 4): o único uso deste recurso nesta página (Visão Geral) passou a ser
-  // `latestDataDate`, consumido pelo `HeroCard` — o restante do que
-  // `anomalies` alimentava (histórico diário, produção do último dia) migrou
-  // para `pages/dashboard/ProductionPage.tsx`, que tem sua própria instância
-  // deste mesmo recurso. `classifyError` reusa `classifyAnomalyErrorStatus`
-  // (já testado isoladamente em `contracts.test.ts`): 404 vira `'NOT_FOUND'`,
+  // `null` (`.data`) = ainda carregando `/energy/anomalies/latest`. Desde a
+  // mudança de contrato deste endpoint (200 sempre, campos por dia `null`
+  // sem expectativa), este recurso NÃO depende de nenhum outro: é buscado
+  // assim que há `plantId`. O único uso deste recurso neste módulo (Visão
+  // Geral) é `latestDataDate`, consumido pelo `HeroCard` — o restante do que
+  // `anomalies` alimentava (histórico diário, produção do último dia) mora em
+  // `pages/dashboard/ProductionPage.tsx`, que tem sua própria instância deste
+  // mesmo recurso. `classifyError` reusa `classifyAnomalyErrorStatus` (já
+  // testado isoladamente em `contracts.test.ts`): 404 vira `'NOT_FOUND'`,
   // 5xx vira `'SERVER_ERROR'`, e 401 já volta `null` de dentro da própria
   // função — falha silenciosa, mesma política de antes (`apiFetch` já tentou
   // refresh; se falhou, o usuário está sendo deslogado, não há nada a
@@ -60,28 +65,21 @@ export function DashboardPage() {
       failure.kind === 'http' ? classifyAnomalyErrorStatus(failure.status) : 'SERVER_ERROR',
   })
 
-  // Refetch único para os 2 recursos que restam neste módulo (Etapa 6,
-  // reduzido de 5 para 4 na Etapa 3 do ADR-072 com a saída de
-  // `financialReturn`, e de 4 para 2 na Etapa 4 com a saída de `pvSummary`/
-  // `monthlyHistory` para `ProductionPage`) — usado tanto pelo botão
+  // Refetch único para os 2 recursos deste módulo — usado tanto pelo botão
   // "Atualizar" quanto pelo `RetryableError` do erro global.
   const refreshAll = () => {
     executive.refetch()
     anomalies.refetch()
   }
   // Combinado dos 2 recursos — usado pelo `disabled`/texto "Atualizando..."
-  // do botão "Atualizar" (o nome `loading` é preservado de propósito: o
-  // teste `DashboardPage.focusVisible.test.tsx` casa a fonte literal do
-  // JSX do botão mais abaixo (ver ternário loading/"Atualizando"/"Atualizar");
-  // renomear a variável quebraria o teste sem nenhuma mudança de
-  // comportamento real).
+  // do botão "Atualizar".
   const loading = executive.status === 'loading' || anomalies.status === 'loading'
 
   const data = executive.data
   // Usado só pelo esqueleto de carregamento do bloco principal (linha
   // `{loading && !data && ...}` abaixo) — continua amarrado especificamente
   // ao recurso executivo, que é quem preenche `data`. Não confundir com
-  // `loading` (combinado, Etapa 6) usado pelo botão "Atualizar": os dois têm
+  // `loading` (combinado) usado pelo botão "Atualizar": os dois têm
   // propósitos diferentes e podem divergir (ex.: executivo já respondeu com
   // erro mas outro recurso ainda está em voo — o esqueleto não deve
   // reaparecer por cima do banner de erro global).
@@ -96,20 +94,21 @@ export function DashboardPage() {
   const selfSufficiencyPercent = toNumber(indicators?.self_sufficiency_rate_percent ?? null)
   const gridDependencyPercent = toNumber(indicators?.grid_dependency_rate_percent ?? null)
   const latestDataDate = anomalies.data ? latestNonNullProductionDate(anomalies.data.daily) : null
-  // Calculado uma única vez e reusado pelo chip do Hero (`AttentionSummary`,
-  // ver Etapa 1.7) e pela lista completa (`DiagnosticsCard`) — mesma lista,
-  // duas apresentações.
+  // Calculado uma única vez e reusado pelo chip do Hero (`AttentionSummary`)
+  // e pela lista completa (`DiagnosticsCard`) — mesma lista, duas
+  // apresentações.
   const diagnostics = data ? combineDiagnostics(data) : []
 
   // Enquanto a lista de usinas (`PlantContext`) ainda carrega, nenhuma
-  // requisição de dados do dashboard foi disparada — mostra o mesmo
-  // esqueleto de carregamento usado para os dados do ciclo.
+  // requisição deste módulo foi disparada — mesmo esqueleto de carregamento
+  // usado por `ProductionPage`/`FinancialPage`/`TechnicalPage` para o mesmo
+  // estado.
   if (plantsLoading) {
     return <MetricCardSkeletonGrid />
   }
 
   // Falha ao carregar `/plants`: sem usina resolvida, não há como buscar dado
-  // nenhum do dashboard.
+  // nenhum deste módulo.
   if (plantsError) {
     return (
       <RetryableError
@@ -134,7 +133,9 @@ export function DashboardPage() {
     <>
       {/* Sem `<h2>` isolado aqui: a casca do app (`AppHeader`) já identifica a
           página, e um segundo título genérico logo abaixo era redundante —
-          só a barra de ação (botão "Atualizar") permanece. */}
+          só a barra de ação (botão "Atualizar") permanece. Extração para um
+          `RefreshBar` compartilhado entre módulos fica para a Etapa 6
+          (ADR-072) — não antecipada aqui. */}
       <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-end">
         <div className="flex items-center gap-3">
           <button
@@ -149,9 +150,7 @@ export function DashboardPage() {
 
       {error && (
         // Retry associado diretamente ao erro global (não só o link
-        // "Atualizar" no topo da página, que existia mas não estava
-        // visualmente ligado à mensagem — ver P2-08 na auditoria de
-        // UI/UX).
+        // "Atualizar" no topo da página).
         <RetryableError
           message={error}
           onRetry={refreshAll}
@@ -180,7 +179,7 @@ export function DashboardPage() {
 
             {/* Bloco 2 — "Para onde foi a energia?": um único diagrama de
                 fluxo (autoconsumo/injetada/importada não se repetem em mais
-                visuais — ver Etapa 5), detalhamento numérico e histórico. */}
+                visuais), detalhamento numérico e histórico. */}
             <section className="md:col-span-3 lg:col-span-7">
               <SectionTitle as="h2">Fluxo de energia</SectionTitle>
               <EnergyFlowDiagram
@@ -195,7 +194,7 @@ export function DashboardPage() {
 
             {/* Diagnósticos e comparação com o ciclo anterior, empilhados na
                 mesma coluna estreita. `id` é o alvo da âncora do chip de
-                atenção no Hero (ver `AttentionSummary`, Etapa 1.7). */}
+                atenção no Hero (ver `AttentionSummary`). */}
             <section id="diagnosticos" className="md:col-span-3 lg:col-span-5">
               <DiagnosticsCard diagnostics={diagnostics} />
 
@@ -210,19 +209,17 @@ export function DashboardPage() {
             {/* "Energia e produção" (importada/injetada/autoconsumo/consumo)
                 foi removida da composição — os mesmos quatro números já
                 aparecem em "Fluxo de energia" (`EnergyFlowDiagram`), com a
-                relação entre eles, que os cards isolados não davam (ver
-                P2-01). O componente `EnergyProductionSection` continua
-                existindo em `components/` para reuso futuro, só não compõe
-                mais esta página. */}
+                relação entre eles, que os cards isolados não davam. O
+                componente `EnergyProductionSection` continua existindo em
+                `components/` para reuso futuro, só não compõe mais este
+                módulo. */}
             <section className="md:col-span-6 lg:col-span-12">
               <SectionTitle as="h2">Indicadores percentuais</SectionTitle>
               {/* Autossuficiência e dependência da rede são complementares
-                  (somam 100%) — antes eram dois `MetricCard` soltos com dois
-                  números sem relação visual entre si (P2-03, fechado agora
-                  por decisão do usuário). Uma única `StackedBar` de 2
-                  segmentos deixa a proporção explícita. Se qualquer um dos
-                  dois vier `null`, mantém os cards separados em vez de
-                  fabricar a barra com metade do dado ausente. */}
+                  (somam 100%) — uma única `StackedBar` de 2 segmentos deixa a
+                  proporção explícita. Se qualquer um dos dois vier `null`,
+                  mantém os cards separados em vez de fabricar a barra com
+                  metade do dado ausente. */}
               {selfSufficiencyPercent != null && gridDependencyPercent != null ? (
                 <StackedBar
                   segments={[
@@ -250,26 +247,25 @@ export function DashboardPage() {
               )}
             </section>
 
-            {/* Bloco 3 — "Quanto produziu? Qual o histórico?" (produção por
+            {/* Bloco "Quanto produziu? Qual o histórico?" (produção por
                 ciclo de faturamento, histórico diário e produção do último
-                dia vs. esperada) migrou para o módulo próprio em
+                dia vs. esperada) mora no módulo próprio em
                 `pages/dashboard/ProductionPage.tsx` (ADR-072, Etapa 4) — não
                 aparece mais aqui, para não duplicar entre as rotas
-                `/dashboard/producao` e esta página. */}
+                `/dashboard/producao` e esta. */}
 
             {/* Bloco "Quanto custou? Qual o retorno?" (financeiro completo:
                 custo do ciclo, tarifas, créditos e retorno do investimento)
-                migrou para o módulo próprio em
-                `pages/dashboard/FinancialPage.tsx` (ADR-072, Etapa 3) — não
-                aparece mais aqui, para não duplicar entre as rotas
-                `/dashboard/financeiro` e esta página. */}
+                mora no módulo próprio em `pages/dashboard/FinancialPage.tsx`
+                (ADR-072, Etapa 3) — não aparece mais aqui, para não duplicar
+                entre as rotas `/dashboard/financeiro` e esta. */}
 
             {/* O bloco "Como está o desempenho técnico?" (PR, yield
                 específico, disponibilidade de reporte, degradação e
-                atribuição de causa de perda) migrou para o módulo próprio em
+                atribuição de causa de perda) mora no módulo próprio em
                 `pages/dashboard/TechnicalPage.tsx` (ADR-072, Etapa 2) — não
                 aparece mais aqui, para não duplicar entre as rotas
-                `/dashboard/tecnico` e esta página. */}
+                `/dashboard/tecnico` e esta. */}
           </div>
         )}
     </>

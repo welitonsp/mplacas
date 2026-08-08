@@ -3,9 +3,9 @@ import { AuthProvider } from './contexts/AuthContext'
 import { PlantProvider } from './contexts/PlantContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { LoginPage } from './pages/LoginPage'
-import { DashboardPage } from './pages/DashboardPage'
 import { DashboardLayout } from './pages/dashboard/DashboardLayout'
 import { DashboardIndexRedirect } from './pages/dashboard/DashboardIndexRedirect'
+import { OverviewPage } from './pages/dashboard/OverviewPage'
 import { FinancialPage } from './pages/dashboard/FinancialPage'
 import { ProductionPage } from './pages/dashboard/ProductionPage'
 import { TechnicalPage } from './pages/dashboard/TechnicalPage'
@@ -32,12 +32,11 @@ export function App() {
             }
           >
             <Route index element={<DashboardIndexRedirect />} />
-            {/* Etapa 1 (ADR-072): a rota de Visão Geral ainda renderiza o
-                `DashboardPage` atual, sem nenhuma mudança de conteúdo — a
-                extração de `OverviewPage` é a etapa final da migração (Etapa
-                5). Técnico (Etapa 2), Financeiro (Etapa 3) e Produção (Etapa
-                4) já migraram para módulo próprio. */}
-            <Route path={DASHBOARD_MODULE_SEGMENTS.overview} element={<DashboardPage />} />
+            {/* Os 4 módulos migraram para rota própria (ADR-072): Técnico
+                (Etapa 2), Financeiro (Etapa 3), Produção (Etapa 4) e Visão
+                Geral (Etapa 5, `OverviewPage` — última migração de
+                conteúdo, `DashboardPage.tsx` removido). */}
+            <Route path={DASHBOARD_MODULE_SEGMENTS.overview} element={<OverviewPage />} />
             <Route path={DASHBOARD_MODULE_SEGMENTS.production} element={<ProductionPage />} />
             <Route path={DASHBOARD_MODULE_SEGMENTS.financial} element={<FinancialPage />} />
             <Route path={DASHBOARD_MODULE_SEGMENTS.technical} element={<TechnicalPage />} />
