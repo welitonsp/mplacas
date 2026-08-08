@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DashboardLayout } from './pages/dashboard/DashboardLayout'
 import { DashboardIndexRedirect } from './pages/dashboard/DashboardIndexRedirect'
+import { TechnicalPage } from './pages/dashboard/TechnicalPage'
 import { DASHBOARD_MODULE_SEGMENTS, DASHBOARD_ROOT_PATH } from './routes'
 
 export function App() {
@@ -29,14 +30,15 @@ export function App() {
             }
           >
             <Route index element={<DashboardIndexRedirect />} />
-            {/* Etapa 1 (ADR-072): as 4 rotas de módulo renderizam o
+            {/* Etapa 1 (ADR-072): 3 das 4 rotas de módulo ainda renderizam o
                 `DashboardPage` atual, sem nenhuma mudança de conteúdo — a
-                divisão em `OverviewPage`/`ProductionPage`/`FinancialPage`/
-                `TechnicalPage` é etapa futura (Etapas 2-5). */}
+                divisão em `OverviewPage`/`ProductionPage`/`FinancialPage` é
+                etapa futura (Etapas 3-5). Técnico já migrou (Etapa 2, o
+                menor módulo, um único recurso) para `TechnicalPage`. */}
             <Route path={DASHBOARD_MODULE_SEGMENTS.overview} element={<DashboardPage />} />
             <Route path={DASHBOARD_MODULE_SEGMENTS.production} element={<DashboardPage />} />
             <Route path={DASHBOARD_MODULE_SEGMENTS.financial} element={<DashboardPage />} />
-            <Route path={DASHBOARD_MODULE_SEGMENTS.technical} element={<DashboardPage />} />
+            <Route path={DASHBOARD_MODULE_SEGMENTS.technical} element={<TechnicalPage />} />
             <Route path="*" element={<DashboardIndexRedirect />} />
           </Route>
           {/* Default: redirect to dashboard (ProtectedRoute will redirect to /login if unauthenticated) */}

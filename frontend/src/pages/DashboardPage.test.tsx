@@ -1,28 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
+import { jsonResponse, photovoltaicSummaryPayload, singlePlant } from '../test/dashboardFixtures'
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
 // módulo — não há `.env.local` no ambiente de teste (ver `LoginPage.test.tsx`).
 vi.mock('../env', () => ({
   API_URL: 'https://api.example.test',
 }))
-
-// `PlantContext` busca `/plants` ao montar (ADR-069, Etapa C) — uma única
-// usina, para preservar o comportamento anterior a esta etapa em todos os
-// testes que não são especificamente sobre seleção de usina.
-const singlePlant = {
-  id: '00000000-0000-0000-0000-000000000000',
-  name: 'Usina de teste',
-  installedPowerKwp: null,
-}
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  })
-}
 
 const executivePayload = {
   plant_id: 'plant-1',
@@ -61,44 +46,12 @@ const executivePayload = {
   trend: null,
 }
 
-const photovoltaicSummaryPayload = {
-  plant_id: 'plant-1',
-  performance: {
-    dc_capacity_kwp: '10.000',
-    performance_ratio: '0.8200',
-    temperature_corrected_performance_ratio: '0.8500',
-    final_yield_kwh_per_kwp: '4.400',
-    reporting_availability_ratio: '0.9800',
-  },
-  performance_unavailable_reason: null,
-  baseline: {
-    baseline_median_performance_ratio: '0.8000',
-    clear_sky_poa_p90_kwh_m2: '5.500',
-    degradation_percent: '-1.20',
-    annualized_degradation_percent: '-0.60',
-    degradation_status: 'STABLE',
-  },
-  baseline_unavailable_reason: null,
-  reference_complete_on: null,
-  losses: [
-    { category: 'COMMUNICATION', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
-    { category: 'UNAVAILABILITY', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
-    { category: 'CLIPPING', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
-    { category: 'SOILING', evidence_level: 'POSSIBLE', estimated_loss_percent: '1.50', evidence_codes: ['SOILING_TREND'], limitation: null },
-    { category: 'SHADING', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
-    { category: 'TEMPERATURE', evidence_level: 'LIKELY', estimated_loss_percent: '2.30', evidence_codes: ['HIGH_CELL_TEMP'], limitation: null },
-    { category: 'DEGRADATION', evidence_level: 'NOT_ASSESSABLE', estimated_loss_percent: null, evidence_codes: [], limitation: 'Baseline insuficiente para isolar degradação.' },
-    { category: 'UNEXPLAINED', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
-  ],
-  losses_unavailable_reason: null,
-  // ADR-068, seção 3: produção esperada diária calculada e quantizada no
-  // backend a partir dos mesmos registros de `performance`/`baseline` acima
-  // (10 kWp × 5.5 kWh/m² × 0.80 = 44.000 kWh/dia).
-  expected_daily_production_kwh: '44.000',
-  expected_daily_production_model_version: 'MPLACAS_EXPECTED_DAILY_PRODUCTION_V1',
-  expected_daily_production_nature: 'SEASONAL_CLEAR_SKY_P90_ENVELOPE',
-  expected_daily_production_unavailable_reason: null,
-}
+// `photovoltaicSummaryPayload` (resposta completa de `/photovoltaic/summary`)
+// mora em `../test/dashboardFixtures.ts` desde a Etapa 2 do ADR-072 (extraída
+// para ser reusada por `TechnicalPage.test.tsx`) — importada no topo deste
+// arquivo. Esta página ainda a consome via `installApiMock` abaixo, para
+// derivar `expectedProduction` (usado por `ProductionHistorySection`, que só
+// migra para o módulo Produção na Etapa 4).
 
 // Usina nova (o caso real do bug corrigido nesta etapa): produção real já é
 // coletada, mas o primeiro ano de referência ainda não fechou — sem baseline

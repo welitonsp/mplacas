@@ -52,7 +52,7 @@ export function getThemePreference(): ThemePreference {
  * Persiste a escolha explícita do usuário (Decisão 1 do ADR). `'system'` não
  * grava um terceiro valor — remove a chave, já que ausência da chave já
  * significa "seguir o SO", mesmo espírito de só persistir preferência não
- * sensível que `mplacas:technical-performance-expanded` já usa.
+ * sensível (tema, não dado de negócio).
  */
 export function setThemePreference(preference: ThemePreference): void {
   if (preference === 'system') {

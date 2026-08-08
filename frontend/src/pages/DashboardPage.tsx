@@ -35,14 +35,17 @@ import { MetricCardSkeletonGrid } from '../components/MetricCardSkeletonGrid'
 import { MonthlyProductionSection } from '../components/MonthlyProductionSection'
 import { ProductionHistorySection } from '../components/ProductionHistorySection'
 import { RetryableError } from '../components/RetryableError'
-import { TechnicalPerformanceSection } from '../components/TechnicalPerformanceSection'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
-// 401): a seção de desempenho técnico mostra as mensagens de indisponibilidade
-// por bloco em vez de ficar carregando indefinidamente — mesmo princípio de
-// `expectedProduction` acima, aplicado a todos os blocos do resumo.
-// `plant_id` depende da usina ativa (`PlantContext`, ADR-069), por isso vira
-// função em vez de constante de módulo.
+// 401): garante um `expectedProduction.available: false` explícito para
+// `ProductionHistorySection` em vez de deixar a seção carregando
+// indefinidamente. `plant_id` depende da usina ativa (`PlantContext`,
+// ADR-069), por isso vira função em vez de constante de módulo.
+//
+// ADR-072 (Etapa 2): o restante deste resumo (performance/baseline/losses)
+// não é mais consumido por esta página — só `expectedProduction` continua
+// sendo, via `TechnicalPerformanceSection`, que migrou para
+// `pages/dashboard/TechnicalPage.tsx` (cópia local desta mesma função lá).
 function fallbackPvSummary(plantId: string): PhotovoltaicSummaryResponse {
   return {
     plant_id: plantId,
@@ -400,20 +403,13 @@ export function DashboardPage() {
                 comentário em `FinancialSection.tsx`). */}
             <FinancialSection indicators={indicators} financialReturn={financialReturn} plantId={plantId} />
 
-            {/* Bloco próprio — "Como está o desempenho técnico?": PR, PR
-                corrigido por temperatura, yield específico, disponibilidade de
-                reporte, degradação anualizada e atribuição de causa de perda.
-                Responde "está indo bem?" com granularidade técnica maior que o
-                Bloco 1 acima — por isso vira seção own em vez de subseção
-                dentro dele (ver Etapa 6). Reordenada para depois do bloco
-                Financeiro/Retorno do investimento (Etapa 3.2, P2-04 parcial):
-                "quanto custou" e "qual o retorno" respondem à pergunta mais
-                prática de um dono de usina antes da granularidade técnica de
-                PR/yield/degradação, que agora também está colapsada por
-                padrão (ver `TechnicalPerformanceSection`, Etapa 3.4). */}
-            <section className="md:col-span-6 lg:col-span-12">
-              <TechnicalPerformanceSection summary={pvSummary} />
-            </section>
+            {/* O bloco "Como está o desempenho técnico?" (PR, yield
+                específico, disponibilidade de reporte, degradação e
+                atribuição de causa de perda) migrou para o módulo próprio em
+                `pages/dashboard/TechnicalPage.tsx` (ADR-072, Etapa 2) — não
+                aparece mais aqui, para não duplicar entre as rotas
+                `/dashboard/tecnico` e esta página (ainda servindo as outras
+                3 rotas até as próximas etapas migrarem). */}
           </div>
         )}
     </>

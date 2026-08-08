@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { render, screen } from '@testing-library/react'
 import type { PhotovoltaicSummaryResponse } from '../lib/dashboard/photovoltaic-contracts'
 import { TechnicalPerformanceSection } from './TechnicalPerformanceSection'
 
@@ -15,63 +15,39 @@ const SUMMARY: PhotovoltaicSummaryResponse = {
   expectedProduction: { available: false, reason: 'NO_PERFORMANCE_HISTORY', referenceCompleteOn: null },
 }
 
-describe('TechnicalPerformanceSection — camada técnica colapsável (Etapa 3.4)', () => {
-  beforeEach(() => {
-    window.localStorage.clear()
-  })
-
-  afterEach(() => {
-    window.localStorage.clear()
-  })
-
-  it('começa expandida por padrão (decisão de 2026-08-06)', () => {
+describe('TechnicalPerformanceSection — sempre expandida, sem toggle (ADR-072, Etapa 2)', () => {
+  it('renderiza o conteúdo diretamente, sem nenhum controle de expandir/colapsar', () => {
     render(<TechnicalPerformanceSection summary={SUMMARY} />)
 
-    const toggle = screen.getByRole('button', { name: /desempenho técnico/i })
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.queryByRole('button', { name: /desempenho técnico/i })).not.toBeInTheDocument()
 
-    const region = document.getElementById('technical-performance-content')
-    expect(region).not.toBeNull()
+    const region = screen.getByRole('region', { name: 'Desempenho técnico' })
     expect(region).not.toHaveAttribute('hidden')
     expect(screen.getByText('Performance ratio (PR)')).toBeInTheDocument()
   })
 
-  it('colapsa ao clicar no controle e atualiza aria-expanded', () => {
+  it('o título "Desempenho técnico" é um heading de nível 2', () => {
     render(<TechnicalPerformanceSection summary={SUMMARY} />)
 
-    const toggle = screen.getByRole('button', { name: /desempenho técnico/i })
-    fireEvent.click(toggle)
+    expect(screen.getByRole('heading', { level: 2, name: 'Desempenho técnico' })).toBeInTheDocument()
+  })
 
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    const region = document.getElementById('technical-performance-content')
-    expect(region).toHaveAttribute('hidden')
-    // Conteúdo continua montado no DOM (não desmontado condicionalmente),
-    // só inacessível por leitor de tela via `hidden`.
+  it('mostra o esqueleto de carregamento enquanto summary ainda não chegou (summary === null)', () => {
+    render(<TechnicalPerformanceSection summary={null} />)
+
+    expect(screen.queryByText('Performance ratio (PR)')).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Desempenho técnico' })).toBeInTheDocument()
+  })
+
+  it('não lê nem persiste mais nenhuma preferência em localStorage (chave antiga vira estado morto)', () => {
+    window.localStorage.setItem('mplacas:technical-performance-expanded', 'false')
+
+    render(<TechnicalPerformanceSection summary={SUMMARY} />)
+
+    // O conteúdo aparece mesmo com o valor antigo 'false' ainda gravado —
+    // prova de que a chave não é mais lida.
     expect(screen.getByText('Performance ratio (PR)')).toBeInTheDocument()
-  })
 
-  it('aria-controls do botão aponta para o id do conteúdo, e a região tem role apropriado', () => {
-    render(<TechnicalPerformanceSection summary={SUMMARY} />)
-
-    const toggle = screen.getByRole('button', { name: /desempenho técnico/i })
-    const contentId = toggle.getAttribute('aria-controls')
-    expect(contentId).toBe('technical-performance-content')
-
-    const region = document.getElementById(contentId as string)
-    expect(region).toHaveAttribute('role', 'region')
-  })
-
-  it('persiste a preferência de expansão em localStorage entre montagens', () => {
-    const { unmount } = render(<TechnicalPerformanceSection summary={SUMMARY} />)
-
-    fireEvent.click(screen.getByRole('button', { name: /desempenho técnico/i }))
-    expect(window.localStorage.getItem('mplacas:technical-performance-expanded')).toBe('false')
-    unmount()
-
-    render(<TechnicalPerformanceSection summary={SUMMARY} />)
-    expect(screen.getByRole('button', { name: /desempenho técnico/i })).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    )
+    window.localStorage.removeItem('mplacas:technical-performance-expanded')
   })
 })
