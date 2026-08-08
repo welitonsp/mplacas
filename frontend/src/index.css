@@ -44,6 +44,13 @@
   --color-data-secondary: #7c3aed;
   --color-data-secondary-light: #f5f3ff;
 
+  /* Instrui o navegador a desenhar controles nativos (popup de <select>,
+     ícone de <input type="date">, scrollbar, autofill) na paleta clara —
+     sem isto o UA pode renderizá-los na paleta padrão do SO mesmo com o
+     resto da página em tema claro. Espelha o `color-scheme: dark;` do
+     bloco `:root[data-theme="dark"]` abaixo. */
+  color-scheme: light;
+
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -64,6 +71,12 @@
    `--color-blue-*`/`--color-indigo-*`/`--color-cyan-*`/`--color-rose-*`
    deliberadamente NÃO são redefinidos aqui (ADR-071 Decisão 3). */
 :root[data-theme="dark"] {
+  /* Contraparte escura do `color-scheme: light;` do :root claro acima —
+     faz o navegador desenhar popup nativo de <select> (PlantSelector.tsx),
+     ícone de <input type="date"> (CapexRegistrationForm.tsx), scrollbar e
+     autofill na paleta escura quando `data-theme="dark"` está ativo. */
+  color-scheme: dark;
+
   --color-brand-primary: #5b8def;
   --color-brand-primary-dark: #8fb8ff;
   --color-brand-primary-light: #132038;
