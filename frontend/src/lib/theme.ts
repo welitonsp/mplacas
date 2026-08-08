@@ -63,6 +63,23 @@ export function setThemePreference(preference: ThemePreference): void {
 }
 
 /**
+ * Resolve o tema efetivo (o que está realmente pintado na tela agora) a
+ * partir de uma preferência de três estados. `'system'` consulta
+ * `matchMedia` no momento da chamada; `'light'`/`'dark'` são o próprio tema,
+ * sem indireção. Usado pelo botão-ícone único do controle de tema no header
+ * (substitui a lista "Aparência" do menu do avatar): o ícone precisa
+ * refletir o resultado visual atual (sol/lua), não a categoria abstrata da
+ * preferência — quando a preferência é "Sistema", o ícone ainda mostra o
+ * tema que o SO resolve neste instante.
+ */
+export function resolveEffectiveTheme(preference: ThemePreference): Theme {
+  if (preference === 'system') {
+    return prefersDark() ? 'dark' : 'light'
+  }
+  return preference
+}
+
+/**
  * Observa mudança de preferência do SO em tempo real e chama `onChange` com
  * o novo tema resolvido — mas só enquanto não houver override salvo (Decisão
  * 1: uma vez que o usuário escolhe manualmente, o SO deixa de ditar o tema).

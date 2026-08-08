@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { AppHeader } from './AppHeader'
 import { useAuth } from '../contexts/AuthContext'
 import { usePlant } from '../contexts/PlantContext'
@@ -193,7 +193,7 @@ describe('AppHeader — seletor de usina (ADR-069, Etapa D)', () => {
   })
 })
 
-describe('AppHeader — controle de aparência (ADR-071, Fase 3)', () => {
+describe('AppHeader — controle de tema (ícone único no header, ADR-071 Fase 4)', () => {
   beforeEach(() => {
     setAuth()
     setPlant()
@@ -208,109 +208,159 @@ describe('AppHeader — controle de aparência (ADR-071, Fase 3)', () => {
     vi.restoreAllMocks()
   })
 
-  function openMenu() {
-    render(<AppHeader />)
-    fireEvent.click(screen.getByRole('button', { name: /maria/i }))
+  /** O botão-ícone de tema é identificado pelo `aria-label` dinâmico, que
+   * sempre começa com "Tema: ". Não fica escondido em nenhum menu — está
+   * sempre visível no cabeçalho, ao lado do menu do usuário. */
+  function getThemeButton() {
+    return screen.getByRole('button', { name: /^Tema:/ })
   }
 
-  it('mostra as três opções com nome acessível em texto visível', () => {
+  it('está sempre visível no cabeçalho, sem precisar abrir o menu do usuário', () => {
     stubMatchMedia(false)
-    openMenu()
+    render(<AppHeader />)
 
-    expect(screen.getByRole('menuitemradio', { name: 'Sistema' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitemradio', { name: 'Claro' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitemradio', { name: 'Escuro' })).toBeInTheDocument()
+    expect(getThemeButton()).toBeInTheDocument()
+    // O menu do avatar segue fechado — o controle de tema não depende dele.
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('"Sistema" é a opção marcada por padrão, via aria-checked (nenhuma chave salva)', () => {
+  it('a lista de texto "Aparência" não existe mais dentro do menu do avatar', () => {
     stubMatchMedia(false)
-    openMenu()
+    render(<AppHeader />)
 
-    expect(screen.getByRole('menuitemradio', { name: 'Sistema' })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByRole('menuitemradio', { name: 'Claro' })).toHaveAttribute('aria-checked', 'false')
-    expect(screen.getByRole('menuitemradio', { name: 'Escuro' })).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(screen.getByRole('button', { name: /maria/i }))
+
+    expect(screen.queryByText('Aparência')).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitemradio')).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Sair' })).toBeInTheDocument()
   })
 
-  it('clicar em "Claro" chama setThemePreference("light") e reflete em document.documentElement.dataset.theme', () => {
-    stubMatchMedia(true) // SO prefere escuro — a escolha manual precisa vencer
+  it('preferência padrão "Sistema" com SO claro: aria-label/title anunciam "Sistema (aplicando claro)" e o próximo clique vai para claro', () => {
+    stubMatchMedia(false) // SO prefere claro
+    render(<AppHeader />)
+
+    const button = getThemeButton()
+    const expected = 'Tema: Sistema (aplicando claro). Clique para mudar para claro.'
+    expect(button).toHaveAttribute('aria-label', expected)
+    expect(button).toHaveAttribute('title', expected)
+  })
+
+  it('clique 1: system → light — chama setThemePreference("light") e aplica no DOM', () => {
+    stubMatchMedia(true) // SO prefere escuro — não deve importar após a escolha manual
     const setThemePreferenceSpy = vi.spyOn(theme, 'setThemePreference')
-    openMenu()
+    render(<AppHeader />)
 
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Claro' }))
+    fireEvent.click(getThemeButton())
 
     expect(setThemePreferenceSpy).toHaveBeenCalledWith('light')
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('light')
     expect(document.documentElement.dataset.theme).toBe('light')
-    expect(screen.getByRole('menuitemradio', { name: 'Claro' })).toHaveAttribute('aria-checked', 'true')
+    expect(getThemeButton()).toHaveAttribute('aria-label', 'Tema: Claro. Clique para mudar para escuro.')
   })
 
-  it('clicar em "Escuro" chama setThemePreference("dark") e reflete em document.documentElement.dataset.theme', () => {
+  it('clique 2: light → dark — chama setThemePreference("dark") e aplica no DOM', () => {
     stubMatchMedia(false)
     const setThemePreferenceSpy = vi.spyOn(theme, 'setThemePreference')
-    openMenu()
+    render(<AppHeader />)
 
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Escuro' }))
+    fireEvent.click(getThemeButton()) // system -> light
+    fireEvent.click(getThemeButton()) // light -> dark
 
-    expect(setThemePreferenceSpy).toHaveBeenCalledWith('dark')
+    expect(setThemePreferenceSpy).toHaveBeenNthCalledWith(2, 'dark')
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark')
     expect(document.documentElement.dataset.theme).toBe('dark')
-    expect(screen.getByRole('menuitemradio', { name: 'Escuro' })).toHaveAttribute('aria-checked', 'true')
+    expect(getThemeButton()).toHaveAttribute('aria-label', 'Tema: Escuro. Clique para mudar para sistema.')
   })
 
-  it('clicar em "Sistema" chama setThemePreference("system"), remove a chave e aplica o tema resolvido do SO', () => {
-    window.localStorage.setItem(THEME_STORAGE_KEY, 'dark')
+  it('clique 3: dark → system — chama setThemePreference("system"), remove a chave e volta ao tema resolvido do SO', () => {
     stubMatchMedia(false) // SO prefere claro
     const setThemePreferenceSpy = vi.spyOn(theme, 'setThemePreference')
-    openMenu()
+    render(<AppHeader />)
 
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Sistema' }))
+    fireEvent.click(getThemeButton()) // system -> light
+    fireEvent.click(getThemeButton()) // light -> dark
+    fireEvent.click(getThemeButton()) // dark -> system
 
-    expect(setThemePreferenceSpy).toHaveBeenCalledWith('system')
+    expect(setThemePreferenceSpy).toHaveBeenNthCalledWith(3, 'system')
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull()
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(getThemeButton()).toHaveAttribute(
+      'aria-label',
+      'Tema: Sistema (aplicando claro). Clique para mudar para claro.'
+    )
+  })
+
+  it('o ciclo completo (4 cliques) volta ao ponto de partida: system → light → dark → system', () => {
+    stubMatchMedia(false)
+    const setThemePreferenceSpy = vi.spyOn(theme, 'setThemePreference')
+    render(<AppHeader />)
+
+    fireEvent.click(getThemeButton())
+    fireEvent.click(getThemeButton())
+    fireEvent.click(getThemeButton())
+    fireEvent.click(getThemeButton())
+
+    expect(setThemePreferenceSpy.mock.calls.map((call) => call[0])).toEqual(['light', 'dark', 'system', 'light'])
+  })
+
+  it('é navegável só por teclado: o botão recebe foco (Tab) e Enter/Space ativa (comportamento nativo de <button>)', () => {
+    stubMatchMedia(false)
+    const setThemePreferenceSpy = vi.spyOn(theme, 'setThemePreference')
+    render(<AppHeader />)
+
+    const button = getThemeButton()
+    button.focus()
+    expect(button).toHaveFocus()
+
+    fireEvent.keyDown(button, { key: 'Enter' })
+    fireEvent.click(button)
+
+    expect(setThemePreferenceSpy).toHaveBeenCalledWith('light')
     expect(document.documentElement.dataset.theme).toBe('light')
   })
 
-  it('é navegável só por teclado: a opção recebe foco (Tab) e Enter/Space seleciona', () => {
+  it('tem foco visível (focus-visible:ring), mesmo padrão do resto do header', () => {
     stubMatchMedia(false)
-    const setThemePreferenceSpy = vi.spyOn(theme, 'setThemePreference')
-    openMenu()
+    render(<AppHeader />)
 
-    const darkOption = screen.getByRole('menuitemradio', { name: 'Escuro' })
-    darkOption.focus()
-    expect(darkOption).toHaveFocus()
-
-    fireEvent.keyDown(darkOption, { key: 'Enter' })
-    fireEvent.click(darkOption)
-
-    expect(setThemePreferenceSpy).toHaveBeenCalledWith('dark')
-    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(getThemeButton().className).toMatch(/focus-visible:ring/)
   })
 
-  it('as três opções têm foco visível (focus-visible:ring), mesmo padrão do resto do header', () => {
+  it('tem touch target mínimo de 44x44px', () => {
     stubMatchMedia(false)
-    openMenu()
+    render(<AppHeader />)
 
-    for (const label of ['Sistema', 'Claro', 'Escuro']) {
-      expect(screen.getByRole('menuitemradio', { name: label }).className).toMatch(/focus-visible:ring/)
-    }
+    expect(getThemeButton().className).toMatch(/min-w-\[44px\]/)
+    expect(getThemeButton().className).toMatch(/min-h-\[44px\]/)
   })
 
-  it('reage a uma mudança simulada de matchMedia enquanto "Sistema" está ativo', () => {
-    const media = stubMatchMedia(false)
+  it('enquanto a preferência é "Sistema", uma mudança simulada de matchMedia atualiza o ícone exibido (aria-label muda)', () => {
+    const media = stubMatchMedia(false) // SO começa claro
     const applyThemeSpy = vi.spyOn(theme, 'applyTheme')
-    openMenu()
+    render(<AppHeader />)
 
-    media.fireChange(true)
+    expect(getThemeButton()).toHaveAttribute(
+      'aria-label',
+      'Tema: Sistema (aplicando claro). Clique para mudar para claro.'
+    )
+
+    act(() => {
+      media.fireChange(true) // SO muda para escuro
+    })
 
     expect(applyThemeSpy).toHaveBeenCalledWith('dark')
     expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(getThemeButton()).toHaveAttribute(
+      'aria-label',
+      'Tema: Sistema (aplicando escuro). Clique para mudar para claro.'
+    )
   })
 
-  it('não reage mais à mudança do SO depois que o usuário escolheu "Claro"/"Escuro" manualmente', () => {
+  it('não reage mais à mudança do SO depois que o usuário escolheu um tema manualmente', () => {
     const media = stubMatchMedia(false)
-    openMenu()
+    render(<AppHeader />)
 
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Claro' }))
+    fireEvent.click(getThemeButton()) // system -> light (manual)
 
     const applyThemeSpy = vi.spyOn(theme, 'applyTheme')
     media.fireChange(true)

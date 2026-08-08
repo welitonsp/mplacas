@@ -2,16 +2,85 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { BrandMark } from './BrandMark'
 import { PlantSelector } from './PlantSelector'
-import { applyTheme, getThemePreference, setThemePreference, watchSystemTheme } from '../lib/theme'
-import type { ThemePreference } from '../lib/theme'
+import {
+  applyTheme,
+  getThemePreference,
+  resolveEffectiveTheme,
+  setThemePreference,
+  watchSystemTheme,
+} from '../lib/theme'
+import type { Theme, ThemePreference } from '../lib/theme'
 
-// Três opções do controle "Aparência" (ADR-071, Decisão 6). "Sistema" é o
-// default (nenhuma chave em `localStorage`, ver `getThemePreference`).
+// Três estados do controle de tema (ADR-071, Decisão 6), na mesma ordem em
+// que o ícone único do header cicla a cada clique: Sistema é o default
+// (nenhuma chave em `localStorage`, ver `getThemePreference`).
 const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string }> = [
   { value: 'system', label: 'Sistema' },
   { value: 'light', label: 'Claro' },
   { value: 'dark', label: 'Escuro' },
 ]
+
+const EFFECTIVE_THEME_LABELS: Record<Theme, string> = {
+  light: 'claro',
+  dark: 'escuro',
+}
+
+function themePreferenceLabel(preference: ThemePreference): string {
+  return THEME_OPTIONS.find((option) => option.value === preference)?.label ?? preference
+}
+
+function nextThemePreference(current: ThemePreference): ThemePreference {
+  const currentIndex = THEME_OPTIONS.findIndex((option) => option.value === current)
+  return THEME_OPTIONS[(currentIndex + 1) % THEME_OPTIONS.length].value
+}
+
+// Texto que serve tanto de `aria-label` quanto de `title` (tooltip nativo)
+// do botão-ícone de tema: estado atual + o que o próximo clique vai fazer.
+// É o que substitui, em termos de acessibilidade, a lista de texto que
+// existia antes dentro do menu do avatar — o leitor de tela nunca vê só o
+// ícone sol/lua sem essa descrição.
+function describeThemeControl(preference: ThemePreference, effectiveTheme: Theme): string {
+  const next = nextThemePreference(preference)
+  const current =
+    preference === 'system'
+      ? `Sistema (aplicando ${EFFECTIVE_THEME_LABELS[effectiveTheme]})`
+      : themePreferenceLabel(preference)
+  return `Tema: ${current}. Clique para mudar para ${themePreferenceLabel(next).toLowerCase()}.`
+}
+
+// Sol/lua em ~20x20, `currentColor`, sem biblioteca de ícones — mesmo padrão
+// de SVG inline de `BrandMark`. `aria-hidden`: o texto acessível do controle
+// vive inteiro no `aria-label`/`title` do botão, o ícone é só reforço visual.
+function SunIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="10" cy="10" r="4" fill="currentColor" />
+      <g stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+        <line x1="10" y1="1.5" x2="10" y2="4" />
+        <line x1="10" y1="16" x2="10" y2="18.5" />
+        <line x1="1.5" y1="10" x2="4" y2="10" />
+        <line x1="16" y1="10" x2="18.5" y2="10" />
+        <line x1="5.76" y1="5.76" x2="3.99" y2="3.99" />
+        <line x1="14.24" y1="5.76" x2="16.01" y2="3.99" />
+        <line x1="5.76" y1="14.24" x2="3.99" y2="16.01" />
+        <line x1="14.24" y1="14.24" x2="16.01" y2="16.01" />
+      </g>
+    </svg>
+  )
+}
+
+function MoonIcon({ className }: { className?: string }) {
+  const maskId = useId()
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
+      <mask id={maskId}>
+        <rect width="20" height="20" fill="white" />
+        <circle cx="13.5" cy="7" r="5" fill="black" />
+      </mask>
+      <circle cx="10" cy="10" r="7.5" fill="currentColor" mask={`url(#${maskId})`} />
+    </svg>
+  )
+}
 
 // Casca do app (Frente S) — substitui `DashboardHeader`. O nome/seletor de
 // usina (ADR-069, Etapa D) é resolvido pelo próprio `PlantSelector`, que lê o
@@ -22,8 +91,8 @@ export function AppHeader() {
   const { username, logout } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const [themePreference, setThemePreferenceState] = useState<ThemePreference>(() => getThemePreference())
+  const [effectiveTheme, setEffectiveThemeState] = useState<Theme>(() => resolveEffectiveTheme(getThemePreference()))
   const menuId = useId()
-  const appearanceHeadingId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
@@ -31,23 +100,33 @@ export function AppHeader() {
   // SO em tempo real (ADR-071, Decisão 1/6). Ao trocar para uma opção manual
   // (`themePreference` muda), o efeito reexecuta: o cleanup remove o
   // listener antigo e o corpo novo retorna sem reassinar, porque a condição
-  // abaixo já não é mais "system".
+  // abaixo já não é mais "system". Também atualiza `effectiveTheme`, para o
+  // ícone sol/lua do header acompanhar a mudança do SO em tempo real.
   useEffect(() => {
     if (themePreference !== 'system') return
 
     return watchSystemTheme((theme) => {
       applyTheme(theme)
+      setEffectiveThemeState(theme)
     })
   }, [themePreference])
 
+  // Reaproveitada pelo botão-ícone único do header (antes era chamada pelos
+  // 3 `<button role="menuitemradio">` da lista "Aparência" dentro do menu do
+  // avatar). Lógica de resolução inalterada, só centralizada em
+  // `resolveEffectiveTheme` (`lib/theme.ts`) em vez de repetir a checagem de
+  // `matchMedia` aqui.
   function handleThemeSelect(preference: ThemePreference) {
     setThemePreference(preference)
     setThemePreferenceState(preference)
-    if (preference === 'system') {
-      applyTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    } else {
-      applyTheme(preference)
-    }
+    const resolved = resolveEffectiveTheme(preference)
+    applyTheme(resolved)
+    setEffectiveThemeState(resolved)
+  }
+
+  // Um clique cicla system → light → dark → system (ordem de `THEME_OPTIONS`).
+  function handleThemeToggle() {
+    handleThemeSelect(nextThemePreference(themePreference))
   }
 
   useEffect(() => {
@@ -74,6 +153,8 @@ export function AppHeader() {
     }
   }, [menuOpen])
 
+  const themeControlLabel = describeThemeControl(themePreference, effectiveTheme)
+
   return (
     <header className="sticky top-0 z-30 bg-[var(--color-surface)]/80 backdrop-blur-md border-b border-[var(--color-border)] shadow-sm">
       <div className="mx-auto max-w-7xl 2xl:max-w-[96rem] px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -83,82 +164,73 @@ export function AppHeader() {
           <PlantSelector />
         </div>
 
-        <div ref={containerRef} className="relative">
+        <div className="flex items-center gap-1">
+          {/* Ícone único, sempre visível: sol/lua conforme o tema efetivo
+              atual. Substitui a lista "Aparência" que ficava escondida
+              dentro do menu do avatar — o usuário não precisa mais abrir
+              nenhum menu para ver ou mudar o tema. */}
           <button
-            ref={buttonRef}
             type="button"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            aria-controls={menuId}
-            aria-label={username ? `Menu de ${username}` : 'Menu do usuário'}
-            onClick={() => setMenuOpen((prev) => !prev)}
-            className="flex items-center gap-2 rounded text-sm text-gray-700 hover:text-gray-900 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+            onClick={handleThemeToggle}
+            aria-label={themeControlLabel}
+            title={themeControlLabel}
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-gray-700 hover:text-gray-900 hover:bg-gray-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
           >
-            <span
-              aria-hidden="true"
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-brand-primary-light)] text-[var(--color-brand-primary)] text-sm font-semibold"
-            >
-              {(username ?? '?').charAt(0).toUpperCase()}
-            </span>
-            <span aria-hidden="true" className={`text-xs transition-transform duration-150 ${menuOpen ? 'rotate-180' : ''}`}>
-              ▾
-            </span>
+            {effectiveTheme === 'light' ? (
+              <SunIcon className="h-5 w-5" />
+            ) : (
+              <MoonIcon className="h-5 w-5" />
+            )}
           </button>
 
-          {menuOpen && (
-            <div
-              id={menuId}
-              role="menu"
-              className="absolute right-0 mt-2 w-48 rounded-lg border border-gray-200 bg-[var(--color-surface)] py-1 shadow-lg"
+          <div ref={containerRef} className="relative">
+            <button
+              ref={buttonRef}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-controls={menuId}
+              aria-label={username ? `Menu de ${username}` : 'Menu do usuário'}
+              onClick={() => setMenuOpen((prev) => !prev)}
+              className="flex items-center gap-2 rounded text-sm text-gray-700 hover:text-gray-900 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
             >
-              {username && (
-                <div className="px-3 py-2 text-sm font-medium text-gray-900 border-b border-gray-100">
-                  {username}
-                </div>
-              )}
+              <span
+                aria-hidden="true"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-brand-primary-light)] text-[var(--color-brand-primary)] text-sm font-semibold"
+              >
+                {(username ?? '?').charAt(0).toUpperCase()}
+              </span>
+              <span aria-hidden="true" className={`text-xs transition-transform duration-150 ${menuOpen ? 'rotate-180' : ''}`}>
+                ▾
+              </span>
+            </button>
 
+            {menuOpen && (
               <div
-                id={appearanceHeadingId}
-                className="px-3 pt-2 pb-1 text-xs font-medium text-gray-500 uppercase tracking-wide"
+                id={menuId}
+                role="menu"
+                className="absolute right-0 mt-2 w-48 rounded-lg border border-gray-200 bg-[var(--color-surface)] py-1 shadow-lg"
               >
-                Aparência
-              </div>
-              <div role="group" aria-labelledby={appearanceHeadingId} className="pb-1 border-b border-gray-100">
-                {THEME_OPTIONS.map((option) => {
-                  const checked = themePreference === option.value
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={checked}
-                      onClick={() => handleThemeSelect(option.value)}
-                      className="flex w-full items-center justify-between gap-2 rounded text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand-primary)]"
-                    >
-                      <span>{option.label}</span>
-                      {checked && (
-                        <span aria-hidden="true" className="text-[var(--color-brand-primary)]">
-                          ✓
-                        </span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
+                {username && (
+                  <div className="px-3 py-2 text-sm font-medium text-gray-900 border-b border-gray-100">
+                    {username}
+                  </div>
+                )}
 
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false)
-                  logout()
-                }}
-                className="w-full rounded text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand-primary)]"
-              >
-                Sair
-              </button>
-            </div>
-          )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    logout()
+                  }}
+                  className="w-full rounded text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand-primary)]"
+                >
+                  Sair
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </header>
