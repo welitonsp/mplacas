@@ -10,7 +10,7 @@
 //   classe já usada em ~39 outros lugares do projeto para rótulo secundário
 //   (ver `CurrencyCard`, `MetricCard`, `Gauge`, etc.), não uma classe nova.
 const HEADING_CLASS: Record<'h2' | 'h3', string> = {
-  h2: 'text-lg font-semibold text-gray-900 tracking-tight',
+  h2: 'relative mb-4 flex items-center gap-2 text-lg font-semibold text-gray-900 tracking-tight before:h-5 before:w-1 before:rounded-full before:bg-[var(--color-brand-primary)]',
   h3: 'text-xs font-medium text-gray-500 uppercase tracking-wide',
 }
 
@@ -29,7 +29,7 @@ export function SectionTitle({
   id?: string
 }) {
   return (
-    <Heading id={id} className={`mb-4 ${HEADING_CLASS[Heading]}`}>
+    <Heading id={id} className={HEADING_CLASS[Heading]}>
       {children}
     </Heading>
   )

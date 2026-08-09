@@ -182,7 +182,7 @@ export function ProductionHistoryChart({
     // `interactive`: as barras do gráfico respondem a clique/foco (seleção do
     // dia ativo abaixo) — o hover do card sinaliza essa interatividade, ao
     // contrário dos cards de métrica só-leitura ao redor.
-    <Card interactive>
+    <Card interactive className="overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
@@ -196,27 +196,30 @@ export function ProductionHistoryChart({
             </span>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
           {ANOMALY_LEGEND.map((item) => (
-            <span key={item.level} className="inline-flex items-center gap-1">
+            <span
+              key={item.level}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm"
+            >
               <span className={`h-2 w-2 rounded-full ${SEVERITY_DOT[levelSeverity(item.level)]}`} />
               {item.label}
             </span>
           ))}
           {hasUnassessedDay && (
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm">
               <span className={`h-2 w-2 rounded-full ${SEVERITY_DOT.neutral}`} />
               Sem expectativa
             </span>
           )}
           {hasExpected && (
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm">
               <span className="h-0 w-3 border-t border-dashed border-[var(--color-chart-reference)]" />
               Esperado
             </span>
           )}
           {hasIrradiation && (
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm">
               <span className="h-0 w-3 border-t-2 border-[var(--color-data-secondary)]" />
               Irradiância solar — eixo à direita, kWh/m²
             </span>
@@ -225,7 +228,7 @@ export function ProductionHistoryChart({
       </div>
 
       {currentStreakDays > 0 && (
-        <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-[var(--color-danger)]">
+        <p className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--color-danger)]/20 bg-[var(--color-danger-light)] px-3 py-1.5 text-xs font-semibold text-[var(--color-danger-text)] shadow-sm">
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-danger)]" />
           {currentStreakDays} dia{currentStreakDays > 1 ? 's' : ''} seguido{currentStreakDays > 1 ? 's' : ''} com
           produção abaixo do esperado.
@@ -260,7 +263,10 @@ export function ProductionHistoryChart({
                 na mesma altura (220px) — mantém as escalas alinhadas ao pixel
                 em vez de esticar um SVG sobre uma área que inclui a régua de
                 datas abaixo. */}
-            <div className="relative" style={{ height: '220px' }}>
+            <div
+              className="relative rounded-2xl border border-[var(--color-border)] bg-[linear-gradient(180deg,var(--color-surface)_0%,var(--color-surface-subtle)_100%)] shadow-inner"
+              style={{ height: '220px' }}
+            >
               {/* 3 gridlines horizontais (0, max/2, max) para a grandeza
                   principal — sem elas as barras não têm referência de leitura. */}
               <span className="pointer-events-none absolute inset-x-0 top-0 border-t border-gray-100" />
@@ -306,7 +312,7 @@ export function ProductionHistoryChart({
                   por seta esquerda/direita (ver `handleChartKeyDown`), não por
                   Tab atravessando até 90 barras. */}
               <div
-                className="flex h-full items-end gap-[2px] rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+                className="relative z-10 flex h-full items-end gap-[2px] rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
                 tabIndex={0}
                 role="slider"
                 aria-label="Histórico de produção diária. Use as setas esquerda e direita para navegar entre os dias."
@@ -331,8 +337,10 @@ export function ProductionHistoryChart({
                       onClick={() => setSelectedIndex(i)}
                     >
                       <span
-                        className={`w-full rounded-t-sm ${SEVERITY_BAR[severity]} ${
-                          isActive ? '' : 'opacity-90'
+                        className={`w-full rounded-t-md shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] transition-all duration-150 ${
+                          SEVERITY_BAR[severity]
+                        } ${
+                          isActive ? 'ring-2 ring-[var(--color-text-primary)] ring-offset-1 ring-offset-[var(--color-surface)]' : 'opacity-85 hover:opacity-100'
                         }`}
                         style={{ height: `${Math.max(barHeightPercent, 2)}%` }}
                       />
@@ -362,10 +370,12 @@ export function ProductionHistoryChart({
       </div>
 
       <div
-        className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600"
+        className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-[var(--color-border)] bg-[linear-gradient(135deg,var(--color-surface)_0%,var(--color-surface-subtle)_100%)] p-3 text-xs text-gray-600 shadow-sm"
         aria-live="polite"
       >
-        <span className="font-medium text-gray-900">{formatShortDate(activeDay.date)}</span>
+        <span className="inline-flex rounded-full bg-[var(--color-brand-primary-light)] px-2.5 py-1 font-semibold text-[var(--color-brand-primary)]">
+          {formatShortDate(activeDay.date)}
+        </span>
         <span>
           Real:{' '}
           <strong className="text-gray-900 tabular-nums">

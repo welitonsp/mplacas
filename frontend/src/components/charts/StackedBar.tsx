@@ -72,7 +72,7 @@ export function StackedBar({
       <div
         role="img"
         aria-label={ariaLabel}
-        className="flex w-full overflow-hidden rounded-md bg-[var(--color-chart-track)]"
+        className="flex w-full overflow-hidden rounded-full bg-[var(--color-chart-track)] shadow-inner ring-1 ring-inset ring-black/5"
         style={{ height }}
       >
         {effectiveTotal > 0 &&
@@ -84,17 +84,23 @@ export function StackedBar({
                 key={`${segment.label}-${index}`}
                 title={`${segment.label}: ${formatValue(segment.value)}`}
                 aria-hidden="true"
-                className="h-full transition-[width] duration-150 motion-reduce:transition-none first:rounded-l-md last:rounded-r-md"
-                style={{ width: `${entered ? pct : 0}%`, backgroundColor: color }}
+                className="h-full shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] transition-[width] duration-300 ease-out motion-reduce:transition-none first:rounded-l-full last:rounded-r-full"
+                style={{
+                  width: `${entered ? pct : 0}%`,
+                  background: `linear-gradient(90deg, ${color}, color-mix(in srgb, ${color} 74%, white))`,
+                }}
               />
             )
           })}
       </div>
-      <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm" aria-hidden="true">
+      <ul className="flex flex-wrap gap-2 text-sm" aria-hidden="true">
         {segments.map((segment, index) => (
-          <li key={`${segment.label}-legend-${index}`} className="flex items-center gap-1.5">
+          <li
+            key={`${segment.label}-legend-${index}`}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm"
+          >
             <span
-              className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+              className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
               style={{
                 backgroundColor:
                   segment.value > 0 ? TONE_BG_VAR[segment.tone ?? 'neutral'] : 'var(--color-chart-track)',

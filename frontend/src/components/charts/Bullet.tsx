@@ -112,15 +112,18 @@ export function Bullet({
       <div
         role="img"
         aria-label={ariaLabel}
-        className={`relative w-full overflow-hidden rounded-md bg-[var(--color-chart-track)] ${BAR_HEIGHT_CLASS}`}
+        className={`relative w-full overflow-hidden rounded-full bg-[var(--color-chart-track)] shadow-inner ring-1 ring-inset ring-black/5 ${BAR_HEIGHT_CLASS}`}
       >
         <div
-          className="h-full rounded-md transition-[width] duration-150 motion-reduce:transition-none"
-          style={{ width: `${entered ? valuePct : 0}%`, backgroundColor: color }}
+          className="h-full rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] transition-[width] duration-300 ease-out motion-reduce:transition-none"
+          style={{
+            width: `${entered ? valuePct : 0}%`,
+            background: `linear-gradient(90deg, ${color}, color-mix(in srgb, ${color} 72%, white))`,
+          }}
         />
         {targetPct != null && (
           <div
-            className="absolute top-0 h-full w-0.5"
+            className="absolute top-0 h-full w-0.5 shadow-[0_0_0_2px_var(--color-surface)]"
             style={{ left: `${targetPct}%`, backgroundColor: TARGET_TICK_COLOR }}
             data-testid="bullet-target-tick"
             aria-hidden="true"
@@ -131,17 +134,17 @@ export function Bullet({
         <span>0</span>
         <span>{formatValue(effectiveMax)}</span>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" aria-hidden="true">
-        <span className="font-semibold tabular-nums text-[var(--color-text-primary)]">
+      <div className="flex flex-wrap items-center gap-2 text-sm" aria-hidden="true">
+        <span className="inline-flex rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-semibold tabular-nums text-[var(--color-text-primary)]">
           {formatValue(safeValue)}
         </span>
         {safeTarget != null && (
-          <span className="text-gray-500 tabular-nums">
+          <span className="inline-flex rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-gray-500 tabular-nums">
             {targetLabel} {formatValue(safeTarget)}
           </span>
         )}
         {deviationPercent != null && (
-          <span className={`font-semibold tabular-nums ${DEVIATION_TONE_CLASS[tone]}`}>
+          <span className={`inline-flex rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-semibold tabular-nums ${DEVIATION_TONE_CLASS[tone]}`}>
             {formatSignedPercent(deviationPercent)}
           </span>
         )}

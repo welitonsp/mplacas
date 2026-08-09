@@ -2,33 +2,42 @@ import type { Diagnostic } from '../lib/dashboard/contracts'
 import { DIAGNOSTIC_SEVERITY_META, SEVERITY_BG, SEVERITY_BORDER_L, SEVERITY_TEXT } from '../lib/dashboard/visuals'
 import { Card } from './Card'
 
-// Cada item mostra problema → severidade → ação recomendada, nessa ordem: o usuário
-// precisa entender POR QUE uma ação é recomendada antes de ver a ação em si. A lista
-// já vem ordenada por gravidade (mais crítico primeiro, ver contracts.combineDiagnostics),
-// e substitui o antigo PriorityActionsCard — a `recommended_action` de cada diagnóstico
-// é exatamente o que compunha `priority_actions` no backend (ver
-// intelligence/executive_service.py::_priority_actions), então listar o diagnóstico
-// completo não perde informação, só adiciona contexto.
+// Cada item mostra problema → severidade → ação recomendada. Essa ordem ajuda
+// a interface funcionar como diagnóstico de causa: primeiro o usuário entende
+// o motivo, depois decide o próximo passo.
 export function DiagnosticsCard({ diagnostics }: { diagnostics: Diagnostic[] }) {
   if (diagnostics.length === 0) {
     return (
       <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnósticos</p>
-        <p className="mt-3 text-sm text-gray-500">Nenhum diagnóstico neste ciclo.</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnósticos</p>
+          <span className="rounded-full bg-[var(--color-success-light)] px-2.5 py-1 text-xs font-semibold text-[var(--color-success-text)]">
+            Sem alertas
+          </span>
+        </div>
+        <p className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-gray-500">
+          Nenhum diagnóstico neste ciclo.
+        </p>
       </Card>
     )
   }
 
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnósticos</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnósticos</p>
+        <span className="rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-semibold text-gray-600">
+          {diagnostics.length} {diagnostics.length === 1 ? 'item' : 'itens'}
+        </span>
+      </div>
+
       <ul className="mt-3 space-y-3">
         {diagnostics.map((diagnostic) => {
           const meta = DIAGNOSTIC_SEVERITY_META[diagnostic.severity]
           return (
             <li
               key={diagnostic.code}
-              className={`rounded-lg border border-gray-200 border-l-4 ${SEVERITY_BORDER_L[meta.severity]} p-3`}
+              className={`rounded-2xl border border-gray-200 border-l-4 bg-[var(--color-surface)] ${SEVERITY_BORDER_L[meta.severity]} p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transition-none`}
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span
@@ -36,10 +45,10 @@ export function DiagnosticsCard({ diagnostics }: { diagnostics: Diagnostic[] }) 
                 >
                   {meta.label}
                 </span>
-                <span className="text-sm text-gray-800">{diagnostic.message}</span>
+                <span className="text-sm font-medium text-gray-800">{diagnostic.message}</span>
               </div>
-              <p className="mt-2 text-sm text-gray-600">
-                <span className="font-medium text-gray-500">Ação recomendada: </span>
+              <p className="mt-2 rounded-xl bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-gray-600">
+                <span className="font-semibold text-gray-700">Ação recomendada: </span>
                 {diagnostic.recommended_action}
               </p>
             </li>

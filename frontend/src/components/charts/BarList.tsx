@@ -83,13 +83,13 @@ export function BarList({
   const entered = useChartEntrance()
 
   return (
-    <ul className={`flex flex-col gap-3 ${className}`.trim()}>
+    <ul className={`flex flex-col gap-2.5 ${className}`.trim()}>
       {items.map((item, index) => {
         const color = TONE_BG_VAR[item.tone ?? 'neutral']
 
         const labelColumn = (
-          <div className="w-28 shrink-0">
-            <span className="block truncate text-sm text-gray-600" title={item.label}>
+          <div className="w-28 shrink-0 sm:w-32">
+            <span className="block truncate text-sm font-medium text-gray-700" title={item.label}>
               {item.label}
             </span>
             {item.badge && (
@@ -105,11 +105,11 @@ export function BarList({
         if (item.value == null) {
           const unavailableLabel = item.unavailableLabel ?? '—'
           return (
-            <li key={`${item.label}-${index}`} className="flex flex-col gap-1">
+            <li key={`${item.label}-${index}`} className="flex flex-col gap-1 rounded-xl px-2 py-1.5 transition-colors duration-150 hover:bg-[var(--color-surface-subtle)]">
               <div className="flex items-center gap-3">
                 {labelColumn}
                 <div
-                  className={`relative flex-1 overflow-hidden rounded-md border border-dashed border-[var(--color-chart-track)] ${BAR_HEIGHT_CLASS}`}
+                  className={`relative flex-1 overflow-hidden rounded-lg border border-dashed border-[var(--color-chart-track)] bg-[var(--color-surface)] shadow-inner ${BAR_HEIGHT_CLASS}`}
                   role="status"
                   aria-label={`${item.label}: ${unavailableLabel}`}
                 />
@@ -128,11 +128,11 @@ export function BarList({
           effectiveMax > 0 ? Math.min(Math.max((item.value / effectiveMax) * 100, 0), 100) : 0
 
         return (
-          <li key={`${item.label}-${index}`} className="flex flex-col gap-1">
+          <li key={`${item.label}-${index}`} className="flex flex-col gap-1 rounded-xl px-2 py-1.5 transition-colors duration-150 hover:bg-[var(--color-surface-subtle)]">
             <div className="flex items-center gap-3">
               {labelColumn}
               <div
-                className={`relative flex-1 overflow-hidden rounded-md bg-[var(--color-chart-track)] ${BAR_HEIGHT_CLASS}`}
+                className={`relative flex-1 overflow-hidden rounded-lg bg-[var(--color-chart-track)] shadow-inner ring-1 ring-inset ring-black/5 ${BAR_HEIGHT_CLASS}`}
                 role="progressbar"
                 aria-valuenow={item.value}
                 aria-valuemin={0}
@@ -140,8 +140,11 @@ export function BarList({
                 aria-label={`${item.label}: ${formatValue(item.value)}`}
               >
                 <div
-                  className="h-full rounded-md transition-[width] duration-150 motion-reduce:transition-none"
-                  style={{ width: `${entered ? pct : 0}%`, backgroundColor: color }}
+                  className="h-full rounded-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                  style={{
+                    width: `${entered ? pct : 0}%`,
+                    background: `linear-gradient(90deg, ${color}, color-mix(in srgb, ${color} 72%, white))`,
+                  }}
                 />
               </div>
               <span className="w-16 shrink-0 text-right text-sm font-semibold tabular-nums text-[var(--color-text-primary)]">
