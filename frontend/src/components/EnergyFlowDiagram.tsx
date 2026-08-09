@@ -3,6 +3,19 @@ import { formatNumber, toNumber } from '../lib/format'
 import { Card } from './Card'
 import { SankeyFlow } from './charts/SankeyFlow'
 
+// Este componente NÃO carrega mais seu próprio rótulo "Fluxo de energia no
+// ciclo" — até a faixa de estado do módulo Visão Geral (ver
+// `pages/dashboard/OverviewPage.tsx`), o rótulo aparecia duas vezes seguidas
+// (a sobrancelha interna aqui + o `<SectionTitle as="h2">Fluxo de
+// energia</SectionTitle>` que o chamador já renderiza logo acima), uma das 4
+// duplicações apontadas pelo diagnóstico de UX que motivou aquela mudança.
+// Removida a interna: é só um `<p>` visual (sem papel de heading no outline
+// de acessibilidade), enquanto o `<h2>` do chamador É a âncora semântica real
+// — mantê-lo e descartar a duplicata visual preserva o outline de heading e
+// remove a repetição de texto. Único consumidor deste componente hoje é
+// `OverviewPage` (confirmado via grep antes desta mudança); se um segundo
+// consumidor aparecer sem heading externo, prefira que ELE renderize um
+// `SectionTitle` próprio a reintroduzir um rótulo interno aqui.
 export function EnergyFlowDiagram({
   production,
   selfConsumption,
@@ -36,10 +49,7 @@ export function EnergyFlowDiagram({
   if (!hasData) {
     return (
       <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-          Fluxo de energia no ciclo
-        </p>
-        <p className="mt-4 text-sm text-gray-500">Dados insuficientes para o diagrama.</p>
+        <p className="text-sm text-gray-500">Dados insuficientes para o diagrama.</p>
       </Card>
     )
   }
@@ -59,25 +69,19 @@ export function EnergyFlowDiagram({
           Parcial
         </span>
       )}
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-        Fluxo de energia no ciclo
-      </p>
-
-      <div className="mt-5">
-        <SankeyFlow
-          nodes={[
-            { id: 'production', label: 'Produção', value: production_ },
-            { id: 'grid', label: 'Rede', value: injected_ + imported_ },
-            { id: 'consumption', label: 'Consumo', value: consumption_ },
-          ]}
-          flows={[
-            { from: 'production', to: 'consumption', value: selfConsumption_, tone: 'success' },
-            { from: 'production', to: 'grid', value: injected_, tone: 'neutral' },
-            { from: 'grid', to: 'consumption', value: imported_, tone: 'neutral' },
-          ]}
-          valueFormatter={valueFormatter}
-        />
-      </div>
+      <SankeyFlow
+        nodes={[
+          { id: 'production', label: 'Produção', value: production_ },
+          { id: 'grid', label: 'Rede', value: injected_ + imported_ },
+          { id: 'consumption', label: 'Consumo', value: consumption_ },
+        ]}
+        flows={[
+          { from: 'production', to: 'consumption', value: selfConsumption_, tone: 'success' },
+          { from: 'production', to: 'grid', value: injected_, tone: 'neutral' },
+          { from: 'grid', to: 'consumption', value: imported_, tone: 'neutral' },
+        ]}
+        valueFormatter={valueFormatter}
+      />
 
       <p className="mt-3 text-xs text-gray-500">
         {formatNumber(selfConsumption_)} kWh consumidos diretamente e{' '}

@@ -79,8 +79,12 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     // O diagrama de fluxo é o único visual mantido — os outros dois visuais
     // redundantes (composição em barra e donut de origem do consumo) não
-    // devem aparecer no módulo.
-    expect(await screen.findByText('Fluxo de energia no ciclo')).toBeInTheDocument()
+    // devem aparecer no módulo. O rótulo "Fluxo de energia" agora aparece uma
+    // única vez, como `<h2>` da faixa de estado — `EnergyFlowDiagram` deixou
+    // de ter sua própria sobrancelha duplicada (ver comentário no topo de
+    // `EnergyFlowDiagram.tsx`).
+    expect(await screen.findByRole('heading', { level: 2, name: 'Fluxo de energia' })).toBeInTheDocument()
+    expect(screen.queryByText('Fluxo de energia no ciclo')).not.toBeInTheDocument()
     expect(screen.queryByText('Composição da produção')).not.toBeInTheDocument()
     expect(screen.queryByText('Origem do consumo')).not.toBeInTheDocument()
   })
@@ -105,6 +109,49 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(screen.getAllByText('22,3%').length).toBeGreaterThan(0)
   })
 
+  // Migrado junto com a `StackedBar` para dentro da faixa de estado — o
+  // fallback (2 `MetricCard` separados quando um dos dois indicadores vem
+  // `null`, em vez de fabricar a barra com metade do dado ausente) precisa
+  // continuar funcionando na nova localização exatamente como antes.
+  it('mantém o fallback de dois MetricCard (em vez da StackedBar) quando um dos dois indicadores vem null, agora dentro da faixa de estado', async () => {
+    vi.resetModules()
+    const executiveWithNullGridDependency = {
+      ...executivePayload,
+      current_cycle: {
+        ...executivePayload.current_cycle,
+        indicators: {
+          ...executivePayload.current_cycle.indicators,
+          grid_dependency_rate_percent: null,
+        },
+      },
+    }
+    installApiMock({ executivePayload: executiveWithNullGridDependency })
+
+    const { container } = await renderOverviewPage()
+
+    await screen.findByText('Autossuficiência')
+
+    // Sem os dois valores, a StackedBar (e seu rótulo de seção) não aparece.
+    expect(screen.queryByRole('img', { name: /Total 100%/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('Indicadores percentuais')).not.toBeInTheDocument()
+
+    // Os dois `MetricCard` aparecem no lugar, dentro da coluna de fluxo da
+    // faixa — o valor disponível continua visível com sua barra de progresso,
+    // e o valor ausente mostra "—" em vez de esconder o card inteiro. Valor e
+    // unidade são checados separadamente (não como string combinada "77,7%")
+    // porque `MetricCard` os renderiza em nós de texto distintos (valor +
+    // `<span>` de unidade) — mesmo padrão já usado por `MetricCard.test.tsx`.
+    const band = container.querySelector('[data-testid="hero-band"]') as HTMLElement
+    expect(band).not.toBeNull()
+    expect(within(band).getByText('Autossuficiência')).toBeInTheDocument()
+    expect(within(band).getByText('Dependência da rede')).toBeInTheDocument()
+    expect(within(band).getByText(/77,7/)).toBeInTheDocument()
+    expect(within(band).getAllByText('%').length).toBeGreaterThan(0)
+    expect(within(band).getByText('—')).toBeInTheDocument()
+    expect(within(band).getByRole('progressbar', { name: 'Autossuficiência' })).toBeInTheDocument()
+    expect(within(band).queryByRole('progressbar', { name: 'Dependência da rede' })).not.toBeInTheDocument()
+  })
+
   it('não renderiza mais a seção "Energia e produção" (redundante com o diagrama de fluxo)', async () => {
     vi.resetModules()
     installApiMock()
@@ -115,7 +162,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     expect(screen.queryByText('Energia e produção')).not.toBeInTheDocument()
     // Os mesmos fatos continuam visíveis, só que uma única vez, no diagrama de fluxo.
-    expect(screen.getByText('Fluxo de energia no ciclo')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Fluxo de energia' })).toBeInTheDocument()
   })
 
   it('importada, injetada, autoconsumo e consumo aparecem em uma única visualização — nenhum card avulso duplica os rótulos de "Energia e produção" removidos', async () => {
@@ -136,9 +183,15 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     // Os quatro fatos continuam visíveis, todos dentro do único diagrama de
     // fluxo — valores do payload: imported=120, injected=80,
-    // self_consumption=420, total_consumption=540.
-    const flowSectionTitle = screen.getByText('Fluxo de energia no ciclo')
-    const flowSection = flowSectionTitle.closest('div') as HTMLElement
+    // self_consumption=420, total_consumption=540. Escopado pelo próprio SVG
+    // do diagrama (aria-label começa com "Produção de") em vez de uma
+    // sobrancelha de texto (removida, ver `EnergyFlowDiagram.tsx`) — sobe até
+    // o `Card` mais próximo (`.rounded-2xl`, classe estável do componente
+    // `Card`) para pegar o mesmo container de antes (SVG + tabela sr-only +
+    // parágrafo de resumo).
+    const flowSvg = screen.getByRole('img', { name: /^Produção de/ })
+    const flowSection = flowSvg.closest('.rounded-2xl') as HTMLElement
+    expect(flowSection).not.toBeNull()
     expect(within(flowSection).getAllByText(/120 kWh/).length).toBeGreaterThan(0)
     expect(within(flowSection).getAllByText(/80 kWh/).length).toBeGreaterThan(0)
     expect(within(flowSection).getAllByText(/420 kWh/).length).toBeGreaterThan(0)
@@ -154,7 +207,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(allOccurrences(/^540 kWh$/)).toHaveLength(0)
   })
 
-  it('pelo menos duas seções distintas declaram md:col-span diferente de 6 (grid de 6 colunas)', async () => {
+  it('a seção de diagnósticos continua com span reduzido no grid de topo (não é mais pareada com "Fluxo de energia", que migrou para dentro da faixa)', async () => {
     vi.resetModules()
     installApiMock()
 
@@ -162,6 +215,13 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     await screen.findByText('Indicadores percentuais')
 
+    // O grid de topo do módulo é `md:grid-cols-6 lg:grid-cols-12`. Antes desta
+    // mudança, pelo menos 2 seções de topo declaravam um span menor que o
+    // total (Fluxo de energia + Diagnósticos, lado a lado). Agora "Fluxo de
+    // energia" vive dentro da faixa de estado (full-width por desenho — é
+    // literalmente o propósito da faixa, hospedar as 2 colunas internamente
+    // em vez de disputar span no grid de topo) — só a seção de Diagnósticos
+    // continua com span reduzido no grid de topo.
     const sections = Array.from(container.querySelectorAll('main > div.grid > section'))
     expect(sections.length).toBeGreaterThan(0)
 
@@ -169,12 +229,45 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
       const match = section.className.match(/\bmd:col-span-(\d+)\b/)
       return match !== null && match[1] !== '6'
     })
+    expect(nonFullWidthAtMd).toHaveLength(1)
+    expect(nonFullWidthAtMd[0]).toHaveAttribute('id', 'diagnosticos')
+  })
 
-    // O grid do módulo é `md:grid-cols-6` — uma seção com `md:col-span-6` (ou
-    // sem span declarado) ocupa a largura inteira, igual ao empilhamento de
-    // mobile. Pelo menos duas seções precisam declarar um span menor no
-    // breakpoint `md` para o tablet deixar de ser uma coluna única.
-    expect(nonFullWidthAtMd.length).toBeGreaterThanOrEqual(2)
+  it('a faixa de estado une HeroCard e EnergyFlowDiagram numa superfície com fundo de marca, em duas colunas (~5/12 e ~7/12) que empilham fora de `lg`', async () => {
+    vi.resetModules()
+    installApiMock()
+
+    const { container } = await renderOverviewPage()
+
+    await screen.findByRole('heading', { level: 2, name: 'Fluxo de energia' })
+
+    const band = container.querySelector('[data-testid="hero-band"]') as HTMLElement
+    expect(band).not.toBeNull()
+    // Superfície de ESTRUTURA (nunca codifica severidade de dado — isso
+    // continua vindo só de `SEVERITY_*`/`accent` dentro dela), full-width no
+    // grid de topo (`md:col-span-6 lg:col-span-12`), mesmo token dos dois
+    // temas (ADR-071), cantos generosos e padding maior que o `Card` padrão.
+    expect(band.className).toMatch(/\bmd:col-span-6\b/)
+    expect(band.className).toMatch(/\blg:col-span-12\b/)
+    expect(band.className).toMatch(/bg-\[var\(--color-brand-primary-light\)\]/)
+    expect(band.className).toMatch(/\brounded-3xl\b/)
+
+    // Dentro da faixa: HeroCard à esquerda (~5/12), fluxo à direita (~7/12),
+    // só a partir de `lg` — abaixo disso empilha (Hero primeiro, fluxo
+    // depois), ordem de leitura preservada tanto no DOM quanto no layout
+    // empilhado.
+    const innerGrid = band.querySelector(':scope > div.grid') as HTMLElement
+    expect(innerGrid).not.toBeNull()
+    const [stateColumn, flowColumn] = Array.from(innerGrid.children) as HTMLElement[]
+    expect(stateColumn.className).toMatch(/\blg:col-span-5\b/)
+    expect(flowColumn.className).toMatch(/\blg:col-span-7\b/)
+    expect(within(stateColumn).getByText(/Ciclo de referência/)).toBeInTheDocument()
+    expect(within(flowColumn).getByRole('heading', { level: 2, name: 'Fluxo de energia' })).toBeInTheDocument()
+
+    // A StackedBar de indicadores percentuais é a tira sob o diagrama —
+    // continua dentro da mesma coluna do fluxo, não numa seção à parte.
+    expect(within(flowColumn).getByText('Indicadores percentuais')).toBeInTheDocument()
+    expect(within(flowColumn).getByRole('img', { name: /Total 100%/ })).toBeInTheDocument()
   })
 })
 

@@ -13,6 +13,7 @@ import { formatNumber, toNumber } from '../../lib/format'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
 import { SectionTitle } from '../../components/SectionTitle'
 import { StackedBar } from '../../components/charts/StackedBar'
+import { Card } from '../../components/Card'
 import { HeroCard } from '../../components/HeroCard'
 import { QualityBanner } from '../../components/QualityBanner'
 import { TrendCard } from '../../components/TrendCard'
@@ -27,9 +28,13 @@ import { RetryableError } from '../../components/RetryableError'
 // Módulo Visão Geral (ADR-072, Etapa 5) — dois recursos (ver ADR seção 2):
 // `executive` (`/energy/executive/latest`) e `anomalies`
 // (`/energy/anomalies/latest`, usado só para `latestDataDate`). Renderiza
-// Hero+QualityBanner, EnergyFlowDiagram, StackedBar de indicadores
-// percentuais, DiagnosticsCard e TrendCard — exatamente o conteúdo que
-// restava em `DashboardPage.tsx` antes desta etapa (agora removido, ver ADR).
+// a faixa de estado em destaque (HeroCard+QualityBanner+EnergyFlowDiagram+
+// StackedBar de indicadores percentuais, ver "faixa de estado" abaixo) e,
+// abaixo dela, DiagnosticsCard e TrendCard — exatamente o conteúdo que
+// restava em `DashboardPage.tsx` antes da Etapa 5 (agora removido, ver ADR),
+// reorganizado para dar destaque visual ao diagrama de fluxo (diagnóstico de
+// UX: o elemento que deveria ser o "hero" da tela estava enterrado como mais
+// uma seção entre outras).
 export function OverviewPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
@@ -162,39 +167,119 @@ export function OverviewPage() {
 
         {data && indicators && quality && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
-            {/* Bloco 1 — "Está indo bem?": saúde do ciclo e status de qualidade
-                do ciclo, em uma faixa horizontal full-width. */}
-            <section className="md:col-span-6 lg:col-span-12">
-              <HeroCard
-                referenceMonth={data.current_cycle.reference_month}
-                headline={data.headline}
-                status={data.status}
-                healthScore={indicators.health_score}
-                latestDataDate={latestDataDate}
-                lastSyncedAt={lastUpdated}
-                diagnostics={diagnostics}
-              />
-              <QualityBanner quality={quality} />
-            </section>
+            {/* Faixa de estado — o hero de fato da página (diagnóstico de UX
+                aprovado pelo usuário): une "está indo bem?" (`HeroCard`, saúde
+                da usina) e "para onde foi a energia?" (`EnergyFlowDiagram`)
+                numa única superfície com fundo de marca, full-width, acima da
+                dobra. Ordem de leitura preservada — estado à esquerda, fluxo à
+                direita, exatamente como as duas perguntas se sucedem. Fundo
+                `--color-brand-primary-light` é só SUPERFÍCIE de estrutura
+                (nunca codifica severidade de dado — isso continua vindo
+                inteiramente de `SEVERITY_*`/`accent` do `HeroCard`/badges
+                dentro dela); funciona nos dois temas sem token novo (ADR-071:
+                `#eff6ff` claro / `#132038` escuro). */}
+            <section
+              data-testid="hero-band"
+              className="md:col-span-6 lg:col-span-12 rounded-3xl bg-[var(--color-brand-primary-light)] p-6 md:p-8"
+            >
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
+                {/* Estado — ~5/12 em telas largas (`lg:`), primeiro no DOM
+                    (também primeiro em mobile, onde a faixa empilha). */}
+                <div className="lg:col-span-5">
+                  <HeroCard
+                    referenceMonth={data.current_cycle.reference_month}
+                    headline={data.headline}
+                    status={data.status}
+                    healthScore={indicators.health_score}
+                    latestDataDate={latestDataDate}
+                    lastSyncedAt={lastUpdated}
+                    diagnostics={diagnostics}
+                  />
+                  <QualityBanner quality={quality} />
+                </div>
 
-            {/* Bloco 2 — "Para onde foi a energia?": um único diagrama de
-                fluxo (autoconsumo/injetada/importada não se repetem em mais
-                visuais), detalhamento numérico e histórico. */}
-            <section className="md:col-span-3 lg:col-span-7">
-              <SectionTitle as="h2">Fluxo de energia</SectionTitle>
-              <EnergyFlowDiagram
-                production={indicators.cycle_production_kwh}
-                selfConsumption={indicators.estimated_self_consumption_kwh}
-                injected={indicators.injected_kwh}
-                imported={indicators.imported_kwh}
-                consumption={indicators.estimated_total_consumption_kwh}
-                partial={hasIncompleteDailyProduction(quality)}
-              />
+                {/* Fluxo — ~7/12 em telas largas. Único diagrama de fluxo
+                    (autoconsumo/injetada/importada não se repetem em mais
+                    visuais) + o resumo proporcional dos mesmos fluxos logo
+                    abaixo (StackedBar de autossuficiência/dependência da
+                    rede). */}
+                <div className="lg:col-span-7">
+                  <SectionTitle as="h2">Fluxo de energia</SectionTitle>
+                  <EnergyFlowDiagram
+                    production={indicators.cycle_production_kwh}
+                    selfConsumption={indicators.estimated_self_consumption_kwh}
+                    injected={indicators.injected_kwh}
+                    imported={indicators.imported_kwh}
+                    consumption={indicators.estimated_total_consumption_kwh}
+                    partial={hasIncompleteDailyProduction(quality)}
+                  />
+
+                  {/* Migrado da antiga seção própria "Indicadores
+                      percentuais" (achado do diagnóstico de UX: uma seção
+                      inteira de página para uma `StackedBar` de 24px, sem
+                      `Card`, mal aproveitada) — é literalmente o resumo
+                      proporcional dos mesmos fluxos que o diagrama acima
+                      mostra, por isso vira uma tira sob ele em vez de seção
+                      à parte. Autossuficiência e dependência da rede são
+                      complementares (somam 100%) — uma única `StackedBar` de
+                      2 segmentos deixa a proporção explícita. Se qualquer um
+                      dos dois vier `null`, mantém os cards separados em vez
+                      de fabricar a barra com metade do dado ausente
+                      (fallback preservado exatamente como antes — mesma
+                      condição, mesmas props). Envolvida em `Card` branco
+                      (mesmo padrão já usado por `FinancialSection` para
+                      `StackedBar`+rótulo) porque o rótulo de seção
+                      (`text-gray-500`, herdado de `SectionTitle`) não atinge
+                      4.5:1 direto sobre o fundo de marca da faixa (medido:
+                      ~4.44:1 no tema claro — abaixo do mínimo AA); dentro do
+                      `Card` ele volta a estar sobre `--color-surface`, onde já
+                      passa (mesmo raciocínio de `HeroCard`/
+                      `EnergyFlowDiagram` acima, que também são `Card`). O
+                      fallback de `MetricCard` não repete esse rótulo — cada
+                      `MetricCard` já tem seu próprio label em maiúscula E já
+                      é, por si, um `Card` branco (sem risco de contraste
+                      direto sobre o fundo da faixa); duplicar "Indicadores
+                      percentuais" por cima de dois cards autoexplicativos
+                      seria redundante. */}
+                  <div className="mt-4">
+                    {selfSufficiencyPercent != null && gridDependencyPercent != null ? (
+                      <Card padding="p-4">
+                        <SectionTitle as="h3">Indicadores percentuais</SectionTitle>
+                        <StackedBar
+                          segments={[
+                            { label: 'Autossuficiência', value: selfSufficiencyPercent, tone: 'success' },
+                            { label: 'Dependência da rede', value: gridDependencyPercent, tone: 'neutral' },
+                          ]}
+                          total={100}
+                          valueFormatter={(value) => `${formatNumber(value, 1)}%`}
+                        />
+                      </Card>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <MetricCard
+                          label="Autossuficiência"
+                          value={indicators.self_sufficiency_rate_percent}
+                          unit="%"
+                          barPercent={selfSufficiencyPercent}
+                        />
+                        <MetricCard
+                          label="Dependência da rede"
+                          value={indicators.grid_dependency_rate_percent}
+                          unit="%"
+                          barPercent={gridDependencyPercent}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </section>
 
             {/* Diagnósticos e comparação com o ciclo anterior, empilhados na
-                mesma coluna estreita. `id` é o alvo da âncora do chip de
-                atenção no Hero (ver `AttentionSummary`). */}
+                mesma coluna estreita, abaixo da faixa de estado — continuam
+                como estavam antes desta mudança (só a seção vizinha "Fluxo de
+                energia" saiu daqui para dentro da faixa). `id` é o alvo da
+                âncora do chip de atenção no Hero (ver `AttentionSummary`). */}
             <section id="diagnosticos" className="md:col-span-3 lg:col-span-5">
               <DiagnosticsCard diagnostics={diagnostics} />
 
@@ -213,39 +298,6 @@ export function OverviewPage() {
                 componente `EnergyProductionSection` continua existindo em
                 `components/` para reuso futuro, só não compõe mais este
                 módulo. */}
-            <section className="md:col-span-6 lg:col-span-12">
-              <SectionTitle as="h2">Indicadores percentuais</SectionTitle>
-              {/* Autossuficiência e dependência da rede são complementares
-                  (somam 100%) — uma única `StackedBar` de 2 segmentos deixa a
-                  proporção explícita. Se qualquer um dos dois vier `null`,
-                  mantém os cards separados em vez de fabricar a barra com
-                  metade do dado ausente. */}
-              {selfSufficiencyPercent != null && gridDependencyPercent != null ? (
-                <StackedBar
-                  segments={[
-                    { label: 'Autossuficiência', value: selfSufficiencyPercent, tone: 'success' },
-                    { label: 'Dependência da rede', value: gridDependencyPercent, tone: 'neutral' },
-                  ]}
-                  total={100}
-                  valueFormatter={(value) => `${formatNumber(value, 1)}%`}
-                />
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <MetricCard
-                    label="Autossuficiência"
-                    value={indicators.self_sufficiency_rate_percent}
-                    unit="%"
-                    barPercent={selfSufficiencyPercent}
-                  />
-                  <MetricCard
-                    label="Dependência da rede"
-                    value={indicators.grid_dependency_rate_percent}
-                    unit="%"
-                    barPercent={gridDependencyPercent}
-                  />
-                </div>
-              )}
-            </section>
 
             {/* Bloco "Quanto produziu? Qual o histórico?" (produção por
                 ciclo de faturamento, histórico diário e produção do último
