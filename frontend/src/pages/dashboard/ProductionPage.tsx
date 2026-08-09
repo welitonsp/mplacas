@@ -17,6 +17,7 @@ import { MonthlyProductionSection } from '../../components/MonthlyProductionSect
 import { ProductionHistorySection } from '../../components/ProductionHistorySection'
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
+import { PageHeader } from '../../components/PageHeader'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
 // 401): garante um `expectedProduction.available: false` explícito para
@@ -237,23 +238,13 @@ export function ProductionPage() {
 
   return (
     <>
-      <div className="mb-6 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
-            Painel de produção
-          </p>
-          {/* `<h1>` próprio do módulo (ADR-072, Etapa 6) — ver o mesmo comentário
-              em `OverviewPage.tsx`. */}
-          <h1 ref={headingRef} tabIndex={-1} className="mt-2 text-2xl font-bold tracking-tight text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded sm:text-3xl">
-            Produção
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
-            Acompanhe ciclos fechados, geração diária e desvios contra o esperado para priorizar a investigação certa.
-          </p>
-        </div>
-        <RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />
-      </div>
-
+      <PageHeader
+        eyebrow="Painel de produção"
+        title="Produção"
+        description="Acompanhe ciclos fechados, geração diária e desvios contra o esperado para priorizar a investigação certa."
+        headingRef={headingRef}
+        actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
+      />
       <section className="mb-6">
         <SectionTitle as="h2">Resumo operacional</SectionTitle>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">

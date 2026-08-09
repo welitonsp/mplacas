@@ -9,6 +9,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
+import { PageHeader } from '../../components/PageHeader'
 
 // Módulo Financeiro (ADR-072, Etapa 3) — dois recursos (ver ADR seção 2):
 // `executive` (`/energy/executive/latest`) e `financialReturn`
@@ -98,21 +99,13 @@ export function FinancialPage() {
       {/* `<h1>` próprio do módulo (ADR-072, Etapa 6) — ver o mesmo comentário
           em `OverviewPage.tsx`. Sempre visível (inclusive durante erro/
           carregamento do recurso executivo), igual aos outros 3 módulos. */}
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-[var(--color-brand-primary)]">
-            Painel financeiro
-          </p>
-          <h1 ref={headingRef} tabIndex={-1} className="mt-1 text-2xl font-bold text-gray-900 tracking-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded">
-            Financeiro
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[var(--color-text-secondary)]">
-            Leitura do ciclo, créditos de energia e retorno do investimento em uma visão preparada para decisão.
-          </p>
-        </div>
-        <RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />
-      </div>
-
+      <PageHeader
+        eyebrow="Painel financeiro"
+        title="Financeiro"
+        description="Leitura do ciclo, créditos de energia e retorno do investimento em uma visão preparada para decisão."
+        headingRef={headingRef}
+        actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
+      />
       {executive.error && (
         <RetryableError
           message={executive.error}

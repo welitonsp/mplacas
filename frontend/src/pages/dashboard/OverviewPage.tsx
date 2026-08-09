@@ -25,6 +25,7 @@ import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 import { OverviewKpiRail } from '../../components/OverviewKpiRail'
+import { PageHeader } from '../../components/PageHeader'
 
 // Módulo Visão Geral (ADR-072, Etapa 5) — dois recursos (ver ADR seção 2):
 // `executive` (`/energy/executive/latest`) e `anomalies`
@@ -155,18 +156,13 @@ export function OverviewPage() {
           fora da ordem normal de tabulação. A casca do app (`AppHeader`)
           identifica o produto, não a rota atual — por isso um heading por
           módulo deixou de ser redundante. */}
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-brand-primary)]">
-            Painel executivo
-          </p>
-          <h1 ref={headingRef} tabIndex={-1} className="mt-1 text-2xl font-bold text-gray-900 tracking-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded">
-            Visão Geral
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">Saúde, energia e resultado da sua usina em um só lugar.</p>
-        </div>
-        <RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0" />
-      </div>
+      <PageHeader
+        eyebrow="Painel executivo"
+        title="Visão Geral"
+        description="Saúde, energia e resultado da sua usina em um só lugar."
+        headingRef={headingRef}
+        actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0" />}
+      />
 
       {error && (
         // Retry associado diretamente ao erro global (não só o link

@@ -19,6 +19,7 @@ import { RetryableError } from '../../components/RetryableError'
 import { EmptyState } from '../../components/EmptyState'
 import { SectionTitle } from '../../components/SectionTitle'
 import { TechnicalPerformanceSection } from '../../components/TechnicalPerformanceSection'
+import { PageHeader } from '../../components/PageHeader'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
 // 401): a seção mostra as mensagens de indisponibilidade por bloco em vez de
@@ -198,23 +199,13 @@ export function TechnicalPage() {
 
   return (
     <>
-      <div className="mb-6 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
-            Diagnóstico técnico
-          </p>
-          {/* `<h1>` próprio do módulo (ADR-072, Etapa 6) — ver o mesmo comentário
-              em `OverviewPage.tsx`. */}
-          <h1 ref={headingRef} tabIndex={-1} className="mt-2 text-2xl font-bold tracking-tight text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded sm:text-3xl">
-            Técnico
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
-            Entenda se a usina está performando bem, se os dados são confiáveis e qual causa técnica merece investigação primeiro.
-          </p>
-        </div>
-        <RefreshBar onRefresh={pvSummaryResource.refetch} loading={loading} className="mb-0 lg:justify-self-end" />
-      </div>
-
+      <PageHeader
+        eyebrow="Diagnóstico técnico"
+        title="Técnico"
+        description="Entenda se a usina está performando bem, se os dados são confiáveis e qual causa técnica merece investigação primeiro."
+        headingRef={headingRef}
+        actions={<RefreshBar onRefresh={pvSummaryResource.refetch} loading={loading} className="mb-0 lg:justify-self-end" />}
+      />
       <section className="mb-6">
         <SectionTitle as="h2">Resumo técnico</SectionTitle>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
