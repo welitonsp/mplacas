@@ -63,78 +63,121 @@ export function FinancialReturnSection({
   const barPercent = clampPercent(roiPercent ?? 0)
   const coverage = coverageLabel(financialReturn)
   const paybackReached = isPaybackAlreadyReached(financialReturn)
+  const paybackLabel = paybackReached
+    ? 'Recuperado'
+    : financialReturn.payback_projection_months !== null
+      ? `${financialReturn.payback_projection_months} ciclos`
+      : 'Em cálculo'
+  const paybackSupportingText = paybackReached
+    ? 'Investimento já recuperado'
+    : financialReturn.payback_projection_months !== null
+      ? 'Projeção, mantida a média recente'
+      : 'Aguardando histórico suficiente'
 
   return (
-    <Card>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Retorno do investimento</p>
+    <Card padding="p-0" className="overflow-hidden">
+      <div className="bg-[linear-gradient(135deg,var(--color-surface)_0%,var(--color-brand-primary-light)_100%)] p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+              Retorno do investimento
+            </p>
+            <p className="mt-2 text-sm leading-6 text-gray-600">
+              Quanto do CAPEX já voltou em economia consolidada.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm sm:min-w-40 sm:text-right">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Payback</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-gray-950">
+              {paybackLabel}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-gray-500">{paybackSupportingText}</p>
+          </div>
+        </div>
 
-      <div className="mt-2 flex items-baseline justify-between gap-3">
-        <p className="text-2xl font-semibold text-gray-900 tabular-nums">
-          {formatNumber(roiPercent, 1)}
-          <span className="ml-1 text-sm font-normal text-gray-500">%</span>
-        </p>
-        <span className="shrink-0 text-xs text-gray-500">acumulado sobre o investimento</span>
+        <div className="mt-5">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">ROI acumulado</p>
+              <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-gray-950">
+                {formatNumber(roiPercent, 1)}
+                <span className="ml-1 text-base font-semibold text-gray-500">%</span>
+              </p>
+            </div>
+            <span className="rounded-full bg-[var(--color-surface)] px-3 py-1 text-xs font-semibold text-[var(--color-brand-primary)] shadow-sm">
+              Progresso financeiro
+            </span>
+          </div>
+
+          {/* Cor de preenchimento `brand-primary` deliberadamente: é progresso
+              financeiro, não estado de saúde. `success` sugeriria "está tudo bem",
+              o que este indicador não afirma (ADR-067, Decisão item 7). */}
+          <div
+            className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-[var(--color-chart-track)] shadow-inner"
+            role="progressbar"
+            aria-valuenow={barPercent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Progresso do acumulado em direção ao investimento"
+          >
+            <div
+              className="h-full rounded-full bg-[var(--color-brand-primary)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
+              style={{ width: `${barPercent}%` }}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Cor de preenchimento `brand-primary` deliberadamente: é progresso
-          financeiro, não estado de saúde. `success` sugeriria "está tudo bem",
-          o que este indicador não afirma (ADR-067, Decisão item 7). */}
-      <div
-        className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[var(--color-chart-track)]"
-        role="progressbar"
-        aria-valuenow={barPercent}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label="Progresso do acumulado em direção ao investimento"
-      >
-        <div
-          className="h-full rounded-full bg-[var(--color-brand-primary)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
-          style={{ width: `${barPercent}%` }}
-        />
-      </div>
+      <div className="p-4 sm:p-5">
+        <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+            <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Investido</dt>
+            <dd className="mt-1 font-semibold tabular-nums text-gray-900">
+              {formatCurrency(financialReturn.investment_amount_brl)}
+            </dd>
+          </div>
+          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+            <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Economia acumulada</dt>
+            <dd className="mt-1 font-semibold tabular-nums text-gray-900">
+              {formatCurrency(financialReturn.accumulated_savings_brl)}
+            </dd>
+          </div>
+          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+            <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Média mensal</dt>
+            <dd className="mt-1 font-semibold tabular-nums text-gray-900">
+              {formatCurrency(financialReturn.average_monthly_savings_brl)}
+            </dd>
+          </div>
+        </dl>
 
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <dt className="text-xs text-gray-500">Investido</dt>
-          <dd className="tabular-nums text-gray-900">
-            {formatCurrency(financialReturn.investment_amount_brl)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs text-gray-500">Economia acumulada</dt>
-          <dd className="tabular-nums text-gray-900">
-            {formatCurrency(financialReturn.accumulated_savings_brl)}
-          </dd>
-        </div>
-      </dl>
+        {/* Rótulo de cobertura: parte do contrato de honestidade do indicador, não
+            um detalhe de UI — sem ele o ROI parece mais completo do que é (ADR-067,
+            Decisão item 7). */}
+        {coverage && <p className="mt-3 text-xs text-gray-500">{coverage}</p>}
 
-      {/* Rótulo de cobertura: parte do contrato de honestidade do indicador, não
-          um detalhe de UI — sem ele o ROI parece mais completo do que é (ADR-067,
-          Decisão item 7). */}
-      {coverage && <p className="mt-3 text-xs text-gray-500">{coverage}</p>}
-
-      <div className="mt-4 border-t border-gray-100 pt-3">
-        {financialReturn.payback_unavailable_reason !== null ? (
-          <p className="text-sm text-gray-500">
-            {paybackUnavailableMessage(financialReturn.payback_unavailable_reason)}
-          </p>
-        ) : paybackReached ? (
-          <p className="text-sm font-medium text-[var(--color-success-text)]">
-            Investimento já recuperado.
-          </p>
-        ) : financialReturn.payback_projection_months !== null ? (
-          <>
-            <p className="text-sm text-gray-900">
-              <span className="font-medium">Projeção de payback:</span>{' '}
-              <span className="tabular-nums">{financialReturn.payback_projection_months}</span> ciclos.
+        <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3">
+          {financialReturn.payback_unavailable_reason !== null ? (
+            <p className="text-sm text-gray-600">
+              {paybackUnavailableMessage(financialReturn.payback_unavailable_reason)}
             </p>
-            {/* Sempre rotulado como PROJEÇÃO, com a premissa visível — nunca uma
-                data certa (ADR-067, Decisão item 7). */}
-            <p className="mt-1 text-xs text-gray-500">
-              Projeção, mantida a média de economia dos últimos ciclos.
+          ) : paybackReached ? (
+            <p className="text-sm font-semibold text-[var(--color-success-text)]">
+              Investimento já recuperado.
             </p>
-          </>
-        ) : null}
+          ) : financialReturn.payback_projection_months !== null ? (
+            <>
+              <p className="text-sm text-gray-900">
+                <span className="font-semibold">Projeção de payback:</span>{' '}
+                <span className="tabular-nums">{financialReturn.payback_projection_months}</span> ciclos.
+              </p>
+              {/* Sempre rotulado como PROJEÇÃO, com a premissa visível — nunca uma
+                  data certa (ADR-067, Decisão item 7). */}
+              <p className="mt-1 text-xs text-gray-500">
+                Projeção, mantida a média de economia dos últimos ciclos.
+              </p>
+            </>
+          ) : null}
+        </div>
       </div>
     </Card>
   )

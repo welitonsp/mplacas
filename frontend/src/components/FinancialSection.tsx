@@ -245,7 +245,7 @@ export function FinancialSection({
         {financialReturn.error ? (
           <RetryableError message={financialReturn.error} onRetry={financialReturn.refetch} />
         ) : (
-          <div className="max-w-3xl">
+          <div className="max-w-5xl">
             <FinancialReturnSection
               financialReturn={financialReturn.data}
               plantId={plantId}
@@ -277,7 +277,7 @@ function FinancialSummaryTile({
         : 'bg-[var(--color-energy-consumption)]'
 
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 shadow-sm sm:p-4">
+    <div className="min-h-[7.5rem] rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 shadow-sm sm:min-h-[8.5rem] sm:p-4">
       <div className={`mb-3 h-1.5 w-12 rounded-sm sm:mb-4 ${toneClass}`} />
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
       <p className="mt-2 text-xl font-semibold text-gray-900 tabular-nums sm:text-2xl">{value}</p>

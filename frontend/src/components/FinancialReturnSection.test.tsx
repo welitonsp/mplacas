@@ -73,7 +73,7 @@ describe('FinancialReturnSection', () => {
       />
     )
 
-    expect(screen.getByText('Investimento já recuperado.')).toBeInTheDocument()
+    expect(screen.getAllByText('Investimento já recuperado.').length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText(/Projeção de payback/)).not.toBeInTheDocument()
   })
 
@@ -87,7 +87,9 @@ describe('FinancialReturnSection', () => {
     )
 
     expect(screen.getByText(/Projeção de payback:/)).toBeInTheDocument()
-    expect(screen.getByText(/64/)).toBeInTheDocument()
+    expect(screen.getAllByText(/64/).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('Média mensal')).toBeInTheDocument()
+    expect(screen.getByText(/R\$\s*760,05/)).toBeInTheDocument()
     expect(screen.getByText(/mantida a média de economia dos últimos ciclos/)).toBeInTheDocument()
   })
 
