@@ -17,13 +17,14 @@ vi.mock('./env', () => ({
 const P1 = { id: '11111111-1111-1111-1111-111111111111', name: 'Usina 1', installedPowerKwp: null }
 const P2 = { id: '22222222-2222-2222-2222-222222222222', name: 'Usina 2', installedPowerKwp: null }
 
-// Todos os 5 recursos de `DashboardPage` (Etapa 1: as 4 rotas de módulo
-// renderizam o componente atual, inalterado) falham por padrão — o objetivo
-// destes testes é a casca de rotas, não o conteúdo interno de `DashboardPage`
-// (já coberto por `DashboardPage.test.tsx`). `usePlantResource` captura
-// rejeição/erro internamente (nunca deixa a Promise sem `catch`, nunca
-// lança), então isso só produz banners de erro na página — não derruba o
-// teste.
+// Todos os 5 recursos dos módulos do dashboard (Etapa 1 do ADR-072: os 4
+// módulos renderizam seu conteúdo real) falham por padrão — o objetivo
+// destes testes é a casca de rotas, não o conteúdo interno de cada módulo
+// (já coberto pelos testes de cada módulo: `OverviewPage.test.tsx`,
+// `ProductionPage.test.tsx`, `FinancialPage.test.tsx`, `TechnicalPage.test.tsx`).
+// `usePlantResource` captura rejeição/erro internamente (nunca deixa a Promise
+// sem `catch`, nunca lança), então isso só produz banners de erro na página —
+// não derruba o teste.
 function installApiMock(fetchPlantsImpl: () => Promise<unknown[]>) {
   vi.doMock('./lib/api', () => ({
     fetchExecutiveDashboard: vi.fn(async () => {

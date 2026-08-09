@@ -1,6 +1,6 @@
 ---
 name: frontend-architecture
-description: Use ao planejar reorganização de rotas, módulos ou fronteiras de responsabilidade no frontend Mplacas. Evita overengineering para um app pequeno (2 rotas reais hoje); toda proposta de estrutura nova precisa de motivo concreto, não hipotético.
+description: Use ao planejar reorganização de rotas, módulos ou fronteiras de responsabilidade no frontend Mplacas. Evita overengineering para um app com 2 rotas reais (`/login` e `/dashboard` com 4 sub-módulos); toda proposta de estrutura nova precisa de motivo concreto, não hipotético.
 ---
 
 # Frontend Architecture — Mplacas
@@ -10,7 +10,7 @@ Guiar decisões de estrutura de pastas, rotas e fronteiras de módulo no fronten
 
 ## Quando usar
 - Antes de propor uma reestruturação de pastas/rotas.
-- Quando `DashboardPage.tsx` ou outro arquivo central voltar a crescer além do sustentável.
+- Quando um dos 4 módulos do dashboard voltar a crescer além do sustentável (ADR-072, Decisão 1: cada módulo em sua própria rota).
 - Ao decidir onde um componente/lib novo deve morar.
 
 ## Quando não usar

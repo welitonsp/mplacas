@@ -20,7 +20,7 @@ Leia `frontend-design` primeiro — ela documenta a paleta, tokens e padrão de 
 2. **Antes de criar token novo**: confirme que nenhum token existente já serve (ex: não crie `--color-warning-text-2` se `--color-warning-text` já resolve). Token novo só quando o caso semântico é genuinamente distinto.
 3. **Biblioteca externa de UI/componente**: proibida sem ADR explícito — mesmo padrão de proibição já aplicado a bibliotecas de gráfico.
 4. Todo componente-base documenta seus estados (default/hover/focus/disabled/loading/error) no próprio arquivo ou em teste, não só no código sem comentário.
-5. Tema único claro é o padrão atual — dark mode não é obrigatório; se for pedido, é feature nova com ADR, não parte de manutenção do design system.
+5. Dark mode foi implementado (ADR-071) — novos componentes precisam respeitar tanto a paleta clara quanto a escura (`:root[data-theme="dark"]` em `index.css`). Ao adicionar cor/fundo novo, garanta contraste mínimo AA em ambos os temas.
 
 ## Anti-patterns
 - Dois componentes de card com a mesma função e nomes diferentes.
@@ -31,3 +31,4 @@ Leia `frontend-design` primeiro — ela documenta a paleta, tokens e padrão de 
 - [ ] Nenhum componente duplicado (Grep feito antes de criar)
 - [ ] Token novo genuinamente necessário, não redundante
 - [ ] Nenhuma lib de UI nova sem ADR
+- [ ] Componente novo respeita dark mode (contraste AA em ambos os temas)

@@ -42,7 +42,8 @@ solte um hex novo direto no componente.
 
 ## Padrão de componente já em uso (siga, não invente um novo)
 
-`frontend/src/pages/DashboardPage.tsx` já estabelece o padrão de "card de métrica":
+`frontend/src/pages/dashboard/OverviewPage.tsx` (e os demais módulos do dashboard) já
+estabelecem o padrão de "card de métrica":
 
 ```tsx
 <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
@@ -91,11 +92,9 @@ visual, não introduzir um estilo de card diferente por tela.
 
 ## Dark mode
 
-**Não é prioridade agora.** O produto não tem esse requisito hoje, e adicionar suporte
-completo a dark mode dobra a superfície de teste visual (cada card, cada estado de
-severidade, em dois temas) por um pedido que ninguém fez. Se o usuário pedir
-explicitamente, trate como decisão de produto nova, não como padrão obrigatório de
-"todo dashboard premium precisa ter".
+Dark mode foi implementado (ADR-071). Componentes precisam respeitar tanto a paleta clara
+quanto a escura (ver `:root[data-theme="dark"]` em `index.css`). Ao refatorar ou adicionar
+componentes, garanta que o contraste e a legibilidade se mantêm em ambos os temas.
 
 ## Para gráficos e visualizações de dado
 

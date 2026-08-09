@@ -69,7 +69,7 @@ describe('Módulos do painel — sem redundância cross-módulo (ADR-072, Etapa 
     // Visão Geral: busca o mesmo `anomalyPayload`, mas só para
     // `latestDataDate` — a frase de streak não deve aparecer aqui.
     renderModule(<OverviewPage />, DASHBOARD_OVERVIEW_PATH)
-    await screen.findByText('Indicadores percentuais')
+    await screen.findByText('Origem do consumo — ciclo 2026-07')
     expect(screen.queryAllByText(STREAK_PHRASE)).toHaveLength(0)
     cleanup()
 

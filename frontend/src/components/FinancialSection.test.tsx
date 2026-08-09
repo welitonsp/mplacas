@@ -5,7 +5,7 @@ import type { FinancialReturnResponse } from '../lib/dashboard/financial-return-
 import type { PlantResource } from '../hooks/usePlantResource'
 import { FinancialSection } from './FinancialSection'
 
-// Mesmos valores de `DashboardPage.test.tsx::executivePayload.current_cycle.indicators`
+// Mesmos valores de `dashboardFixtures.ts::executivePayload.current_cycle.indicators`
 // (Etapa 7 — extração de `FinancialSection`): consistente com a fórmula real do
 // backend, bill_energy_component_brl = total_amount_brl - public_lighting_brl
 // (ver intelligence/energy_engine.py::analyze_energy_cycle) — 420,71 - 30,21.
@@ -61,10 +61,11 @@ function buildFinancialReturn(
 }
 
 describe('FinancialSection', () => {
-  it('agrupa os 8 cards numa única subseção "Custo do ciclo" — tarifas/créditos compactados numa tira, sem perder nenhum card (ADR-072 Etapa 7)', () => {
+  it('agrupa os cards de dinheiro sob "Custo do ciclo" e os de energia sob "Créditos de energia" — tarifas/créditos compactados em tiras, sem perder nenhum card (ADR-072 Etapa 7; separação de grandeza, achado F3)', () => {
     const { container } = render(
       <FinancialSection
         indicators={buildIndicators()}
+        referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
         plantId="plant-1"
       />
@@ -73,39 +74,56 @@ describe('FinancialSection', () => {
     // `FinancialSection` não tem mais heading "Financeiro" isolado (ADR-072,
     // Etapa 6 — o módulo que a hospeda já expõe esse texto como `<h1>` da
     // rota, ver `FinancialSection.tsx`) — a primeira `<section>` (das duas
-    // que o componente devolve como irmãs) é a de "Custo do ciclo".
+    // que o componente devolve como irmãs) é a de "Custo do ciclo"/"Créditos
+    // de energia".
     const section = container.querySelector('section') as HTMLElement
+
+    // Ciclo de referência (achado F1) visível junto de "Custo do ciclo" —
+    // único bloco cujo dado é estritamente do ciclo corrente.
+    expect(within(section).getByText('Ciclo de referência: 2026-07')).toBeInTheDocument()
 
     const custoGrid = within(section).getByText('Valor total da fatura').closest('.grid')
     expect(custoGrid).not.toBeNull()
     expect(custoGrid!.children).toHaveLength(2)
 
-    // Tarifas com/sem impostos e saldo/cobertura de créditos: antes 4
-    // `MetricCard` sob duas subseções próprias ("Tarifas"/"Créditos de
-    // energia"), agora uma única tira (`MetricStrip`) de 4 colunas dentro do
-    // mesmo bloco "Custo do ciclo" — nenhum dos 4 rótulos/valores some, só o
-    // invólucro muda.
+    // Tarifas com/sem impostos: tira de 2 colunas dentro do bloco "Custo do
+    // ciclo" (dinheiro) — nenhum dos 2 rótulos/valores some, só o invólucro
+    // muda.
     const tarifaLabel = within(section).getByText('Tarifa com impostos')
-    const strip = tarifaLabel.closest('.grid') as HTMLElement
-    expect(strip).not.toBeNull()
-    expect(strip.children).toHaveLength(4)
-    expect(within(strip).getByText('Tarifa sem impostos')).toBeInTheDocument()
-    expect(within(strip).getByText('Saldo de créditos')).toBeInTheDocument()
-    expect(within(strip).getByText('Cobertura de créditos')).toBeInTheDocument()
+    const tarifaStrip = tarifaLabel.closest('.grid') as HTMLElement
+    expect(tarifaStrip).not.toBeNull()
+    expect(tarifaStrip.children).toHaveLength(2)
+    expect(within(tarifaStrip).getByText('Tarifa sem impostos')).toBeInTheDocument()
+    // Saldo/cobertura de créditos não vivem mais na mesma tira que as
+    // tarifas (achado F3: kWh não é a mesma grandeza de R$/kWh).
+    expect(within(tarifaStrip).queryByText('Saldo de créditos')).not.toBeInTheDocument()
+    expect(within(tarifaStrip).queryByText('Cobertura de créditos')).not.toBeInTheDocument()
+
+    // Saldo/cobertura de créditos: tira própria de 2 colunas, fora do bloco
+    // "Custo do ciclo".
+    const creditoLabel = within(section).getByText('Saldo de créditos')
+    const creditoStrip = creditoLabel.closest('.grid') as HTMLElement
+    expect(creditoStrip).not.toBeNull()
+    expect(creditoStrip.children).toHaveLength(2)
+    expect(within(creditoStrip).getByText('Cobertura de créditos')).toBeInTheDocument()
+    expect(creditoStrip).not.toBe(tarifaStrip)
 
     expect(within(section).getByText('Custo do ciclo')).toBeInTheDocument()
-    // As duas subseções antigas não existem mais como headings isolados — o
-    // texto das métricas continua visível (verificado acima), só a
-    // sub-rotulação "Tarifas"/"Créditos de energia" foi removida junto com a
-    // separação em caixas.
+    // "Créditos de energia" volta a ser um heading próprio (h2, irmão de
+    // "Custo do ciclo") — dado de energia não some sob um rótulo de dinheiro
+    // (achado F3, já antecipado por
+    // docs/UI_UX_AUDIT_2026-08-04.md P2-04 "Grandeza fora de lugar").
+    expect(
+      within(section).getByRole('heading', { level: 2, name: 'Créditos de energia' })
+    ).toBeInTheDocument()
     expect(within(section).queryByText('Tarifas')).not.toBeInTheDocument()
-    expect(within(section).queryByText('Créditos de energia')).not.toBeInTheDocument()
   })
 
   it('renderiza todos os valores financeiros com a unidade correta quando a fatura tem tarifa registrada', () => {
     render(
       <FinancialSection
         indicators={buildIndicators()}
+        referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
         plantId="plant-1"
       />
@@ -157,6 +175,7 @@ describe('FinancialSection', () => {
           estimated_savings_brl: null,
           savings_unavailable_reason: 'TARIFF_NOT_AVAILABLE',
         })}
+        referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
         plantId="plant-1"
       />
@@ -175,6 +194,7 @@ describe('FinancialSection', () => {
     render(
       <FinancialSection
         indicators={buildIndicators()}
+        referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
         plantId="plant-1"
       />
@@ -195,6 +215,7 @@ describe('FinancialSection', () => {
     render(
       <FinancialSection
         indicators={buildIndicators()}
+        referenceMonth="2026-07"
         financialReturn={buildFinancialReturn({
           data: null,
           status: 'error',
