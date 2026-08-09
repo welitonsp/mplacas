@@ -19,6 +19,7 @@ import { SectionTitle } from '../../components/SectionTitle'
 import { TechnicalPerformanceSection } from '../../components/TechnicalPerformanceSection'
 import { PageHeader } from '../../components/PageHeader'
 import { SummaryTile } from '../../components/SummaryTile'
+import { TechnicalDiagnosticPanel } from '../../components/TechnicalDiagnosticPanel'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
 // 401): a seção mostra as mensagens de indisponibilidade por bloco em vez de
@@ -197,6 +198,10 @@ export function TechnicalPage() {
             tone="brand"
           />
         </div>
+      </section>
+
+      <section className="mb-6">
+        <TechnicalDiagnosticPanel summary={pvSummary} />
       </section>
 
       <TechnicalPerformanceSection summary={pvSummary} />

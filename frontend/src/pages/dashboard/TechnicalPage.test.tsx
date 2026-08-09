@@ -114,7 +114,7 @@ describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
 
     await screen.findByText('Bruto')
     expect(screen.getByText('Performance ratio (PR)')).toBeInTheDocument()
-    expect(screen.getByText('82%')).toBeInTheDocument()
+    expect(screen.getAllByText('82%').length).toBeGreaterThan(0)
   })
 
   it('em erro de /photovoltaic/summary, mostra as mensagens de indisponibilidade por bloco em vez de travar ou de um banner global', async () => {
