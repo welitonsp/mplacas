@@ -13,9 +13,14 @@ import { RetryableError } from '../../components/RetryableError'
 // `executive` (`/energy/executive/latest`) e `financialReturn`
 // (`/energy/financial-return/latest`). Não existe um endpoint "resumo
 // financeiro" dedicado — `FinancialSection` consome `current_cycle.indicators`
-// do payload executivo (custo do ciclo, tarifas, créditos), por isso este
-// módulo precisa do recurso executivo inteiro mesmo sem usar `headline`/
-// `status`/`trend`/diagnósticos, que pertencem à Visão Geral (Etapa 5).
+// (custo do ciclo, tarifas, créditos) e `current_cycle.reference_month`
+// (exibido junto do bloco "Custo do ciclo" — achado F1 da auditoria
+// financeira desta sessão: uma tarifa com 6 casas decimais sem o ciclo ao
+// lado não é reproduzível a partir da fatura confirmada que a originou, ver
+// ADR-056 seção sobre variação de tarifa entre ciclos) do payload executivo,
+// por isso este módulo precisa do recurso executivo inteiro mesmo sem usar
+// `headline`/`status`/`trend`/diagnósticos, que pertencem à Visão Geral
+// (Etapa 5).
 export function FinancialPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
@@ -89,10 +94,20 @@ export function FinancialPage() {
       {/* `<h1>` próprio do módulo (ADR-072, Etapa 6) — ver o mesmo comentário
           em `OverviewPage.tsx`. Sempre visível (inclusive durante erro/
           carregamento do recurso executivo), igual aos outros 3 módulos. */}
-      <h1 ref={headingRef} tabIndex={-1} className="mb-1 text-xl font-bold text-gray-900 tracking-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded">
-        Financeiro
-      </h1>
-      <RefreshBar onRefresh={refreshAll} loading={loading} />
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-wide text-[var(--color-brand-primary)]">
+            Painel financeiro
+          </p>
+          <h1 ref={headingRef} tabIndex={-1} className="mt-1 text-2xl font-bold text-gray-900 tracking-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded">
+            Financeiro
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[var(--color-text-secondary)]">
+            Leitura do ciclo, créditos de energia e retorno do investimento em uma visão preparada para decisão.
+          </p>
+        </div>
+        <RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />
+      </div>
 
       {executive.error && (
         <RetryableError
@@ -109,7 +124,12 @@ export function FinancialPage() {
         // devolve dois `<section>` irmãos (`md:col-span-6 lg:col-span-12`
         // cada), preservados sem mudança de layout ao migrar de módulo.
         <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
-          <FinancialSection indicators={indicators} financialReturn={financialReturn} plantId={plantId} />
+          <FinancialSection
+            indicators={indicators}
+            referenceMonth={data.current_cycle.reference_month}
+            financialReturn={financialReturn}
+            plantId={plantId}
+          />
         </div>
       )}
     </>

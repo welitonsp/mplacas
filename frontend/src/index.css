@@ -43,6 +43,11 @@
      de sol, não um julgamento de estado da usina. Ver skill dataviz. */
   --color-data-secondary: #7c3aed;
   --color-data-secondary-light: #f5f3ff;
+  --color-energy-solar: #a16207;
+  --color-energy-solar-light: #fefce8;
+  --color-energy-grid: #2563eb;
+  --color-energy-consumption: #7c3aed;
+  --shadow-cockpit: 0 24px 70px -38px rgb(15 23 42 / 0.42);
 
   /* Instrui o navegador a desenhar controles nativos (popup de <select>,
      ícone de <input type="date">, scrollbar, autofill) na paleta clara —
@@ -98,6 +103,11 @@
   --color-chart-track: #263144;
   --color-data-secondary: #c4b5fd;
   --color-data-secondary-light: #1e1b33;
+  --color-energy-solar: #facc15;
+  --color-energy-solar-light: #29230d;
+  --color-energy-grid: #7aa2f7;
+  --color-energy-consumption: #c4b5fd;
+  --shadow-cockpit: 0 28px 80px -42px rgb(0 0 0 / 0.8);
 
   --color-gray-50: #0d1420;
   --color-gray-100: #161f30;
@@ -120,4 +130,11 @@ body {
 
 #root {
   min-height: 100vh;
+}
+
+.overview-cockpit {
+  background:
+    radial-gradient(circle at 92% 2%, color-mix(in srgb, var(--color-energy-solar) 16%, transparent), transparent 28rem),
+    linear-gradient(135deg, var(--color-surface) 0%, var(--color-brand-primary-light) 100%);
+  box-shadow: var(--shadow-cockpit);
 }

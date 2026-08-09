@@ -109,6 +109,10 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
       await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
     ).toBeInTheDocument()
     expect(screen.getByText(/R\$\s*420,71/)).toBeInTheDocument()
+    // Ciclo de referência (`current_cycle.reference_month`, achado F1 da
+    // auditoria financeira desta sessão) visível junto de "Custo do ciclo" —
+    // antes só aparecia em `HeroCard`, no módulo Visão Geral (outra rota).
+    expect(screen.getByText('Ciclo de referência: 2026-07')).toBeInTheDocument()
   })
 
   it('em erro de /energy/executive/latest, mostra RetryableError e refaz o fetch ao clicar em "Tentar novamente"', async () => {

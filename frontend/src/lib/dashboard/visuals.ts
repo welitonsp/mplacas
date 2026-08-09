@@ -129,12 +129,6 @@ export const ANOMALY_LEGEND: { level: AnomalyLevel; label: string }[] = [
   { level: 'ANOMALY', label: 'Anomalia/crítico' },
 ]
 
-// Cor "grid" reutilizada em `EnergyFlowDiagram` para representar energia
-// injetada/importada da rede (gray-300, hex #d1d5db). Autoconsumo =
-// brand-primary em todos os pontos. Composição não é severidade (bom/ruim) —
-// por isso não usamos success/warning/danger aqui, ver skill dataviz.
-export const GRID_HEX = '#d1d5db'
-
 // Nomes em pt-BR para as oito categorias da taxonomia de perdas fotovoltaicas
 // (`photovoltaic/loss_taxonomy.py::LossCategory`, ver ADR-065 seção 4).
 export const LOSS_CATEGORY_LABEL: Record<LossCategory, string> = {

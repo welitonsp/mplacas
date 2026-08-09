@@ -23,6 +23,7 @@ export function EnergyFlowDiagram({
   imported,
   consumption,
   partial = false,
+  embedded = false,
 }: {
   production: MetricValue
   selfConsumption: MetricValue
@@ -37,6 +38,7 @@ export function EnergyFlowDiagram({
   // dois), não um nó isolado. Absorve o selo "Parcial" que antes só existia
   // nos cards removidos de "Energia e produção" (ver P2-01, Etapa 3.3).
   partial?: boolean
+  embedded?: boolean
 }) {
   const prod = toNumber(production)
   const sc = toNumber(selfConsumption)
@@ -47,6 +49,9 @@ export function EnergyFlowDiagram({
   const hasData = prod != null && prod > 0 && cons != null && cons > 0 && sc != null && inj != null && imp != null
 
   if (!hasData) {
+    if (embedded) {
+      return <p className="rounded-2xl py-8 text-center text-sm text-gray-500">Dados insuficientes para o diagrama.</p>
+    }
     return (
       <Card>
         <p className="text-sm text-gray-500">Dados insuficientes para o diagrama.</p>
@@ -62,8 +67,8 @@ export function EnergyFlowDiagram({
 
   const valueFormatter = (value: number) => `${formatNumber(value)} kWh`
 
-  return (
-    <Card dashed={partial}>
+  const content = (
+    <>
       {partial && (
         <span className="absolute right-3 top-3 rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-warning)]">
           Parcial
@@ -73,10 +78,24 @@ export function EnergyFlowDiagram({
         nodes={[
           { id: 'production', label: 'Produção', value: production_ },
           { id: 'grid', label: 'Rede', value: injected_ + imported_ },
-          { id: 'consumption', label: 'Consumo', value: consumption_ },
+          // "estimado" no rótulo (achado A1 do audit de honestidade de dado):
+          // `consumption_` é `estimated_total_consumption_kwh`, inferido a partir
+          // de `cycle_production_kwh - injected_kwh` (ver `billing/models.py`),
+          // nunca medido diretamente — ao contrário de "Produção" e "Rede"
+          // (soma de `injected_kwh`/`imported_kwh`, ambos da fatura confirmada).
+          // O rótulo aparece tanto no nó do SVG quanto na linha correspondente da
+          // tabela `sr-only` (`SankeyFlow` reusa o mesmo `label`), então este é o
+          // único lugar que precisa do qualificador para cobrir os dois.
+          { id: 'consumption', label: 'Consumo estimado', value: consumption_ },
         ]}
         flows={[
-          { from: 'production', to: 'consumption', value: selfConsumption_, tone: 'success' },
+          // Composição (para onde a energia foi), não severidade de bom/ruim —
+          // achado M3 do audit: autoconsumo alto não é "bom" nem injeção alta na
+          // rede é "ruim", os três fluxos só descrevem como a produção se
+          // distribuiu. Por isso os três usam o mesmo tom neutro (equivalente a
+          // `--color-brand-primary`); `tone: 'success'` era usado aqui por engano
+          // no fluxo de autoconsumo.
+          { from: 'production', to: 'consumption', value: selfConsumption_, tone: 'neutral' },
           { from: 'production', to: 'grid', value: injected_, tone: 'neutral' },
           { from: 'grid', to: 'consumption', value: imported_, tone: 'neutral' },
         ]}
@@ -84,11 +103,24 @@ export function EnergyFlowDiagram({
       />
 
       <p className="mt-3 text-xs text-gray-500">
-        {formatNumber(selfConsumption_)} kWh consumidos diretamente e{' '}
+        {formatNumber(selfConsumption_)} kWh de autoconsumo estimado e{' '}
         {formatNumber(injected_)} kWh injetados na rede a partir da produção de{' '}
-        {formatNumber(production_)} kWh. Consumo total de {formatNumber(consumption_)} kWh, sendo{' '}
+        {formatNumber(production_)} kWh. Consumo total estimado de {formatNumber(consumption_)} kWh, sendo{' '}
         {formatNumber(imported_)} kWh importados da rede.
       </p>
-    </Card>
+    </>
   )
+
+  if (embedded) {
+    return (
+      <div
+        data-testid="energy-flow-embedded"
+        className={`relative rounded-2xl ${partial ? 'border border-dashed border-[var(--color-warning)] p-4' : ''}`}
+      >
+        {content}
+      </div>
+    )
+  }
+
+  return <Card dashed={partial}>{content}</Card>
 }

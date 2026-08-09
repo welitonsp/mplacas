@@ -62,7 +62,7 @@ function buildFinancialReturn(
 
 describe('FinancialSection', () => {
   it('agrupa os cards de dinheiro sob "Custo do ciclo" e os de energia sob "Créditos de energia" — tarifas/créditos compactados em tiras, sem perder nenhum card (ADR-072 Etapa 7; separação de grandeza, achado F3)', () => {
-    const { container } = render(
+    render(
       <FinancialSection
         indicators={buildIndicators()}
         referenceMonth="2026-07"
@@ -76,7 +76,13 @@ describe('FinancialSection', () => {
     // rota, ver `FinancialSection.tsx`) — a primeira `<section>` (das duas
     // que o componente devolve como irmãs) é a de "Custo do ciclo"/"Créditos
     // de energia".
-    const section = container.querySelector('section') as HTMLElement
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Resumo financeiro' })
+    ).toBeInTheDocument()
+    expect(screen.getByText('Cobertura por créditos')).toBeInTheDocument()
+    expect(screen.getByText('ROI acumulado')).toBeInTheDocument()
+
+    const section = screen.getByRole('heading', { level: 2, name: 'Custo do ciclo' }).closest('section') as HTMLElement
 
     // Ciclo de referência (achado F1) visível junto de "Custo do ciclo" —
     // único bloco cujo dado é estritamente do ciclo corrente.
@@ -162,8 +168,8 @@ describe('FinancialSection', () => {
 
     expect(screen.getByText('Cobertura de créditos')).toBeInTheDocument()
 
-    expect(screen.getByText('Economia estimada')).toBeInTheDocument()
-    expect(screen.getByText(/R\$\s*120,40/)).toBeInTheDocument()
+    expect(screen.getAllByText('Economia estimada')).toHaveLength(2)
+    expect(screen.getAllByText(/R\$\s*120,40/).length).toBeGreaterThanOrEqual(2)
   })
 
   it('nunca mostra R$ 0,00 de economia quando a fatura não tem tarifa registrada — mostra mensagem explícita', () => {
@@ -181,8 +187,8 @@ describe('FinancialSection', () => {
       />
     )
 
-    const savingsLabel = screen.getByText('Economia estimada')
-    const savingsCard = savingsLabel.closest('div') as HTMLElement
+    const savingsMessage = screen.getByText(/fatura deste ciclo não tem a tarifa com impostos registrada/)
+    const savingsCard = savingsMessage.closest('div') as HTMLElement
 
     expect(within(savingsCard).queryByText(/R\$\s*0,00/)).not.toBeInTheDocument()
     expect(

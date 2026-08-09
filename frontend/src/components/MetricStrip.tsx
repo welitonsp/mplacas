@@ -39,9 +39,13 @@ export interface MetricStripItem {
 // Grade fixa em 4 colunas (`sm:grid-cols-4`, 2 em telas estreitas) — classes
 // Tailwind precisam ser literais no código-fonte para o build gerar o CSS
 // correspondente (nunca construídas em runtime via template string, ver
-// skill frontend-design, seção Build). O único uso hoje (`FinancialSection`)
-// sempre passa 4 itens; se um futuro consumidor precisar de outra contagem,
-// adicione uma nova classe literal aqui em vez de interpolar `items.length`.
+// skill frontend-design, seção Build). `FinancialSection` usa duas tiras, 2
+// itens cada — tarifas dentro de "Custo do ciclo", saldo/cobertura de
+// créditos em "Créditos de energia" (blocos separados por grandeza, achado
+// F3 da auditoria financeira desta sessão) — ambas cabendo dentro da mesma
+// grade de até 4 colunas, sem sobra de linha. Se um futuro consumidor
+// precisar de mais de 4 itens, adicione uma nova classe literal aqui em vez
+// de interpolar `items.length`.
 export function MetricStrip({ items, className = '' }: { items: MetricStripItem[]; className?: string }) {
   return (
     <Card className={`grid grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-6 ${className}`.trim()}>

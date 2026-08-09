@@ -6,9 +6,17 @@
 // cargo de cada módulo (cada um sabe combinar seus próprios recursos via
 // `usePlantResource` — este componente não conhece nem `usePlantResource`
 // nem quantos recursos existem por trás do botão).
-export function RefreshBar({ onRefresh, loading }: { onRefresh: () => void; loading: boolean }) {
+export function RefreshBar({
+  onRefresh,
+  loading,
+  className = 'mb-6',
+}: {
+  onRefresh: () => void
+  loading: boolean
+  className?: string
+}) {
   return (
-    <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-end">
+    <div className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end ${className}`.trim()}>
       <div className="flex items-center gap-3">
         <button
           onClick={onRefresh}

@@ -62,7 +62,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     await renderOverviewPage()
 
-    await screen.findByText('Indicadores percentuais')
+    await screen.findByText('Origem do consumo — ciclo 2026-07')
     await waitFor(() => {
       expect(fetchExecutiveMock).toHaveBeenCalledTimes(1)
       expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(1)
@@ -83,7 +83,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     // única vez, como `<h2>` da faixa de estado — `EnergyFlowDiagram` deixou
     // de ter sua própria sobrancelha duplicada (ver comentário no topo de
     // `EnergyFlowDiagram.tsx`).
-    expect(await screen.findByRole('heading', { level: 2, name: 'Fluxo de energia' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Fluxo de energia — ciclo 2026-07' })).toBeInTheDocument()
     expect(screen.queryByText('Fluxo de energia no ciclo')).not.toBeInTheDocument()
     expect(screen.queryByText('Composição da produção')).not.toBeInTheDocument()
     expect(screen.queryByText('Origem do consumo')).not.toBeInTheDocument()
@@ -95,7 +95,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     await renderOverviewPage()
 
-    await screen.findByText('Indicadores percentuais')
+    await screen.findByText('Origem do consumo — ciclo 2026-07')
 
     const bar = screen.getByRole('img', { name: /Total 100%/ })
     expect(bar).toHaveAttribute(
@@ -133,7 +133,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     // Sem os dois valores, a StackedBar (e seu rótulo de seção) não aparece.
     expect(screen.queryByRole('img', { name: /Total 100%/ })).not.toBeInTheDocument()
-    expect(screen.queryByText('Indicadores percentuais')).not.toBeInTheDocument()
+    expect(screen.queryByText('Origem do consumo — ciclo 2026-07')).not.toBeInTheDocument()
 
     // Os dois `MetricCard` aparecem no lugar, dentro da coluna de fluxo da
     // faixa — o valor disponível continua visível com sua barra de progresso,
@@ -158,11 +158,11 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     await renderOverviewPage()
 
-    await screen.findByText('Indicadores percentuais')
+    await screen.findByText('Origem do consumo — ciclo 2026-07')
 
     expect(screen.queryByText('Energia e produção')).not.toBeInTheDocument()
     // Os mesmos fatos continuam visíveis, só que uma única vez, no diagrama de fluxo.
-    expect(screen.getByRole('heading', { level: 2, name: 'Fluxo de energia' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Fluxo de energia — ciclo 2026-07' })).toBeInTheDocument()
   })
 
   it('importada, injetada, autoconsumo e consumo aparecem em uma única visualização — nenhum card avulso duplica os rótulos de "Energia e produção" removidos', async () => {
@@ -171,7 +171,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     await renderOverviewPage()
 
-    await screen.findByText('Indicadores percentuais')
+    await screen.findByText('Origem do consumo — ciclo 2026-07')
 
     // `EnergyProductionSection` (removida da composição) usava exatamente
     // estes quatro rótulos em cards isolados — se algum deles reaparecer no
@@ -207,21 +207,16 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(allOccurrences(/^540 kWh$/)).toHaveLength(0)
   })
 
-  it('a seção de diagnósticos continua com span reduzido no grid de topo (não é mais pareada com "Fluxo de energia", que migrou para dentro da faixa)', async () => {
+  it('a seção de diagnósticos ocupa a linha inteira abaixo do cockpit, sem deixar uma coluna vazia', async () => {
     vi.resetModules()
     installApiMock()
 
     const { container } = await renderOverviewPage()
 
-    await screen.findByText('Indicadores percentuais')
+    await screen.findByText('Origem do consumo — ciclo 2026-07')
 
-    // O grid de topo do módulo é `md:grid-cols-6 lg:grid-cols-12`. Antes desta
-    // mudança, pelo menos 2 seções de topo declaravam um span menor que o
-    // total (Fluxo de energia + Diagnósticos, lado a lado). Agora "Fluxo de
-    // energia" vive dentro da faixa de estado (full-width por desenho — é
-    // literalmente o propósito da faixa, hospedar as 2 colunas internamente
-    // em vez de disputar span no grid de topo) — só a seção de Diagnósticos
-    // continua com span reduzido no grid de topo.
+    // O cockpit e a área de atenção usam a linha inteira. A comparação com o
+    // ciclo anterior, quando existe, é organizada dentro da própria seção.
     const sections = Array.from(container.querySelectorAll('main > div.grid > section'))
     expect(sections.length).toBeGreaterThan(0)
 
@@ -229,8 +224,8 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
       const match = section.className.match(/\bmd:col-span-(\d+)\b/)
       return match !== null && match[1] !== '6'
     })
-    expect(nonFullWidthAtMd).toHaveLength(1)
-    expect(nonFullWidthAtMd[0]).toHaveAttribute('id', 'diagnosticos')
+    expect(nonFullWidthAtMd).toHaveLength(0)
+    expect(container.querySelector('#diagnosticos')).toHaveClass('md:col-span-6', 'lg:col-span-12')
   })
 
   it('a faixa de estado une HeroCard e EnergyFlowDiagram numa superfície com fundo de marca, em duas colunas (~5/12 e ~7/12) que empilham fora de `lg`', async () => {
@@ -239,7 +234,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     const { container } = await renderOverviewPage()
 
-    await screen.findByRole('heading', { level: 2, name: 'Fluxo de energia' })
+    await screen.findByRole('heading', { level: 2, name: 'Fluxo de energia — ciclo 2026-07' })
 
     const band = container.querySelector('[data-testid="hero-band"]') as HTMLElement
     expect(band).not.toBeNull()
@@ -262,12 +257,17 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(stateColumn.className).toMatch(/\blg:col-span-5\b/)
     expect(flowColumn.className).toMatch(/\blg:col-span-7\b/)
     expect(within(stateColumn).getByText(/Ciclo de referência/)).toBeInTheDocument()
-    expect(within(flowColumn).getByRole('heading', { level: 2, name: 'Fluxo de energia' })).toBeInTheDocument()
+    expect(within(flowColumn).getByRole('heading', { level: 2, name: 'Fluxo de energia — ciclo 2026-07' })).toBeInTheDocument()
 
     // A StackedBar de indicadores percentuais é a tira sob o diagrama —
     // continua dentro da mesma coluna do fluxo, não numa seção à parte.
-    expect(within(flowColumn).getByText('Indicadores percentuais')).toBeInTheDocument()
+    expect(within(flowColumn).getByText('Origem do consumo — ciclo 2026-07')).toBeInTheDocument()
     expect(within(flowColumn).getByRole('img', { name: /Total 100%/ })).toBeInTheDocument()
+
+    const summary = within(band).getByRole('group', { name: 'Resumo executivo do ciclo' })
+    expect(within(summary).getByText('500 kWh')).toBeInTheDocument()
+    expect(within(summary).getByText('40 kWh')).toBeInTheDocument()
+    expect(within(summary).getByText(/R\$\s*120,40/)).toBeInTheDocument()
   })
 })
 
@@ -291,7 +291,7 @@ describe('OverviewPage — erro global tem retry associado', () => {
     const retryButton = screen.getByRole('button', { name: 'Tentar novamente' })
     fireEvent.click(retryButton)
 
-    await screen.findByText('Indicadores percentuais')
+    await screen.findByText('Origem do consumo — ciclo 2026-07')
     expect(executiveCalls).toBe(2)
   })
 
@@ -320,7 +320,7 @@ describe('OverviewPage — erro global tem retry associado', () => {
     const retryButton = screen.getByRole('button', { name: 'Tentar novamente' })
     fireEvent.click(retryButton)
 
-    await screen.findByText('Indicadores percentuais')
+    await screen.findByText('Origem do consumo — ciclo 2026-07')
     expect(executiveCalls).toBe(2)
     await waitFor(() => {
       expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(2)

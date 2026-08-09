@@ -1,7 +1,7 @@
 import type { ExecutiveIndicators } from '../lib/dashboard/contracts'
 import type { FinancialReturnResponse } from '../lib/dashboard/financial-return-contracts'
 import type { PlantResource } from '../hooks/usePlantResource'
-import { formatCurrency, toNumber } from '../lib/format'
+import { formatCurrency, formatNumber, toNumber } from '../lib/format'
 import { SectionTitle } from './SectionTitle'
 import { CurrencyCard } from './CurrencyCard'
 import { StackedBar } from './charts/StackedBar'
@@ -24,10 +24,19 @@ import { RetryableError } from './RetryableError'
 // testes de estrutura de grade (`DashboardPage.test.tsx`) já esperam.
 export function FinancialSection({
   indicators,
+  referenceMonth,
   financialReturn,
   plantId,
 }: {
   indicators: ExecutiveIndicators
+  // `current_cycle.reference_month` do payload executivo (achado F1 da
+  // auditoria financeira desta sessão) — exibido junto de "Custo do ciclo",
+  // o único bloco deste componente cujo dado é estritamente do ciclo
+  // corrente (tarifas variam ~5% entre ciclos, ver ADR-056). "Retorno do
+  // investimento" agrega histórico de vários ciclos, por isso não recebe
+  // este rótulo. Mesmo padrão textual de `HeroCard.tsx` ("Ciclo de
+  // referência: AAAA-MM"), não uma formatação nova.
+  referenceMonth: string
   financialReturn: PlantResource<FinancialReturnResponse>
   plantId: string
 }) {
@@ -45,9 +54,47 @@ export function FinancialSection({
     billTotalAmount != null && billEnergyComponent != null && billPublicLighting != null
       ? billTotalAmount - billEnergyComponent - billPublicLighting
       : null
+  const estimatedSavings = toNumber(indicators.estimated_savings_brl)
+  const creditCoverage = toNumber(indicators.credit_coverage_rate_percent)
+  const roiPercent =
+    financialReturn.data?.unavailable_reason === null
+      ? toNumber(financialReturn.data.roi_percent)
+      : null
+  const roiSupportingText =
+    financialReturn.status === 'loading'
+      ? 'Carregando retorno'
+      : financialReturn.error
+        ? 'Retorno indisponível'
+        : financialReturn.data?.unavailable_reason === 'INVESTMENT_NOT_REGISTERED'
+          ? 'Cadastre o CAPEX'
+          : 'Acumulado sobre o investimento'
 
   return (
     <>
+      <section className="md:col-span-6 lg:col-span-12">
+        <SectionTitle as="h2">Resumo financeiro</SectionTitle>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <FinancialSummaryTile
+            label="Economia estimada"
+            value={estimatedSavings == null ? 'R$ —' : formatCurrency(estimatedSavings)}
+            supportingText={estimatedSavings == null ? 'Tarifa do ciclo ausente' : `Ciclo ${referenceMonth}`}
+            tone="solar"
+          />
+          <FinancialSummaryTile
+            label="Cobertura por créditos"
+            value={creditCoverage == null ? '—' : `${formatNumber(creditCoverage, 1)}%`}
+            supportingText="Quanto do consumo foi coberto"
+            tone="grid"
+          />
+          <FinancialSummaryTile
+            label="ROI acumulado"
+            value={roiPercent == null ? '—' : `${formatNumber(roiPercent, 1)}%`}
+            supportingText={roiSupportingText}
+            tone="investment"
+          />
+        </div>
+      </section>
+
       {/* Valores em R$ (total da fatura, componente de energia, iluminação
           pública, economia estimada), tarifas em R$/kWh e saldo/cobertura de
           créditos — cada card com unidade sempre visível, sem exceção para a
@@ -59,21 +106,38 @@ export function FinancialSection({
             já expõe "Financeiro" como `<h1>` da rota — um segundo heading com
             o mesmo texto logo abaixo seria redundante (mesmo raciocínio já
             aplicado em `OverviewPage`) e ambíguo para `getByText`/leitor de
-            tela. A subseção abaixo passa a ser `h2`, direto sob o `h1` do
-            módulo (antes era `h3`, sob o `h2` "Financeiro" removido). */}
-        {/* Os mesmos oito cards de antes, sob uma única subseção rotulada
-            "Custo do ciclo" (antes três: "Custo do ciclo"/"Tarifas"/
-            "Créditos de energia") — a hierarquia visual (fatura vs. tarifa
-            vs. créditos) já existia na cabeça de quem lê, só não estava
-            expressa na estrutura (acabamento de hierarquia do dashboard).
-            Tarifas e créditos (antes 4 `MetricCard`, cada um seu próprio
-            `Card`, mesmo peso visual do "Valor total da fatura" ao lado)
-            foram compactados numa única tira de 4 colunas dentro deste mesmo
-            bloco "Custo do ciclo" (ver `MetricStrip`) — nenhum valor,
-            unidade ou casa decimal muda, só o invólucro (4 caixas viram 1). */}
+            tela. As subseções abaixo passam a ser `h2`, direto sob o `h1` do
+            módulo (antes eram `h3`, sob o `h2` "Financeiro" removido). */}
+        {/* Os mesmos oito cards de antes, agora em dois blocos rotulados —
+            "Custo do ciclo" (dinheiro: fatura, tarifas, economia) e
+            "Créditos de energia" (energia: saldo/cobertura em kWh) — em vez
+            de um único heading "Custo do ciclo" para os oito (estado
+            intermediário desta mesma etapa). Achado F3 da auditoria
+            financeira desta sessão, já antecipado por
+            `docs/UI_UX_AUDIT_2026-08-04.md` (P2-04, "Grandeza fora de
+            lugar"): saldo de créditos é kWh, não custo — quem navega por
+            heading (leitor de tela) não pode ouvir "Custo do ciclo" e achar
+            um valor em kWh como se fosse item de dinheiro. Tarifas (R$/kWh)
+            continuam em "Custo do ciclo": são preço, não energia, mantendo o
+            mesmo peso visual discreto de linha de apoio de antes (só a
+            classificação créditos-vs-custo mudou). Cada bloco usa sua
+            própria tira (`MetricStrip`, 2 itens em vez de 4) em vez de voltar
+            a 4 `MetricCard` soltos — preserva a compactação visual que
+            motivou a tira original, só divide a única tira de 4 colunas em
+            duas de 2, uma por grandeza. */}
         <div className="space-y-6">
           <div>
             <SectionTitle as="h2">Custo do ciclo</SectionTitle>
+            {/* Ciclo de referência do payload executivo (achado F1 da
+                auditoria financeira desta sessão) — sem isso, a tarifa de 6
+                casas decimais abaixo (que varia ~5% entre ciclos, ver
+                ADR-056) não é rastreável até a fatura confirmada que a
+                originou. Mesmo texto/estilo de `HeroCard.tsx`, único outro
+                lugar do app que já mostra este dado (lá, só no módulo Visão
+                Geral). */}
+            <p className="-mt-3 mb-4 text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Ciclo de referência: {referenceMonth}
+            </p>
             {/* Decomposição da fatura (energia + iluminação pública [+
                 outros encargos, quando a soma não fecha em cima dos dois
                 conhecidos]) — antes eram três `CurrencyCard` soltos sem
@@ -82,7 +146,7 @@ export function FinancialSection({
                 total_amount_brl - public_lighting_brl`, ver
                 `intelligence/energy_engine.py`) antes de decompor — ver
                 skill `financial-visualization`. */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] gap-4 items-stretch">
               {billTotalAmount != null && billEnergyComponent != null && billPublicLighting != null ? (
                 <div className="rounded-lg border border-gray-200 bg-[var(--color-surface)] p-4">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
@@ -119,13 +183,14 @@ export function FinancialSection({
               />
             </div>
 
-            {/* Tarifas do ciclo (R$/kWh) e saldo/cobertura de créditos de
-                energia — mesmos 4 valores/unidades de antes (`tariff_with_
-                taxes_brl_kwh`/`tariff_without_taxes_brl_kwh` com 6 casas
-                decimais, ver ADR-056; `credit_balance_kwh`;
-                `credit_coverage_rate_percent` com a mesma barra de
-                progresso), só reagrupados numa tira dentro do card de
-                "Custo do ciclo" em vez de 4 `MetricCard` soltos. */}
+            {/* Tarifas do ciclo (R$/kWh) — mesmos 2 valores de antes
+                (`tariff_with_taxes_brl_kwh`/`tariff_without_taxes_brl_kwh`
+                com 6 casas decimais, ver ADR-056), numa tira de 2 colunas
+                dentro do card de "Custo do ciclo" (linha de apoio da fatura
+                acima, não item de destaque próprio). Saldo/cobertura de
+                créditos saíram desta tira para o bloco "Créditos de
+                energia" abaixo — ver comentário no início desta seção
+                (achado F3). */}
             <MetricStrip
               className="mt-4"
               items={[
@@ -141,6 +206,22 @@ export function FinancialSection({
                   unit: 'R$/kWh',
                   maximumFractionDigits: 6,
                 },
+              ]}
+            />
+          </div>
+
+          <div>
+            {/* Bloco próprio para os 2 itens de energia (kWh) que antes
+                viviam sob o heading de dinheiro "Custo do ciclo" (achado F3
+                da auditoria financeira desta sessão) — mesmos valores/
+                unidade/barra de progresso de antes (`credit_balance_kwh`,
+                `credit_coverage_rate_percent`), só com heading e
+                agrupamento próprios, para que um leitor de tela não ouça
+                "Custo do ciclo" e encontre um saldo em kWh como se fosse
+                item de dinheiro. */}
+            <SectionTitle as="h2">Créditos de energia</SectionTitle>
+            <MetricStrip
+              items={[
                 { label: 'Saldo de créditos', value: indicators.credit_balance_kwh, unit: 'kWh' },
                 {
                   label: 'Cobertura de créditos',
@@ -164,7 +245,7 @@ export function FinancialSection({
         {financialReturn.error ? (
           <RetryableError message={financialReturn.error} onRetry={financialReturn.refetch} />
         ) : (
-          <div className="max-w-xl">
+          <div className="max-w-3xl">
             <FinancialReturnSection
               financialReturn={financialReturn.data}
               plantId={plantId}
@@ -174,5 +255,33 @@ export function FinancialSection({
         )}
       </section>
     </>
+  )
+}
+
+function FinancialSummaryTile({
+  label,
+  value,
+  supportingText,
+  tone,
+}: {
+  label: string
+  value: string
+  supportingText: string
+  tone: 'solar' | 'grid' | 'investment'
+}) {
+  const toneClass =
+    tone === 'solar'
+      ? 'bg-[var(--color-energy-solar)]'
+      : tone === 'grid'
+        ? 'bg-[var(--color-energy-grid)]'
+        : 'bg-[var(--color-energy-consumption)]'
+
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+      <div className={`mb-4 h-1.5 w-12 rounded-sm ${toneClass}`} />
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-gray-900 tabular-nums">{value}</p>
+      <p className="mt-1 text-xs text-gray-500">{supportingText}</p>
+    </div>
   )
 }

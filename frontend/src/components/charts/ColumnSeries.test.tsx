@@ -187,6 +187,33 @@ describe('ColumnSeries', () => {
     expect(screen.getByText('Nenhum dado para exibir.')).toBeInTheDocument()
   })
 
+  it('envolve a área de colunas (não o eixo Y) num container com scroll horizontal, preservando a largura mínima total das colunas', () => {
+    const items = Array.from({ length: 12 }, (_, i) => ({ label: `m${i}`, value: (i + 1) * 10 }))
+    render(<ColumnSeries items={items} />)
+
+    const scrollContainer = screen.getByTestId('column-series-scroll')
+    expect(scrollContainer.className).toContain('overflow-x-auto')
+
+    // O eixo Y (0/metade/máximo) fica fora do container rolável — continua
+    // visível como referência fixa quando o usuário rola horizontalmente em
+    // mobile, mesmo padrão de `ProductionHistoryChart` (ver comentário no
+    // componente).
+    const visual = screen.getByTestId('column-series-visual')
+    expect(scrollContainer.parentElement).toBe(visual)
+
+    // A área de colunas em si (role="img") fica DENTRO do container de
+    // scroll, nunca fora dele.
+    expect(scrollContainer.contains(screen.getByRole('img'))).toBe(true)
+
+    // O wrapper imediatamente dentro do container de scroll preserva a
+    // largura mínima total das 12 colunas (12×40px de MIN_COLUMN_WIDTH +
+    // 11×8px de gap = 568px) — nunca comprimida abaixo disso pra caber na
+    // viewport (jsdom não mede layout real, então a verificação é sobre o
+    // `minWidth` inline aplicado, não sobre pixels renderizados de fato).
+    const minWidthWrapper = scrollContainer.firstElementChild as HTMLElement
+    expect(minWidthWrapper.style.minWidth).toBe('568px')
+  })
+
   it('mostra o eixo Y (0/metade/máximo) com a mesma unidade do valueFormatter', () => {
     render(
       <ColumnSeries items={[{ label: 'A', value: 100 }]} valueFormatter={(v) => `${v} kWh`} />,

@@ -17,7 +17,7 @@ describe('EnergyFlowDiagram', () => {
     const svg = screen.getByRole('img')
     expect(svg).toHaveAttribute(
       'aria-label',
-      'Produção de 100 kWh: 60 kWh consumidos diretamente, 40 kWh injetados na rede. Consumo total de 80 kWh: 60 kWh de produção própria, 20 kWh importados da rede.',
+      'Produção de 100 kWh: 60 kWh consumidos diretamente, 40 kWh injetados na rede. Consumo estimado total de 80 kWh: 60 kWh de produção própria, 20 kWh importados da rede.',
     )
   })
 

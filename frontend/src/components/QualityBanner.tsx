@@ -1,7 +1,7 @@
 import type { CycleQuality } from '../lib/dashboard/contracts'
 import { Card } from './Card'
 
-export function QualityBanner({ quality }: { quality: CycleQuality }) {
+export function QualityBanner({ quality, compact = false }: { quality: CycleQuality; compact?: boolean }) {
   const items = [
     { key: 'missing', label: 'ausente', value: quality.missing_days },
     { key: 'provisional', label: 'provisório', value: quality.provisional_days },
@@ -18,6 +18,19 @@ export function QualityBanner({ quality }: { quality: CycleQuality }) {
     )
   }
 
+  const description = items
+    .map((item) => `${item.value} dia${item.value > 1 ? 's' : ''} ${item.label}${item.value > 1 ? 's' : ''}`)
+    .join(', ')
+
+  if (compact) {
+    return (
+      <div className="mt-4 rounded-xl bg-[var(--color-warning-light)] px-3 py-2.5 text-sm text-[var(--color-warning-text)]">
+        <p className="font-semibold">Dados parciais neste ciclo</p>
+        <p className="mt-0.5 text-xs">{description}.</p>
+      </div>
+    )
+  }
+
   return (
     <Card dashed tone="warning" padding="p-4" className="mt-4">
       <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-warning)]">
@@ -25,10 +38,7 @@ export function QualityBanner({ quality }: { quality: CycleQuality }) {
         Dados parciais neste ciclo
       </p>
       <p className="mt-1.5 text-sm text-gray-700">
-        {items
-          .map((item) => `${item.value} dia${item.value > 1 ? 's' : ''} ${item.label}${item.value > 1 ? 's' : ''}`)
-          .join(', ')}
-        .
+        {description}.
       </p>
     </Card>
   )

@@ -43,6 +43,13 @@ const NO_DATA_MARKER_HEIGHT = 14
 // estreitas com muitos itens.
 const MIN_COLUMN_WIDTH = 40
 
+// Espaçamento entre colunas — mesmo valor do `gap-2` do Tailwind (0.5rem =
+// 8px com a raiz padrão), usado tanto na classe quanto no cálculo explícito
+// de `columnsMinWidth` abaixo (não dá pra ler o gap computado de uma classe
+// CSS em tempo de render, então o valor em px precisa ficar em sincronia com
+// a classe manualmente).
+const COLUMN_GAP = 8
+
 /**
  * Série de colunas verticais ao longo de um eixo de tempo/categoria, em
  * SVG/CSS puro (sem biblioteca de gráficos — ver skill `chart-standards`).
@@ -110,6 +117,16 @@ export function ColumnSeries({
     })
     .join('; ')
 
+  // Largura mínima da área de colunas inteira (todas as colunas + gaps entre
+  // elas) — usada como `minWidth` do wrapper dentro do container rolável
+  // logo abaixo. Com muitos itens (ex.: 12 meses) essa largura passa da
+  // viewport em telas estreitas; sem este wrapper explícito, o container
+  // `overflow-x-auto` não teria conteúdo maior que si mesmo pra rolar, e as
+  // colunas comprimiriam abaixo de `MIN_COLUMN_WIDTH` em vez de vazar/rolar
+  // (mesmo problema que motivou o `minWidth` equivalente em
+  // `ProductionHistoryChart`, ver comentário lá).
+  const columnsMinWidth = items.length * MIN_COLUMN_WIDTH + (items.length - 1) * COLUMN_GAP
+
   return (
     <div className={className}>
       {/* `data-testid`: o mesmo rótulo/valor aparece de novo, de propósito,
@@ -132,101 +149,109 @@ export function ColumnSeries({
           <span>{formatValue(0)}</span>
         </div>
 
-        <div className="min-w-0 flex-1">
-          <div role="img" aria-label={ariaLabel} className="relative" style={{ height: CHART_HEIGHT }}>
-            <span
-              className="pointer-events-none absolute inset-x-0 top-0 border-t border-gray-100"
-              aria-hidden="true"
-            />
-            <span
-              className="pointer-events-none absolute inset-x-0 border-t border-gray-100"
-              style={{ top: '50%' }}
-              aria-hidden="true"
-            />
-            <span
-              className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-gray-100"
-              aria-hidden="true"
-            />
+        {/* Área de colunas rolável — eixo Y permanece fixo à esquerda (fora
+            deste container) enquanto o usuário rola horizontalmente em telas
+            estreitas com muitos itens, em vez de arrastar a página inteira
+            (mesmo padrão de `min-w-0 flex-1 overflow-x-auto` + wrapper com
+            `minWidth` de `ProductionHistoryChart`, ver comentário lá — nunca
+            comprime as colunas abaixo de `MIN_COLUMN_WIDTH` pra caber). */}
+        <div className="min-w-0 flex-1 overflow-x-auto" data-testid="column-series-scroll">
+          <div style={{ minWidth: columnsMinWidth }}>
+            <div role="img" aria-label={ariaLabel} className="relative" style={{ height: CHART_HEIGHT }}>
+              <span
+                className="pointer-events-none absolute inset-x-0 top-0 border-t border-gray-100"
+                aria-hidden="true"
+              />
+              <span
+                className="pointer-events-none absolute inset-x-0 border-t border-gray-100"
+                style={{ top: '50%' }}
+                aria-hidden="true"
+              />
+              <span
+                className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-gray-100"
+                aria-hidden="true"
+              />
 
-            <div className="flex h-full items-end gap-2" aria-hidden="true">
-              {items.map((item, index) => {
-                if (item.value == null) {
+              <div className="flex h-full items-end gap-2" aria-hidden="true">
+                {items.map((item, index) => {
+                  if (item.value == null) {
+                    return (
+                      <div
+                        key={`${item.label}-${index}`}
+                        className="flex h-full flex-1 flex-col items-center justify-end"
+                        style={{ minWidth: MIN_COLUMN_WIDTH }}
+                      >
+                        <div
+                          className="w-full rounded-t-sm border-2 border-dashed border-[var(--color-chart-track)] transition-[height] duration-150 motion-reduce:transition-none"
+                          style={{ height: entered ? NO_DATA_MARKER_HEIGHT : 0 }}
+                        />
+                      </div>
+                    )
+                  }
+
+                  const pct =
+                    effectiveMax > 0 ? Math.min(Math.max((item.value / effectiveMax) * 100, 0), 100) : 0
+                  const barHeight = Math.max((pct / 100) * CHART_HEIGHT, 3)
+                  const color = TONE_BG_VAR[item.tone ?? 'neutral']
+                  const badgeTone = item.badge?.tone
+
                   return (
                     <div
                       key={`${item.label}-${index}`}
                       className="flex h-full flex-1 flex-col items-center justify-end"
                       style={{ minWidth: MIN_COLUMN_WIDTH }}
                     >
+                      {/* `data-quality`: mesma informação do contorno tracejado,
+                          como atributo — verificável em teste sem depender de
+                          classe CSS/cor (ver instrução da tarefa). */}
                       <div
-                        className="w-full rounded-t-sm border-2 border-dashed border-[var(--color-chart-track)] transition-[height] duration-150 motion-reduce:transition-none"
-                        style={{ height: entered ? NO_DATA_MARKER_HEIGHT : 0 }}
+                        data-quality={badgeTone ? 'partial' : 'complete'}
+                        className={`w-full rounded-t-sm transition-[height] duration-150 motion-reduce:transition-none ${
+                          badgeTone ? 'border-2 border-dashed' : ''
+                        }`}
+                        style={{
+                          height: entered ? barHeight : 0,
+                          backgroundColor: color,
+                          ...(badgeTone ? { borderColor: TONE_BG_VAR[badgeTone] } : {}),
+                        }}
                       />
                     </div>
                   )
-                }
-
-                const pct =
-                  effectiveMax > 0 ? Math.min(Math.max((item.value / effectiveMax) * 100, 0), 100) : 0
-                const barHeight = Math.max((pct / 100) * CHART_HEIGHT, 3)
-                const color = TONE_BG_VAR[item.tone ?? 'neutral']
-                const badgeTone = item.badge?.tone
-
-                return (
-                  <div
-                    key={`${item.label}-${index}`}
-                    className="flex h-full flex-1 flex-col items-center justify-end"
-                    style={{ minWidth: MIN_COLUMN_WIDTH }}
-                  >
-                    {/* `data-quality`: mesma informação do contorno tracejado,
-                        como atributo — verificável em teste sem depender de
-                        classe CSS/cor (ver instrução da tarefa). */}
-                    <div
-                      data-quality={badgeTone ? 'partial' : 'complete'}
-                      className={`w-full rounded-t-sm transition-[height] duration-150 motion-reduce:transition-none ${
-                        badgeTone ? 'border-2 border-dashed' : ''
-                      }`}
-                      style={{
-                        height: entered ? barHeight : 0,
-                        backgroundColor: color,
-                        ...(badgeTone ? { borderColor: TONE_BG_VAR[badgeTone] } : {}),
-                      }}
-                    />
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Rótulos do eixo X + valor + selo de qualidade por coluna — texto
-              real (não `aria-hidden`), mesmo tratamento que `BarList` já dava
-              ao rótulo/selo de cada item: acessível pela leitura normal do
-              DOM, além do resumo já coberto pelo `aria-label` acima e pela
-              tabela `sr-only` abaixo. */}
-          <div className="mt-1.5 flex gap-2">
-            {items.map((item, index) => (
-              <div
-                key={`${item.label}-label-${index}`}
-                className="flex flex-1 flex-col items-center gap-0.5 text-center"
-                style={{ minWidth: MIN_COLUMN_WIDTH }}
-              >
-                <span className="text-xs text-gray-600" title={item.label}>
-                  {item.label}
-                </span>
-                <span className="text-xs font-semibold tabular-nums text-[var(--color-text-primary)]">
-                  {item.value == null ? item.unavailableLabel ?? '—' : formatValue(item.value)}
-                </span>
-                {item.badge && (
-                  <span
-                    className={`inline-block rounded-full px-1.5 py-0.5 text-xs font-semibold leading-tight ${BADGE_CLASS[item.badge.tone]}`}
-                  >
-                    {item.badge.label}
-                  </span>
-                )}
-                {item.description && (
-                  <span className="text-xs leading-tight text-gray-500">{item.description}</span>
-                )}
+                })}
               </div>
-            ))}
+            </div>
+
+            {/* Rótulos do eixo X + valor + selo de qualidade por coluna — texto
+                real (não `aria-hidden`), mesmo tratamento que `BarList` já dava
+                ao rótulo/selo de cada item: acessível pela leitura normal do
+                DOM, além do resumo já coberto pelo `aria-label` acima e pela
+                tabela `sr-only` abaixo. */}
+            <div className="mt-1.5 flex gap-2">
+              {items.map((item, index) => (
+                <div
+                  key={`${item.label}-label-${index}`}
+                  className="flex flex-1 flex-col items-center gap-0.5 text-center"
+                  style={{ minWidth: MIN_COLUMN_WIDTH }}
+                >
+                  <span className="text-xs text-gray-600" title={item.label}>
+                    {item.label}
+                  </span>
+                  <span className="text-xs font-semibold tabular-nums text-[var(--color-text-primary)]">
+                    {item.value == null ? item.unavailableLabel ?? '—' : formatValue(item.value)}
+                  </span>
+                  {item.badge && (
+                    <span
+                      className={`inline-block rounded-full px-1.5 py-0.5 text-xs font-semibold leading-tight ${BADGE_CLASS[item.badge.tone]}`}
+                    >
+                      {item.badge.label}
+                    </span>
+                  )}
+                  {item.description && (
+                    <span className="text-xs leading-tight text-gray-500">{item.description}</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

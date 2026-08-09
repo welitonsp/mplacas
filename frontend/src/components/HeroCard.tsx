@@ -24,6 +24,7 @@ export function HeroCard({
   latestDataDate = null,
   lastSyncedAt = null,
   diagnostics = [],
+  embedded = false,
 }: {
   referenceMonth: string
   headline: string
@@ -34,20 +35,26 @@ export function HeroCard({
   // Ver `AttentionSummary` — chip "N críticos" só aparece quando há pelo
   // menos um diagnóstico CRITICAL; lista vazia (padrão) não renderiza nada.
   diagnostics?: Diagnostic[]
+  embedded?: boolean
 }) {
   const meta = statusMeta(status)
   const score = toNumber(healthScore)
 
-  return (
-    <Card accent={meta.severity} className="sm:p-6">
+  const content = (
       <div
-        className={`grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-x-4 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center lg:gap-x-8 lg:gap-y-1 ${AREAS_BASE} ${AREAS_SM} ${AREAS_LG}`}
+        className={`grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-x-4 ${
+          embedded
+            ? `${AREAS_BASE} ${AREAS_SM}`
+            : `lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center lg:gap-x-8 lg:gap-y-1 ${AREAS_BASE} ${AREAS_SM} ${AREAS_LG}`
+        }`}
       >
         <div className="[grid-area:headline]">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
             Ciclo de referência: {referenceMonth}
           </p>
-          <p className="mt-1 text-3xl font-semibold text-gray-900">{headline}</p>
+          <p className={`mt-1 font-semibold tracking-tight text-gray-900 ${embedded ? 'text-2xl' : 'text-3xl'}`}>
+            {headline}
+          </p>
           <AttentionSummary diagnostics={diagnostics} />
         </div>
 
@@ -58,7 +65,7 @@ export function HeroCard({
               label="Saúde da usina"
               valueLabel={`${formatNumber(score, 0)}/100`}
               tone={meta.severity}
-              size={112}
+              size={embedded ? 96 : 112}
             />
           </div>
         )}
@@ -74,6 +81,15 @@ export function HeroCard({
           <DataFreshness latestDataDate={latestDataDate} lastSyncedAt={lastSyncedAt} />
         </div>
       </div>
+  )
+
+  if (embedded) {
+    return <div data-testid="hero-card-embedded" className="h-full py-1">{content}</div>
+  }
+
+  return (
+    <Card accent={meta.severity} className="sm:p-6">
+      {content}
     </Card>
   )
 }
