@@ -174,7 +174,7 @@ export function AppHeader() {
             onClick={handleThemeToggle}
             aria-label={themeControlLabel}
             title={themeControlLabel}
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700 transition-colors duration-150 hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:text-gray-900 hover:shadow-md active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none"
           >
             {effectiveTheme === 'light' ? (
               <SunIcon className="h-5 w-5" />
@@ -192,7 +192,7 @@ export function AppHeader() {
               aria-controls={menuId}
               aria-label={username ? `Menu de ${username}` : 'Menu do usuário'}
               onClick={() => setMenuOpen((prev) => !prev)}
-              className="flex min-h-[44px] items-center gap-2 rounded-full border border-gray-200 bg-gray-50 pl-1.5 pr-2 text-sm text-gray-700 transition-colors duration-150 hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+              className="flex min-h-[44px] items-center gap-2 rounded-full border border-gray-200 bg-gray-50 pl-1.5 pr-2 text-sm text-gray-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:text-gray-900 hover:shadow-md active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none"
             >
               <span
                 aria-hidden="true"
@@ -224,7 +224,7 @@ export function AppHeader() {
                     setMenuOpen(false)
                     logout()
                   }}
-                  className="w-full rounded text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand-primary)]"
+                  className="w-full rounded text-left px-3 py-2 text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand-primary)]"
                 >
                   Sair
                 </button>

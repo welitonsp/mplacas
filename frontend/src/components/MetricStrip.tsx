@@ -66,7 +66,7 @@ export function MetricStrip({ items, className = '' }: { items: MetricStripItem[
               aria-label={item.label}
             >
               <div
-                className="h-full rounded-full bg-[var(--color-brand-primary)]"
+                className="h-full rounded-full bg-[var(--color-brand-primary)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
                 style={{ width: `${clampPercent(item.barPercent)}%` }}
               />
             </div>

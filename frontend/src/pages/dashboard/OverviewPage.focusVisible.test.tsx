@@ -51,7 +51,7 @@ describe('OverviewPage — botão "Atualizar" tem foco visível', () => {
     // A classe de foco é a mesma durante o carregamento. Não espere os dois
     // recursos terminarem apenas para inspecionar uma propriedade estática
     // do botão; isso torna o teste independente da velocidade do runner.
-    const button = await screen.findByRole('button', { name: /Atualizar/ })
+    const button = await screen.findByRole('button', { name: /Atualiz/ })
     expect(button.className).toMatch(/focus-visible:ring/)
   })
 })

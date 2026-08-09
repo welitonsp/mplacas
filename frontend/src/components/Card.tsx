@@ -41,11 +41,11 @@ export function Card({
         ? 'bg-[var(--color-danger-light)] border-[var(--color-danger)]/30'
         : 'bg-[var(--color-surface)] border-[var(--color-border)]'
   const accentClass = accent ? `border-l-4 ${SEVERITY_BORDER_L[accent]}` : ''
-  const interactiveClass = interactive ? 'hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] hover:-translate-y-0.5' : ''
+  const interactiveClass = interactive ? 'hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 active:translate-y-0' : ''
 
   return (
     <div
-      className={`relative rounded-2xl border ${dashed ? 'border-dashed' : ''} ${toneClass} ${padding} shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] transition-all duration-300 ease-out ${interactiveClass} ${accentClass} ${className}`
+      className={`relative rounded-2xl border ${dashed ? 'border-dashed' : ''} ${toneClass} ${padding} shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] transition-all duration-300 ease-out motion-reduce:transition-none ${interactiveClass} ${accentClass} ${className}`
         .replace(/\s+/g, ' ')
         .trim()}
       {...rest}

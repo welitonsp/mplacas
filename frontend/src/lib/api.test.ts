@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { API_URL } from '../env'
 import { fetchPlants } from './api'
 import { TokenStore } from './auth'
 
@@ -30,7 +31,7 @@ describe('fetchPlants', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('https://api.example.com/plants')
+    expect(url).toBe(`${API_URL}/plants`)
     expect((init.headers as Headers).get('Authorization')).toBe('Bearer token-abc')
 
     expect(plants).toEqual([

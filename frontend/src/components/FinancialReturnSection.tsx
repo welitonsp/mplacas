@@ -88,7 +88,7 @@ export function FinancialReturnSection({
         aria-label="Progresso do acumulado em direção ao investimento"
       >
         <div
-          className="h-full rounded-full bg-[var(--color-brand-primary)]"
+          className="h-full rounded-full bg-[var(--color-brand-primary)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
           style={{ width: `${barPercent}%` }}
         />
       </div>

@@ -74,14 +74,14 @@ export function DashboardNav() {
             to={item.to}
             aria-label={item.label}
             className={({ isActive }) =>
-              `group flex min-h-[52px] min-w-[9.25rem] items-center gap-2.5 whitespace-nowrap rounded-xl border px-2.5 text-sm font-semibold transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] sm:min-h-[56px] sm:min-w-[10.5rem] sm:gap-3 sm:px-3 lg:min-w-0 ${
+              `group flex min-h-[52px] min-w-[9.25rem] items-center gap-2.5 whitespace-nowrap rounded-xl border px-2.5 text-sm font-semibold transition-all duration-200 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none sm:min-h-[56px] sm:min-w-[10.5rem] sm:gap-3 sm:px-3 lg:min-w-0 ${
                 isActive
                   ? 'border-[var(--color-brand-primary)] bg-[var(--color-brand-primary-light)] text-[var(--color-brand-primary)] shadow-sm'
-                  : 'border-transparent text-gray-600 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-900'
+                  : 'border-transparent text-gray-600 hover:-translate-y-0.5 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-900 hover:shadow-sm'
               }`
             }
           >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/70 text-current ring-1 ring-inset ring-black/5 sm:h-9 sm:w-9">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/70 text-current ring-1 ring-inset ring-black/5 transition-transform duration-200 group-hover:scale-105 motion-reduce:transition-none sm:h-9 sm:w-9">
               <NavItemIcon name={item.icon} />
             </span>
             <span className="min-w-0 text-left">

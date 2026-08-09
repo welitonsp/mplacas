@@ -35,8 +35,23 @@ export function RetryableError({
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex min-h-[40px] shrink-0 items-center justify-center rounded-lg bg-[var(--color-danger)] px-4 text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-[var(--color-danger-text)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)] focus-visible:ring-offset-2"
+          className="inline-flex min-h-[40px] shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--color-danger)] px-4 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-danger-text)] hover:shadow-md active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)] focus-visible:ring-offset-2 motion-reduce:transition-none"
         >
+          <svg
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M16.2 8.2A6.5 6.5 0 0 0 4.7 5.1L3.5 6.3" />
+            <path d="M3.5 3v3.3h3.3" />
+            <path d="M3.8 11.8a6.5 6.5 0 0 0 11.5 3.1l1.2-1.2" />
+            <path d="M16.5 17v-3.3h-3.3" />
+          </svg>
           Tentar novamente
         </button>
       </div>
