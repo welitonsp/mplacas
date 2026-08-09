@@ -207,6 +207,13 @@ jobs:
       - name: Type check
         run: npm run type-check
       - name: Tests
+        env:
+          # env.ts throws at import time if VITE_API_URL is absent, and test
+          # files transitively import it, so the suite needs this set too —
+          # not the Build step's placeholder below, but the same value local
+          # dev uses (.env.example/.env.local), since src/lib/api.test.ts
+          # asserts against this exact URL string.
+          VITE_API_URL: https://api.example.com
         run: npm test
       - name: Build
         env:
