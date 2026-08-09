@@ -26,6 +26,7 @@ import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 import { OverviewKpiRail } from '../../components/OverviewKpiRail'
 import { PageHeader } from '../../components/PageHeader'
+import { ExecutiveDecisionPanel } from '../../components/ExecutiveDecisionPanel'
 
 // Módulo Visão Geral (ADR-072, Etapa 5) — dois recursos (ver ADR seção 2):
 // `executive` (`/energy/executive/latest`) e `anomalies`
@@ -178,6 +179,15 @@ export function OverviewPage() {
 
         {data && indicators && quality && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
+            <section className="md:col-span-6 lg:col-span-12" aria-label="Decisão executiva do ciclo">
+              <ExecutiveDecisionPanel
+                dashboard={data}
+                diagnostics={diagnostics}
+                latestProduction={latestProduction}
+                latestDataDate={latestDataDate}
+              />
+            </section>
+
             {/* Faixa de estado — o hero de fato da página (diagnóstico de UX
                 aprovado pelo usuário): une "está indo bem?" (`HeroCard`, saúde
                 da usina) e "para onde foi a energia?" (`EnergyFlowDiagram`)

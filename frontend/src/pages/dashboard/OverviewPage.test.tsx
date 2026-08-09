@@ -71,6 +71,22 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(fetchAnomalyHistoryMock).toHaveBeenCalledWith(singlePlant.id)
   })
 
+  it('abre a Visão Geral com uma decisão executiva antes do cockpit visual', async () => {
+    vi.resetModules()
+    installApiMock()
+
+    const { container } = await renderOverviewPage()
+
+    const decisionSection = await screen.findByRole('region', { name: 'Decisão executiva do ciclo' })
+    expect(within(decisionSection).getByRole('heading', { level: 2, name: 'Ciclo pede acompanhamento' })).toBeInTheDocument()
+    expect(within(decisionSection).getByText('Acompanhar hoje')).toBeInTheDocument()
+    expect(within(decisionSection).getByText('Próxima ação')).toBeInTheDocument()
+    expect(within(decisionSection).getByRole('group', { name: 'Sinais usados na decisão' })).toBeInTheDocument()
+
+    const firstSection = container.querySelector('main > div.grid > section')
+    expect(firstSection).toBe(decisionSection)
+  })
+
   it('autoconsumo/injetada/importada aparecem em um único componente de visualização (EnergyFlowDiagram)', async () => {
     vi.resetModules()
     installApiMock()
