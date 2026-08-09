@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { jsonResponse, photovoltaicSummaryPayload, singlePlant } from '../../test/dashboardFixtures'
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
@@ -55,6 +55,30 @@ describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
       expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(1)
     })
     expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledWith(singlePlant.id)
+  })
+
+  it('destaca o resumo técnico com saúde, disponibilidade, suspeita principal e produção esperada', async () => {
+    vi.resetModules()
+    installApiMock()
+
+    await renderTechnicalPage()
+
+    const title = await screen.findByRole('heading', { level: 2, name: 'Resumo técnico' })
+    const section = title.closest('section') as HTMLElement
+
+    await waitFor(() => {
+      expect(within(section).getByText('Saúde técnica')).toBeInTheDocument()
+      expect(within(section).getByText('Atenção')).toBeInTheDocument()
+    })
+    expect(within(section).getByText('PR bruto 82%')).toBeInTheDocument()
+    expect(within(section).getByText('Disponibilidade dos dados')).toBeInTheDocument()
+    expect(within(section).getByText('98%')).toBeInTheDocument()
+    expect(within(section).getByText('Principal suspeita')).toBeInTheDocument()
+    expect(within(section).getByText('Temperatura')).toBeInTheDocument()
+    expect(within(section).getByText('Evidência de causa · 2,3%')).toBeInTheDocument()
+    expect(within(section).getByText('Produção esperada')).toBeInTheDocument()
+    expect(within(section).getByText('44 kWh/dia')).toBeInTheDocument()
+    expect(within(section).getByText('PR corrigido 85%')).toBeInTheDocument()
   })
 
   it('renderiza a seção técnica sem nenhum controle de expandir/colapsar (sempre expandida)', async () => {
