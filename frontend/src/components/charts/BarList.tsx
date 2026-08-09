@@ -94,7 +94,7 @@ export function BarList({
             </span>
             {item.badge && (
               <span
-                className={`mt-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${BADGE_CLASS[item.badge.tone]}`}
+                className={`mt-1 inline-block rounded-full px-1.5 py-0.5 text-xs font-semibold ${BADGE_CLASS[item.badge.tone]}`}
               >
                 {item.badge.label}
               </span>

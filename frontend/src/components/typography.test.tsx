@@ -5,7 +5,12 @@ import { describe, expect, it } from 'vitest'
 // tokenizada do Tailwind (`text-xs` = 12px). Este teste varre o código-fonte
 // de todos os componentes e páginas e falha se um tamanho arbitrário abaixo
 // de 12px reaparecer (mesmo padrão de `colorContrast.test.tsx`).
-const componentSources = import.meta.glob('./*.tsx', {
+// `./*.tsx` (não recursivo) não alcançava `components/charts/*.tsx` nem
+// nenhuma outra subpasta de `components/` — mesmo tipo de bug que
+// `colorContrast.test.tsx` já teve corrigido para `components/charts/` na
+// Fase 0 do dark mode (ADR-071); nunca tinha sido replicado aqui. Corrigido
+// para `**/*.tsx` (revisão final do dark mode, ADR-071 Fase 4).
+const componentSources = import.meta.glob('./**/*.tsx', {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -20,8 +25,19 @@ const pageSources = import.meta.glob('../pages/**/*.tsx', {
   import: 'default',
   eager: true,
 }) as Record<string, string>
+// Nem `components/`/`pages/` cobrem tudo: `lib/dashboard/visuals.ts` é
+// `.ts` puro (fora dos dois globs `.tsx` acima) mas guarda strings de classe
+// Tailwind de verdade (`SEVERITY_TEXT`/`SEVERITY_BG`/etc.); `main.tsx`,
+// `App.tsx` e `contexts/*.tsx` também podem carregar classe solta e ficavam
+// fora de qualquer guard. Lista explícita (não um glob amplo em `../`, que
+// pegaria `node_modules`/config) — revisão final do dark mode, ADR-071
+// Fase 4.
+const otherSources = import.meta.glob(
+  ['../lib/dashboard/visuals.ts', '../main.tsx', '../App.tsx', '../contexts/*.tsx'],
+  { query: '?raw', import: 'default', eager: true }
+) as Record<string, string>
 
-const files = Object.entries({ ...componentSources, ...pageSources }).filter(
+const files = Object.entries({ ...componentSources, ...pageSources, ...otherSources }).filter(
   ([path]) => !path.endsWith('.test.tsx')
 )
 

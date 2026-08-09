@@ -127,7 +127,7 @@ export function Bullet({
           />
         )}
       </div>
-      <div className="flex items-center justify-between text-[11px] text-gray-500 tabular-nums" aria-hidden="true">
+      <div className="flex items-center justify-between text-xs text-gray-500 tabular-nums" aria-hidden="true">
         <span>0</span>
         <span>{formatValue(effectiveMax)}</span>
       </div>

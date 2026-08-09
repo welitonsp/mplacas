@@ -217,13 +217,13 @@ export function ColumnSeries({
                 </span>
                 {item.badge && (
                   <span
-                    className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-tight ${BADGE_CLASS[item.badge.tone]}`}
+                    className={`inline-block rounded-full px-1.5 py-0.5 text-xs font-semibold leading-tight ${BADGE_CLASS[item.badge.tone]}`}
                   >
                     {item.badge.label}
                   </span>
                 )}
                 {item.description && (
-                  <span className="text-[10px] leading-tight text-gray-500">{item.description}</span>
+                  <span className="text-xs leading-tight text-gray-500">{item.description}</span>
                 )}
               </div>
             ))}

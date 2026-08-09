@@ -4,8 +4,20 @@ import './index.css'
 import { applyTheme, resolveInitialTheme } from './lib/theme'
 
 // Resolve e aplica o tema (claro/escuro) antes de qualquer render — ADR-071,
-// Decisão 2. Side-effect de módulo, roda uma única vez no bootstrap.
-applyTheme(resolveInitialTheme())
+// Decisão 2. Side-effect de módulo, roda uma única vez no bootstrap, fora de
+// qualquer árvore React — por isso fora do alcance do `ErrorBoundary` (que só
+// captura erros durante o ciclo de render de uma árvore já montada). Um
+// `localStorage`/`matchMedia` bloqueado por alguma política incomum de
+// navegador não pode deixar a página em branco sem nenhuma mensagem: o
+// `try/catch` aqui garante um tema padrão seguro (claro) e loga o erro,
+// sem lançar — o boot do app nunca trava por causa da resolução de tema.
+try {
+  applyTheme(resolveInitialTheme())
+} catch (error) {
+  // eslint-disable-next-line no-console
+  console.error('Falha ao resolver o tema inicial do Mplacas; usando o tema claro padrão:', error)
+  applyTheme('light')
+}
 
 // Migração de segurança do dashboard FastAPI removido. Nunca lemos o
 // valor: apenas apagamos a credencial de longa duração deixada por versões antigas.
