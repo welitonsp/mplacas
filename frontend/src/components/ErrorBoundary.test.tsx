@@ -36,4 +36,18 @@ describe('ErrorBoundary', () => {
 
     consoleErrorSpy.mockRestore()
   })
+
+  it('o botão de recarregar preserva foco visível acessível', () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    render(
+      <ErrorBoundary>
+        <Bomb />
+      </ErrorBoundary>
+    )
+
+    expect(screen.getByRole('button', { name: 'Recarregar' }).className).toMatch(/focus-visible:ring/)
+
+    consoleErrorSpy.mockRestore()
+  })
 })
