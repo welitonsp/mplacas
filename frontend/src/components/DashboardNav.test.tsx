@@ -64,13 +64,13 @@ describe('DashboardNav', () => {
     expect(screen.getByText('Conteúdo — Técnico')).toBeInTheDocument()
   })
 
-  it('cada link usa o padrão de foco visível e touch target mínimo 44px', () => {
+  it('cada link usa o padrão de foco visível e touch target confortável', () => {
     renderNav(DASHBOARD_OVERVIEW_PATH)
 
     for (const name of ['Visão Geral', 'Produção', 'Financeiro', 'Técnico']) {
       const link = screen.getByRole('link', { name })
       expect(link.className).toMatch(/focus-visible:ring-2 focus-visible:ring-\[var\(--color-brand-primary\)\]/)
-      expect(link.className).toMatch(/min-h-\[44px\]/)
+      expect(link.className).toMatch(/min-h-\[56px\]/)
     }
   })
 })

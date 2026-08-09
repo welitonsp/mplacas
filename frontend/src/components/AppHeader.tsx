@@ -156,15 +156,15 @@ export function AppHeader() {
   const themeControlLabel = describeThemeControl(themePreference, effectiveTheme)
 
   return (
-    <header className="sticky top-0 z-30 bg-[var(--color-surface)]/80 backdrop-blur-md border-b border-[var(--color-border)] shadow-sm">
+    <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[var(--color-surface)]/90 shadow-sm backdrop-blur-md">
       <div className="mx-auto max-w-7xl 2xl:max-w-[96rem] px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <BrandMark className="h-7 w-auto text-[var(--color-brand-primary)] flex-shrink-0" />
-          <span className="text-lg font-semibold text-gray-900 hidden sm:inline">Mplacas</span>
+          <span className="hidden text-lg font-semibold tracking-tight text-gray-950 sm:inline">Mplacas</span>
           <PlantSelector />
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           {/* Ícone único, sempre visível: sol/lua conforme o tema efetivo
               atual. Substitui a lista "Aparência" que ficava escondida
               dentro do menu do avatar — o usuário não precisa mais abrir
@@ -174,7 +174,7 @@ export function AppHeader() {
             onClick={handleThemeToggle}
             aria-label={themeControlLabel}
             title={themeControlLabel}
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded text-gray-700 hover:text-gray-900 hover:bg-gray-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700 transition-colors duration-150 hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
           >
             {effectiveTheme === 'light' ? (
               <SunIcon className="h-5 w-5" />
@@ -192,7 +192,7 @@ export function AppHeader() {
               aria-controls={menuId}
               aria-label={username ? `Menu de ${username}` : 'Menu do usuário'}
               onClick={() => setMenuOpen((prev) => !prev)}
-              className="flex items-center gap-2 rounded text-sm text-gray-700 hover:text-gray-900 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+              className="flex min-h-[44px] items-center gap-2 rounded-full border border-gray-200 bg-gray-50 pl-1.5 pr-2 text-sm text-gray-700 transition-colors duration-150 hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
             >
               <span
                 aria-hidden="true"
@@ -209,7 +209,7 @@ export function AppHeader() {
               <div
                 id={menuId}
                 role="menu"
-                className="absolute right-0 mt-2 w-48 rounded-lg border border-gray-200 bg-[var(--color-surface)] py-1 shadow-lg"
+                className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200 bg-[var(--color-surface)] py-1 shadow-lg"
               >
                 {username && (
                   <div className="px-3 py-2 text-sm font-medium text-gray-900 border-b border-gray-100">

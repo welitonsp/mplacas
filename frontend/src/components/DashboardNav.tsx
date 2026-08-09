@@ -8,11 +8,31 @@ import {
 
 type NavIcon = 'overview' | 'production' | 'financial' | 'technical'
 
-const NAV_ITEMS: ReadonlyArray<{ to: string; label: string; icon: NavIcon }> = [
-  { to: DASHBOARD_OVERVIEW_PATH, label: 'Visão Geral', icon: 'overview' },
-  { to: DASHBOARD_PRODUCTION_PATH, label: 'Produção', icon: 'production' },
-  { to: DASHBOARD_FINANCIAL_PATH, label: 'Financeiro', icon: 'financial' },
-  { to: DASHBOARD_TECHNICAL_PATH, label: 'Técnico', icon: 'technical' },
+const NAV_ITEMS: ReadonlyArray<{ to: string; label: string; description: string; icon: NavIcon }> = [
+  {
+    to: DASHBOARD_OVERVIEW_PATH,
+    label: 'Visão Geral',
+    description: 'Cockpit executivo',
+    icon: 'overview',
+  },
+  {
+    to: DASHBOARD_PRODUCTION_PATH,
+    label: 'Produção',
+    description: 'Geração e desvios',
+    icon: 'production',
+  },
+  {
+    to: DASHBOARD_FINANCIAL_PATH,
+    label: 'Financeiro',
+    description: 'Economia e retorno',
+    icon: 'financial',
+  },
+  {
+    to: DASHBOARD_TECHNICAL_PATH,
+    label: 'Técnico',
+    description: 'Causas e performance',
+    icon: 'technical',
+  },
 ]
 
 function NavItemIcon({ name }: { name: NavIcon }) {
@@ -37,23 +57,39 @@ export function DashboardNav() {
   return (
     <nav
       aria-label="Seções do painel"
-      className="border-b border-[var(--color-border)] bg-[var(--color-surface)]"
+      className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-sm"
     >
-      <div className="mx-auto max-w-7xl 2xl:max-w-[96rem] px-4 sm:px-6 lg:px-8 flex gap-1 overflow-x-auto">
+      <div className="hidden px-3 pb-3 pt-2 lg:block">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+          Operação
+        </p>
+        <p className="mt-1 text-sm text-gray-500">
+          Navegue pelos módulos do painel solar.
+        </p>
+      </div>
+      <div className="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
+            aria-label={item.label}
             className={({ isActive }) =>
-              `flex min-h-[44px] items-center gap-2 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] ${
+              `group flex min-h-[56px] min-w-[10.5rem] items-center gap-3 whitespace-nowrap rounded-xl border px-3 text-sm font-semibold transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] lg:min-w-0 ${
                 isActive
-                  ? 'border-[var(--color-brand-primary)] text-[var(--color-brand-primary)]'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  ? 'border-[var(--color-brand-primary)] bg-[var(--color-brand-primary-light)] text-[var(--color-brand-primary)] shadow-sm'
+                  : 'border-transparent text-gray-600 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-900'
               }`
             }
           >
-            <NavItemIcon name={item.icon} />
-            {item.label}
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/70 text-current ring-1 ring-inset ring-black/5">
+              <NavItemIcon name={item.icon} />
+            </span>
+            <span className="min-w-0 text-left">
+              <span className="block truncate">{item.label}</span>
+              <span className="block truncate text-xs font-medium text-gray-500 group-aria-[current=page]:text-[var(--color-brand-primary)]/80">
+                {item.description}
+              </span>
+            </span>
           </NavLink>
         ))}
       </div>
