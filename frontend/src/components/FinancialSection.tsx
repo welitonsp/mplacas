@@ -7,7 +7,7 @@ import { CurrencyCard } from './CurrencyCard'
 import { StackedBar } from './charts/StackedBar'
 import { EstimatedSavingsCard } from './EstimatedSavingsCard'
 import { FinancialReturnSection } from './FinancialReturnSection'
-import { MetricCard } from './MetricCard'
+import { MetricStrip } from './MetricStrip'
 import { RetryableError } from './RetryableError'
 
 // Bloco 3 — "Quanto custou? Qual o retorno?" (Etapa 7 da refatoração de
@@ -59,13 +59,18 @@ export function FinancialSection({
             já expõe "Financeiro" como `<h1>` da rota — um segundo heading com
             o mesmo texto logo abaixo seria redundante (mesmo raciocínio já
             aplicado em `OverviewPage`) e ambíguo para `getByText`/leitor de
-            tela. As três subseções abaixo passam a ser `h2`, direto sob o
-            `h1` do módulo (antes eram `h3`, sob o `h2` "Financeiro" removido). */}
-        {/* Os mesmos oito cards de antes, reagrupados em três subseções
-            rotuladas em vez de uma grade achatada — a hierarquia visual
-            (fatura vs. tarifa vs. créditos) já existia na cabeça de quem lê,
-            só não estava expressa na estrutura (acabamento de hierarquia do
-            dashboard). */}
+            tela. A subseção abaixo passa a ser `h2`, direto sob o `h1` do
+            módulo (antes era `h3`, sob o `h2` "Financeiro" removido). */}
+        {/* Os mesmos oito cards de antes, sob uma única subseção rotulada
+            "Custo do ciclo" (antes três: "Custo do ciclo"/"Tarifas"/
+            "Créditos de energia") — a hierarquia visual (fatura vs. tarifa
+            vs. créditos) já existia na cabeça de quem lê, só não estava
+            expressa na estrutura (acabamento de hierarquia do dashboard).
+            Tarifas e créditos (antes 4 `MetricCard`, cada um seu próprio
+            `Card`, mesmo peso visual do "Valor total da fatura" ao lado)
+            foram compactados numa única tira de 4 colunas dentro deste mesmo
+            bloco "Custo do ciclo" (ver `MetricStrip`) — nenhum valor,
+            unidade ou casa decimal muda, só o invólucro (4 caixas viram 1). */}
         <div className="space-y-6">
           <div>
             <SectionTitle as="h2">Custo do ciclo</SectionTitle>
@@ -113,37 +118,38 @@ export function FinancialSection({
                 unavailableReason={indicators.savings_unavailable_reason}
               />
             </div>
-          </div>
 
-          <div>
-            <SectionTitle as="h2">Tarifas</SectionTitle>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <MetricCard
-                label="Tarifa com impostos"
-                value={indicators.tariff_with_taxes_brl_kwh}
-                unit="R$/kWh"
-                maximumFractionDigits={6}
-              />
-              <MetricCard
-                label="Tarifa sem impostos"
-                value={indicators.tariff_without_taxes_brl_kwh}
-                unit="R$/kWh"
-                maximumFractionDigits={6}
-              />
-            </div>
-          </div>
-
-          <div>
-            <SectionTitle as="h2">Créditos de energia</SectionTitle>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <MetricCard label="Saldo de créditos" value={indicators.credit_balance_kwh} unit="kWh" />
-              <MetricCard
-                label="Cobertura de créditos"
-                value={indicators.credit_coverage_rate_percent}
-                unit="%"
-                barPercent={toNumber(indicators.credit_coverage_rate_percent)}
-              />
-            </div>
+            {/* Tarifas do ciclo (R$/kWh) e saldo/cobertura de créditos de
+                energia — mesmos 4 valores/unidades de antes (`tariff_with_
+                taxes_brl_kwh`/`tariff_without_taxes_brl_kwh` com 6 casas
+                decimais, ver ADR-056; `credit_balance_kwh`;
+                `credit_coverage_rate_percent` com a mesma barra de
+                progresso), só reagrupados numa tira dentro do card de
+                "Custo do ciclo" em vez de 4 `MetricCard` soltos. */}
+            <MetricStrip
+              className="mt-4"
+              items={[
+                {
+                  label: 'Tarifa com impostos',
+                  value: indicators.tariff_with_taxes_brl_kwh,
+                  unit: 'R$/kWh',
+                  maximumFractionDigits: 6,
+                },
+                {
+                  label: 'Tarifa sem impostos',
+                  value: indicators.tariff_without_taxes_brl_kwh,
+                  unit: 'R$/kWh',
+                  maximumFractionDigits: 6,
+                },
+                { label: 'Saldo de créditos', value: indicators.credit_balance_kwh, unit: 'kWh' },
+                {
+                  label: 'Cobertura de créditos',
+                  value: indicators.credit_coverage_rate_percent,
+                  unit: '%',
+                  barPercent: toNumber(indicators.credit_coverage_rate_percent),
+                },
+              ]}
+            />
           </div>
         </div>
       </section>

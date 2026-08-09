@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { jsonResponse, photovoltaicSummaryPayload, singlePlant } from '../../test/dashboardFixtures'
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
@@ -44,8 +44,16 @@ describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
 
     await renderTechnicalPage()
 
+    // Mesmo achado/correção de `FinancialPage.test.tsx` (ADR-072 Etapa 7): o
+    // `<h1>` "Técnico" (e o restante do conteúdo, incluindo "Bruto") só
+    // aparece depois que `plantId` resolve, mas não há garantia de que o
+    // efeito assíncrono de `usePlantResource` já tenha disparado a
+    // requisição no instante em que `findByText` resolve — sem `waitFor` a
+    // asserção de contagem corre contra esse efeito.
     await screen.findByText('Bruto')
-    expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(1)
+    })
     expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledWith(singlePlant.id)
   })
 

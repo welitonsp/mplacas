@@ -65,10 +65,20 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
 
     await renderFinancialPage()
 
+    // O `<h1>` "Financeiro" é renderizado assim que `plantId` resolve (ver
+    // `FinancialPage.tsx`), antes de `usePlantResource` necessariamente já
+    // ter disparado as duas requisições — sem `waitFor` ao redor das
+    // asserções de contagem, esta checagem corre contra o efeito assíncrono
+    // e falha de forma intermitente (achado durante ADR-072 Etapa 7,
+    // reproduzido em `main` antes de qualquer mudança; mesmo padrão de
+    // `OverviewPage.test.tsx`/`ProductionPage.test.tsx`, que já usam
+    // `waitFor` para a asserção equivalente).
     await screen.findByText('Financeiro')
-    expect(fetchExecutiveMock).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(fetchExecutiveMock).toHaveBeenCalledTimes(1)
+      expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(1)
+    })
     expect(fetchExecutiveMock).toHaveBeenCalledWith(singlePlant.id)
-    expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(1)
     expect(fetchFinancialReturnMock).toHaveBeenCalledWith(singlePlant.id)
   })
 

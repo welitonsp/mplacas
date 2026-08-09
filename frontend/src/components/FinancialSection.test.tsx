@@ -61,7 +61,7 @@ function buildFinancialReturn(
 }
 
 describe('FinancialSection', () => {
-  it('agrupa os cards em três subgrupos rotulados (Custo do ciclo, Tarifas, Créditos de energia), sem perder nenhum card (Frente H)', () => {
+  it('agrupa os 8 cards numa única subseção "Custo do ciclo" — tarifas/créditos compactados numa tira, sem perder nenhum card (ADR-072 Etapa 7)', () => {
     const { container } = render(
       <FinancialSection
         indicators={buildIndicators()}
@@ -73,25 +73,33 @@ describe('FinancialSection', () => {
     // `FinancialSection` não tem mais heading "Financeiro" isolado (ADR-072,
     // Etapa 6 — o módulo que a hospeda já expõe esse texto como `<h1>` da
     // rota, ver `FinancialSection.tsx`) — a primeira `<section>` (das duas
-    // que o componente devolve como irmãs) é a de "Custo do ciclo"/
-    // "Tarifas"/"Créditos de energia".
+    // que o componente devolve como irmãs) é a de "Custo do ciclo".
     const section = container.querySelector('section') as HTMLElement
 
     const custoGrid = within(section).getByText('Valor total da fatura').closest('.grid')
     expect(custoGrid).not.toBeNull()
     expect(custoGrid!.children).toHaveLength(2)
 
-    const tarifasGrid = within(section).getByText('Tarifa com impostos').closest('.grid')
-    expect(tarifasGrid).not.toBeNull()
-    expect(tarifasGrid!.children).toHaveLength(2)
-
-    const creditosGrid = within(section).getByText('Saldo de créditos').closest('.grid')
-    expect(creditosGrid).not.toBeNull()
-    expect(creditosGrid!.children).toHaveLength(2)
+    // Tarifas com/sem impostos e saldo/cobertura de créditos: antes 4
+    // `MetricCard` sob duas subseções próprias ("Tarifas"/"Créditos de
+    // energia"), agora uma única tira (`MetricStrip`) de 4 colunas dentro do
+    // mesmo bloco "Custo do ciclo" — nenhum dos 4 rótulos/valores some, só o
+    // invólucro muda.
+    const tarifaLabel = within(section).getByText('Tarifa com impostos')
+    const strip = tarifaLabel.closest('.grid') as HTMLElement
+    expect(strip).not.toBeNull()
+    expect(strip.children).toHaveLength(4)
+    expect(within(strip).getByText('Tarifa sem impostos')).toBeInTheDocument()
+    expect(within(strip).getByText('Saldo de créditos')).toBeInTheDocument()
+    expect(within(strip).getByText('Cobertura de créditos')).toBeInTheDocument()
 
     expect(within(section).getByText('Custo do ciclo')).toBeInTheDocument()
-    expect(within(section).getByText('Tarifas')).toBeInTheDocument()
-    expect(within(section).getByText('Créditos de energia')).toBeInTheDocument()
+    // As duas subseções antigas não existem mais como headings isolados — o
+    // texto das métricas continua visível (verificado acima), só a
+    // sub-rotulação "Tarifas"/"Créditos de energia" foi removida junto com a
+    // separação em caixas.
+    expect(within(section).queryByText('Tarifas')).not.toBeInTheDocument()
+    expect(within(section).queryByText('Créditos de energia')).not.toBeInTheDocument()
   })
 
   it('renderiza todos os valores financeiros com a unidade correta quando a fatura tem tarifa registrada', () => {
