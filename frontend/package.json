@@ -23,11 +23,11 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^6.0.5",
-    "jsdom": "^25.0.1",
+    "jsdom": "^30.0.1",
     "tailwindcss": "^4.1.0",
     "typescript": "^7.0.2",
     "vite": "^8.2.0",
     "vitest": "^4.1.10",
-    "wrangler": "^4.118.0"
+    "wrangler": "^4.119.0"
   }
 }
