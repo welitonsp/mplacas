@@ -2,11 +2,13 @@ import { fetchAnomalyHistory, fetchMonthlyProductionHistory, fetchPhotovoltaicSu
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
-import type { AnomalyDashboardResponse, AnomalyFetchError, AnomalyFetchState } from '../../lib/dashboard/contracts'
-import { classifyAnomalyErrorStatus, parseAnomalyDashboard } from '../../lib/dashboard/contracts'
+import type { AnomalyDashboardResponse, AnomalyFetchError, AnomalyFetchState, Severity } from '../../lib/dashboard/contracts'
+import { classifyAnomalyErrorStatus, latestNonNullProductionDate, parseAnomalyDashboard } from '../../lib/dashboard/contracts'
 import { parseMonthlyProductionHistory } from '../../lib/dashboard/monthly-history-contracts'
 import type { PhotovoltaicSummaryResponse } from '../../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary } from '../../lib/dashboard/photovoltaic-contracts'
+import { formatFullDate, formatNumber, toNumber } from '../../lib/format'
+import { levelLabel, levelSeverity, SEVERITY_BG, SEVERITY_TEXT } from '../../lib/dashboard/visuals'
 import { SectionTitle } from '../../components/SectionTitle'
 import { LatestDailyProductionCard } from '../../components/LatestDailyProductionCard'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
@@ -36,6 +38,66 @@ function fallbackPvSummary(plantId: string): PhotovoltaicSummaryResponse {
     losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
     expectedProduction: { available: false, reason: 'NO_PERFORMANCE_HISTORY', referenceCompleteOn: null },
   }
+}
+
+const SUMMARY_TILE_TONE: Record<Severity | 'brand', { bar: string; bg: string; text: string }> = {
+  brand: {
+    bar: 'bg-[var(--color-brand-primary)]',
+    bg: 'bg-[var(--color-brand-primary-light)]',
+    text: 'text-[var(--color-brand-primary)]',
+  },
+  success: {
+    bar: 'bg-[var(--color-success)]',
+    bg: SEVERITY_BG.success,
+    text: SEVERITY_TEXT.success,
+  },
+  warning: {
+    bar: 'bg-[var(--color-warning)]',
+    bg: SEVERITY_BG.warning,
+    text: SEVERITY_TEXT.warning,
+  },
+  danger: {
+    bar: 'bg-[var(--color-danger)]',
+    bg: SEVERITY_BG.danger,
+    text: SEVERITY_TEXT.danger,
+  },
+  neutral: {
+    bar: 'bg-gray-300',
+    bg: SEVERITY_BG.neutral,
+    text: SEVERITY_TEXT.neutral,
+  },
+}
+
+interface ProductionSummaryTileProps {
+  label: string
+  value: string
+  supportingText: string
+  tone: Severity | 'brand'
+}
+
+function ProductionSummaryTile({ label, value, supportingText, tone }: ProductionSummaryTileProps) {
+  const meta = SUMMARY_TILE_TONE[tone]
+
+  return (
+    <article className="min-h-[8.5rem] rounded-xl border border-gray-200 bg-[var(--color-surface)] p-4 shadow-sm">
+      <div className={`mb-4 h-1 w-10 rounded-full ${meta.bar}`} aria-hidden="true" />
+      <div className="text-sm font-semibold text-gray-600">{label}</div>
+      <div className="mt-2 text-2xl font-bold tracking-tight text-gray-950">{value}</div>
+      <div className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${meta.bg} ${meta.text}`}>
+        {supportingText}
+      </div>
+    </article>
+  )
+}
+
+function formatKwh(value: number | null): string {
+  return value === null ? '—' : `${formatNumber(value)} kWh`
+}
+
+function formatDeviation(value: number | null): string {
+  if (value === null) return '—'
+  const prefix = value > 0 ? '+' : ''
+  return `${prefix}${formatNumber(value, 1)}%`
 }
 
 // Módulo Produção (ADR-072, Etapa 4) — três recursos (ver ADR seção 2):
@@ -156,15 +218,73 @@ export function ProductionPage() {
   // ainda não chegou, nunca o fallback prematuramente.
   const pvSummary = pvSummaryResource.status === 'error' ? fallbackPvSummary(plantId) : pvSummaryResource.data
   const expectedProduction = pvSummary?.expectedProduction ?? null
+  const latestProductionDate = anomalies.data ? latestNonNullProductionDate(anomalies.data.daily) : null
+  const latestProductionPoint =
+    latestProductionDate && anomalies.data
+      ? anomalies.data.daily.find((point) => point.date === latestProductionDate) ?? null
+      : null
+  const latestActualProduction = latestProductionPoint ? toNumber(latestProductionPoint.actual_production_kwh) : null
+  const latestExpectedProduction = latestProductionPoint ? toNumber(latestProductionPoint.expected_production_kwh) : null
+  const latestDeviation = latestProductionPoint ? toNumber(latestProductionPoint.deviation_percent) : null
+  const latestLevel = latestProductionPoint?.level ?? null
+  const deviationTone = latestProductionPoint ? levelSeverity(latestLevel) : 'neutral'
+  const streakDays = anomalies.data?.current_streak_days ?? null
+  const streakTone: Severity = streakDays === null ? 'neutral' : streakDays > 0 ? 'warning' : 'success'
 
   return (
     <>
-      {/* `<h1>` próprio do módulo (ADR-072, Etapa 6) — ver o mesmo comentário
-          em `OverviewPage.tsx`. */}
-      <h1 ref={headingRef} tabIndex={-1} className="mb-1 text-xl font-bold text-gray-900 tracking-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded">
-        Produção
-      </h1>
-      <RefreshBar onRefresh={refreshAll} loading={loading} />
+      <div className="mb-6 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+            Painel de produção
+          </p>
+          {/* `<h1>` próprio do módulo (ADR-072, Etapa 6) — ver o mesmo comentário
+              em `OverviewPage.tsx`. */}
+          <h1 ref={headingRef} tabIndex={-1} className="mt-2 text-2xl font-bold tracking-tight text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] rounded sm:text-3xl">
+            Produção
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
+            Acompanhe ciclos fechados, geração diária e desvios contra o esperado para priorizar a investigação certa.
+          </p>
+        </div>
+        <RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />
+      </div>
+
+      <section className="mb-6">
+        <SectionTitle as="h2">Resumo operacional</SectionTitle>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <ProductionSummaryTile
+            label="Última produção"
+            value={formatKwh(latestActualProduction)}
+            supportingText={
+              anomalyState.loading && !latestProductionPoint
+                ? 'Carregando histórico'
+                : latestProductionDate
+                  ? `Dado de ${formatFullDate(latestProductionDate)}`
+                  : 'Sem dado diário'
+            }
+            tone="brand"
+          />
+          <ProductionSummaryTile
+            label="Esperado no dia"
+            value={formatKwh(latestExpectedProduction)}
+            supportingText={latestExpectedProduction === null ? 'Baseline indisponível' : 'Referência diária'}
+            tone="neutral"
+          />
+          <ProductionSummaryTile
+            label="Desvio"
+            value={formatDeviation(latestDeviation)}
+            supportingText={latestProductionPoint ? levelLabel(latestLevel) : 'Sem comparação'}
+            tone={deviationTone}
+          />
+          <ProductionSummaryTile
+            label="Sequência de atenção"
+            value={streakDays === null ? '—' : `${formatNumber(streakDays, 0)} ${streakDays === 1 ? 'dia' : 'dias'}`}
+            supportingText={streakDays === null ? 'Aguardando dados' : streakDays > 0 ? 'abaixo do esperado' : 'sem alerta ativo'}
+            tone={streakTone}
+          />
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
         {/* Produção por ciclo de faturamento (12 ciclos fechados) — leitura do

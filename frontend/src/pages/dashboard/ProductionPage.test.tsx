@@ -81,6 +81,31 @@ describe('ProductionPage — módulo Produção (ADR-072, Etapa 4)', () => {
   })
 })
 
+describe('ProductionPage — resumo operacional', () => {
+  it('destaca produção real, esperado, desvio e sequência de atenção no topo', async () => {
+    vi.resetModules()
+    installApiMock()
+
+    await renderProductionPage()
+
+    const title = await screen.findByRole('heading', { level: 2, name: 'Resumo operacional' })
+    const section = title.closest('section') as HTMLElement
+
+    expect(within(section).getByText('Última produção')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(within(section).getByText('40 kWh')).toBeInTheDocument()
+    })
+    expect(within(section).getByText('Dado de 30/07/2026')).toBeInTheDocument()
+    expect(within(section).getByText('Esperado no dia')).toBeInTheDocument()
+    expect(within(section).getByText('44 kWh')).toBeInTheDocument()
+    expect(within(section).getByText('Desvio')).toBeInTheDocument()
+    expect(within(section).getByText('-9%')).toBeInTheDocument()
+    expect(within(section).getByText('Sequência de atenção')).toBeInTheDocument()
+    expect(within(section).getByText('2 dias')).toBeInTheDocument()
+    expect(within(section).getByText('abaixo do esperado')).toBeInTheDocument()
+  })
+})
+
 describe('ProductionPage — seção "Produção por ciclo de faturamento"', () => {
   it('renderiza as colunas do histórico de ciclos, não o banner de erro', async () => {
     vi.resetModules()
