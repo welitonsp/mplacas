@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import { stubMatchMediaMatches } from '../../test/matchMedia'
 import { StackedBar } from './StackedBar'
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 describe('StackedBar', () => {
-  it('calcula larguras proporcionais ao total (implícito pela soma dos segmentos)', () => {
+  it('calcula larguras proporcionais ao total (implícito pela soma dos segmentos)', async () => {
     render(
       <StackedBar
         segments={[
@@ -17,11 +22,13 @@ describe('StackedBar', () => {
     const bar = screen.getByRole('img')
     const fills = bar.children
     expect(fills).toHaveLength(2)
-    expect((fills[0] as HTMLElement).style.width).toBe('77.7%')
-    expect((fills[1] as HTMLElement).style.width).toBe('22.3%')
+    await waitFor(() => {
+      expect((fills[0] as HTMLElement).style.width).toBe('77.7%')
+      expect((fills[1] as HTMLElement).style.width).toBe('22.3%')
+    })
   })
 
-  it('calcula larguras proporcionais a um total explícito', () => {
+  it('calcula larguras proporcionais a um total explícito', async () => {
     render(
       <StackedBar
         segments={[{ label: 'Energia', value: 50 }]}
@@ -31,7 +38,9 @@ describe('StackedBar', () => {
     )
 
     const bar = screen.getByRole('img')
-    expect((bar.children[0] as HTMLElement).style.width).toBe('25%')
+    await waitFor(() => {
+      expect((bar.children[0] as HTMLElement).style.width).toBe('25%')
+    })
   })
 
   it('não renderiza segmento com value <= 0', () => {
@@ -111,5 +120,68 @@ describe('StackedBar', () => {
 
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
     expect(screen.getByText('Nenhum dado para exibir.')).toBeInTheDocument()
+  })
+
+  describe('animação de entrada (uma vez por montagem, nunca em refetch)', () => {
+    it('os segmentos nascem em 0% e crescem até a largura final após a montagem', async () => {
+      render(
+        <StackedBar
+          segments={[{ label: 'Energia', value: 60, tone: 'neutral' }]}
+          total={100}
+          valueFormatter={(value) => `${value}%`}
+        />,
+      )
+
+      const bar = screen.getByRole('img')
+      const fill = bar.children[0] as HTMLElement
+
+      expect(fill.style.width).toBe('0%')
+
+      await waitFor(() => {
+        expect(fill.style.width).toBe('60%')
+      })
+    })
+
+    it('prefers-reduced-motion: reduce mostra a largura final já no primeiro render, sem animação', () => {
+      stubMatchMediaMatches(true)
+
+      render(
+        <StackedBar
+          segments={[{ label: 'Energia', value: 60, tone: 'neutral' }]}
+          total={100}
+          valueFormatter={(value) => `${value}%`}
+        />,
+      )
+
+      const bar = screen.getByRole('img')
+      const fill = bar.children[0] as HTMLElement
+      expect(fill.style.width).toBe('60%')
+    })
+
+    it('um refetch (rerender com valor novo, sem desmontar) não reanima do zero', async () => {
+      const { rerender } = render(
+        <StackedBar
+          segments={[{ label: 'Energia', value: 60, tone: 'neutral' }]}
+          total={100}
+          valueFormatter={(value) => `${value}%`}
+        />,
+      )
+
+      const getFill = () => (screen.getByRole('img').children[0] as HTMLElement)
+
+      await waitFor(() => {
+        expect(getFill().style.width).toBe('60%')
+      })
+
+      rerender(
+        <StackedBar
+          segments={[{ label: 'Energia', value: 90, tone: 'neutral' }]}
+          total={100}
+          valueFormatter={(value) => `${value}%`}
+        />,
+      )
+
+      expect(getFill().style.width).toBe('90%')
+    })
   })
 })

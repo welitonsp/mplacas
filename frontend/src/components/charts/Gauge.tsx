@@ -1,4 +1,5 @@
 import { clampPercent } from '../../lib/format'
+import { useChartEntrance } from './useChartEntrance'
 
 export type ChartTone = 'success' | 'warning' | 'danger' | 'neutral'
 
@@ -59,6 +60,14 @@ export function Gauge({
   const ariaLabel = label ? `${label}: ${displayValue}` : `${displayValue} de 100`
   const color = TONE_COLOR_VAR[tone]
 
+  // Animação de entrada (uma vez por montagem, nunca em refetch — ver
+  // `useChartEntrance`): o anel cresce de 0 até `pct`. `displayValue`/
+  // `ariaLabel` acima NUNCA dependem disto — o texto/rótulo acessível
+  // sempre mostra o valor real desde o primeiro render, só o traço visual
+  // do SVG começa vazio.
+  const entered = useChartEntrance()
+  const drawnPct = entered ? pct : 0
+
   return (
     <div
       className={`relative inline-flex flex-col items-center ${className}`.trim()}
@@ -81,8 +90,9 @@ export function Gauge({
           stroke={color}
           strokeWidth="3"
           strokeLinecap="round"
-          strokeDasharray={`${pct} 100`}
+          strokeDasharray={`${drawnPct} 100`}
           transform="rotate(-90 18 18)"
+          className="transition-[stroke-dasharray] duration-150 motion-reduce:transition-none"
         />
       </svg>
       <div

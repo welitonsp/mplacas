@@ -1,4 +1,5 @@
 import type { ChartTone } from './Gauge'
+import { useChartEntrance } from './useChartEntrance'
 
 // Cor do tick de referência (target) — sempre neutra/escura, nunca um dos
 // tokens de severidade (`Gauge`/`BarList` reservam essas cores para o
@@ -83,6 +84,13 @@ export function Bullet({
 
   const color = TONE_BG_VAR[tone]
 
+  // Animação de entrada (uma vez por montagem, nunca em refetch — ver
+  // `useChartEntrance`): só a barra do valor real cresce de 0% até
+  // `valuePct` — o tick de meta é uma referência estática, não uma medida
+  // que "cresce", então aparece direto na posição final. `aria-label`/os
+  // números abaixo da barra nunca dependem disto.
+  const entered = useChartEntrance()
+
   const ariaLabel = (() => {
     const prefix = label ? `${label}: ` : ''
     const valueText = formatValue(safeValue)
@@ -107,8 +115,8 @@ export function Bullet({
         className={`relative w-full overflow-hidden rounded-md bg-[var(--color-chart-track)] ${BAR_HEIGHT_CLASS}`}
       >
         <div
-          className="h-full rounded-md transition-[width] duration-150"
-          style={{ width: `${valuePct}%`, backgroundColor: color }}
+          className="h-full rounded-md transition-[width] duration-150 motion-reduce:transition-none"
+          style={{ width: `${entered ? valuePct : 0}%`, backgroundColor: color }}
         />
         {targetPct != null && (
           <div

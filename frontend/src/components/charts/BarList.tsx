@@ -1,4 +1,5 @@
 import type { ChartTone } from './Gauge'
+import { useChartEntrance } from './useChartEntrance'
 
 export type BarListItem = {
   label: string
@@ -75,6 +76,12 @@ export function BarList({
   const effectiveMax = maxValue ?? (assessableValues.length > 0 ? Math.max(...assessableValues) : 0)
   const formatValue = valueFormatter ?? ((value: number) => String(value))
 
+  // Animação de entrada (uma vez por montagem, nunca em refetch — ver
+  // `useChartEntrance`): cada barra cresce de 0% até sua largura real.
+  // `aria-valuenow`/`aria-label`/o valor textual ao lado nunca dependem
+  // disto — sempre mostram o valor real desde o primeiro render.
+  const entered = useChartEntrance()
+
   return (
     <ul className={`flex flex-col gap-3 ${className}`.trim()}>
       {items.map((item, index) => {
@@ -133,8 +140,8 @@ export function BarList({
                 aria-label={`${item.label}: ${formatValue(item.value)}`}
               >
                 <div
-                  className="h-full rounded-md transition-[width] duration-150"
-                  style={{ width: `${pct}%`, backgroundColor: color }}
+                  className="h-full rounded-md transition-[width] duration-150 motion-reduce:transition-none"
+                  style={{ width: `${entered ? pct : 0}%`, backgroundColor: color }}
                 />
               </div>
               <span className="w-16 shrink-0 text-right text-sm font-semibold tabular-nums text-[var(--color-text-primary)]">

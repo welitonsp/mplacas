@@ -1,14 +1,21 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import { stubMatchMediaMatches } from '../../test/matchMedia'
 import { Bullet } from './Bullet'
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 describe('Bullet', () => {
-  it('desenha a barra do valor real proporcional a max', () => {
+  it('desenha a barra do valor real proporcional a max', async () => {
     render(<Bullet value={50} target={null} max={100} label="Produção" />)
 
     const bar = screen.getByRole('img')
     const fill = bar.firstElementChild as HTMLElement
-    expect(fill.style.width).toBe('50%')
+    await waitFor(() => {
+      expect(fill.style.width).toBe('50%')
+    })
   })
 
   it('posiciona o tick de meta na proporção correta de max', () => {
@@ -75,12 +82,14 @@ describe('Bullet', () => {
     expect(screen.getByText('+20%')).toBeInTheDocument()
   })
 
-  it('clampa a largura da barra em 100% quando value excede max explícito', () => {
+  it('clampa a largura da barra em 100% quando value excede max explícito', async () => {
     render(<Bullet value={250} target={100} max={200} />)
 
     const bar = screen.getByRole('img')
     const fill = bar.firstElementChild as HTMLElement
-    expect(fill.style.width).toBe('100%')
+    await waitFor(() => {
+      expect(fill.style.width).toBe('100%')
+    })
   })
 
   it('trata target=0 sem calcular desvio (divisão por zero)', () => {
@@ -88,5 +97,44 @@ describe('Bullet', () => {
 
     const bar = screen.getByRole('img')
     expect(bar).toHaveAttribute('aria-label', '10 kWh, esperado 0 kWh')
+  })
+
+  describe('animação de entrada (uma vez por montagem, nunca em refetch)', () => {
+    it('a barra do valor real nasce em 0% e cresce até a largura final após a montagem', async () => {
+      render(<Bullet value={60} target={80} max={100} label="Produção" />)
+
+      const bar = screen.getByRole('img')
+      const fill = bar.firstElementChild as HTMLElement
+
+      expect(fill.style.width).toBe('0%')
+
+      await waitFor(() => {
+        expect(fill.style.width).toBe('60%')
+      })
+    })
+
+    it('prefers-reduced-motion: reduce mostra a largura final já no primeiro render, sem animação', () => {
+      stubMatchMediaMatches(true)
+
+      render(<Bullet value={60} target={80} max={100} label="Produção" />)
+
+      const bar = screen.getByRole('img')
+      const fill = bar.firstElementChild as HTMLElement
+      expect(fill.style.width).toBe('60%')
+    })
+
+    it('um refetch (rerender com valor novo, sem desmontar) não reanima do zero', async () => {
+      const { rerender } = render(<Bullet value={60} target={80} max={100} label="Produção" />)
+
+      const getFill = () => (screen.getByRole('img').firstElementChild as HTMLElement)
+
+      await waitFor(() => {
+        expect(getFill().style.width).toBe('60%')
+      })
+
+      rerender(<Bullet value={90} target={80} max={100} label="Produção" />)
+
+      expect(getFill().style.width).toBe('90%')
+    })
   })
 })

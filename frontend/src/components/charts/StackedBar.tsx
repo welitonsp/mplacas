@@ -1,4 +1,5 @@
 import type { ChartTone } from './Gauge'
+import { useChartEntrance } from './useChartEntrance'
 
 export type StackedBarSegment = {
   label: string
@@ -48,6 +49,11 @@ export function StackedBar({
   const effectiveTotal = total ?? segments.reduce((sum, segment) => sum + segment.value, 0)
   const renderableSegments = segments.filter((segment) => segment.value > 0)
 
+  // Animação de entrada (uma vez por montagem, nunca em refetch — ver
+  // `useChartEntrance`): os segmentos crescem juntos de 0% até sua largura
+  // real. `aria-label`/a legenda com os valores nunca dependem disto.
+  const entered = useChartEntrance()
+
   const ariaLabel = (() => {
     const totalText = `Total ${formatValue(effectiveTotal)}`
     if (renderableSegments.length === 0) return totalText
@@ -78,8 +84,8 @@ export function StackedBar({
                 key={`${segment.label}-${index}`}
                 title={`${segment.label}: ${formatValue(segment.value)}`}
                 aria-hidden="true"
-                className="h-full transition-[width] duration-150 first:rounded-l-md last:rounded-r-md"
-                style={{ width: `${pct}%`, backgroundColor: color }}
+                className="h-full transition-[width] duration-150 motion-reduce:transition-none first:rounded-l-md last:rounded-r-md"
+                style={{ width: `${entered ? pct : 0}%`, backgroundColor: color }}
               />
             )
           })}

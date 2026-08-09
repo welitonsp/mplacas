@@ -1,4 +1,5 @@
 import type { ChartTone } from './Gauge'
+import { useChartEntrance } from './useChartEntrance'
 
 // A topologia de fluxo do Mplacas é fixa: produção → consumo (autoconsumo
 // direto), produção → rede (injeção) e rede → consumo (importação). Este não
@@ -35,6 +36,11 @@ const MAX_STROKE = 26
 
 const VIEW_WIDTH = 600
 const VIEW_HEIGHT = 260
+
+// Atraso entre o início do traçado de cada fluxo (80-100ms dá a sensação de
+// sequência — produção -> consumo, produção -> rede, rede -> consumo — em
+// vez de tudo aparecendo simultaneamente).
+const FLOW_STAGGER_MS = 90
 
 // Caixas dos três nós, fixas porque a topologia é fixa (ver comentário do
 // tipo `SankeyNodeId` acima). Produção à esquerda, Consumo à direita, Rede
@@ -92,6 +98,16 @@ export function SankeyFlow({
   className?: string
 }) {
   const formatValue = valueFormatter ?? ((value: number) => String(value))
+
+  // Animação de entrada (uma vez por montagem, nunca em refetch — ver
+  // `useChartEntrance`): cada `<path>` é "desenhado" do início ao fim via
+  // `pathLength`/`stroke-dashoffset` (técnica clássica de traçado SVG — o
+  // atributo `pathLength={1}` normaliza o comprimento de QUALQUER path para
+  // 1 unidade, então `stroke-dasharray={1}` + `stroke-dashoffset` indo de 1
+  // [invisível] a 0 [completo] funciona sem medir o comprimento real do
+  // traço em pixels, suportado nativamente pelo navegador — nenhuma
+  // dependência nova). `aria-label`/a tabela `sr-only` nunca dependem disto.
+  const entered = useChartEntrance()
 
   if (nodes.length === 0) {
     return <p className={`text-sm text-gray-500 ${className}`.trim()}>Nenhum dado para exibir.</p>
@@ -164,6 +180,11 @@ export function SankeyFlow({
               strokeLinecap="round"
               opacity={0.85}
               aria-hidden="true"
+              pathLength={1}
+              strokeDasharray={1}
+              strokeDashoffset={entered ? 0 : 1}
+              className="transition-[stroke-dashoffset] duration-500 motion-reduce:transition-none"
+              style={{ transitionDelay: `${index * FLOW_STAGGER_MS}ms` }}
             />
           )
         })}

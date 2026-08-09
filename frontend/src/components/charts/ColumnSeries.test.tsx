@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import { stubMatchMediaMatches } from '../../test/matchMedia'
 import { ColumnSeries } from './ColumnSeries'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('ColumnSeries', () => {
   it('renderiza uma coluna por item, em ordem (nunca reordenado), com rótulo e valor', () => {
@@ -33,7 +38,7 @@ describe('ColumnSeries', () => {
     expect(chart.getAttribute('aria-label')).toBe('A: 10 kWh; B: 20 kWh')
   })
 
-  it('calcula altura proporcional ao maior valor da série quando maxValue não é informado', () => {
+  it('calcula altura proporcional ao maior valor da série quando maxValue não é informado', async () => {
     render(
       <ColumnSeries
         items={[
@@ -45,9 +50,14 @@ describe('ColumnSeries', () => {
     )
 
     const columns = document.querySelectorAll('[data-quality]')
-    const heights = Array.from(columns).map((el) => (el as HTMLElement).style.height)
-    // 160px de altura útil (CHART_HEIGHT) — A a 25%, B a 100%, C a 50%.
-    expect(heights).toEqual(['40px', '160px', '80px'])
+
+    // A altura final só chega depois do tick de animação de entrada (ver
+    // `useChartEntrance`) — o primeiro render mostra 0px em cada coluna.
+    await waitFor(() => {
+      const heights = Array.from(columns).map((el) => (el as HTMLElement).style.height)
+      // 160px de altura útil (CHART_HEIGHT) — A a 25%, B a 100%, C a 50%.
+      expect(heights).toEqual(['40px', '160px', '80px'])
+    })
   })
 
   it('nunca fabrica uma coluna a partir de value=null — desenha marcador tracejado de altura fixa', () => {
@@ -68,7 +78,7 @@ describe('ColumnSeries', () => {
     expect(screen.getByRole('img').getAttribute('aria-label')).toBe('A: sem dado; B: 40')
   })
 
-  it('item com value=null não entra no cálculo do maior valor (maxValue implícito)', () => {
+  it('item com value=null não entra no cálculo do maior valor (maxValue implícito)', async () => {
     render(
       <ColumnSeries
         items={[
@@ -79,7 +89,9 @@ describe('ColumnSeries', () => {
     )
 
     const column = document.querySelector('[data-quality]') as HTMLElement
-    expect(column.style.height).toBe('160px')
+    await waitFor(() => {
+      expect(column.style.height).toBe('160px')
+    })
   })
 
   it('coluna com badge é distinguível via atributo data-quality="partial", não só cor', () => {
@@ -188,5 +200,41 @@ describe('ColumnSeries', () => {
     expect(visual.getAllByText('100 kWh')).toHaveLength(2)
     expect(visual.getByText('50 kWh')).toBeInTheDocument()
     expect(visual.getByText('0 kWh')).toBeInTheDocument()
+  })
+
+  describe('animação de entrada (uma vez por montagem, nunca em refetch)', () => {
+    it('a coluna nasce com altura 0 e cresce até o valor real após a montagem', async () => {
+      render(<ColumnSeries items={[{ label: 'A', value: 80 }]} maxValue={100} />)
+
+      const column = document.querySelector('[data-quality]') as HTMLElement
+      expect(column.style.height).toBe('0px')
+
+      await waitFor(() => {
+        expect(column.style.height).toBe('128px') // 80% de 160px (CHART_HEIGHT)
+      })
+    })
+
+    it('prefers-reduced-motion: reduce mostra a altura final já no primeiro render, sem animação', () => {
+      stubMatchMediaMatches(true)
+
+      render(<ColumnSeries items={[{ label: 'A', value: 80 }]} maxValue={100} />)
+
+      const column = document.querySelector('[data-quality]') as HTMLElement
+      expect(column.style.height).toBe('128px')
+    })
+
+    it('um refetch (rerender com valor novo, sem desmontar) não reanima do zero', async () => {
+      const { rerender } = render(<ColumnSeries items={[{ label: 'A', value: 80 }]} maxValue={100} />)
+
+      const getColumn = () => document.querySelector('[data-quality]') as HTMLElement
+
+      await waitFor(() => {
+        expect(getColumn().style.height).toBe('128px')
+      })
+
+      rerender(<ColumnSeries items={[{ label: 'A', value: 40 }]} maxValue={100} />)
+
+      expect(getColumn().style.height).toBe('64px')
+    })
   })
 })

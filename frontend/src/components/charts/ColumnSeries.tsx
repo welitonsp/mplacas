@@ -1,5 +1,6 @@
 import type { ChartTone } from './Gauge'
 import type { BarListItem } from './BarList'
+import { useChartEntrance } from './useChartEntrance'
 
 // Mesmo shape de item de `BarList` (label/value/tone/badge/description/
 // unavailableLabel) — reaproveitado em vez de duplicado (ver skill
@@ -89,6 +90,13 @@ export function ColumnSeries({
     .filter((value): value is number => value != null)
   const effectiveMax = maxValue ?? (assessableValues.length > 0 ? Math.max(...assessableValues) : 0)
 
+  // Animação de entrada (uma vez por montagem, nunca em refetch — ver
+  // `useChartEntrance`): cada coluna (com dado ou o marcador tracejado de
+  // "sem dado") cresce de altura 0 até sua altura real. O rótulo/valor/selo
+  // abaixo de cada coluna e o `aria-label`/tabela `sr-only` nunca dependem
+  // disto — sempre mostram o valor real desde o primeiro render.
+  const entered = useChartEntrance()
+
   // Equivalente textual completo do gráfico inteiro — usado no `aria-label`
   // do `role="img"` que envolve só a área visual (barras), mesmo padrão de
   // `StackedBar`/`SankeyFlow`. Inclui o selo de qualidade quando presente,
@@ -150,8 +158,8 @@ export function ColumnSeries({
                       style={{ minWidth: MIN_COLUMN_WIDTH }}
                     >
                       <div
-                        className="w-full rounded-t-sm border-2 border-dashed border-[var(--color-chart-track)]"
-                        style={{ height: NO_DATA_MARKER_HEIGHT }}
+                        className="w-full rounded-t-sm border-2 border-dashed border-[var(--color-chart-track)] transition-[height] duration-150 motion-reduce:transition-none"
+                        style={{ height: entered ? NO_DATA_MARKER_HEIGHT : 0 }}
                       />
                     </div>
                   )
@@ -174,11 +182,11 @@ export function ColumnSeries({
                         classe CSS/cor (ver instrução da tarefa). */}
                     <div
                       data-quality={badgeTone ? 'partial' : 'complete'}
-                      className={`w-full rounded-t-sm transition-[height] duration-150 ${
+                      className={`w-full rounded-t-sm transition-[height] duration-150 motion-reduce:transition-none ${
                         badgeTone ? 'border-2 border-dashed' : ''
                       }`}
                       style={{
-                        height: barHeight,
+                        height: entered ? barHeight : 0,
                         backgroundColor: color,
                         ...(badgeTone ? { borderColor: TONE_BG_VAR[badgeTone] } : {}),
                       }}

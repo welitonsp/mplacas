@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import { stubMatchMediaMatches } from '../../test/matchMedia'
 import { BarList } from './BarList'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('BarList', () => {
   it('renderiza uma barra para cada item da lista', () => {
@@ -17,7 +22,7 @@ describe('BarList', () => {
     expect(screen.getAllByRole('progressbar')).toHaveLength(3)
   })
 
-  it('calcula larguras proporcionais ao maior valor da lista quando maxValue não é informado', () => {
+  it('calcula larguras proporcionais ao maior valor da lista quando maxValue não é informado', async () => {
     render(
       <BarList
         items={[
@@ -29,20 +34,25 @@ describe('BarList', () => {
     )
 
     const bars = screen.getAllByRole('progressbar')
-    const fillWidths = bars.map(
-      (bar) => (bar.firstElementChild as HTMLElement).style.width,
-    )
 
-    expect(fillWidths).toEqual(['25%', '100%', '50%'])
+    // A largura final só chega depois do tick de animação de entrada (ver
+    // `useChartEntrance`/`ChartEntrance.entrance.test.tsx`) — o primeiro
+    // render mostra 0%, que não é o que este teste quer verificar.
+    await waitFor(() => {
+      const fillWidths = bars.map((bar) => (bar.firstElementChild as HTMLElement).style.width)
+      expect(fillWidths).toEqual(['25%', '100%', '50%'])
+    })
   })
 
-  it('calcula larguras proporcionais a maxValue explícito quando informado', () => {
+  it('calcula larguras proporcionais a maxValue explícito quando informado', async () => {
     render(<BarList items={[{ label: 'A', value: 40 }]} maxValue={200} />)
 
     const bar = screen.getByRole('progressbar')
     const fill = bar.firstElementChild as HTMLElement
 
-    expect(fill.style.width).toBe('20%')
+    await waitFor(() => {
+      expect(fill.style.width).toBe('20%')
+    })
   })
 
   it('expõe role progressbar com atributos ARIA corretos em cada item', () => {
@@ -103,7 +113,7 @@ describe('BarList', () => {
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 
-  it('itens com value=null não entram no cálculo do maior valor (maxValue implícito)', () => {
+  it('itens com value=null não entram no cálculo do maior valor (maxValue implícito)', async () => {
     render(
       <BarList
         items={[
@@ -116,6 +126,52 @@ describe('BarList', () => {
     const bar = screen.getByRole('progressbar')
     const fill = bar.firstElementChild as HTMLElement
 
-    expect(fill.style.width).toBe('100%')
+    await waitFor(() => {
+      expect(fill.style.width).toBe('100%')
+    })
+  })
+
+  describe('animação de entrada (uma vez por montagem, nunca em refetch)', () => {
+    it('a barra nasce em 0% e cresce até o valor real após a montagem', async () => {
+      render(<BarList items={[{ label: 'A', value: 60 }]} maxValue={100} />)
+
+      const bar = screen.getByRole('progressbar')
+      const fill = bar.firstElementChild as HTMLElement
+
+      expect(fill.style.width).toBe('0%')
+
+      await waitFor(() => {
+        expect(fill.style.width).toBe('60%')
+      })
+    })
+
+    it('prefers-reduced-motion: reduce mostra a largura final já no primeiro render, sem animação', () => {
+      stubMatchMediaMatches(true)
+
+      render(<BarList items={[{ label: 'A', value: 60 }]} maxValue={100} />)
+
+      const bar = screen.getByRole('progressbar')
+      const fill = bar.firstElementChild as HTMLElement
+
+      expect(fill.style.width).toBe('60%')
+    })
+
+    it('um refetch (rerender com valor novo, sem desmontar) não reanima do zero', async () => {
+      const { rerender } = render(<BarList items={[{ label: 'A', value: 60 }]} maxValue={100} />)
+
+      const getFill = () => (screen.getByRole('progressbar').firstElementChild as HTMLElement)
+
+      await waitFor(() => {
+        expect(getFill().style.width).toBe('60%')
+      })
+
+      // Mesma instância (nenhum unmount) recebendo um valor novo, como um
+      // `usePlantResource.refetch()` traria para a mesma usina.
+      rerender(<BarList items={[{ label: 'A', value: 90 }]} maxValue={100} />)
+
+      // Nunca passa por 0% de novo — vai direto pro novo valor (a pequena
+      // transição de 60% -> 90% já existente, não uma reanimação do zero).
+      expect(getFill().style.width).toBe('90%')
+    })
   })
 })
