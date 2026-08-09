@@ -24,6 +24,14 @@ function renderLoginPage() {
 }
 
 describe('LoginPage — acessibilidade e tokens de design', () => {
+  it('mostra a proposta executiva e a prévia do cockpit no primeiro acesso', () => {
+    renderLoginPage()
+
+    expect(screen.getByText('Prévia do cockpit')).toBeInTheDocument()
+    expect(screen.getByText('Operação, técnica e financeiro no mesmo olhar')).toBeInTheDocument()
+    expect(screen.getByText('Sessão protegida por credenciais operacionais. O backend valida permissões a cada requisição.')).toBeInTheDocument()
+  })
+
   it('o botão "Entrar" usa os tokens de cor do projeto, não classes bg-blue-*/focus:ring-blue-*', () => {
     renderLoginPage()
 
