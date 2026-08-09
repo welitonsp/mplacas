@@ -24,7 +24,7 @@ export function AppShell({ children, subnav }: { children: ReactNode; subnav?: R
 
         <AppHeader />
 
-        <main id={MAIN_ID} className="mx-auto max-w-7xl 2xl:max-w-[96rem] px-4 sm:px-6 lg:px-8 py-8 md:py-10">
+        <main id={MAIN_ID} className="mx-auto max-w-7xl 2xl:max-w-[96rem] px-3 py-5 sm:px-6 sm:py-8 lg:px-8 md:py-10">
           {children}
         </main>
       </div>
@@ -42,7 +42,7 @@ export function AppShell({ children, subnav }: { children: ReactNode; subnav?: R
 
       <AppHeader />
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 md:py-8 lg:grid-cols-[17rem_minmax(0,1fr)] lg:px-8 xl:gap-8 2xl:max-w-[96rem]">
+      <div className="mx-auto grid max-w-7xl gap-4 px-3 py-4 sm:gap-6 sm:px-6 sm:py-6 md:py-8 lg:grid-cols-[16rem_minmax(0,1fr)] lg:px-8 xl:grid-cols-[17rem_minmax(0,1fr)] xl:gap-8 2xl:max-w-[96rem]">
         <aside className="lg:sticky lg:top-20 lg:self-start">
           {subnav}
         </aside>

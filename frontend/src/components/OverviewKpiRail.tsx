@@ -48,14 +48,14 @@ function KpiItem({
   accentClass: string
 }) {
   return (
-    <div className="group relative min-w-0 px-4 py-4 sm:px-5">
+    <div className="group relative min-w-0 px-4 py-3.5 sm:px-5 sm:py-4">
       <div className="flex items-start gap-3">
         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${accentClass}`}>
           <KpiIcon name={icon} />
         </span>
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-gray-900">{value}</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-gray-900 sm:text-xl">{value}</p>
           <p className="mt-1 text-xs leading-relaxed text-gray-500">{meta}</p>
         </div>
       </div>

@@ -63,7 +63,7 @@ export function EmptyState({
   className?: string
 }) {
   return (
-    <div className={`rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-10 text-center shadow-sm ${className}`.trim()}>
+    <div className={`rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-8 text-center shadow-sm sm:px-6 sm:py-10 ${className}`.trim()}>
       <EmptyStateIcon tone={tone} />
       {eyebrow && (
         <p className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">

@@ -80,10 +80,10 @@ function ProductionSummaryTile({ label, value, supportingText, tone }: Productio
   const meta = SUMMARY_TILE_TONE[tone]
 
   return (
-    <article className="min-h-[8.5rem] rounded-xl border border-gray-200 bg-[var(--color-surface)] p-4 shadow-sm">
-      <div className={`mb-4 h-1 w-10 rounded-full ${meta.bar}`} aria-hidden="true" />
+    <article className="min-h-[7.5rem] rounded-xl border border-gray-200 bg-[var(--color-surface)] p-3.5 shadow-sm sm:min-h-[8.5rem] sm:p-4">
+      <div className={`mb-3 h-1 w-10 rounded-full sm:mb-4 ${meta.bar}`} aria-hidden="true" />
       <div className="text-sm font-semibold text-gray-600">{label}</div>
-      <div className="mt-2 text-2xl font-bold tracking-tight text-gray-950">{value}</div>
+      <div className="mt-2 text-xl font-bold tracking-tight text-gray-950 sm:text-2xl">{value}</div>
       <div className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${meta.bg} ${meta.text}`}>
         {supportingText}
       </div>

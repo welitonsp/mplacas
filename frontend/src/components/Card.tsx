@@ -14,7 +14,7 @@ export function Card({
   dashed = false,
   tone = 'neutral',
   accent,
-  padding = 'p-5',
+  padding = 'p-4 sm:p-5',
   className = '',
   // `hover:shadow-md` só faz sentido quando o card responde a interação
   // (é clicável/expansível) — aplicado incondicionalmente antes, sinalizava
@@ -28,7 +28,7 @@ export function Card({
   tone?: CardTone
   accent?: Severity
   // Utilitário de padding sobrescrevível (ex: `QualityBanner` usa `p-4`) — separado
-  // de `className` para nunca colidir com o `p-5` padrão na mesma cascata CSS.
+  // de `className` para nunca colidir com o `p-4 sm:p-5` padrão na mesma cascata CSS.
   padding?: string
   className?: string
   interactive?: boolean

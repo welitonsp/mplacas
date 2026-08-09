@@ -277,10 +277,10 @@ function FinancialSummaryTile({
         : 'bg-[var(--color-energy-consumption)]'
 
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-      <div className={`mb-4 h-1.5 w-12 rounded-sm ${toneClass}`} />
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 shadow-sm sm:p-4">
+      <div className={`mb-3 h-1.5 w-12 rounded-sm sm:mb-4 ${toneClass}`} />
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-gray-900 tabular-nums">{value}</p>
+      <p className="mt-2 text-xl font-semibold text-gray-900 tabular-nums sm:text-2xl">{value}</p>
       <p className="mt-1 text-xs text-gray-500">{supportingText}</p>
     </div>
   )

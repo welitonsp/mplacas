@@ -157,7 +157,7 @@ export function AppHeader() {
 
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[var(--color-surface)]/90 shadow-sm backdrop-blur-md">
-      <div className="mx-auto max-w-7xl 2xl:max-w-[96rem] px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-3 sm:h-16 sm:px-6 lg:px-8 2xl:max-w-[96rem]">
         <div className="flex items-center gap-3 min-w-0">
           <BrandMark className="h-7 w-auto text-[var(--color-brand-primary)] flex-shrink-0" />
           <span className="hidden text-lg font-semibold tracking-tight text-gray-950 sm:inline">Mplacas</span>
