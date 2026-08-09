@@ -275,7 +275,7 @@ export function ProductionDiagnosticPanel({
               key={signal.label}
               className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[signal.tone]} px-3 py-2`}
             >
-              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{signal.label}</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{signal.label}</p>
               <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[signal.tone]}`}>{signal.value}</p>
             </div>
           ))}
