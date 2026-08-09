@@ -16,16 +16,30 @@ export function RetryableError({
   return (
     <div
       role="alert"
-      className={`flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--color-danger-light)] border border-[var(--color-danger)]/20 px-4 py-3 text-sm text-[var(--color-danger-text)] ${className}`.trim()}
+      className={`rounded-2xl border border-[var(--color-danger)]/25 bg-[var(--color-danger-light)] p-4 text-[var(--color-danger-text)] shadow-sm ${className}`.trim()}
     >
-      <span>{message}</span>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="shrink-0 rounded text-sm font-medium hover:underline transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)]"
-      >
-        Tentar novamente
-      </button>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 gap-3">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/70 ring-1 ring-inset ring-[var(--color-danger)]/15" aria-hidden="true">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 8v4" />
+              <path d="M12 16h.01" />
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+            </svg>
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Não foi possível carregar os dados</p>
+            <p className="mt-1 text-sm leading-6">{message}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="inline-flex min-h-[40px] shrink-0 items-center justify-center rounded-lg bg-[var(--color-danger)] px-4 text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-[var(--color-danger-text)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)] focus-visible:ring-offset-2"
+        >
+          Tentar novamente
+        </button>
+      </div>
     </div>
   )
 }

@@ -126,7 +126,9 @@ describe('ProductionPage — seção "Produção por ciclo de faturamento"', () 
     // com o valor formatado. Escopado à parte visual (`data-testid`) porque
     // os mesmos rótulos/valores se repetem, de propósito, na tabela
     // `sr-only` da primitiva — sem esse escopo `getByText` ficaria ambíguo.
-    expect(within(section).getByRole('img')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(within(section).getByRole('img')).toBeInTheDocument()
+    })
     const visual = within(within(section).getByTestId('column-series-visual'))
     expect(visual.getByText('mar/26')).toBeInTheDocument()
     expect(visual.getByText('abr/26')).toBeInTheDocument()

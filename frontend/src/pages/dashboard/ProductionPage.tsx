@@ -11,6 +11,7 @@ import { formatFullDate, formatNumber, toNumber } from '../../lib/format'
 import { levelLabel, levelSeverity, SEVERITY_BG, SEVERITY_TEXT } from '../../lib/dashboard/visuals'
 import { SectionTitle } from '../../components/SectionTitle'
 import { LatestDailyProductionCard } from '../../components/LatestDailyProductionCard'
+import { EmptyState } from '../../components/EmptyState'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { MonthlyProductionSection } from '../../components/MonthlyProductionSection'
 import { ProductionHistorySection } from '../../components/ProductionHistorySection'
@@ -204,9 +205,12 @@ export function ProductionPage() {
   // estado vazio explícito, zero chamadas de dados disparadas.
   if (!plantId || plants.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-[var(--color-surface)] px-6 py-10 text-center text-sm text-gray-600">
-        Nenhuma usina cadastrada para esta conta ainda.
-      </div>
+      <EmptyState
+        eyebrow="Configuração inicial"
+        title="Nenhuma usina cadastrada"
+        description="Nenhuma usina cadastrada para esta conta ainda. Quando uma usina for vinculada, histórico, desvios e produção esperada aparecerão aqui."
+        tone="brand"
+      />
     )
   }
 

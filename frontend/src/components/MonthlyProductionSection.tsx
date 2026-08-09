@@ -1,6 +1,7 @@
 import type { ColumnSeriesItem } from './charts/ColumnSeries'
 import { ColumnSeries } from './charts/ColumnSeries'
 import { Card } from './Card'
+import { EmptyState } from './EmptyState'
 import type { MonthlyProductionHistoryResponse } from '../lib/dashboard/monthly-history-contracts'
 import { formatCycleLabel, formatNumber } from '../lib/format'
 
@@ -33,11 +34,11 @@ export function MonthlyProductionSection({
   // erro (o backend devolve `200` com `cycles: []`, ver contrato do endpoint).
   if (cycles.length === 0) {
     return (
-      <Card>
-        <p className="text-sm text-gray-500">
-          Ainda não há ciclo de faturamento fechado para esta usina.
-        </p>
-      </Card>
+      <EmptyState
+        title="Sem ciclos fechados"
+        description="Ainda não há ciclo de faturamento fechado para esta usina. Assim que a primeira fatura for consolidada, o histórico mensal aparecerá aqui."
+        tone="neutral"
+      />
     )
   }
 

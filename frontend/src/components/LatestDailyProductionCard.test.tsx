@@ -137,7 +137,7 @@ describe('LatestDailyProductionCard', () => {
   it('mostra estado indisponível explícito quando não há nenhum dia com produção real coletada', () => {
     render(<LatestDailyProductionCard anomalyState={{ data: null, loading: false, error: null }} />)
 
-    expect(screen.getByText('Produção do último dia vs. esperada')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Sem produção diária' })).toBeInTheDocument()
     expect(
       screen.getByText('Ainda não há produção diária registrada para comparar com o esperado.')
     ).toBeInTheDocument()

@@ -18,6 +18,7 @@ import { QualityBanner } from '../../components/QualityBanner'
 import { TrendCard } from '../../components/TrendCard'
 import { EnergyFlowDiagram } from '../../components/EnergyFlowDiagram'
 import { DiagnosticsCard } from '../../components/DiagnosticsCard'
+import { EmptyState } from '../../components/EmptyState'
 import { hasIncompleteDailyProduction } from '../../components/EnergyProductionSection'
 import { MetricCard } from '../../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
@@ -136,9 +137,12 @@ export function OverviewPage() {
   // estado vazio explícito, zero chamadas de dados disparadas.
   if (!plantId || plants.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-[var(--color-surface)] px-6 py-10 text-center text-sm text-gray-600">
-        Nenhuma usina cadastrada para esta conta ainda.
-      </div>
+      <EmptyState
+        eyebrow="Configuração inicial"
+        title="Nenhuma usina cadastrada"
+        description="Nenhuma usina cadastrada para esta conta ainda. Assim que uma usina for vinculada, o cockpit executivo aparecerá aqui."
+        tone="brand"
+      />
     )
   }
 

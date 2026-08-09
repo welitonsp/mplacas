@@ -178,9 +178,8 @@ describe('MonthlyProductionSection', () => {
   it('mostra mensagem neutra quando não há nenhum ciclo fechado', () => {
     render(<MonthlyProductionSection history={buildHistory({ cyclesReturned: 0, cycles: [] })} />)
 
-    expect(
-      screen.getByText('Ainda não há ciclo de faturamento fechado para esta usina.')
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Sem ciclos fechados' })).toBeInTheDocument()
+    expect(screen.getByText(/Ainda não há ciclo de faturamento fechado para esta usina/)).toBeInTheDocument()
   })
 
   it('mostra a coluna única e o aviso de comparação quando há só um ciclo', () => {

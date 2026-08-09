@@ -4,6 +4,7 @@ import { levelSeverity } from '../lib/dashboard/visuals'
 import { formatFullDate, formatNumber, toNumber } from '../lib/format'
 import { Bullet } from './charts/Bullet'
 import { Card } from './Card'
+import { EmptyState } from './EmptyState'
 
 // Compara a produção real do ÚLTIMO DIA com dado diário coletado contra a
 // produção esperada do mesmo dia — ambas na mesma escala diária (kWh/dia).
@@ -41,14 +42,12 @@ export function LatestDailyProductionCard({
   // explícito, nunca uma barra fabricada a partir de zero.
   if (!latestPoint || actualValue == null) {
     return (
-      <Card className={className}>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-          Produção do último dia vs. esperada
-        </p>
-        <p className="mt-4 text-sm text-gray-500">
-          Ainda não há produção diária registrada para comparar com o esperado.
-        </p>
-      </Card>
+      <EmptyState
+        title="Sem produção diária"
+        description="Ainda não há produção diária registrada para comparar com o esperado."
+        tone="neutral"
+        className={className}
+      />
     )
   }
 

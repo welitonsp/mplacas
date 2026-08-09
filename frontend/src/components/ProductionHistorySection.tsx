@@ -3,7 +3,9 @@ import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-cont
 import { baselineUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
 import { toNumber } from '../lib/format'
 import { Card } from './Card'
+import { EmptyState } from './EmptyState'
 import { ProductionHistoryChart } from './ProductionHistoryChart'
+import { RetryableError } from './RetryableError'
 import { YieldCard } from './YieldCard'
 
 export function ProductionHistorySection({
@@ -42,14 +44,11 @@ export function ProductionHistorySection({
   // efetivamente chegou (200) e disse que não há expectativa.
   if (anomalyState.error === 'NOT_FOUND') {
     return (
-      <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-          Histórico de produção diária
-        </p>
-        <p className="mt-4 text-sm text-[var(--color-text-secondary)]">
-          Ainda não há dado de produção diária coletado para este período.
-        </p>
-      </Card>
+      <EmptyState
+        title="Sem histórico diário"
+        description="Ainda não há dado de produção diária coletado para este período."
+        tone="neutral"
+      />
     )
   }
 
@@ -57,36 +56,20 @@ export function ProductionHistorySection({
   // tentar novamente, em vez de misturar com o caso acima.
   if (anomalyState.error === 'SERVER_ERROR') {
     return (
-      <Card tone="danger">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-          Histórico de produção diária
-        </p>
-        <p className="mt-4 text-sm text-[var(--color-danger)]">
-          Não foi possível carregar o histórico de produção diária. Tente novamente.
-        </p>
-        {onRetry && (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-3 rounded text-xs font-medium text-[var(--color-brand-primary)] hover:text-[var(--color-brand-primary-dark)] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
-          >
-            Tentar novamente
-          </button>
-        )}
-      </Card>
+      <RetryableError
+        message="Não foi possível carregar o histórico de produção diária. Tente novamente."
+        onRetry={onRetry ?? (() => {})}
+      />
     )
   }
 
   if (!anomalyState.data) {
     return (
-      <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-          Histórico de produção diária
-        </p>
-        <p className="mt-4 text-sm text-gray-500">
-          Não foi possível carregar o histórico de produção diária no momento.
-        </p>
-      </Card>
+      <EmptyState
+        title="Histórico indisponível"
+        description="Não foi possível carregar o histórico de produção diária no momento."
+        tone="neutral"
+      />
     )
   }
 
@@ -114,16 +97,15 @@ export function ProductionHistorySection({
 
     if (!hasActualProduction) {
       return (
-        <Card>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-            Histórico de produção diária
-          </p>
-          <p className="mt-4 text-sm text-gray-500">
-            {expectedProduction.available
+        <EmptyState
+          title="Produção esperada indisponível"
+          description={
+            expectedProduction.available
               ? baselineUnavailableMessage('NO_PERFORMANCE_HISTORY', null)
-              : baselineUnavailableMessage(expectedProduction.reason, expectedProduction.referenceCompleteOn)}
-          </p>
-        </Card>
+              : baselineUnavailableMessage(expectedProduction.reason, expectedProduction.referenceCompleteOn)
+          }
+          tone="neutral"
+        />
       )
     }
   }

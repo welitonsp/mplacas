@@ -5,6 +5,7 @@ import { useModuleTitle } from '../../hooks/useModuleTitle'
 import { parseExecutiveDashboard } from '../../lib/dashboard/contracts'
 import { parseFinancialReturn } from '../../lib/dashboard/financial-return-contracts'
 import { FinancialSection } from '../../components/FinancialSection'
+import { EmptyState } from '../../components/EmptyState'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
@@ -79,9 +80,12 @@ export function FinancialPage() {
   // estado vazio explícito, zero chamadas de dados disparadas.
   if (!plantId || plants.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-[var(--color-surface)] px-6 py-10 text-center text-sm text-gray-600">
-        Nenhuma usina cadastrada para esta conta ainda.
-      </div>
+      <EmptyState
+        eyebrow="Configuração inicial"
+        title="Nenhuma usina cadastrada"
+        description="Nenhuma usina cadastrada para esta conta ainda. Quando uma usina for vinculada, economia, retorno e créditos aparecerão aqui."
+        tone="brand"
+      />
     )
   }
 
