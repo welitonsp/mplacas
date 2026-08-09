@@ -2,7 +2,7 @@
 # Cloud Run Job). Deliberately separate from the main application Dockerfile:
 # it ships only infra/gcp/audit-costs.sh + infra/gcp/lib.sh and the Google
 # Cloud SDK, never application source or secrets.
-FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:slim@sha256:70f3244ccf80a83c23805b5ff9f0b1a88d57b3fd07831d57a311e70625b289e9
+FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:slim@sha256:6fd292185f0efc136eff2f6d20287870e5b66619818d5108c31ad55311722028
 
 ENV MPLACAS_CONFIG_FROM_ENV=1
 ENV MPLACAS_AUDIT_SKIP_BILLING=1
