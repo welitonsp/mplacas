@@ -19,6 +19,7 @@ import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 import { PageHeader } from '../../components/PageHeader'
 import { SummaryTile } from '../../components/SummaryTile'
+import { ProductionDiagnosticPanel } from '../../components/ProductionDiagnosticPanel'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
 // 401): garante um `expectedProduction.available: false` explícito para
@@ -230,6 +231,10 @@ export function ProductionPage() {
             tone={streakTone}
           />
         </div>
+      </section>
+
+      <section className="mb-6" aria-label="Diagnóstico de produção do período">
+        <ProductionDiagnosticPanel anomalyState={anomalyState} expectedProduction={expectedProduction} />
       </section>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">

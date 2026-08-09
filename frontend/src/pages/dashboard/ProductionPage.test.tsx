@@ -104,6 +104,27 @@ describe('ProductionPage — resumo operacional', () => {
     expect(within(section).getByText('2 dias')).toBeInTheDocument()
     expect(within(section).getByText('abaixo do esperado')).toBeInTheDocument()
   })
+
+  it('mostra diagnóstico de produção com pior dia, perda estimada e próxima ação antes dos gráficos', async () => {
+    vi.resetModules()
+    installApiMock()
+
+    const { container } = await renderProductionPage()
+
+    const diagnosisSection = await screen.findByRole('region', { name: 'Diagnóstico de produção do período' })
+    await waitFor(() => {
+      expect(within(diagnosisSection).getByRole('heading', { level: 2, name: 'Diagnóstico: perda recorrente de produção' })).toBeInTheDocument()
+    })
+    expect(within(diagnosisSection).getByText(/2 dias seguidos abaixo do esperado/)).toBeInTheDocument()
+    expect(within(diagnosisSection).getByText(/Perda estimada de 10 kWh/)).toBeInTheDocument()
+    expect(within(diagnosisSection).getByRole('group', { name: 'Sinais do diagnóstico de produção' })).toBeInTheDocument()
+
+    const chart = await screen.findByTestId('column-series-visual')
+    const chartSection = chart.closest('section') as HTMLElement
+    expect(container.contains(diagnosisSection)).toBe(true)
+    expect(chartSection).not.toBeNull()
+    expect(Boolean(diagnosisSection.compareDocumentPosition(chartSection) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+  })
 })
 
 describe('ProductionPage — seção "Produção por ciclo de faturamento"', () => {
