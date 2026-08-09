@@ -47,7 +47,7 @@ export function HeroCard({
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
             Ciclo de referência: {referenceMonth}
           </p>
-          <p className="mt-1 text-xl font-semibold text-gray-900">{headline}</p>
+          <p className="mt-1 text-3xl font-semibold text-gray-900">{headline}</p>
           <AttentionSummary diagnostics={diagnostics} />
         </div>
 

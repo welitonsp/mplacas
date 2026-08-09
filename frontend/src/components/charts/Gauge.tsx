@@ -17,6 +17,19 @@ const TONE_COLOR_VAR: Record<ChartTone, string> = {
 // (0-100) sem nenhuma conta extra de perímetro.
 const RADIUS = 15.9155
 
+// O texto central escala com `size` para não ficar minúsculo em gauges
+// grandes (ex: HeroCard, 112px — o índice de saúde da usina, o número mais
+// importante da tela) nem estourar o círculo em gauges pequenos (ex:
+// PerformanceRatioCard/ReportingAvailabilityCard, 72px). Faixas cobrem os
+// tamanhos em uso hoje no projeto (72, 96 default, 112) com folga para
+// tamanhos intermediários futuros, sem depender de cálculo proporcional
+// que exigiria font-size arbitrário fora da escala do Tailwind.
+function centerTextClass(size: number): string {
+  if (size >= 104) return 'text-xl'
+  if (size >= 84) return 'text-sm'
+  return 'text-xs'
+}
+
 /**
  * Anel de progresso (gauge) circular em SVG puro, sem dependência de
  * biblioteca de gráficos.
@@ -73,7 +86,7 @@ export function Gauge({
         />
       </svg>
       <div
-        className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm font-semibold tabular-nums text-[var(--color-text-primary)]"
+        className={`pointer-events-none absolute inset-0 flex items-center justify-center font-semibold tabular-nums text-[var(--color-text-primary)] ${centerTextClass(size)}`}
         aria-hidden="true"
       >
         {displayValue}
