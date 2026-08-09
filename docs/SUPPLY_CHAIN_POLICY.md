@@ -51,3 +51,29 @@ imagem de produção apenas por tag.
 Attestations são emitidas em pushes para `main`. Relatórios de dependências, SBOM e vulnerabilidades
 ficam como artifacts. Uma exceção precisa indicar pacote/CVE, razão de não aplicabilidade, owner e
 prazo; exclusões globais ou sem vencimento são proibidas.
+
+### Exceção ativa: edição manual de hash em `pypdf` (2026-08-09)
+
+`pypdf` 6.14.2 → 6.15.0 em `requirements.lock`/`requirements-dev.lock` (commit `07fd426`) corrigiu
+CVE-2026-71852 e CVE-2026-71870 (DoS por exaustão de recurso ao processar PDF malformado — caminho
+relevante: `src/mplacas/telegram/pdf.py` extrai texto de PDF enviado pelo usuário via fatura no
+Telegram). O range em `pyproject.toml` (`>=6.14.2,<7`) já cobria a versão nova; só os lockfiles
+precisavam de bump.
+
+**Razão do desvio**: `scripts/compile-locks.sh` requer Docker, indisponível no ambiente onde a
+correção foi feita; `pip-tools==7.6.0` local está quebrado por incompatibilidade com `pip==26.2`
+(`ImportError: cannot import name 'stdlib_pkgs'`). Os dois hashes (wheel + sdist) foram obtidos e
+conferidos **duas vezes de forma independente** direto da API JSON oficial do PyPI
+(`https://pypi.org/pypi/pypdf/6.15.0/json`) — uma vez por quem aplicou a correção, uma segunda vez
+por revisão independente (`reviewer`) antes do push, ambas batendo byte a byte. Nenhum outro pin foi
+tocado (confirmado via `git show 07fd426`).
+
+**O que esta exceção não cobre**: nem `scripts/check_lock_drift.py` nem
+`tests/test_supply_chain_contract.py` recalculam hash contra o PyPI — nenhum dos dois guardrails
+automatizados teria detectado um erro nesta edição manual caso ele tivesse ocorrido. A garantia aqui
+é só a dupla verificação humana/agente registrada acima, não o CI.
+
+**Owner e prazo**: dono do repositório (Weliton). Regenerar `requirements.lock`/`requirements-dev.lock`
+via `scripts/compile-locks.sh` (Docker) assim que disponível, substituindo esta edição manual por uma
+gerada pelo processo padrão — o mais tardar no próximo ciclo semanal do Dependabot para `pip`, que já
+vai tocar esses arquivos de qualquer forma. Remover esta seção quando a regeneração acontecer.
