@@ -8,7 +8,7 @@ import { parseMonthlyProductionHistory } from '../../lib/dashboard/monthly-histo
 import type { PhotovoltaicSummaryResponse } from '../../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary } from '../../lib/dashboard/photovoltaic-contracts'
 import { formatFullDate, formatNumber, toNumber } from '../../lib/format'
-import { levelLabel, levelSeverity, SEVERITY_BG, SEVERITY_TEXT } from '../../lib/dashboard/visuals'
+import { levelLabel, levelSeverity } from '../../lib/dashboard/visuals'
 import { SectionTitle } from '../../components/SectionTitle'
 import { LatestDailyProductionCard } from '../../components/LatestDailyProductionCard'
 import { EmptyState } from '../../components/EmptyState'
@@ -18,6 +18,7 @@ import { ProductionHistorySection } from '../../components/ProductionHistorySect
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 import { PageHeader } from '../../components/PageHeader'
+import { SummaryTile } from '../../components/SummaryTile'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
 // 401): garante um `expectedProduction.available: false` explícito para
@@ -40,56 +41,6 @@ function fallbackPvSummary(plantId: string): PhotovoltaicSummaryResponse {
     losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
     expectedProduction: { available: false, reason: 'NO_PERFORMANCE_HISTORY', referenceCompleteOn: null },
   }
-}
-
-const SUMMARY_TILE_TONE: Record<Severity | 'brand', { bar: string; bg: string; text: string }> = {
-  brand: {
-    bar: 'bg-[var(--color-brand-primary)]',
-    bg: 'bg-[var(--color-brand-primary-light)]',
-    text: 'text-[var(--color-brand-primary)]',
-  },
-  success: {
-    bar: 'bg-[var(--color-success)]',
-    bg: SEVERITY_BG.success,
-    text: SEVERITY_TEXT.success,
-  },
-  warning: {
-    bar: 'bg-[var(--color-warning)]',
-    bg: SEVERITY_BG.warning,
-    text: SEVERITY_TEXT.warning,
-  },
-  danger: {
-    bar: 'bg-[var(--color-danger)]',
-    bg: SEVERITY_BG.danger,
-    text: SEVERITY_TEXT.danger,
-  },
-  neutral: {
-    bar: 'bg-gray-300',
-    bg: SEVERITY_BG.neutral,
-    text: SEVERITY_TEXT.neutral,
-  },
-}
-
-interface ProductionSummaryTileProps {
-  label: string
-  value: string
-  supportingText: string
-  tone: Severity | 'brand'
-}
-
-function ProductionSummaryTile({ label, value, supportingText, tone }: ProductionSummaryTileProps) {
-  const meta = SUMMARY_TILE_TONE[tone]
-
-  return (
-    <article className="min-h-[7.5rem] rounded-xl border border-gray-200 bg-[var(--color-surface)] p-3.5 shadow-sm sm:min-h-[8.5rem] sm:p-4">
-      <div className={`mb-3 h-1 w-10 rounded-full sm:mb-4 ${meta.bar}`} aria-hidden="true" />
-      <div className="text-sm font-semibold text-gray-600">{label}</div>
-      <div className="mt-2 text-xl font-bold tracking-tight text-gray-950 sm:text-2xl">{value}</div>
-      <div className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${meta.bg} ${meta.text}`}>
-        {supportingText}
-      </div>
-    </article>
-  )
 }
 
 function formatKwh(value: number | null): string {
@@ -248,7 +199,7 @@ export function ProductionPage() {
       <section className="mb-6">
         <SectionTitle as="h2">Resumo operacional</SectionTitle>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <ProductionSummaryTile
+          <SummaryTile
             label="Última produção"
             value={formatKwh(latestActualProduction)}
             supportingText={
@@ -260,19 +211,19 @@ export function ProductionPage() {
             }
             tone="brand"
           />
-          <ProductionSummaryTile
+          <SummaryTile
             label="Esperado no dia"
             value={formatKwh(latestExpectedProduction)}
             supportingText={latestExpectedProduction === null ? 'Baseline indisponível' : 'Referência diária'}
             tone="neutral"
           />
-          <ProductionSummaryTile
+          <SummaryTile
             label="Desvio"
             value={formatDeviation(latestDeviation)}
             supportingText={latestProductionPoint ? levelLabel(latestLevel) : 'Sem comparação'}
             tone={deviationTone}
           />
-          <ProductionSummaryTile
+          <SummaryTile
             label="Sequência de atenção"
             value={streakDays === null ? '—' : `${formatNumber(streakDays, 0)} ${streakDays === 1 ? 'dia' : 'dias'}`}
             supportingText={streakDays === null ? 'Aguardando dados' : streakDays > 0 ? 'abaixo do esperado' : 'sem alerta ativo'}

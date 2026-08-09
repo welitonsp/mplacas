@@ -10,8 +10,6 @@ import {
   EVIDENCE_LEVEL_META,
   LOSS_CATEGORY_LABEL,
   performanceSeverity,
-  SEVERITY_BG,
-  SEVERITY_TEXT,
 } from '../../lib/dashboard/visuals'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { RefreshBar } from '../../components/RefreshBar'
@@ -20,6 +18,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { SectionTitle } from '../../components/SectionTitle'
 import { TechnicalPerformanceSection } from '../../components/TechnicalPerformanceSection'
 import { PageHeader } from '../../components/PageHeader'
+import { SummaryTile } from '../../components/SummaryTile'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
 // 401): a seção mostra as mensagens de indisponibilidade por bloco em vez de
@@ -41,56 +40,6 @@ function fallbackPvSummary(plantId: string): PhotovoltaicSummaryResponse {
     losses_unavailable_reason: 'NO_LOSS_ASSESSMENTS',
     expectedProduction: { available: false, reason: 'NO_PERFORMANCE_HISTORY', referenceCompleteOn: null },
   }
-}
-
-const SUMMARY_TILE_TONE: Record<Severity | 'brand', { bar: string; bg: string; text: string }> = {
-  brand: {
-    bar: 'bg-[var(--color-brand-primary)]',
-    bg: 'bg-[var(--color-brand-primary-light)]',
-    text: 'text-[var(--color-brand-primary)]',
-  },
-  success: {
-    bar: 'bg-[var(--color-success)]',
-    bg: SEVERITY_BG.success,
-    text: SEVERITY_TEXT.success,
-  },
-  warning: {
-    bar: 'bg-[var(--color-warning)]',
-    bg: SEVERITY_BG.warning,
-    text: SEVERITY_TEXT.warning,
-  },
-  danger: {
-    bar: 'bg-[var(--color-danger)]',
-    bg: SEVERITY_BG.danger,
-    text: SEVERITY_TEXT.danger,
-  },
-  neutral: {
-    bar: 'bg-gray-300',
-    bg: SEVERITY_BG.neutral,
-    text: SEVERITY_TEXT.neutral,
-  },
-}
-
-interface TechnicalSummaryTileProps {
-  label: string
-  value: string
-  supportingText: string
-  tone: Severity | 'brand'
-}
-
-function TechnicalSummaryTile({ label, value, supportingText, tone }: TechnicalSummaryTileProps) {
-  const meta = SUMMARY_TILE_TONE[tone]
-
-  return (
-    <article className="min-h-[7.5rem] rounded-xl border border-gray-200 bg-[var(--color-surface)] p-3.5 shadow-sm sm:min-h-[8.5rem] sm:p-4">
-      <div className={`mb-3 h-1 w-10 rounded-full sm:mb-4 ${meta.bar}`} aria-hidden="true" />
-      <div className="text-sm font-semibold text-gray-600">{label}</div>
-      <div className="mt-2 text-xl font-bold tracking-tight text-gray-950 sm:text-2xl">{value}</div>
-      <div className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${meta.bg} ${meta.text}`}>
-        {supportingText}
-      </div>
-    </article>
-  )
 }
 
 function formatPercent(value: number | null, maximumFractionDigits = 0): string {
@@ -209,19 +158,19 @@ export function TechnicalPage() {
       <section className="mb-6">
         <SectionTitle as="h2">Resumo técnico</SectionTitle>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <TechnicalSummaryTile
+          <SummaryTile
             label="Saúde técnica"
             value={technicalHealthLabel(performanceRatio)}
             supportingText={`PR bruto ${formatPercent(performanceRatio)}`}
             tone={healthTone}
           />
-          <TechnicalSummaryTile
+          <SummaryTile
             label="Disponibilidade dos dados"
             value={formatPercent(reportingAvailability)}
             supportingText="reporte dos devices"
             tone={availabilityTone}
           />
-          <TechnicalSummaryTile
+          <SummaryTile
             label="Principal suspeita"
             value={leadingLoss ? LOSS_CATEGORY_LABEL[leadingLoss.category] : 'Sem causa crítica'}
             supportingText={
@@ -233,7 +182,7 @@ export function TechnicalPage() {
             }
             tone={leadingLossTone}
           />
-          <TechnicalSummaryTile
+          <SummaryTile
             label="Produção esperada"
             value={formatDailyKwh(expectedDailyProduction)}
             supportingText={
