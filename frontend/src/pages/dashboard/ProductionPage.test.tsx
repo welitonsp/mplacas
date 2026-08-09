@@ -66,7 +66,10 @@ describe('ProductionPage — módulo Produção (ADR-072, Etapa 4)', () => {
 
     await renderProductionPage()
 
-    await screen.findByText('mar/26')
+    // `data-testid="column-series-visual"` (ver `charts/ColumnSeries.tsx`)
+    // identifica a parte visual do gráfico sem ambiguidade com a tabela
+    // `sr-only` que repete os mesmos rótulos/valores de propósito.
+    await screen.findByTestId('column-series-visual')
     await waitFor(() => {
       expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(1)
       expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(1)
@@ -79,7 +82,7 @@ describe('ProductionPage — módulo Produção (ADR-072, Etapa 4)', () => {
 })
 
 describe('ProductionPage — seção "Produção por ciclo de faturamento"', () => {
-  it('renderiza as barras do histórico de ciclos, não o banner de erro', async () => {
+  it('renderiza as colunas do histórico de ciclos, não o banner de erro', async () => {
     vi.resetModules()
     installApiMock()
 
@@ -93,21 +96,29 @@ describe('ProductionPage — seção "Produção por ciclo de faturamento"', () 
     })
 
     // Os 3 ciclos de `monthlyHistoryPayload` (default de `installApiMock`)
-    // aparecem como barras reais, em ordem cronológica, com o valor formatado.
-    expect(within(section).getAllByRole('progressbar')).toHaveLength(3)
-    expect(within(section).getByText('mar/26')).toBeInTheDocument()
-    expect(within(section).getByText('abr/26')).toBeInTheDocument()
-    expect(within(section).getByText('mai/26')).toBeInTheDocument()
-    expect(within(section).getByText('980 kWh')).toBeInTheDocument()
-    expect(within(section).getByText('1.050 kWh')).toBeInTheDocument()
-    expect(within(section).getByText('500 kWh')).toBeInTheDocument()
+    // aparecem como colunas reais (`ColumnSeries`, um único `role="img"` para
+    // toda a série — ver `charts/ColumnSeries.tsx`), em ordem cronológica,
+    // com o valor formatado. Escopado à parte visual (`data-testid`) porque
+    // os mesmos rótulos/valores se repetem, de propósito, na tabela
+    // `sr-only` da primitiva — sem esse escopo `getByText` ficaria ambíguo.
+    expect(within(section).getByRole('img')).toBeInTheDocument()
+    const visual = within(within(section).getByTestId('column-series-visual'))
+    expect(visual.getByText('mar/26')).toBeInTheDocument()
+    expect(visual.getByText('abr/26')).toBeInTheDocument()
+    expect(visual.getByText('mai/26')).toBeInTheDocument()
+    expect(visual.getByText('980 kWh')).toBeInTheDocument()
+    // "1.050 kWh" aparece duas vezes dentro da parte visual: o valor da
+    // coluna abr/26 E o tique do topo do eixo Y, já que abr/26 é o maior
+    // valor da série (mesma coincidência tratada em `ColumnSeries.test.tsx`).
+    expect(visual.getAllByText('1.050 kWh')).toHaveLength(2)
+    expect(visual.getByText('500 kWh')).toBeInTheDocument()
 
     // mai/26 tem missing_days: 3 no payload — único ciclo com o selo de
     // dados parciais.
     expect(within(section).getAllByText('dados parciais')).toHaveLength(1)
   })
 
-  it('mostra o esqueleto de carregamento enquanto /reports/monthly/history está em voo, depois as barras reais (sucesso)', async () => {
+  it('mostra o esqueleto de carregamento enquanto /reports/monthly/history está em voo, depois as colunas reais (sucesso)', async () => {
     vi.resetModules()
     let resolveFetch: (value: Response) => void = () => {}
     const pending = new Promise<Response>((resolve) => {
@@ -119,16 +130,19 @@ describe('ProductionPage — seção "Produção por ciclo de faturamento"', () 
 
     const sectionTitle = await screen.findByText('Produção por ciclo de faturamento')
     const section = sectionTitle.closest('section') as HTMLElement
-    expect(within(section).queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(within(section).queryByRole('img')).not.toBeInTheDocument()
 
     resolveFetch(jsonResponse(monthlyHistoryPayload))
 
     await waitFor(() => {
-      expect(within(section).getAllByRole('progressbar')).toHaveLength(3)
+      expect(within(section).getByRole('img')).toBeInTheDocument()
     })
+    expect(
+      within(within(section).getByTestId('column-series-visual')).getByText('mar/26')
+    ).toBeInTheDocument()
   })
 
-  it('mostra RetryableError (não as barras) quando fetchMonthlyProductionHistory falha, sem travar o resto do módulo, e refaz o fetch ao clicar em "Tentar novamente"', async () => {
+  it('mostra RetryableError (não as colunas) quando fetchMonthlyProductionHistory falha, sem travar o resto do módulo, e refaz o fetch ao clicar em "Tentar novamente"', async () => {
     vi.resetModules()
     const fetchMonthlyProductionHistoryMock = vi
       .fn()
@@ -157,7 +171,7 @@ describe('ProductionPage — seção "Produção por ciclo de faturamento"', () 
     fireEvent.click(within(section).getByRole('button', { name: 'Tentar novamente' }))
 
     await waitFor(() => {
-      expect(within(section).getAllByRole('progressbar')).toHaveLength(3)
+      expect(within(section).getByRole('img')).toBeInTheDocument()
     })
     expect(fetchMonthlyProductionHistoryMock).toHaveBeenCalledTimes(2)
   })
@@ -355,7 +369,7 @@ describe('ProductionPage — re-busca dados quando a usina ativa muda (ADR-069, 
       </MemoryRouter>
     )
 
-    await screen.findByText('mar/26')
+    await screen.findByTestId('column-series-visual')
     expect(anomalyCallsPlantIds).toEqual([singlePlant.id])
     expect(pvSummaryCallsPlantIds).toEqual([singlePlant.id])
     expect(monthlyHistoryCallsPlantIds).toEqual([singlePlant.id])

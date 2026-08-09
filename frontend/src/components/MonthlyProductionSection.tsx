@@ -1,16 +1,18 @@
-import type { BarListItem } from './charts/BarList'
-import { BarList } from './charts/BarList'
+import type { ColumnSeriesItem } from './charts/ColumnSeries'
+import { ColumnSeries } from './charts/ColumnSeries'
 import { Card } from './Card'
 import type { MonthlyProductionHistoryResponse } from '../lib/dashboard/monthly-history-contracts'
 import { formatCycleLabel, formatNumber } from '../lib/format'
 
-// Seção "Produção por ciclo de faturamento": um `BarList` (kWh por ciclo
-// fechado, ordem cronológica, nunca reordenado — ver skill `chart-standards`).
-// `history === null` é o estado de carregamento (mesmo padrão de
-// `FinancialReturnSection`, cujo fetch/erro é dono do `DashboardPage`, não
-// deste componente). Erro de rede/servidor é tratado fora daqui, isolado do
-// resto da página, com `RetryableError` — este componente só recebe o
-// resultado já parseado (ou `null` enquanto carrega).
+// Seção "Produção por ciclo de faturamento": um `ColumnSeries` (kWh por
+// ciclo fechado, colunas verticais em ordem cronológica — o tempo se lê da
+// esquerda pra direita, mais compacto que a lista de barras horizontais
+// anterior, ver ADR/instrução da troca). `history === null` é o estado de
+// carregamento (mesmo padrão de `FinancialReturnSection`, cujo fetch/erro é
+// dono do `DashboardPage`, não deste componente). Erro de rede/servidor é
+// tratado fora daqui, isolado do resto da página, com `RetryableError` —
+// este componente só recebe o resultado já parseado (ou `null` enquanto
+// carrega).
 export function MonthlyProductionSection({
   history,
 }: {
@@ -41,31 +43,51 @@ export function MonthlyProductionSection({
 
   // `provisionalDays`/`incompleteDays` não disparam o selo de lacuna —
   // provisório ainda é medição real. Só `missingDays`/`unavailableDays`
-  // (dias sem nenhum dado coletado) contam como lacuna de telemetria.
-  const items: BarListItem[] = cycles.map((cycle) => {
-    const hasGap =
-      cycle.quality != null &&
-      (cycle.quality.missingDays ?? 0) + (cycle.quality.unavailableDays ?? 0) > 0
+  // (dias sem nenhum dado coletado) contam como lacuna de telemetria. Quando
+  // há lacuna, `description` guarda a contagem EXATA de dias sem dado — o
+  // `BarList` antigo só mostrava o selo "dados parciais" sem nunca expor
+  // esse número em lugar nenhum da UI; a coluna nova preserva o selo E
+  // acrescenta essa contagem (visível abaixo da coluna e na tabela `sr-only`
+  // de `ColumnSeries`), nunca só em tooltip (ver instrução da tarefa).
+  const items: ColumnSeriesItem[] = cycles.map((cycle) => {
+    const gapDays =
+      (cycle.quality?.missingDays ?? 0) + (cycle.quality?.unavailableDays ?? 0)
+    const hasGap = cycle.quality != null && gapDays > 0
     return {
       label: formatCycleLabel(cycle.referenceMonth),
       value: cycle.productionKwh,
       unavailableLabel: 'sem dado',
       tone: hasGap ? 'warning' : 'neutral',
-      ...(hasGap ? { badge: { label: 'dados parciais', tone: 'warning' as const } } : {}),
+      ...(hasGap
+        ? {
+            badge: { label: 'dados parciais', tone: 'warning' as const },
+            description: `${gapDays} ${gapDays === 1 ? 'dia' : 'dias'} sem dado`,
+          }
+        : {}),
     }
   })
+  const hasAnyGap = items.some((item) => item.badge != null)
 
   return (
     <Card>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
         Últimos {cyclesReturned} {cyclesReturned === 1 ? 'ciclo' : 'ciclos'}
       </p>
-      <BarList
+      <ColumnSeries
         className="mt-4"
         items={items}
         valueFormatter={(value) => `${formatNumber(value, 0)} kWh`}
+        // Selo "dados parciais" é dado de qualidade real (ADR-038), não
+        // decoração — a legenda só aparece quando pelo menos um ciclo tem
+        // lacuna, para não poluir a leitura quando todos os ciclos exibidos
+        // são completos.
+        legend={
+          hasAnyGap
+            ? [{ label: 'Dados parciais — dias sem telemetria coletada', tone: 'warning', dashed: true }]
+            : undefined
+        }
       />
-      {/* Uma barra sozinha preenche 100% da escala e sugere uma comparação
+      {/* Uma coluna sozinha preenche 100% da escala e sugere uma comparação
           que não existe — a ressalva evita que o usuário leia "cheio" como
           "bom" sem nada para comparar (ver instrução da tarefa). */}
       {cycles.length === 1 && (
