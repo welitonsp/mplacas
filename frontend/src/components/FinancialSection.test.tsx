@@ -80,7 +80,7 @@ describe('FinancialSection', () => {
       screen.getByRole('heading', { level: 2, name: 'Resumo financeiro' })
     ).toBeInTheDocument()
     expect(screen.getByText('Cobertura por créditos')).toBeInTheDocument()
-    expect(screen.getByText('ROI acumulado')).toBeInTheDocument()
+    expect(screen.getAllByText('ROI acumulado').length).toBeGreaterThanOrEqual(1)
 
     const section = screen.getByRole('heading', { level: 2, name: 'Custo do ciclo' }).closest('section') as HTMLElement
 

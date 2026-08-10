@@ -9,6 +9,7 @@ import { EstimatedSavingsCard } from './EstimatedSavingsCard'
 import { FinancialReturnSection } from './FinancialReturnSection'
 import { MetricStrip } from './MetricStrip'
 import { RetryableError } from './RetryableError'
+import { FinancialDecisionPanel } from './FinancialDecisionPanel'
 
 // Bloco 3 — "Quanto custou? Qual o retorno?" (Etapa 7 da refatoração de
 // `DashboardPage`): dois blocos financeiros que sempre andam juntos (custo do
@@ -71,6 +72,15 @@ export function FinancialSection({
 
   return (
     <>
+      <section className="md:col-span-6 lg:col-span-12" aria-label="Decisão financeira do ciclo">
+        <FinancialDecisionPanel
+          indicators={indicators}
+          referenceMonth={referenceMonth}
+          financialReturn={financialReturn.data}
+          financialReturnError={financialReturn.error}
+        />
+      </section>
+
       <section className="md:col-span-6 lg:col-span-12">
         <SectionTitle as="h2">Resumo financeiro</SectionTitle>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
