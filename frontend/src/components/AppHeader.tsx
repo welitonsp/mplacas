@@ -95,6 +95,8 @@ export function AppHeader() {
   const menuId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const operatorDisplayName = username ?? 'Usuário autenticado'
+  const operatorInitial = operatorDisplayName.charAt(0).toUpperCase()
 
   // Enquanto a opção ativa for "Sistema", reage a mudança de preferência do
   // SO em tempo real (ADR-071, Decisão 1/6). Ao trocar para uma opção manual
@@ -198,14 +200,14 @@ export function AppHeader() {
                 aria-hidden="true"
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-brand-primary-light)] text-[var(--color-brand-primary)] text-sm font-semibold"
               >
-                {(username ?? '?').charAt(0).toUpperCase()}
+                {operatorInitial}
               </span>
               <span className="hidden min-w-0 text-left md:block">
                 <span className="block text-[12px] font-semibold uppercase leading-4 tracking-[0.12em] text-[var(--color-text-muted)]">
                   Operador
                 </span>
                 <span className="block max-w-[10rem] truncate text-sm font-semibold leading-5 text-gray-900">
-                  {username ?? 'Usuário'}
+                  {operatorDisplayName}
                 </span>
               </span>
               <span aria-hidden="true" className={`text-xs transition-transform duration-150 ${menuOpen ? 'rotate-180' : ''}`}>
@@ -217,25 +219,60 @@ export function AppHeader() {
               <div
                 id={menuId}
                 role="menu"
-                className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200 bg-[var(--color-surface)] py-1 shadow-lg"
+                className="absolute right-0 mt-2 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-[var(--color-surface)] shadow-xl"
               >
-                {username && (
-                  <div className="px-3 py-2 text-sm font-medium text-gray-900 border-b border-gray-100">
-                    {username}
+                <div className="border-b border-gray-100 bg-[var(--color-surface-subtle)] px-4 py-3">
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+                    Sessão operacional
+                  </p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <span
+                      aria-hidden="true"
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-brand-primary-light)] text-sm font-bold text-[var(--color-brand-primary)]"
+                    >
+                      {operatorInitial}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-950">{operatorDisplayName}</p>
+                      <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">Acesso seguro ao painel</p>
+                    </div>
                   </div>
-                )}
+                </div>
 
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    logout()
-                  }}
-                  className="w-full rounded text-left px-3 py-2 text-sm text-gray-700 transition-colors duration-150 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand-primary)]"
-                >
-                  Sair
-                </button>
+                <div className="p-1.5">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      logout()
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-gray-700 transition-colors duration-150 hover:bg-gray-50 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand-primary)]"
+                  >
+                    <svg
+                      viewBox="0 0 20 20"
+                      aria-hidden="true"
+                      className="h-4 w-4 flex-shrink-0"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M8 5.5V4a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5a2 2 0 0 1-2-2v-1.5"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M3 10h8m0 0L8.25 7.25M11 10l-2.75 2.75"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    Sair do painel
+                  </button>
+                </div>
               </div>
             )}
           </div>

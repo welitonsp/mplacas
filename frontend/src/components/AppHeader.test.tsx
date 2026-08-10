@@ -83,7 +83,7 @@ describe('AppHeader — menu de usuário', () => {
     setPlant()
   })
 
-  it('abre o menu ao clicar no botão e mostra a ação "Sair"', () => {
+  it('abre o menu ao clicar no botão e mostra a sessão operacional com ação de saída', () => {
     setAuth()
     render(<AppHeader />)
 
@@ -94,7 +94,9 @@ describe('AppHeader — menu de usuário', () => {
     fireEvent.click(trigger)
 
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('menuitem', { name: 'Sair' })).toBeInTheDocument()
+    expect(screen.getByText('Sessão operacional')).toBeInTheDocument()
+    expect(screen.getByText('Acesso seguro ao painel')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Sair do painel' })).toBeInTheDocument()
     expect(trigger).toHaveAttribute('aria-controls', screen.getByRole('menu').id)
   })
 
@@ -141,24 +143,24 @@ describe('AppHeader — menu de usuário', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('o botão "Sair" chama logout() do AuthContext', () => {
+  it('o botão "Sair do painel" chama logout() do AuthContext', () => {
     const logout = vi.fn()
     setAuth({ logout })
     render(<AppHeader />)
 
     fireEvent.click(screen.getByRole('button', { name: /maria/i }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Sair' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Sair do painel' }))
 
     expect(logout).toHaveBeenCalledTimes(1)
   })
 
-  it('o botão "Sair" tem estado de foco visível (focus-visible:ring)', () => {
+  it('o botão "Sair do painel" tem estado de foco visível (focus-visible:ring)', () => {
     setAuth()
     render(<AppHeader />)
 
     fireEvent.click(screen.getByRole('button', { name: /maria/i }))
 
-    expect(screen.getByRole('menuitem', { name: 'Sair' }).className).toMatch(/focus-visible:ring/)
+    expect(screen.getByRole('menuitem', { name: 'Sair do painel' }).className).toMatch(/focus-visible:ring/)
   })
 })
 
@@ -198,7 +200,7 @@ describe('AppHeader — seletor de usina (ADR-069, Etapa D)', () => {
     render(<AppHeader />)
 
     fireEvent.click(screen.getByRole('button', { name: /maria/i }))
-    expect(screen.getByRole('menuitem', { name: 'Sair' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Sair do painel' })).toBeInTheDocument()
   })
 })
 
@@ -241,7 +243,7 @@ describe('AppHeader — controle de tema (ícone único no header, ADR-071 Fase 
 
     expect(screen.queryByText('Aparência')).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitemradio')).not.toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: 'Sair' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Sair do painel' })).toBeInTheDocument()
   })
 
   it('preferência padrão "Sistema" com SO claro: aria-label/title anunciam "Sistema (aplicando claro)" e o próximo clique vai para claro', () => {
