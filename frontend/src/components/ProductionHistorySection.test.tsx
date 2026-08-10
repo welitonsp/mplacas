@@ -73,6 +73,9 @@ describe('ProductionHistorySection', () => {
     expect(screen.getByText('Últimos 7 dias em foco')).toBeInTheDocument()
     expect(screen.getByText('Histórico de produção diária (7 dias)')).toBeInTheDocument()
     expect(screen.getAllByText('70 kWh/dia').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('Tendência do recorte')).toBeInTheDocument()
+    expect(screen.getByText('Em recuperação')).toBeInTheDocument()
+    expect(screen.getByText('250% acima da janela anterior.')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '30 dias' }))
 
@@ -80,6 +83,8 @@ describe('ProductionHistorySection', () => {
     expect(screen.getByText('Últimos 10 dias em foco')).toBeInTheDocument()
     expect(screen.getByText('Histórico de produção diária (10 dias)')).toBeInTheDocument()
     expect(screen.getAllByText('55 kWh/dia').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('Sem comparação')).toBeInTheDocument()
+    expect(screen.getByText('Precisa de janela anterior de 30 dias para comparar tendência.')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '90 dias' }))
 

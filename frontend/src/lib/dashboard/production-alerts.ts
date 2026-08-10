@@ -28,6 +28,17 @@ export interface ProductionAlertSignal {
   detail: string
 }
 
+export interface ProductionAverageTrend {
+  percent: number | null
+  tone: ProductionSignalTone
+  label: string
+  detail: string
+  recentAverage: number | null
+  previousAverage: number | null
+  recentDays: number
+  previousDays: number
+}
+
 export function latestProductionDays<T>(items: readonly T[], days: number): T[] {
   return items.slice(Math.max(0, items.length - days))
 }
@@ -87,6 +98,84 @@ function compareAgainstPreviousWindow(daily: readonly AnomalyDailyPoint[]): {
   return {
     dropPercent: ((recentAverage.average - previousAverage.average) / previousAverage.average) * 100,
     recentDays: recentAverage.days,
+  }
+}
+
+export function compareProductionAverageTrend(
+  daily: readonly AnomalyDailyPoint[],
+  periodDays: ProductionPeriodDays,
+): ProductionAverageTrend {
+  const recent = latestProductionDays(daily, periodDays)
+  const previous = daily.slice(
+    Math.max(0, daily.length - periodDays * 2),
+    Math.max(0, daily.length - periodDays),
+  )
+  const recentAverage = averageActualProduction(recent)
+  const previousAverage = averageActualProduction(previous)
+
+  if (recentAverage.average == null || previousAverage.average == null || previousAverage.average <= 0) {
+    return {
+      percent: null,
+      tone: 'neutral',
+      label: 'Sem comparação',
+      detail: `Precisa de janela anterior de ${periodDays} dias para comparar tendência.`,
+      recentAverage: recentAverage.average,
+      previousAverage: previousAverage.average,
+      recentDays: recentAverage.days,
+      previousDays: previousAverage.days,
+    }
+  }
+
+  const percent = ((recentAverage.average - previousAverage.average) / previousAverage.average) * 100
+
+  if (percent <= HISTORICAL_CRITICAL_DROP_PERCENT) {
+    return {
+      percent,
+      tone: 'danger',
+      label: 'Queda forte',
+      detail: `${formatNumber(Math.abs(percent), 1)}% abaixo da janela anterior.`,
+      recentAverage: recentAverage.average,
+      previousAverage: previousAverage.average,
+      recentDays: recentAverage.days,
+      previousDays: previousAverage.days,
+    }
+  }
+
+  if (percent <= HISTORICAL_WARNING_DROP_PERCENT) {
+    return {
+      percent,
+      tone: 'warning',
+      label: 'Queda relevante',
+      detail: `${formatNumber(Math.abs(percent), 1)}% abaixo da janela anterior.`,
+      recentAverage: recentAverage.average,
+      previousAverage: previousAverage.average,
+      recentDays: recentAverage.days,
+      previousDays: previousAverage.days,
+    }
+  }
+
+  if (percent > 0) {
+    return {
+      percent,
+      tone: 'success',
+      label: 'Em recuperação',
+      detail: `${formatNumber(percent, 1)}% acima da janela anterior.`,
+      recentAverage: recentAverage.average,
+      previousAverage: previousAverage.average,
+      recentDays: recentAverage.days,
+      previousDays: previousAverage.days,
+    }
+  }
+
+  return {
+    percent,
+    tone: 'neutral',
+    label: 'Estável',
+    detail: `Variação de ${formatNumber(percent, 1)}% contra a janela anterior.`,
+    recentAverage: recentAverage.average,
+    previousAverage: previousAverage.average,
+    recentDays: recentAverage.days,
+    previousDays: previousAverage.days,
   }
 }
 

@@ -4,6 +4,7 @@ import {
   DEFAULT_PRODUCTION_PERIOD_DAYS,
   PRODUCTION_PERIOD_OPTIONS,
   averageActualProduction,
+  compareProductionAverageTrend,
   latestProductionDays,
   productionAlertSignal,
   productionPerformancePercent,
@@ -131,6 +132,7 @@ export function ProductionHistorySection({
   const filteredDaily = latestProductionDays(anomalyState.data.daily, selectedPeriodDays)
   const averageProduction = averageActualProduction(filteredDaily)
   const selectedPerformance = productionPerformancePercent(filteredDaily)
+  const averageTrend = compareProductionAverageTrend(anomalyState.data.daily, selectedPeriodDays)
   const alertSignal = productionAlertSignal(anomalyState.data.daily)
   const hasIrradiation = filteredDaily.some((d) => toNumber(d.irradiation_kwh_m2) != null)
 
@@ -172,7 +174,7 @@ export function ProductionHistorySection({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-2xl border border-gray-200 bg-[var(--color-surface)]/85 px-3 py-3">
             <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
               Média no período
@@ -196,6 +198,18 @@ export function ProductionHistorySection({
               {selectedPerformance.assessedDays > 0
                 ? `${selectedPerformance.assessedDays} dias contra esperado`
                 : 'sem baseline no recorte'}
+            </p>
+          </div>
+
+          <div className={`rounded-2xl border px-3 py-3 ${SIGNAL_STYLES[averageTrend.tone]}`}>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] opacity-80">
+              Tendência do recorte
+            </p>
+            <p className="mt-1 text-xl font-semibold">
+              {averageTrend.label}
+            </p>
+            <p className="mt-1 text-xs leading-5 opacity-85">
+              {averageTrend.detail}
             </p>
           </div>
 
