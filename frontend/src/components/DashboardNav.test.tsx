@@ -9,9 +9,9 @@ import {
   DASHBOARD_TECHNICAL_PATH,
 } from '../routes'
 
-// Harness mínimo: 4 rotas reais (não só o `DashboardNav` isolado), para
-// exercitar navegação de verdade — `NavLink`/`aria-current` só fazem sentido
-// dentro de um roteador que resolve qual rota está ativa.
+// Harness mínimo: 4 rotas reais, para exercitar navegação de verdade.
+// `NavLink`/`aria-current` só fazem sentido dentro de um roteador que resolve
+// qual rota está ativa.
 function renderNav(initialEntry: string) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -22,7 +22,7 @@ function renderNav(initialEntry: string) {
         <Route path={DASHBOARD_FINANCIAL_PATH} element={<p>Conteúdo — Financeiro</p>} />
         <Route path={DASHBOARD_TECHNICAL_PATH} element={<p>Conteúdo — Técnico</p>} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 
@@ -74,13 +74,17 @@ describe('DashboardNav', () => {
     }
   })
 
-  it('mostra o contexto executivo do módulo ativo e a rotina de leitura', () => {
+  it('mostra pergunta-chave, foco e entregável do módulo ativo junto da rotina de leitura', () => {
     renderNav(DASHBOARD_TECHNICAL_PATH)
 
     const context = screen.getByRole('group', { name: 'Contexto do módulo ativo' })
     expect(context).toHaveTextContent('Agora: Técnico')
+    expect(context).toHaveTextContent('Pergunta-chave')
+    expect(context).toHaveTextContent('Qual causa técnica atacar primeiro?')
+    expect(context).toHaveTextContent('Foco de leitura')
     expect(context).toHaveTextContent('Investigue PR, perdas, degradação e disponibilidade.')
-    expect(context).toHaveTextContent('Priorize a causa técnica com maior evidência e impacto.')
+    expect(context).toHaveTextContent('Entregável')
+    expect(context).toHaveTextContent('Plano de investigação por causa provável, evidência e impacto.')
 
     const routine = screen.getByRole('list', { name: 'Rotina executiva de leitura' })
     expect(within(routine).getByText('Visão Geral')).toBeInTheDocument()

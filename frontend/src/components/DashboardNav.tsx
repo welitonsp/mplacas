@@ -40,22 +40,26 @@ const NAV_ITEMS: ReadonlyArray<{ key: NavKey; to: string; label: string; descrip
   },
 ]
 
-const MODULE_CONTEXT: Record<NavKey, { focus: string; decision: string }> = {
+const MODULE_CONTEXT: Record<NavKey, { question: string; focus: string; deliverable: string }> = {
   overview: {
+    question: 'A usina exige decisão agora?',
     focus: 'Comece pelo estado geral da usina.',
-    decision: 'Decida se o ciclo está saudável ou se precisa abrir uma investigação.',
+    deliverable: 'Decisão executiva, confiança dos dados e plano de ação.',
   },
   production: {
+    question: 'A geração caiu ou está dentro do esperado?',
     focus: 'Valide geração, pior dia e recorrência.',
-    decision: 'Separe queda pontual de perda operacional recorrente.',
+    deliverable: 'Plano operacional para queda, normalidade ou dados incompletos.',
   },
   financial: {
+    question: 'A usina está protegendo caixa e retorno?',
     focus: 'Conecte energia com economia e retorno.',
-    decision: 'Veja se o ciclo protege caixa, payback e previsibilidade.',
+    deliverable: 'Próxima decisão financeira para ROI, payback, CAPEX e créditos.',
   },
   technical: {
+    question: 'Qual causa técnica atacar primeiro?',
     focus: 'Investigue PR, perdas, degradação e disponibilidade.',
-    decision: 'Priorize a causa técnica com maior evidência e impacto.',
+    deliverable: 'Plano de investigação por causa provável, evidência e impacto.',
   },
 }
 
@@ -74,8 +78,8 @@ function NavItemIcon({ name }: { name: NavIcon }) {
 }
 
 // Sub-navegação dos módulos do painel (ADR-072, Decisão 1/4). Além dos links,
-// a sidebar agora funciona como roteiro executivo: mostra o contexto do módulo
-// ativo e a rotina de leitura recomendada para operação diária.
+// a sidebar funciona como roteiro executivo: mostra pergunta-chave,
+// foco de leitura, entregável do módulo ativo e rotina recomendada.
 export function DashboardNav() {
   const { pathname } = useLocation()
   const activeItem =
@@ -95,7 +99,7 @@ export function DashboardNav() {
           Roteiro executivo do painel
         </p>
         <p className="mt-1 text-xs leading-5 text-gray-600">
-          Leia primeiro a saúde, depois aprofunde causa, impacto e retorno.
+          Leia primeiro a decisão, depois valide produção, retorno e causa.
         </p>
       </div>
 
@@ -136,12 +140,32 @@ export function DashboardNav() {
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-brand-primary)]">
           Agora: {activeItem.label}
         </p>
-        <p className="mt-2 text-sm font-semibold leading-5 text-gray-950">
-          {activeContext.focus}
-        </p>
-        <p className="mt-2 text-xs leading-5 text-gray-600">
-          {activeContext.decision}
-        </p>
+        <div className="mt-3 space-y-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+              Pergunta-chave
+            </p>
+            <p className="mt-1 text-sm font-semibold leading-5 text-gray-950">
+              {activeContext.question}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+              Foco de leitura
+            </p>
+            <p className="mt-1 text-xs leading-5 text-gray-600">
+              {activeContext.focus}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+              Entregável
+            </p>
+            <p className="mt-1 text-xs leading-5 text-gray-600">
+              {activeContext.deliverable}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="hidden border-t border-[var(--color-border)] px-4 py-4 lg:block">
