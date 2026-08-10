@@ -21,6 +21,16 @@ describe('TechnicalDiagnosticPanel', () => {
     expect(screen.getByText(/Impacto estimado de 2,3%/)).toBeInTheDocument()
     expect(screen.getByText(/Transformar esta causa em ordem de verificação/)).toBeInTheDocument()
 
+    expect(screen.getByText('Agir hoje')).toBeInTheDocument()
+    expect(screen.getByText('Técnico + operação')).toBeInTheDocument()
+    expect(screen.getByText('Evidências usadas')).toBeInTheDocument()
+    expect(screen.getByText(/PR bruto: 82%/)).toBeInTheDocument()
+
+    const playbook = screen.getByRole('list', { name: 'Plano técnico de investigação' })
+    expect(within(playbook).getByText('Confirmar telemetria')).toBeInTheDocument()
+    expect(within(playbook).getByText('Isolar causa dominante')).toBeInTheDocument()
+    expect(within(playbook).getByText('Medir pós-ação')).toBeInTheDocument()
+
     const signals = screen.getByText('PR bruto').closest('div')?.parentElement as HTMLElement
     expect(within(signals).getByText('82%')).toBeInTheDocument()
     expect(within(signals).getByText('98%')).toBeInTheDocument()
