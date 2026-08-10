@@ -35,6 +35,10 @@ export const LIGHT_TOKENS = {
   '--color-chart-track': '#e2e8f0',
   '--color-data-secondary': '#7c3aed',
   '--color-data-secondary-light': '#f5f3ff',
+  '--color-energy-solar': '#a16207',
+  '--color-energy-solar-light': '#fefce8',
+  '--color-energy-grid': '#2563eb',
+  '--color-energy-consumption': '#7c3aed',
 
   // Paleta `gray-*` padrão do Tailwind v4 (`@tailwindcss/vite`), gerada como
   // `oklch(...)` em `@layer theme` (ver ADR-071, Contexto). Hex abaixo
@@ -76,6 +80,10 @@ export const DARK_TOKENS = {
   '--color-chart-track': '#263144',
   '--color-data-secondary': '#c4b5fd',
   '--color-data-secondary-light': '#1e1b33',
+  '--color-energy-solar': '#facc15',
+  '--color-energy-solar-light': '#29230d',
+  '--color-energy-grid': '#7aa2f7',
+  '--color-energy-consumption': '#c4b5fd',
 
   '--color-gray-50': '#0d1420',
   '--color-gray-100': '#161f30',
