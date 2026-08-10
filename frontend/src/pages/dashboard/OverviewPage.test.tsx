@@ -71,11 +71,16 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(fetchAnomalyHistoryMock).toHaveBeenCalledWith(singlePlant.id)
   })
 
-  it('abre a Visão Geral com uma decisão executiva antes do cockpit visual', async () => {
+  it('abre a Visão Geral com confiança dos dados antes da decisão executiva e do cockpit visual', async () => {
     vi.resetModules()
     installApiMock()
 
     const { container } = await renderOverviewPage()
+
+    const confidenceSection = await screen.findByRole('region', { name: 'Confiança dos dados do ciclo' })
+    expect(within(confidenceSection).getByRole('complementary', { name: 'Confiança dos dados' })).toBeInTheDocument()
+    expect(within(confidenceSection).getByText('Alta confiança')).toBeInTheDocument()
+    expect(within(confidenceSection).getByText('Dados prontos para decisão')).toBeInTheDocument()
 
     const decisionSection = await screen.findByRole('region', { name: 'Decisão executiva do ciclo' })
     expect(within(decisionSection).getByRole('heading', { level: 2, name: 'Ciclo pede acompanhamento' })).toBeInTheDocument()
@@ -83,8 +88,9 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(within(decisionSection).getByText('Próxima ação')).toBeInTheDocument()
     expect(within(decisionSection).getByRole('group', { name: 'Sinais usados na decisão' })).toBeInTheDocument()
 
-    const firstSection = container.querySelector('main > div.grid > section')
-    expect(firstSection).toBe(decisionSection)
+    const sections = Array.from(container.querySelectorAll('main > div.grid > section'))
+    expect(sections[0]).toBe(confidenceSection)
+    expect(sections[1]).toBe(decisionSection)
   })
 
   it('autoconsumo/injetada/importada aparecem em um único componente de visualização (EnergyFlowDiagram)', async () => {
