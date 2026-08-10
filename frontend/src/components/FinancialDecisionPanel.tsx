@@ -7,6 +7,7 @@ import {
 import { formatCurrency, formatNumber, toNumber } from '../lib/format'
 import { SEVERITY_BG, SEVERITY_TEXT } from '../lib/dashboard/visuals'
 import { Card } from './Card'
+import { OperationalState } from './OperationalState'
 
 interface FinancialDecision {
   tone: Severity
@@ -239,6 +240,72 @@ export function FinancialDecisionPanel({
     financialReturn,
     financialReturnError,
   })
+
+  if (financialReturnError || financialReturn === null) {
+    return (
+      <OperationalState
+        role="status"
+        tone={decision.tone}
+        icon={financialReturnError ? 'warning' : 'sync'}
+        align="start"
+        eyebrow="Decisão financeira"
+        title={decision.title}
+        description={decision.summary}
+        actionClassName="mt-5 space-y-4"
+        action={
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${SEVERITY_BG[decision.tone]} ${SEVERITY_TEXT[decision.tone]}`}>
+                {decision.label}
+              </span>
+              <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+                {decision.window}
+              </span>
+              <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+                {decision.owner}
+              </span>
+            </div>
+
+            <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
+              {decision.evidence.map((item) => (
+                <div
+                  key={item.label}
+                  className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[item.tone]} px-3 py-2`}
+                >
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{item.label}</p>
+                  <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[item.tone]}`}>{item.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Próxima decisão</p>
+                <p className="mt-2 text-sm leading-6 text-gray-700">{decision.primaryAction}</p>
+              </div>
+
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Plano financeiro</p>
+                <ol aria-label="Plano financeiro executivo" className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  {decision.playbook.map((step, index) => (
+                    <li key={step.title}>
+                      <div className="flex items-center gap-2">
+                        <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${SEVERITY_BG[decision.tone]} ${SEVERITY_TEXT[decision.tone]}`}>
+                          {index + 1}
+                        </span>
+                        <p className="text-sm font-semibold text-[var(--color-text)]">{step.title}</p>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{step.detail}</p>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+          </>
+        }
+      />
+    )
+  }
 
   return (
     <Card accent={decision.tone} className="overflow-hidden">

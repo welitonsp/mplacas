@@ -4,6 +4,7 @@ import { baselineUnavailableMessage } from '../lib/dashboard/photovoltaic-contra
 import { levelLabel, levelSeverity, SEVERITY_BG, SEVERITY_TEXT } from '../lib/dashboard/visuals'
 import { formatFullDate, formatNumber, toNumber } from '../lib/format'
 import { Card } from './Card'
+import { OperationalState } from './OperationalState'
 
 interface ProductionDiagnosis {
   tone: Severity
@@ -290,6 +291,60 @@ export function ProductionDiagnosticPanel({
   expectedProduction: ExpectedDailyProduction | null
 }) {
   const diagnosis = buildProductionDiagnosis({ anomalyState, expectedProduction })
+
+  const shouldUseOperationalState =
+    (anomalyState.loading && !anomalyState.data) ||
+    anomalyState.error === 'SERVER_ERROR' ||
+    anomalyState.error === 'NOT_FOUND' ||
+    !anomalyState.data ||
+    (anomalyState.data !== null && actualDays(anomalyState.data).length === 0) ||
+    (anomalyState.data?.expected_unavailable_reason ?? null) !== null
+
+  if (shouldUseOperationalState) {
+    return (
+      <OperationalState
+        role={anomalyState.error === 'SERVER_ERROR' ? 'alert' : 'status'}
+        tone={diagnosis.tone}
+        icon={anomalyState.error === 'SERVER_ERROR' ? 'warning' : 'sync'}
+        align="start"
+        eyebrow="Diagnóstico de produção"
+        title={diagnosis.title}
+        description={diagnosis.cause}
+        actionClassName="mt-5 space-y-4"
+        action={
+          <>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Impacto</p>
+                <p className="mt-2 text-sm leading-6 text-gray-700">{diagnosis.impact}</p>
+              </div>
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Próxima ação</p>
+                <p className="mt-2 text-sm leading-6 text-gray-700">{diagnosis.action}</p>
+              </div>
+            </div>
+
+            <div
+              role="group"
+              aria-label="Sinais do diagnóstico de produção"
+              className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4"
+            >
+              {diagnosis.signals.map((signal) => (
+                <div
+                  key={signal.label}
+                  className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[signal.tone]} px-3 py-2`}
+                >
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{signal.label}</p>
+                  <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[signal.tone]}`}>{signal.value}</p>
+                </div>
+              ))}
+            </div>
+          </>
+        }
+      />
+    )
+  }
+
   const window = diagnosis.window ?? defaultWindow(diagnosis.tone)
   const owner = diagnosis.owner ?? defaultOwner(diagnosis.tone)
   const evidenceSummary =
