@@ -82,6 +82,36 @@ describe('ProductionDiagnosticPanel', () => {
     expect(within(playbook).getByText('Escalar se persistir')).toBeInTheDocument()
   })
 
+  it('mostra o critério de alerta de 7 dias usado pelo gráfico de produção', () => {
+    const state = anomalyState({
+      plant_id: 'plant-1',
+      days_analyzed: 7,
+      current_streak_days: 7,
+      worst_level: 'ANOMALY',
+      expected_unavailable_reason: null,
+      daily: Array.from({ length: 7 }, (_, index) => ({
+        date: `2026-08-${String(index + 1).padStart(2, '0')}`,
+        actual_production_kwh: 70,
+        expected_production_kwh: 100,
+        level: 'ANOMALY',
+        deviation_percent: -30,
+        irradiation_kwh_m2: null,
+      })),
+    })
+
+    render(
+      <ProductionDiagnosticPanel
+        anomalyState={state}
+        expectedProduction={EXPECTED_PRODUCTION}
+      />,
+    )
+
+    expect(screen.getByText('Critério de alerta')).toBeInTheDocument()
+    expect(screen.getByText('Alerta crítico')).toBeInTheDocument()
+    expect(screen.getByText(/Média de 7 dias em 70% do esperado/)).toBeInTheDocument()
+    expect(screen.getByText(/Regra: 7 dias contra esperado/)).toBeInTheDocument()
+  })
+
   it('não fabrica perda quando há produção real, mas não há referência esperada', () => {
     const state = anomalyState({
       plant_id: 'plant-1',

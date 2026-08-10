@@ -1,5 +1,14 @@
 import { useState } from 'react'
-import type { AnomalyDailyPoint, AnomalyFetchState } from '../lib/dashboard/contracts'
+import type { AnomalyFetchState, Severity } from '../lib/dashboard/contracts'
+import {
+  DEFAULT_PRODUCTION_PERIOD_DAYS,
+  PRODUCTION_PERIOD_OPTIONS,
+  averageActualProduction,
+  latestProductionDays,
+  productionAlertSignal,
+  productionPerformancePercent,
+  type ProductionPeriodDays,
+} from '../lib/dashboard/production-alerts'
 import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-contracts'
 import { baselineUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
 import { formatNumber, toNumber } from '../lib/format'
@@ -9,144 +18,7 @@ import { ProductionHistoryChart } from './ProductionHistoryChart'
 import { RetryableError } from './RetryableError'
 import { YieldCard } from './YieldCard'
 
-type ProductionPeriodDays = 7 | 30 | 90
-type ProductionSignalTone = 'success' | 'warning' | 'danger' | 'neutral'
-
-const PERIOD_OPTIONS: ReadonlyArray<ProductionPeriodDays> = [7, 30, 90]
-const DEFAULT_PERIOD_DAYS: ProductionPeriodDays = 7
-const EXPECTED_WARNING_THRESHOLD_PERCENT = 85
-const EXPECTED_CRITICAL_THRESHOLD_PERCENT = 75
-const HISTORICAL_WARNING_DROP_PERCENT = -15
-const HISTORICAL_CRITICAL_DROP_PERCENT = -25
-
-function latestDays<T>(items: readonly T[], days: number): T[] {
-  return items.slice(Math.max(0, items.length - days))
-}
-
-function averageActualProduction(daily: readonly AnomalyDailyPoint[]): { average: number | null; days: number } {
-  const values = daily
-    .map((day) => toNumber(day.actual_production_kwh))
-    .filter((value): value is number => value != null)
-
-  if (values.length === 0) return { average: null, days: 0 }
-
-  return {
-    average: values.reduce((sum, value) => sum + value, 0) / values.length,
-    days: values.length,
-  }
-}
-
-function productionPerformancePercent(daily: readonly AnomalyDailyPoint[]): {
-  percent: number | null
-  assessedDays: number
-} {
-  const totals = daily.reduce(
-    (acc, day) => {
-      const actual = toNumber(day.actual_production_kwh)
-      const expected = toNumber(day.expected_production_kwh)
-      if (actual == null || expected == null) return acc
-      return {
-        actual: acc.actual + actual,
-        expected: acc.expected + expected,
-        assessedDays: acc.assessedDays + 1,
-      }
-    },
-    { actual: 0, expected: 0, assessedDays: 0 }
-  )
-
-  if (totals.expected <= 0 || totals.assessedDays === 0) return { percent: null, assessedDays: 0 }
-
-  return {
-    percent: (totals.actual / totals.expected) * 100,
-    assessedDays: totals.assessedDays,
-  }
-}
-
-function compareAgainstPreviousWindow(daily: readonly AnomalyDailyPoint[]): {
-  dropPercent: number | null
-  recentDays: number
-} {
-  const recent = latestDays(daily, DEFAULT_PERIOD_DAYS)
-  const previous = daily.slice(Math.max(0, daily.length - DEFAULT_PERIOD_DAYS * 2), Math.max(0, daily.length - DEFAULT_PERIOD_DAYS))
-  const recentAverage = averageActualProduction(recent)
-  const previousAverage = averageActualProduction(previous)
-
-  if (recentAverage.average == null || previousAverage.average == null || previousAverage.average <= 0) {
-    return { dropPercent: null, recentDays: recentAverage.days }
-  }
-
-  return {
-    dropPercent: ((recentAverage.average - previousAverage.average) / previousAverage.average) * 100,
-    recentDays: recentAverage.days,
-  }
-}
-
-function productionAlertSignal(daily: readonly AnomalyDailyPoint[]): {
-  tone: ProductionSignalTone
-  label: string
-  detail: string
-} {
-  const recent = latestDays(daily, DEFAULT_PERIOD_DAYS)
-  const recentPerformance = productionPerformancePercent(recent)
-
-  if (recentPerformance.percent != null && recentPerformance.assessedDays >= 3) {
-    if (recentPerformance.percent < EXPECTED_CRITICAL_THRESHOLD_PERCENT) {
-      return {
-        tone: 'danger',
-        label: 'Alerta crítico',
-        detail: `Média de 7 dias em ${formatNumber(recentPerformance.percent, 1)}% do esperado.`,
-      }
-    }
-
-    if (recentPerformance.percent < EXPECTED_WARNING_THRESHOLD_PERCENT) {
-      return {
-        tone: 'warning',
-        label: 'Atenção',
-        detail: `Média de 7 dias em ${formatNumber(recentPerformance.percent, 1)}% do esperado.`,
-      }
-    }
-
-    return {
-      tone: 'success',
-      label: 'Dentro do gatilho',
-      detail: `Média de 7 dias em ${formatNumber(recentPerformance.percent, 1)}% do esperado.`,
-    }
-  }
-
-  const historical = compareAgainstPreviousWindow(daily)
-
-  if (historical.dropPercent != null && historical.recentDays >= 3) {
-    if (historical.dropPercent <= HISTORICAL_CRITICAL_DROP_PERCENT) {
-      return {
-        tone: 'danger',
-        label: 'Alerta crítico',
-        detail: `Média de 7 dias ${formatNumber(Math.abs(historical.dropPercent), 1)}% abaixo da janela anterior.`,
-      }
-    }
-
-    if (historical.dropPercent <= HISTORICAL_WARNING_DROP_PERCENT) {
-      return {
-        tone: 'warning',
-        label: 'Atenção',
-        detail: `Média de 7 dias ${formatNumber(Math.abs(historical.dropPercent), 1)}% abaixo da janela anterior.`,
-      }
-    }
-
-    return {
-      tone: 'success',
-      label: 'Dentro do gatilho',
-      detail: `Sem queda relevante contra a janela anterior (${formatNumber(historical.dropPercent, 1)}%).`,
-    }
-  }
-
-  return {
-    tone: 'neutral',
-    label: 'Aguardando dados',
-    detail: 'Gatilho usa esperado/PR quando disponível; sem baseline, compara 7 dias contra a janela anterior.',
-  }
-}
-
-const SIGNAL_STYLES: Record<ProductionSignalTone, string> = {
+const SIGNAL_STYLES: Record<Severity, string> = {
   success: 'border-[var(--color-success)]/20 bg-[var(--color-success-light)] text-[var(--color-success-text)]',
   warning: 'border-[var(--color-warning)]/25 bg-[var(--color-warning-light)] text-[var(--color-warning-text)]',
   danger: 'border-[var(--color-danger)]/25 bg-[var(--color-danger-light)] text-[var(--color-danger-text)]',
@@ -164,7 +36,7 @@ export function ProductionHistorySection({
   // Só relevante para o estado `SERVER_ERROR` — reexecuta a busca do histórico.
   onRetry?: () => void
 }) {
-  const [selectedPeriodDays, setSelectedPeriodDays] = useState<ProductionPeriodDays>(DEFAULT_PERIOD_DAYS)
+  const [selectedPeriodDays, setSelectedPeriodDays] = useState<ProductionPeriodDays>(DEFAULT_PRODUCTION_PERIOD_DAYS)
   const loadingExpected = expectedProduction === null
   // Antes só esperava o histórico terminar de carregar quando a produção
   // esperada estava disponível — o que fazia o card pular direto pro
@@ -256,7 +128,7 @@ export function ProductionHistorySection({
     }
   }
 
-  const filteredDaily = latestDays(anomalyState.data.daily, selectedPeriodDays)
+  const filteredDaily = latestProductionDays(anomalyState.data.daily, selectedPeriodDays)
   const averageProduction = averageActualProduction(filteredDaily)
   const selectedPerformance = productionPerformancePercent(filteredDaily)
   const alertSignal = productionAlertSignal(anomalyState.data.daily)
@@ -279,7 +151,7 @@ export function ProductionHistorySection({
           </div>
 
           <div className="flex flex-wrap gap-2" aria-label="Filtrar histórico diário">
-            {PERIOD_OPTIONS.map((days) => {
+            {PRODUCTION_PERIOD_OPTIONS.map((days) => {
               const active = selectedPeriodDays === days
               return (
                 <button

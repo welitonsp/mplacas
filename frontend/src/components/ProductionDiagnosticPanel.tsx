@@ -1,4 +1,5 @@
 import type { AnomalyDashboardResponse, AnomalyDailyPoint, AnomalyFetchState, Severity } from '../lib/dashboard/contracts'
+import { productionAlertSignal } from '../lib/dashboard/production-alerts'
 import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-contracts'
 import { baselineUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
 import { levelLabel, levelSeverity, SEVERITY_BG, SEVERITY_TEXT } from '../lib/dashboard/visuals'
@@ -351,6 +352,7 @@ export function ProductionDiagnosticPanel({
     diagnosis.evidenceSummary ??
     diagnosis.signals.map((signal) => `${signal.label}: ${signal.value}`).join(' · ')
   const playbook = diagnosis.playbook ?? defaultPlaybook(diagnosis.tone)
+  const alertSignal = anomalyState.data ? productionAlertSignal(anomalyState.data.daily) : null
 
   return (
     <Card accent={diagnosis.tone} className="overflow-hidden">
@@ -409,6 +411,18 @@ export function ProductionDiagnosticPanel({
             Plano de produção
           </p>
         </div>
+
+        {alertSignal && (
+          <div className={`mt-4 rounded-xl border border-[var(--color-border)] ${SEVERITY_BG[alertSignal.tone]} p-3`}>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Critério de alerta</p>
+            <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[alertSignal.tone]}`}>
+              {alertSignal.label}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
+              {alertSignal.detail} Regra: 7 dias contra esperado; sem baseline, 7 dias contra a janela anterior.
+            </p>
+          </div>
+        )}
 
         <ol aria-label="Plano operacional de produção" className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
           {playbook.map((step, index) => (
