@@ -71,11 +71,20 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(fetchAnomalyHistoryMock).toHaveBeenCalledWith(singlePlant.id)
   })
 
-  it('abre a Visão Geral com confiança dos dados antes da decisão executiva e do cockpit visual', async () => {
+  it('abre a Visão Geral com produção como indicador chave antes da confiança, decisão e cockpit visual', async () => {
     vi.resetModules()
     installApiMock()
 
     const { container } = await renderOverviewPage()
+
+    const productionHero = await screen.findByRole('region', { name: 'Produção e saúde da usina' })
+    expect(within(productionHero).getByRole('heading', { level: 2, name: 'Produção e Saúde da Usina' })).toBeInTheDocument()
+    expect(within(productionHero).getByText('Indicador chave')).toBeInTheDocument()
+    expect(within(productionHero).getByText('Aguardando dados')).toBeInTheDocument()
+    expect(within(productionHero).getByText('Último dia')).toBeInTheDocument()
+    expect(within(productionHero).getByText('Média 7 dias')).toBeInTheDocument()
+    expect(within(productionHero).getByText('Desempenho vs esperado')).toBeInTheDocument()
+    expect(within(productionHero).getByRole('link', { name: /Abrir análise completa/ })).toHaveAttribute('href', '/dashboard/producao')
 
     const confidenceSection = await screen.findByRole('region', { name: 'Confiança dos dados do ciclo' })
     expect(within(confidenceSection).getByRole('complementary', { name: 'Confiança dos dados' })).toBeInTheDocument()
@@ -89,8 +98,9 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(within(decisionSection).getByRole('group', { name: 'Sinais usados na decisão' })).toBeInTheDocument()
 
     const sections = Array.from(container.querySelectorAll('main > div.grid > section'))
-    expect(sections[0]).toBe(confidenceSection)
-    expect(sections[1]).toBe(decisionSection)
+    expect(sections[0]).toBe(productionHero)
+    expect(sections[1]).toBe(confidenceSection)
+    expect(sections[2]).toBe(decisionSection)
   })
 
   it('autoconsumo/injetada/importada aparecem em um único componente de visualização (EnergyFlowDiagram)', async () => {

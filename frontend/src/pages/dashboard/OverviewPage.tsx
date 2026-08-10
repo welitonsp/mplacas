@@ -1,7 +1,8 @@
+import { Link } from 'react-router'
 import { fetchAnomalyHistory, fetchExecutiveDashboard } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
-import type { AnomalyDashboardResponse, AnomalyFetchError } from '../../lib/dashboard/contracts'
+import type { AnomalyDashboardResponse, AnomalyFetchError, Severity } from '../../lib/dashboard/contracts'
 import {
   classifyAnomalyErrorStatus,
   combineDiagnostics,
@@ -9,7 +10,14 @@ import {
   parseAnomalyDashboard,
   parseExecutiveDashboard,
 } from '../../lib/dashboard/contracts'
-import { formatNumber, toNumber } from '../../lib/format'
+import {
+  DEFAULT_PRODUCTION_PERIOD_DAYS,
+  averageActualProduction,
+  latestProductionDays,
+  productionAlertSignal,
+  productionPerformancePercent,
+} from '../../lib/dashboard/production-alerts'
+import { formatNumber, formatShortDate, toNumber } from '../../lib/format'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
 import { SectionTitle } from '../../components/SectionTitle'
 import { StackedBar } from '../../components/charts/StackedBar'
@@ -28,6 +36,192 @@ import { OverviewKpiRail } from '../../components/OverviewKpiRail'
 import { PageHeader } from '../../components/PageHeader'
 import { ExecutiveDecisionPanel } from '../../components/ExecutiveDecisionPanel'
 import { DataConfidenceStrip } from '../../components/DataConfidenceStrip'
+import { DASHBOARD_PRODUCTION_PATH } from '../../routes'
+
+const PRODUCTION_HEALTH_CLASSES: Record<Severity, string> = {
+  success: 'border-[var(--color-success)]/25 bg-[var(--color-success-light)] text-[var(--color-success-text)]',
+  warning: 'border-[var(--color-warning)]/30 bg-[var(--color-warning-light)] text-[var(--color-warning-text)]',
+  danger: 'border-[var(--color-danger)]/30 bg-[var(--color-danger-light)] text-[var(--color-danger-text)]',
+  neutral: 'border-gray-200 bg-gray-50 text-gray-700',
+}
+
+function ProductionHealthHero({
+  anomalyData,
+  loading,
+  error,
+}: {
+  anomalyData: AnomalyDashboardResponse | null
+  loading: boolean
+  error: AnomalyFetchError | null
+}) {
+  if (loading && !anomalyData) {
+    return (
+      <section
+        data-testid="production-health-hero"
+        aria-label="Produção e saúde da usina"
+        className="md:col-span-6 lg:col-span-12"
+      >
+        <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
+          <div className="animate-pulse space-y-4">
+            <div className="h-3 w-32 rounded bg-gray-200" />
+            <div className="h-8 w-72 max-w-full rounded bg-gray-200" />
+            <div className="grid gap-3 sm:grid-cols-4">
+              <div className="h-20 rounded-2xl bg-gray-100" />
+              <div className="h-20 rounded-2xl bg-gray-100" />
+              <div className="h-20 rounded-2xl bg-gray-100" />
+              <div className="h-20 rounded-2xl bg-gray-100" />
+            </div>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  if (!anomalyData || error) {
+    const title = error === 'NOT_FOUND' ? 'Sem histórico diário ainda' : 'Produção diária indisponível'
+    const detail =
+      error === 'NOT_FOUND'
+        ? 'Assim que a primeira coleta diária entrar, este será o indicador principal da usina.'
+        : 'Não foi possível montar o indicador principal de produção agora. Use Atualizar para tentar novamente.'
+
+    return (
+      <section
+        data-testid="production-health-hero"
+        aria-label="Produção e saúde da usina"
+        className="md:col-span-6 lg:col-span-12"
+      >
+        <div className="rounded-3xl border border-gray-200 bg-gray-50 p-5 text-gray-700 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+            Indicador chave
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-gray-950">
+            Produção e Saúde da Usina
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600">{title}. {detail}</p>
+        </div>
+      </section>
+    )
+  }
+
+  const recent = latestProductionDays(anomalyData.daily, DEFAULT_PRODUCTION_PERIOD_DAYS)
+  const alertSignal = productionAlertSignal(anomalyData.daily)
+  const performance = productionPerformancePercent(recent)
+  const average = averageActualProduction(recent)
+  const productionValues = recent
+    .map((day) => ({ day, actual: toNumber(day.actual_production_kwh) }))
+    .filter((item): item is { day: NonNullable<typeof item.day>; actual: number } => item.actual != null)
+  const totalProduction = productionValues.reduce((sum, item) => sum + item.actual, 0)
+  const latestPoint = [...recent].reverse().find((day) => toNumber(day.actual_production_kwh) != null) ?? null
+  const latestActual = latestPoint ? toNumber(latestPoint.actual_production_kwh) : null
+  const maxBar = Math.max(
+    ...recent.map((day) => toNumber(day.actual_production_kwh) ?? 0),
+    ...recent.map((day) => toNumber(day.expected_production_kwh) ?? 0),
+    1,
+  )
+
+  return (
+    <section
+      data-testid="production-health-hero"
+      aria-label="Produção e saúde da usina"
+      className="md:col-span-6 lg:col-span-12"
+    >
+      <div className="overflow-hidden rounded-3xl border border-[var(--color-brand-primary)]/20 bg-[linear-gradient(135deg,var(--color-surface)_0%,var(--color-brand-primary-light)_100%)] shadow-[0_18px_50px_-28px_rgba(37,99,235,0.55)]">
+        <div className="grid gap-6 p-5 md:p-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(18rem,0.95fr)] lg:items-end">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+                Indicador chave
+              </p>
+              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${PRODUCTION_HEALTH_CLASSES[alertSignal.tone]}`}>
+                {alertSignal.label}
+              </span>
+            </div>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-gray-950 md:text-3xl">
+              Produção e Saúde da Usina
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-700">
+              {alertSignal.detail} Este é o primeiro sinal operacional: mostra se a usina está gerando dentro do esperado nos últimos 7 dias.
+            </p>
+            <Link
+              to={DASHBOARD_PRODUCTION_PATH}
+              className="mt-4 inline-flex min-h-[44px] items-center rounded-full bg-[var(--color-brand-primary)] px-4 text-sm font-semibold text-white shadow-sm transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 motion-reduce:transition-none"
+            >
+              Abrir análise completa <span aria-hidden="true" className="ml-1">→</span>
+            </Link>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/70 bg-white/80 px-3 py-3 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Último dia</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
+                {latestActual == null ? '—' : `${formatNumber(latestActual, 1)} kWh`}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                {latestPoint ? formatShortDate(latestPoint.date) : 'sem dado diário'}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/70 bg-white/80 px-3 py-3 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Média 7 dias</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
+                {average.average == null ? '—' : `${formatNumber(average.average, 1)} kWh/dia`}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                {average.days} {average.days === 1 ? 'dia com dado' : 'dias com dado'}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/70 bg-white/80 px-3 py-3 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Desempenho vs esperado</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
+                {performance.percent == null ? '—' : `${formatNumber(performance.percent, 1)}%`}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                {performance.assessedDays > 0 ? `${performance.assessedDays} dias avaliados` : 'sem baseline no recorte'}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/70 bg-white/80 px-3 py-3 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Total 7 dias</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
+                {productionValues.length === 0 ? '—' : `${formatNumber(totalProduction, 1)} kWh`}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">produção acumulada recente</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-white/70 bg-white/55 px-5 py-4 md:px-6">
+          <div className="flex h-24 items-end gap-2" aria-label="Mini gráfico dos últimos 7 dias">
+            {recent.map((day) => {
+              const actual = toNumber(day.actual_production_kwh) ?? 0
+              const expected = toNumber(day.expected_production_kwh)
+              const actualHeight = Math.max(6, Math.min(100, (actual / maxBar) * 100))
+              const expectedHeight = expected == null ? null : Math.max(6, Math.min(100, (expected / maxBar) * 100))
+
+              return (
+                <div key={day.date} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
+                  <div className="relative flex h-full w-full max-w-12 items-end justify-center">
+                    {expectedHeight != null && (
+                      <span
+                        className="absolute bottom-0 w-full rounded-t-md border-t-2 border-dashed border-[var(--color-chart-reference)]"
+                        style={{ height: `${expectedHeight}%` }}
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span
+                      className={`relative z-10 w-full max-w-8 rounded-t-lg ${PRODUCTION_HEALTH_CLASSES[alertSignal.tone].includes('danger') ? 'bg-[var(--color-danger)]' : 'bg-[var(--color-brand-primary)]'}`}
+                      style={{ height: `${actualHeight}%` }}
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <span className="text-xs font-semibold text-gray-600 tabular-nums">{formatShortDate(day.date)}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
 
 // Módulo Visão Geral (ADR-072, Etapa 5) — dois recursos (ver ADR seção 2):
 // `executive` (`/energy/executive/latest`) e `anomalies`
@@ -185,6 +379,12 @@ export function OverviewPage() {
 
         {data && indicators && quality && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
+            <ProductionHealthHero
+              anomalyData={anomalies.data}
+              loading={anomalies.status === 'loading'}
+              error={anomalies.error}
+            />
+
             <section className="md:col-span-6 lg:col-span-12" aria-label="Confiança dos dados do ciclo">
               <DataConfidenceStrip
                 quality={quality}
