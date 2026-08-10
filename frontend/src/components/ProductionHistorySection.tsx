@@ -26,6 +26,43 @@ const SIGNAL_STYLES: Record<Severity, string> = {
   neutral: 'border-gray-200 bg-gray-50 text-gray-700',
 }
 
+const PERIOD_STORAGE_KEY = 'mplacas:production-history-period'
+
+function parseStoredPeriodPreference(value: string | null): ProductionPeriodDays {
+  const period = Number(value)
+
+  if (Number.isFinite(period) && PRODUCTION_PERIOD_OPTIONS.includes(period as ProductionPeriodDays)) {
+    return period as ProductionPeriodDays
+  }
+
+  return DEFAULT_PRODUCTION_PERIOD_DAYS
+}
+
+function readStoredPeriodPreference(): ProductionPeriodDays {
+  if (typeof window === 'undefined') {
+    return DEFAULT_PRODUCTION_PERIOD_DAYS
+  }
+
+  try {
+    return parseStoredPeriodPreference(window.localStorage.getItem(PERIOD_STORAGE_KEY))
+  } catch {
+    return DEFAULT_PRODUCTION_PERIOD_DAYS
+  }
+}
+
+function saveStoredPeriodPreference(days: ProductionPeriodDays) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(PERIOD_STORAGE_KEY, String(days))
+  } catch {
+    // LocalStorage pode estar bloqueado em alguns navegadores/modos privados.
+    // A seleção visual continua funcionando pela memória do React.
+  }
+}
+
 export function ProductionHistorySection({
   anomalyState,
   expectedProduction,
@@ -37,7 +74,7 @@ export function ProductionHistorySection({
   // Só relevante para o estado `SERVER_ERROR` — reexecuta a busca do histórico.
   onRetry?: () => void
 }) {
-  const [selectedPeriodDays, setSelectedPeriodDays] = useState<ProductionPeriodDays>(DEFAULT_PRODUCTION_PERIOD_DAYS)
+  const [selectedPeriodDays, setSelectedPeriodDays] = useState<ProductionPeriodDays>(readStoredPeriodPreference)
   const loadingExpected = expectedProduction === null
   // Antes só esperava o histórico terminar de carregar quando a produção
   // esperada estava disponível — o que fazia o card pular direto pro
@@ -136,6 +173,11 @@ export function ProductionHistorySection({
   const alertSignal = productionAlertSignal(anomalyState.data.daily)
   const hasIrradiation = filteredDaily.some((d) => toNumber(d.irradiation_kwh_m2) != null)
 
+  function handlePeriodSelect(days: ProductionPeriodDays) {
+    setSelectedPeriodDays(days)
+    saveStoredPeriodPreference(days)
+  }
+
   return (
     <div className="space-y-4">
       <Card className="border-[var(--color-brand-primary)]/15 bg-[linear-gradient(135deg,var(--color-surface)_0%,var(--color-brand-primary-light)_100%)]">
@@ -160,7 +202,7 @@ export function ProductionHistorySection({
                   key={days}
                   type="button"
                   aria-pressed={active}
-                  onClick={() => setSelectedPeriodDays(days)}
+                  onClick={() => handlePeriodSelect(days)}
                   className={`min-h-[40px] rounded-full border px-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none ${
                     active
                       ? 'border-[var(--color-brand-primary)] bg-[var(--color-brand-primary)] text-white shadow-sm'

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { ProductionHistorySection } from './ProductionHistorySection'
 import type { AnomalyDailyPoint, AnomalyFetchState } from '../lib/dashboard/contracts'
@@ -38,7 +38,13 @@ const AVAILABLE: ExpectedDailyProduction = {
   nature: 'SEASONAL_CLEAR_SKY_P90_ENVELOPE',
 }
 
+const PERIOD_STORAGE_KEY = 'mplacas:production-history-period'
+
 describe('ProductionHistorySection', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
   it('mostra o percentual de desempenho e a legenda "Esperado" quando a produção esperada está disponível', () => {
     const anomalyState: AnomalyFetchState = {
       loading: false,
@@ -90,6 +96,38 @@ describe('ProductionHistorySection', () => {
 
     expect(screen.getByRole('button', { name: '90 dias' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('Últimos 10 dias em foco')).toBeInTheDocument()
+  })
+
+  it('lembra o período escolhido pelo usuário em localStorage', () => {
+    const daily = Array.from({ length: 30 }, (_, index) =>
+      buildDaily({
+        date: `2026-08-${String(index + 1).padStart(2, '0')}`,
+        actual_production_kwh: 55,
+        expected_production_kwh: 60,
+        deviation_percent: -8,
+      })
+    )
+    const anomalyState: AnomalyFetchState = {
+      loading: false,
+      error: null,
+      data: buildAnomalyData({ daily }),
+    }
+
+    const { unmount } = render(
+      <ProductionHistorySection anomalyState={anomalyState} expectedProduction={AVAILABLE} />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '30 dias' }))
+
+    expect(window.localStorage.getItem(PERIOD_STORAGE_KEY)).toBe('30')
+
+    unmount()
+
+    render(<ProductionHistorySection anomalyState={anomalyState} expectedProduction={AVAILABLE} />)
+
+    expect(screen.getByRole('button', { name: '30 dias' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Últimos 30 dias em foco')).toBeInTheDocument()
+    expect(screen.getByText('Histórico de produção diária (30 dias)')).toBeInTheDocument()
   })
 
   it('mostra alerta crítico quando a média dos últimos 7 dias fica abaixo do gatilho esperado', () => {
