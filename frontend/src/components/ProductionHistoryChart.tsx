@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent } from 'react'
 import type { AnomalyDailyPoint } from '../lib/dashboard/contracts'
 import { clampPercent, formatNumber, formatShortDate, toNumber } from '../lib/format'
+import { averageActualProduction } from '../lib/dashboard/production-alerts'
 import {
   ANOMALY_LEGEND,
   SEVERITY_BAR,
@@ -55,6 +56,8 @@ export function ProductionHistoryChart({
       }),
       1
     ) * 1.1
+  const averageProduction = averageActualProduction(daily).average
+  const averageLineY = averageProduction == null ? null : 100 - clampPercent((averageProduction / maxValue) * 100)
 
   // Só existe algo pra desenhar como linha de "Esperado" quando o baseline
   // está disponível E ao menos um dia do período tem valor não-nulo — mesmo
@@ -218,6 +221,12 @@ export function ProductionHistoryChart({
               Esperado
             </span>
           )}
+          {averageProduction != null && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm">
+              <span className="h-0 w-3 border-t-2 border-[var(--color-brand-primary)]" />
+              Média do período
+            </span>
+          )}
           {hasIrradiation && (
             <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm">
               <span className="h-0 w-3 border-t-2 border-[var(--color-data-secondary)]" />
@@ -272,6 +281,25 @@ export function ProductionHistoryChart({
               <span className="pointer-events-none absolute inset-x-0 top-0 border-t border-gray-100" />
               <span className="pointer-events-none absolute inset-x-0 border-t border-gray-100" style={{ top: '50%' }} />
               <span className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-gray-100" />
+
+              {averageLineY != null && (
+                <svg
+                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  viewBox={`0 0 ${daily.length} 100`}
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <line
+                    x1="0"
+                    x2={daily.length}
+                    y1={averageLineY}
+                    y2={averageLineY}
+                    stroke="var(--color-brand-primary)"
+                    strokeWidth="1.6"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+              )}
 
               {hasExpected && (
                 <svg
@@ -397,6 +425,14 @@ export function ProductionHistoryChart({
         {activeDay.deviation_percent != null && (
           <span className={`tabular-nums ${SEVERITY_TEXT[activeSeverity]}`}>
             Desvio: {formatNumber(activeDay.deviation_percent, 1)}%
+          </span>
+        )}
+        {averageProduction != null && (
+          <span>
+            Média do período:{' '}
+            <strong className="text-[var(--color-brand-primary)] tabular-nums">
+              {formatNumber(averageProduction, 1)} kWh/dia
+            </strong>
           </span>
         )}
         <span className={`inline-flex items-center gap-1 font-medium ${SEVERITY_TEXT[activeSeverity]}`}>

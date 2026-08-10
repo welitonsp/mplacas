@@ -72,14 +72,14 @@ describe('ProductionHistorySection', () => {
     expect(screen.getByRole('button', { name: '7 dias' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('Últimos 7 dias em foco')).toBeInTheDocument()
     expect(screen.getByText('Histórico de produção diária (7 dias)')).toBeInTheDocument()
-    expect(screen.getByText('70 kWh/dia')).toBeInTheDocument()
+    expect(screen.getAllByText('70 kWh/dia').length).toBeGreaterThanOrEqual(1)
 
     fireEvent.click(screen.getByRole('button', { name: '30 dias' }))
 
     expect(screen.getByRole('button', { name: '30 dias' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('Últimos 10 dias em foco')).toBeInTheDocument()
     expect(screen.getByText('Histórico de produção diária (10 dias)')).toBeInTheDocument()
-    expect(screen.getByText('55 kWh/dia')).toBeInTheDocument()
+    expect(screen.getAllByText('55 kWh/dia').length).toBeGreaterThanOrEqual(1)
 
     fireEvent.click(screen.getByRole('button', { name: '90 dias' }))
 

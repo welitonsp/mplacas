@@ -178,6 +178,14 @@ describe('ProductionHistoryChart — eixo Y e linha de "Esperado"', () => {
     expect(screen.getByText('Esperado')).toBeInTheDocument()
   })
 
+  it('desenha uma linha de média do período e mostra o valor no painel de detalhe', () => {
+    const { container } = render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
+
+    expect(screen.getByText('Média do período')).toBeInTheDocument()
+    expect(screen.getByText('20 kWh/dia')).toBeInTheDocument()
+    expect(container.querySelector('line[stroke="var(--color-brand-primary)"]')).toBeInTheDocument()
+  })
+
   it('não desenha a linha de "Esperado" quando expectedAvailable é false, mas as barras de produção real continuam', () => {
     const { container } = render(
       <ProductionHistoryChart daily={DAILY} currentStreakDays={0} expectedAvailable={false} />
