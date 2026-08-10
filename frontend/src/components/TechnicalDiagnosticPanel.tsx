@@ -13,9 +13,13 @@ interface TechnicalDiagnosis {
   tone: Severity
   title: string
   confidence: 'Alta' | 'Média' | 'Baixa'
+  investigationWindow?: string
+  owner?: string
   cause: string
   impact: string
   action: string
+  evidenceSummary?: string
+  playbook?: Array<{ title: string; detail: string }>
   signals: Array<{ label: string; value: string; tone: Severity }>
 }
 
@@ -47,6 +51,38 @@ function strongestLoss(losses: PhotovoltaicLossItem[] | null): PhotovoltaicLossI
       return (toNumber(right.estimated_loss_percent) ?? -1) - (toNumber(left.estimated_loss_percent) ?? -1)
     })
   return candidates[0] ?? null
+}
+
+function defaultPlaybook(tone: Severity): Array<{ title: string; detail: string }> {
+  if (tone === 'danger') {
+    return [
+      { title: 'Confirmar telemetria', detail: 'Verificar inversor, gateway e coleta antes de concluir perda física.' },
+      { title: 'Isolar causa dominante', detail: 'Cruzar PR bruto, PR corrigido, disponibilidade e perdas estimadas.' },
+      { title: 'Medir pós-ação', detail: 'Registrar correção e comparar a leitura do próximo ciclo.' },
+    ]
+  }
+
+  if (tone === 'warning') {
+    return [
+      { title: 'Validar tendência', detail: 'Comparar com dias e ciclos equivalentes antes de acionar campo.' },
+      { title: 'Preparar inspeção', detail: 'Deixar causa provável, evidências e limite de decisão documentados.' },
+      { title: 'Revisar próximo ciclo', detail: 'Confirmar se o sinal cresceu, estabilizou ou desapareceu.' },
+    ]
+  }
+
+  if (tone === 'success') {
+    return [
+      { title: 'Manter baseline', detail: 'Usar este ciclo como referência saudável para desvios futuros.' },
+      { title: 'Preservar rotina', detail: 'Continuar monitorando PR, disponibilidade e degradação.' },
+      { title: 'Registrar aprendizado', detail: 'Guardar contexto que sustentou a boa performance.' },
+    ]
+  }
+
+  return [
+    { title: 'Completar dados', detail: 'Aguardar ou recuperar leituras necessárias para fechar diagnóstico.' },
+    { title: 'Evitar conclusão prematura', detail: 'Não transformar ausência de dado em causa técnica.' },
+    { title: 'Reavaliar depois', detail: 'Refazer a leitura quando performance, baseline e perdas estiverem disponíveis.' },
+  ]
 }
 
 export function buildTechnicalDiagnosis(summary: PhotovoltaicSummaryResponse | null): TechnicalDiagnosis {
@@ -175,6 +211,28 @@ export function buildTechnicalDiagnosis(summary: PhotovoltaicSummaryResponse | n
 
 export function TechnicalDiagnosticPanel({ summary }: { summary: PhotovoltaicSummaryResponse | null }) {
   const diagnosis = buildTechnicalDiagnosis(summary)
+  const investigationWindow =
+    diagnosis.investigationWindow ??
+    (diagnosis.tone === 'danger'
+      ? 'Agir hoje'
+      : diagnosis.tone === 'warning'
+        ? 'Acompanhar esta semana'
+        : diagnosis.tone === 'success'
+          ? 'Rotina semanal'
+          : 'Completar dados')
+  const owner =
+    diagnosis.owner ??
+    (diagnosis.tone === 'danger'
+      ? 'Técnico + operação'
+      : diagnosis.tone === 'warning'
+        ? 'Operação'
+        : diagnosis.tone === 'success'
+          ? 'Gestão técnica'
+          : 'Operação')
+  const evidenceSummary =
+    diagnosis.evidenceSummary ??
+    diagnosis.signals.map((signal) => `${signal.label}: ${signal.value}`).join(' · ')
+  const playbook = diagnosis.playbook ?? defaultPlaybook(diagnosis.tone)
 
   return (
     <Card accent={diagnosis.tone} className="overflow-hidden">
@@ -186,6 +244,12 @@ export function TechnicalDiagnosticPanel({ summary }: { summary: PhotovoltaicSum
               className={`rounded-full px-2.5 py-1 text-xs font-semibold ${SEVERITY_BG[diagnosis.tone]} ${SEVERITY_TEXT[diagnosis.tone]}`}
             >
               Confiança {diagnosis.confidence.toLowerCase()}
+            </span>
+            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+              {investigationWindow}
+            </span>
+            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+              {owner}
             </span>
           </div>
           <h2 className="mt-2 text-xl font-semibold tracking-tight text-gray-950">{diagnosis.title}</h2>
@@ -214,6 +278,32 @@ export function TechnicalDiagnosticPanel({ summary }: { summary: PhotovoltaicSum
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Próxima ação</p>
           <p className="mt-2 text-sm leading-6 text-gray-700">{diagnosis.action}</p>
         </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Evidências usadas</p>
+            <p className="mt-1 text-sm leading-6 text-gray-700">{evidenceSummary}</p>
+          </div>
+          <p className="rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+            Plano de investigação
+          </p>
+        </div>
+
+        <ol aria-label="Plano técnico de investigação" className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {playbook.map((step, index) => (
+            <li key={step.title} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+              <div className="flex items-center gap-2">
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${SEVERITY_BG[diagnosis.tone]} ${SEVERITY_TEXT[diagnosis.tone]}`}>
+                  {index + 1}
+                </span>
+                <p className="text-sm font-semibold text-[var(--color-text)]">{step.title}</p>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">{step.detail}</p>
+            </li>
+          ))}
+        </ol>
       </div>
     </Card>
   )
