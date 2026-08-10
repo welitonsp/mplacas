@@ -74,8 +74,38 @@ describe('ProductionHistoryChart — teclado e semântica ARIA', () => {
 
     // Rótulo do primeiro dia — a régua de datas precisa estar dentro do mesmo
     // container que rola horizontalmente junto com as barras, não fora dele.
-    const firstDateLabel = screen.getByText('01/07')
-    expect(scrollContainer!.contains(firstDateLabel)).toBe(true)
+    const firstDateLabels = screen.getAllByText('01/07')
+    expect(firstDateLabels.some((label) => scrollContainer!.contains(label))).toBe(true)
+  })
+
+  it('mostra a data curta no topo de cada barra quando o recorte tem até 7 dias', () => {
+    const daily = Array.from({ length: 7 }, (_, index) =>
+      buildDaily(`2026-08-${String(index + 2).padStart(2, '0')}`, (index + 1) * 10)
+    )
+
+    render(<ProductionHistoryChart daily={daily} currentStreakDays={0} />)
+
+    const dateLabels = screen.getAllByTestId('production-bar-date-label')
+    expect(dateLabels).toHaveLength(7)
+    expect(dateLabels.map((label) => label.textContent)).toEqual([
+      '02/08',
+      '03/08',
+      '04/08',
+      '05/08',
+      '06/08',
+      '07/08',
+      '08/08',
+    ])
+  })
+
+  it('não mostra data no topo das barras em recortes maiores para evitar poluição visual', () => {
+    const daily = Array.from({ length: 30 }, (_, index) =>
+      buildDaily(`2026-08-${String((index % 28) + 1).padStart(2, '0')}`, (index + 1) * 2)
+    )
+
+    render(<ProductionHistoryChart daily={daily} currentStreakDays={0} />)
+
+    expect(screen.queryAllByTestId('production-bar-date-label')).toHaveLength(0)
   })
 
   it('mantém o dia selecionado explicitamente ao invés de resetar para o último dia', () => {

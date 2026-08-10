@@ -59,6 +59,7 @@ export function ProductionHistoryChart({
   const actualProductionValues = daily
     .map((day) => toNumber(day.actual_production_kwh))
     .filter((value): value is number => value != null)
+  const showInlineDateLabels = daily.length <= 7
   const averageProduction = averageActualProduction(daily).average
   const averageLineY = averageProduction == null ? null : 100 - clampPercent((averageProduction / maxValue) * 100)
   const belowAverageDays =
@@ -387,6 +388,16 @@ export function ProductionHistoryChart({
                       onMouseEnter={() => setSelectedIndex(i)}
                       onClick={() => setSelectedIndex(i)}
                     >
+                      {showInlineDateLabels && (
+                        <span
+                          data-testid="production-bar-date-label"
+                          aria-hidden="true"
+                          className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 rounded-full border border-[var(--color-border)] bg-white/95 px-1.5 py-0.5 text-xs font-semibold leading-none text-gray-700 shadow-sm tabular-nums"
+                          style={{ bottom: `calc(${Math.max(barHeightPercent, 2)}% + 6px)` }}
+                        >
+                          {formatShortDate(d.date)}
+                        </span>
+                      )}
                       <span
                         className={`w-full rounded-t-md shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] transition-all duration-150 ${
                           SEVERITY_BAR[severity]
