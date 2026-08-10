@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { ProductionHistorySection } from './ProductionHistorySection'
 import type { AnomalyDailyPoint, AnomalyFetchState } from '../lib/dashboard/contracts'
 import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-contracts'
@@ -50,6 +50,63 @@ describe('ProductionHistorySection', () => {
 
     expect(screen.getByText(/Desempenho:/)).toBeInTheDocument()
     expect(screen.getByText('Esperado')).toBeInTheDocument()
+  })
+
+  it('filtra o gráfico por 7 dias por padrão e permite alternar para 30 e 90 dias', () => {
+    const daily = Array.from({ length: 10 }, (_, index) =>
+      buildDaily({
+        date: `2026-08-${String(index + 1).padStart(2, '0')}`,
+        actual_production_kwh: (index + 1) * 10,
+        expected_production_kwh: 100,
+        deviation_percent: -10,
+      })
+    )
+    const anomalyState: AnomalyFetchState = {
+      loading: false,
+      error: null,
+      data: buildAnomalyData({ daily }),
+    }
+
+    render(<ProductionHistorySection anomalyState={anomalyState} expectedProduction={AVAILABLE} />)
+
+    expect(screen.getByRole('button', { name: '7 dias' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Últimos 7 dias em foco')).toBeInTheDocument()
+    expect(screen.getByText('Histórico de produção diária (7 dias)')).toBeInTheDocument()
+    expect(screen.getByText('70 kWh/dia')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '30 dias' }))
+
+    expect(screen.getByRole('button', { name: '30 dias' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Últimos 10 dias em foco')).toBeInTheDocument()
+    expect(screen.getByText('Histórico de produção diária (10 dias)')).toBeInTheDocument()
+    expect(screen.getByText('55 kWh/dia')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '90 dias' }))
+
+    expect(screen.getByRole('button', { name: '90 dias' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Últimos 10 dias em foco')).toBeInTheDocument()
+  })
+
+  it('mostra alerta crítico quando a média dos últimos 7 dias fica abaixo do gatilho esperado', () => {
+    const daily = Array.from({ length: 7 }, (_, index) =>
+      buildDaily({
+        date: `2026-08-${String(index + 1).padStart(2, '0')}`,
+        actual_production_kwh: 70,
+        expected_production_kwh: 100,
+        deviation_percent: -30,
+        level: 'ANOMALY',
+      })
+    )
+    const anomalyState: AnomalyFetchState = {
+      loading: false,
+      error: null,
+      data: buildAnomalyData({ daily, worstLevel: 'ANOMALY' }),
+    }
+
+    render(<ProductionHistorySection anomalyState={anomalyState} expectedProduction={AVAILABLE} />)
+
+    expect(screen.getByText('Alerta crítico')).toBeInTheDocument()
+    expect(screen.getByText('Média de 7 dias em 70% do esperado.')).toBeInTheDocument()
   })
 
   it.each([
