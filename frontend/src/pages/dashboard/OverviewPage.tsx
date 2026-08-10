@@ -163,6 +163,11 @@ export function OverviewPage() {
         title="Visão Geral"
         description="Saúde, energia e resultado da sua usina em um só lugar."
         headingRef={headingRef}
+        insights={[
+          { label: 'Pergunta', value: 'A usina exige decisão agora?' },
+          { label: 'Leitura', value: 'Saúde, energia e caixa' },
+          { label: 'Saída', value: 'Prioridade executiva' },
+        ]}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0" />}
       />
 

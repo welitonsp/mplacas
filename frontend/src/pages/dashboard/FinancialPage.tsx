@@ -104,6 +104,11 @@ export function FinancialPage() {
         title="Financeiro"
         description="Leitura do ciclo, créditos de energia e retorno do investimento em uma visão preparada para decisão."
         headingRef={headingRef}
+        insights={[
+          { label: 'Pergunta', value: 'A usina protege caixa?' },
+          { label: 'Leitura', value: 'Economia, créditos e ROI' },
+          { label: 'Saída', value: 'Decisão financeira' },
+        ]}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
       />
       {executive.error && (

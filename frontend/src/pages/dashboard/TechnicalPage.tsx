@@ -154,6 +154,11 @@ export function TechnicalPage() {
         title="Técnico"
         description="Entenda se a usina está performando bem, se os dados são confiáveis e qual causa técnica merece investigação primeiro."
         headingRef={headingRef}
+        insights={[
+          { label: 'Pergunta', value: 'Qual causa atacar primeiro?' },
+          { label: 'Leitura', value: 'PR, perdas e disponibilidade' },
+          { label: 'Saída', value: 'Plano de investigação' },
+        ]}
         actions={<RefreshBar onRefresh={pvSummaryResource.refetch} loading={loading} className="mb-0 lg:justify-self-end" />}
       />
       <section className="mb-6">

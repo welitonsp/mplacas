@@ -195,6 +195,11 @@ export function ProductionPage() {
         title="Produção"
         description="Acompanhe ciclos fechados, geração diária e desvios contra o esperado para priorizar a investigação certa."
         headingRef={headingRef}
+        insights={[
+          { label: 'Pergunta', value: 'A geração caiu ou normalizou?' },
+          { label: 'Leitura', value: 'Ciclo, dia e desvio' },
+          { label: 'Saída', value: 'Ação operacional' },
+        ]}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
       />
       <section className="mb-6">
