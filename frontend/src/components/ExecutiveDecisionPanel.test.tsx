@@ -53,7 +53,11 @@ describe('ExecutiveDecisionPanel', () => {
     expect(screen.getByText('Prioridade crítica')).toBeInTheDocument()
     expect(screen.getByText('Resolver primeiro')).toBeInTheDocument()
     expect(screen.getByText(/Risco relevante para geração/)).toBeInTheDocument()
-    expect(screen.getByText('Revisar consumo importado.')).toBeInTheDocument()
+    expect(screen.getAllByText('Revisar consumo importado.')).toHaveLength(2)
+    expect(screen.getByText('Agir nas próximas 24h')).toBeInTheDocument()
+    expect(screen.getByText('Operação + técnico')).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Plano executivo de ação' })).toBeInTheDocument()
+    expect(screen.getByText('Atacar causa prioritária')).toBeInTheDocument()
   })
 
   it('mostra operação sob controle quando o ciclo está saudável e sem diagnósticos', () => {
@@ -80,6 +84,13 @@ describe('ExecutiveDecisionPanel', () => {
     expect(decision.tone).toBe('success')
     expect(decision.title).toBe('Operação sob controle')
     expect(decision.action).toMatch(/Manter monitoramento/)
+    expect(decision.cadence).toBe('Manter rotina semanal')
+    expect(decision.owner).toBe('Gestão operacional')
+    expect(decision.playbook.map((item) => item.title)).toEqual([
+      'Usar como referência',
+      'Preservar qualidade',
+      'Registrar aprendizado',
+    ])
   })
 
   it('expõe os sinais usados na decisão: saúde, produção, último dia e economia', () => {
