@@ -56,8 +56,13 @@ export function ProductionHistoryChart({
       }),
       1
     ) * 1.1
+  const actualProductionValues = daily
+    .map((day) => toNumber(day.actual_production_kwh))
+    .filter((value): value is number => value != null)
   const averageProduction = averageActualProduction(daily).average
   const averageLineY = averageProduction == null ? null : 100 - clampPercent((averageProduction / maxValue) * 100)
+  const belowAverageDays =
+    averageProduction == null ? null : actualProductionValues.filter((value) => value < averageProduction).length
 
   // Só existe algo pra desenhar como linha de "Esperado" quando o baseline
   // está disponível E ao menos um dia do período tem valor não-nulo — mesmo
@@ -114,6 +119,19 @@ export function ProductionHistoryChart({
   const activeIndex = selectedIndex ?? daily.length - 1
   const activeDay = daily[activeIndex]
   const activeSeverity = levelSeverity(activeDay.level)
+  const activeActual = toNumber(activeDay.actual_production_kwh)
+  const activeAverageDeltaPercent =
+    activeActual != null && averageProduction != null && averageProduction > 0
+      ? ((activeActual - averageProduction) / averageProduction) * 100
+      : null
+  const activeAverageDeltaTone =
+    activeAverageDeltaPercent == null
+      ? 'text-gray-500'
+      : activeAverageDeltaPercent < -15
+        ? SEVERITY_TEXT.danger
+        : activeAverageDeltaPercent < 0
+          ? SEVERITY_TEXT.warning
+          : SEVERITY_TEXT.success
 
   // Texto acessível do dia ativo: quando `expected_production_kwh` é `null`
   // (sem expectativa disponível pra esse dia), a frase NÃO pode dizer "0 kWh
@@ -196,6 +214,11 @@ export function ProductionHistoryChart({
               className={`text-lg font-semibold tabular-nums ${SEVERITY_TEXT[performanceSeverity(performancePercent)]}`}
             >
               Desempenho: {formatNumber(performancePercent, 1)}%
+            </span>
+          )}
+          {belowAverageDays != null && (
+            <span className="text-sm font-semibold text-gray-700 tabular-nums">
+              {belowAverageDays} {belowAverageDays === 1 ? 'dia' : 'dias'} abaixo da média
             </span>
           )}
         </div>
@@ -433,6 +456,12 @@ export function ProductionHistoryChart({
             <strong className="text-[var(--color-brand-primary)] tabular-nums">
               {formatNumber(averageProduction, 1)} kWh/dia
             </strong>
+          </span>
+        )}
+        {activeAverageDeltaPercent != null && (
+          <span className={`tabular-nums ${activeAverageDeltaTone}`}>
+            Vs. média: {activeAverageDeltaPercent > 0 ? '+' : ''}
+            {formatNumber(activeAverageDeltaPercent, 0)}%
           </span>
         )}
         <span className={`inline-flex items-center gap-1 font-medium ${SEVERITY_TEXT[activeSeverity]}`}>

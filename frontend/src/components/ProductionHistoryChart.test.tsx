@@ -183,6 +183,8 @@ describe('ProductionHistoryChart — eixo Y e linha de "Esperado"', () => {
 
     expect(screen.getByText('Média do período')).toBeInTheDocument()
     expect(screen.getByText('20 kWh/dia')).toBeInTheDocument()
+    expect(screen.getByText('1 dia abaixo da média')).toBeInTheDocument()
+    expect(screen.getByText('Vs. média: +50%')).toBeInTheDocument()
     expect(container.querySelector('line[stroke="var(--color-brand-primary)"]')).toBeInTheDocument()
   })
 
