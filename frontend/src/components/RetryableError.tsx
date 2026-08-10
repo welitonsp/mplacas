@@ -1,7 +1,8 @@
-// Bloco de erro com retry associado diretamente à mensagem — extraído de
-// `DashboardPage`, onde aparecia duas vezes de forma idêntica (erro global do
-// dashboard executivo e erro de retorno do investimento). Mesmo padrão usado
-// pelo erro de servidor do histórico de produção (`ProductionHistorySection`).
+import { OperationalState } from './OperationalState'
+
+// Bloco de erro com retry associado diretamente à mensagem. A API pública foi
+// mantida, mas agora usa o padrão visual de estado operacional para ficar
+// consistente com estados vazios, carregamento e dados incompletos.
 export function RetryableError({
   message,
   onRetry,
@@ -9,29 +10,18 @@ export function RetryableError({
 }: {
   message: string
   onRetry: () => void
-  // Extra classes do container (ex: `mb-6` quando o bloco precisa de espaço
-  // abaixo dele mesmo, fora de uma seção que já controla o espaçamento).
   className?: string
 }) {
   return (
-    <div
+    <OperationalState
       role="alert"
-      className={`rounded-2xl border border-[var(--color-danger)]/25 bg-[var(--color-danger-light)] p-4 text-[var(--color-danger-text)] shadow-sm ${className}`.trim()}
-    >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 gap-3">
-          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/70 ring-1 ring-inset ring-[var(--color-danger)]/15" aria-hidden="true">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 8v4" />
-              <path d="M12 16h.01" />
-              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
-            </svg>
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">Não foi possível carregar os dados</p>
-            <p className="mt-1 text-sm leading-6">{message}</p>
-          </div>
-        </div>
+      tone="danger"
+      icon="warning"
+      align="start"
+      title="Não foi possível carregar os dados"
+      description={message}
+      className={className}
+      action={
         <button
           type="button"
           onClick={onRetry}
@@ -54,7 +44,7 @@ export function RetryableError({
           </svg>
           Tentar novamente
         </button>
-      </div>
-    </div>
+      }
+    />
   )
 }
