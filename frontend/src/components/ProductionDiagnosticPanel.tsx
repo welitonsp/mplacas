@@ -9,9 +9,13 @@ interface ProductionDiagnosis {
   tone: Severity
   title: string
   confidence: 'Alta' | 'Média' | 'Baixa'
+  window?: string
+  owner?: string
   cause: string
   impact: string
   action: string
+  evidenceSummary?: string
+  playbook?: Array<{ title: string; detail: string }>
   signals: Array<{ label: string; value: string; tone: Severity }>
 }
 
@@ -124,6 +128,52 @@ function buildSignals(data: AnomalyDashboardResponse | null): ProductionDiagnosi
       value: performance === null ? '—' : `${formatNumber(performance, 1)}%`,
       tone: performance === null ? 'neutral' : performance < 70 ? 'danger' : performance < 85 ? 'warning' : 'success',
     },
+  ]
+}
+
+function defaultWindow(tone: Severity): string {
+  if (tone === 'danger') return 'Agir hoje'
+  if (tone === 'warning') return 'Monitorar próximos dias'
+  if (tone === 'success') return 'Rotina semanal'
+  return 'Completar dados'
+}
+
+function defaultOwner(tone: Severity): string {
+  if (tone === 'danger') return 'Operação + técnico'
+  if (tone === 'warning') return 'Operação'
+  if (tone === 'success') return 'Gestão operacional'
+  return 'Operação'
+}
+
+function defaultPlaybook(tone: Severity): Array<{ title: string; detail: string }> {
+  if (tone === 'danger') {
+    return [
+      { title: 'Confirmar desvio', detail: 'Validar sequência de queda e descartar falha de coleta.' },
+      { title: 'Cruzar com Técnico', detail: 'Verificar PR, disponibilidade, perdas prováveis e clima.' },
+      { title: 'Medir recuperação', detail: 'Comparar os próximos dias contra o esperado após a ação.' },
+    ]
+  }
+
+  if (tone === 'warning') {
+    return [
+      { title: 'Acompanhar repetição', detail: 'Verificar se o desvio volta nos próximos dias de geração.' },
+      { title: 'Separar clima de falha', detail: 'Comparar com histórico, irradiância e usinas equivalentes quando houver.' },
+      { title: 'Escalar se persistir', detail: 'Abrir investigação técnica se a sequência ou perda em kWh aumentar.' },
+    ]
+  }
+
+  if (tone === 'success') {
+    return [
+      { title: 'Manter referência', detail: 'Usar o período saudável como baseline operacional recente.' },
+      { title: 'Preservar rotina', detail: 'Continuar acompanhando produção diária e sequência de atenção.' },
+      { title: 'Registrar normalidade', detail: 'Guardar o período como comparação para futuras anomalias.' },
+    ]
+  }
+
+  return [
+    { title: 'Completar histórico', detail: 'Aguardar coleta diária ou backfill antes de classificar perda.' },
+    { title: 'Validar baseline', detail: 'Confirmar se a produção esperada já pode ser calculada.' },
+    { title: 'Reabrir diagnóstico', detail: 'Reavaliar quando houver real e esperado no mesmo período.' },
   ]
 }
 
@@ -240,6 +290,12 @@ export function ProductionDiagnosticPanel({
   expectedProduction: ExpectedDailyProduction | null
 }) {
   const diagnosis = buildProductionDiagnosis({ anomalyState, expectedProduction })
+  const window = diagnosis.window ?? defaultWindow(diagnosis.tone)
+  const owner = diagnosis.owner ?? defaultOwner(diagnosis.tone)
+  const evidenceSummary =
+    diagnosis.evidenceSummary ??
+    diagnosis.signals.map((signal) => `${signal.label}: ${signal.value}`).join(' · ')
+  const playbook = diagnosis.playbook ?? defaultPlaybook(diagnosis.tone)
 
   return (
     <Card accent={diagnosis.tone} className="overflow-hidden">
@@ -251,6 +307,12 @@ export function ProductionDiagnosticPanel({
               className={`rounded-full px-2.5 py-1 text-xs font-semibold ${SEVERITY_BG[diagnosis.tone]} ${SEVERITY_TEXT[diagnosis.tone]}`}
             >
               Confiança {diagnosis.confidence.toLowerCase()}
+            </span>
+            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+              {window}
+            </span>
+            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+              {owner}
             </span>
           </div>
 
@@ -280,6 +342,32 @@ export function ProductionDiagnosticPanel({
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Evidências usadas</p>
+            <p className="mt-1 text-sm leading-6 text-gray-700">{evidenceSummary}</p>
+          </div>
+          <p className="rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+            Plano de produção
+          </p>
+        </div>
+
+        <ol aria-label="Plano operacional de produção" className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {playbook.map((step, index) => (
+            <li key={step.title} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+              <div className="flex items-center gap-2">
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${SEVERITY_BG[diagnosis.tone]} ${SEVERITY_TEXT[diagnosis.tone]}`}>
+                  {index + 1}
+                </span>
+                <p className="text-sm font-semibold text-[var(--color-text)]">{step.title}</p>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">{step.detail}</p>
+            </li>
+          ))}
+        </ol>
       </div>
     </Card>
   )
