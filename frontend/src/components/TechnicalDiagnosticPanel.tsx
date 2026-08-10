@@ -8,6 +8,7 @@ import { EVIDENCE_LEVEL_META, LOSS_CATEGORY_LABEL, SEVERITY_BG, SEVERITY_TEXT } 
 import type { Severity } from '../lib/dashboard/contracts'
 import { formatNumber, toNumber } from '../lib/format'
 import { Card } from './Card'
+import { OperationalState } from './OperationalState'
 
 interface TechnicalDiagnosis {
   tone: Severity
@@ -211,6 +212,35 @@ export function buildTechnicalDiagnosis(summary: PhotovoltaicSummaryResponse | n
 
 export function TechnicalDiagnosticPanel({ summary }: { summary: PhotovoltaicSummaryResponse | null }) {
   const diagnosis = buildTechnicalDiagnosis(summary)
+
+  if (summary === null) {
+    return (
+      <OperationalState
+        role="status"
+        tone="neutral"
+        icon="sync"
+        align="start"
+        eyebrow="Diagnóstico de causa"
+        title="Montando diagnóstico técnico"
+        description="Ainda estamos carregando PR, disponibilidade, perdas e baseline. A leitura fica em modo conservador para evitar conclusão prematura."
+        actionClassName="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3"
+        action={
+          <>
+            {diagnosis.signals.map((signal) => (
+              <div
+                key={signal.label}
+                className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2"
+              >
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{signal.label}</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--color-text-secondary)]">{signal.value}</p>
+              </div>
+            ))}
+          </>
+        }
+      />
+    )
+  }
+
   const investigationWindow =
     diagnosis.investigationWindow ??
     (diagnosis.tone === 'danger'

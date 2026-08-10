@@ -37,4 +37,20 @@ describe('OperationalState', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar os dados')
     expect(screen.getByText('Tente novamente em alguns instantes.')).toBeInTheDocument()
   })
+
+  it('aceita landmark complementar com rótulo acessível', () => {
+    render(
+      <OperationalState
+        role="complementary"
+        ariaLabel="Confiança dos dados"
+        title="Dados prontos para decisão"
+        description="Última leitura diária consolidada."
+        tone="success"
+        icon="check"
+      />,
+    )
+
+    const landmark = screen.getByRole('complementary', { name: 'Confiança dos dados' })
+    expect(landmark).toHaveTextContent('Dados prontos para decisão')
+  })
 })

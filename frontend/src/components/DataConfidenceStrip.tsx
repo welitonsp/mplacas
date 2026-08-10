@@ -1,5 +1,6 @@
 import type { CycleQuality } from '../lib/dashboard/contracts'
 import { formatFullDate } from '../lib/format'
+import { OperationalState, type OperationalStateIcon } from './OperationalState'
 
 type ConfidenceTone = 'success' | 'warning' | 'danger'
 
@@ -67,22 +68,10 @@ export function buildDataConfidenceSummary(quality: CycleQuality, latestDataDate
   }
 }
 
-const toneClasses: Record<ConfidenceTone, { dot: string; badge: string; panel: string }> = {
-  success: {
-    dot: 'bg-[var(--color-success)]',
-    badge: 'border-[var(--color-success)]/25 bg-[var(--color-success-light)] text-[var(--color-success-text)]',
-    panel: 'border-[var(--color-success)]/20',
-  },
-  warning: {
-    dot: 'bg-[var(--color-warning)]',
-    badge: 'border-[var(--color-warning)]/25 bg-[var(--color-warning-light)] text-[var(--color-warning-text)]',
-    panel: 'border-[var(--color-warning)]/25',
-  },
-  danger: {
-    dot: 'bg-[var(--color-danger)]',
-    badge: 'border-[var(--color-danger)]/25 bg-[var(--color-danger-light)] text-[var(--color-danger-text)]',
-    panel: 'border-[var(--color-danger)]/25',
-  },
+const confidenceIcon: Record<ConfidenceTone, OperationalStateIcon> = {
+  success: 'check',
+  warning: 'sync',
+  danger: 'warning',
 }
 
 export function DataConfidenceStrip({
@@ -95,45 +84,40 @@ export function DataConfidenceStrip({
   referenceMonth: string
 }) {
   const summary = buildDataConfidenceSummary(quality, latestDataDate)
-  const classes = toneClasses[summary.tone]
 
   return (
-    <aside
-      aria-label="Confiança dos dados"
-      className={`rounded-2xl border bg-[var(--color-surface)] p-4 shadow-sm ${classes.panel}`}
-    >
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${classes.badge}`}
-            >
-              <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${classes.dot}`} />
-              {summary.label}
-            </span>
-            <span className="text-xs font-medium text-[var(--color-text-secondary)]">
-              Ciclo {referenceMonth}
-            </span>
-          </div>
-          <h2 className="mt-2 text-base font-semibold text-[var(--color-text)]">{summary.headline}</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{summary.description}</p>
-        </div>
-
-        <dl className="grid gap-3 sm:grid-cols-2 lg:min-w-[28rem]">
-          <div className="rounded-xl bg-[var(--color-surface-subtle)] px-3 py-2.5">
-            <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-              Diretriz
-            </dt>
-            <dd className="mt-1 text-sm font-semibold text-[var(--color-text)]">{summary.decisionGuidance}</dd>
-          </div>
-          <div className="rounded-xl bg-[var(--color-surface-subtle)] px-3 py-2.5">
-            <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-              Próximo check
-            </dt>
-            <dd className="mt-1 text-sm font-semibold text-[var(--color-text)]">{summary.nextCheck}</dd>
-          </div>
-        </dl>
-      </div>
-    </aside>
+    <OperationalState
+      role="complementary"
+      ariaLabel="Confiança dos dados"
+      tone={summary.tone}
+      icon={confidenceIcon[summary.tone]}
+      align="start"
+      eyebrow={summary.label}
+      title={summary.headline}
+      description={summary.description}
+      className="p-4"
+      actionClassName="mt-5 space-y-3"
+      action={
+        <>
+          <p className="text-xs font-medium text-[var(--color-text-secondary)]">
+            Ciclo {referenceMonth}
+          </p>
+          <dl className="grid gap-3 sm:grid-cols-2 lg:min-w-[28rem]">
+            <div className="rounded-xl bg-[var(--color-surface-subtle)] px-3 py-2.5">
+              <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                Diretriz
+              </dt>
+              <dd className="mt-1 text-sm font-semibold text-[var(--color-text)]">{summary.decisionGuidance}</dd>
+            </div>
+            <div className="rounded-xl bg-[var(--color-surface-subtle)] px-3 py-2.5">
+              <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                Próximo check
+              </dt>
+              <dd className="mt-1 text-sm font-semibold text-[var(--color-text)]">{summary.nextCheck}</dd>
+            </div>
+          </dl>
+        </>
+      }
+    />
   )
 }
