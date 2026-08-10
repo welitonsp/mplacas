@@ -10,6 +10,18 @@ function parseSummary(payload: unknown): PhotovoltaicSummaryResponse {
 }
 
 describe('TechnicalDiagnosticPanel', () => {
+  it('usa estado operacional enquanto o diagnóstico técnico ainda está carregando', () => {
+    render(<TechnicalDiagnosticPanel summary={null} />)
+
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('Diagnóstico de causa')
+    expect(screen.getByRole('heading', { level: 2, name: 'Montando diagnóstico técnico' })).toBeInTheDocument()
+    expect(status).toHaveTextContent('Ainda estamos carregando PR, disponibilidade, perdas e baseline.')
+    expect(status).toHaveTextContent('PR bruto')
+    expect(status).toHaveTextContent('Disponibilidade')
+    expect(status).toHaveTextContent('PR corrigido')
+  })
+
   it('transforma a principal perda provável em causa, impacto e próxima ação', () => {
     const summary = parseSummary(photovoltaicSummaryPayload)
 

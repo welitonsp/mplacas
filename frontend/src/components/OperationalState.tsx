@@ -3,7 +3,7 @@ import type { Severity } from '../lib/dashboard/contracts'
 import { SEVERITY_BG, SEVERITY_TEXT } from '../lib/dashboard/visuals'
 
 export type OperationalStateTone = Severity | 'brand'
-export type OperationalStateIcon = 'empty' | 'warning' | 'sync'
+export type OperationalStateIcon = 'check' | 'empty' | 'warning' | 'sync'
 
 const TONE_META: Record<OperationalStateTone, { bg: string; text: string; ring: string; border: string }> = {
   brand: {
@@ -55,7 +55,12 @@ function OperationalIcon({ icon, tone }: { icon: OperationalStateIcon; tone: Ope
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        {icon === 'warning' ? (
+        {icon === 'check' ? (
+          <>
+            <path d="m5 12 4 4L19 6" />
+            <path d="M12 21a9 9 0 1 0-8.48-6" />
+          </>
+        ) : icon === 'warning' ? (
           <>
             <path d="M12 8v4" />
             <path d="M12 16h.01" />
@@ -89,8 +94,10 @@ export function OperationalState({
   tone = 'neutral',
   icon = 'empty',
   role,
+  ariaLabel,
   headingLevel = 2,
   align = 'center',
+  actionClassName,
   className = '',
 }: {
   eyebrow?: string
@@ -99,9 +106,11 @@ export function OperationalState({
   action?: ReactNode
   tone?: OperationalStateTone
   icon?: OperationalStateIcon
-  role?: 'status' | 'alert'
+  role?: 'status' | 'alert' | 'complementary'
+  ariaLabel?: string
   headingLevel?: 2 | 3
   align?: 'center' | 'start'
+  actionClassName?: string
   className?: string
 }) {
   const meta = TONE_META[tone]
@@ -111,6 +120,7 @@ export function OperationalState({
   return (
     <section
       role={role}
+      aria-label={ariaLabel}
       aria-live={role === 'alert' ? 'assertive' : role === 'status' ? 'polite' : undefined}
       className={`rounded-2xl border ${meta.border} bg-[var(--color-surface)] p-5 shadow-sm sm:p-6 ${className}`.trim()}
     >
@@ -131,7 +141,7 @@ export function OperationalState({
             {description}
           </p>
           {action && (
-            <div className={centered ? 'mt-6 flex justify-center' : 'mt-5 flex flex-wrap gap-3'}>
+            <div className={actionClassName ?? (centered ? 'mt-6 flex justify-center' : 'mt-5 flex flex-wrap gap-3')}>
               {action}
             </div>
           )}

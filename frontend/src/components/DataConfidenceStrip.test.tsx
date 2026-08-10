@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { DataConfidenceStrip, buildDataConfidenceSummary } from './DataConfidenceStrip'
 import type { CycleQuality } from '../lib/dashboard/contracts'
+import { DataConfidenceStrip, buildDataConfidenceSummary } from './DataConfidenceStrip'
 
 const consolidatedQuality: CycleQuality = {
   missing_days: 0,
@@ -22,6 +22,7 @@ describe('DataConfidenceStrip', () => {
 
     const strip = screen.getByRole('complementary', { name: 'Confiança dos dados' })
     expect(within(strip).getByText('Alta confiança')).toBeInTheDocument()
+    expect(within(strip).getByText('Ciclo 2026-07')).toBeInTheDocument()
     expect(within(strip).getByRole('heading', { level: 2, name: 'Dados prontos para decisão' })).toBeInTheDocument()
     expect(within(strip).getByText('Última leitura diária: 30/07/2026.')).toBeInTheDocument()
     expect(within(strip).getByText('Use os indicadores do ciclo para decisão executiva.')).toBeInTheDocument()
