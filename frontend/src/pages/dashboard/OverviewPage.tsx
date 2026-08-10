@@ -37,12 +37,41 @@ import { PageHeader } from '../../components/PageHeader'
 import { ExecutiveDecisionPanel } from '../../components/ExecutiveDecisionPanel'
 import { DataConfidenceStrip } from '../../components/DataConfidenceStrip'
 import { DASHBOARD_PRODUCTION_PATH } from '../../routes'
+import { SEVERITY_BAR, levelLabel, levelSeverity } from '../../lib/dashboard/visuals'
 
 const PRODUCTION_HEALTH_CLASSES: Record<Severity, string> = {
   success: 'border-[var(--color-success)]/25 bg-[var(--color-success-light)] text-[var(--color-success-text)]',
   warning: 'border-[var(--color-warning)]/30 bg-[var(--color-warning-light)] text-[var(--color-warning-text)]',
   danger: 'border-[var(--color-danger)]/30 bg-[var(--color-danger-light)] text-[var(--color-danger-text)]',
   neutral: 'border-gray-200 bg-gray-50 text-gray-700',
+}
+
+function productionHealthAction(tone: Severity): { title: string; detail: string } {
+  if (tone === 'danger') {
+    return {
+      title: 'Ação prioritária',
+      detail: 'Verificar hoje inversor, comunicação, sujeira e sombreamento antes que a perda vire recorrente.',
+    }
+  }
+
+  if (tone === 'warning') {
+    return {
+      title: 'Investigar se persistir',
+      detail: 'Comparar com clima/irradiação e revisar operação se a queda continuar nos próximos dias.',
+    }
+  }
+
+  if (tone === 'success') {
+    return {
+      title: 'Monitorar rotina',
+      detail: 'Produção dentro do gatilho operacional. Manter acompanhamento diário e registrar desvios relevantes.',
+    }
+  }
+
+  return {
+    title: 'Coletar mais dados',
+    detail: 'O gatilho precisa de pelo menos 3 dias avaliados para reduzir falso alerta operacional.',
+  }
 }
 
 function ProductionHealthHero({
@@ -105,6 +134,7 @@ function ProductionHealthHero({
 
   const recent = latestProductionDays(anomalyData.daily, DEFAULT_PRODUCTION_PERIOD_DAYS)
   const alertSignal = productionAlertSignal(anomalyData.daily)
+  const action = productionHealthAction(alertSignal.tone)
   const performance = productionPerformancePercent(recent)
   const average = averageActualProduction(recent)
   const productionValues = recent
@@ -142,6 +172,14 @@ function ProductionHealthHero({
             <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-700">
               {alertSignal.detail} Este é o primeiro sinal operacional: mostra se a usina está gerando dentro do esperado nos últimos 7 dias.
             </p>
+            <div
+              data-testid="production-health-action"
+              className={`mt-4 max-w-3xl rounded-2xl border px-3 py-3 ${PRODUCTION_HEALTH_CLASSES[alertSignal.tone]}`}
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] opacity-80">Próxima ação</p>
+              <p className="mt-1 text-base font-semibold">{action.title}</p>
+              <p className="mt-1 text-sm leading-6 opacity-85">{action.detail}</p>
+            </div>
             <Link
               to={DASHBOARD_PRODUCTION_PATH}
               className="mt-4 inline-flex min-h-[44px] items-center rounded-full bg-[var(--color-brand-primary)] px-4 text-sm font-semibold text-white shadow-sm transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 motion-reduce:transition-none"
@@ -193,11 +231,16 @@ function ProductionHealthHero({
             {recent.map((day) => {
               const actual = toNumber(day.actual_production_kwh) ?? 0
               const expected = toNumber(day.expected_production_kwh)
+              const severity = levelSeverity(day.level)
               const actualHeight = Math.max(6, Math.min(100, (actual / maxBar) * 100))
               const expectedHeight = expected == null ? null : Math.max(6, Math.min(100, (expected / maxBar) * 100))
 
               return (
-                <div key={day.date} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
+                <div
+                  key={day.date}
+                  className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
+                  aria-label={`${formatShortDate(day.date)}: ${formatNumber(actual, 1)} kWh, ${levelLabel(day.level)}`}
+                >
                   <div className="relative flex h-full w-full max-w-12 items-end justify-center">
                     {expectedHeight != null && (
                       <span
@@ -207,7 +250,9 @@ function ProductionHealthHero({
                       />
                     )}
                     <span
-                      className={`relative z-10 w-full max-w-8 rounded-t-lg ${PRODUCTION_HEALTH_CLASSES[alertSignal.tone].includes('danger') ? 'bg-[var(--color-danger)]' : 'bg-[var(--color-brand-primary)]'}`}
+                      data-testid="production-health-mini-bar"
+                      data-severity={severity}
+                      className={`relative z-10 w-full max-w-8 rounded-t-lg ${SEVERITY_BAR[severity]}`}
                       style={{ height: `${actualHeight}%` }}
                       aria-hidden="true"
                     />
