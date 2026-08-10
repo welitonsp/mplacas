@@ -71,7 +71,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(fetchAnomalyHistoryMock).toHaveBeenCalledWith(singlePlant.id)
   })
 
-  it('abre a Visão Geral com produção como indicador chave antes da confiança, decisão e cockpit visual', async () => {
+  it('abre a Visão Geral com produção como indicador chave, confiança compacta e menos ruído acima da dobra', async () => {
     vi.resetModules()
     installApiMock()
 
@@ -81,6 +81,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(within(productionHero).getByRole('heading', { level: 2, name: 'Produção e Saúde da Usina' })).toBeInTheDocument()
     expect(within(productionHero).getByText('Indicador chave')).toBeInTheDocument()
     expect(within(productionHero).getByText('Aguardando dados')).toBeInTheDocument()
+    expect(within(productionHero).getByTestId('production-health-confidence-badge')).toHaveTextContent('Alta confiança · ciclo 2026-07')
     expect(within(productionHero).getByText('Próxima ação')).toBeInTheDocument()
     expect(within(productionHero).getByText('Coletar mais dados')).toBeInTheDocument()
     expect(within(productionHero).getByText('Último dia')).toBeInTheDocument()
@@ -90,10 +91,9 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     const miniBars = within(productionHero).getAllByTestId('production-health-mini-bar')
     expect(miniBars.map((bar) => bar.getAttribute('data-severity'))).toEqual(['warning', 'success'])
 
-    const confidenceSection = await screen.findByRole('region', { name: 'Confiança dos dados do ciclo' })
-    expect(within(confidenceSection).getByRole('complementary', { name: 'Confiança dos dados' })).toBeInTheDocument()
-    expect(within(confidenceSection).getByText('Alta confiança')).toBeInTheDocument()
-    expect(within(confidenceSection).getByText('Dados prontos para decisão')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Confiança dos dados do ciclo' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Pergunta')).not.toBeInTheDocument()
+    expect(screen.queryByText('Saída')).not.toBeInTheDocument()
 
     const decisionSection = await screen.findByRole('region', { name: 'Decisão executiva do ciclo' })
     expect(within(decisionSection).getByRole('heading', { level: 2, name: 'Ciclo pede acompanhamento' })).toBeInTheDocument()
@@ -103,8 +103,30 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     const sections = Array.from(container.querySelectorAll('main > div.grid > section'))
     expect(sections[0]).toBe(productionHero)
-    expect(sections[1]).toBe(confidenceSection)
-    expect(sections[2]).toBe(decisionSection)
+    expect(sections[1]).toBe(decisionSection)
+  })
+
+  it('mantém confiança dos dados como seção grande só quando há ressalva de qualidade', async () => {
+    vi.resetModules()
+    installApiMock({
+      executivePayload: {
+        ...executivePayload,
+        current_cycle: {
+          ...executivePayload.current_cycle,
+          quality: { missing_days: 1, provisional_days: 0, incomplete_days: 0, unavailable_days: 0 },
+        },
+      },
+    })
+
+    await renderOverviewPage()
+
+    const productionHero = await screen.findByRole('region', { name: 'Produção e saúde da usina' })
+    expect(within(productionHero).getByTestId('production-health-confidence-badge')).toHaveTextContent('Validar telemetria · ciclo 2026-07')
+
+    const confidenceSection = await screen.findByRole('region', { name: 'Confiança dos dados do ciclo' })
+    expect(within(confidenceSection).getByRole('complementary', { name: 'Confiança dos dados' })).toBeInTheDocument()
+    expect(within(confidenceSection).getByText('Validar telemetria')).toBeInTheDocument()
+    expect(within(confidenceSection).getByText('Decisão exige confirmação dos dados')).toBeInTheDocument()
   })
 
   it('autoconsumo/injetada/importada aparecem em um único componente de visualização (EnergyFlowDiagram)', async () => {

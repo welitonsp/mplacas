@@ -2,7 +2,7 @@ import { Link } from 'react-router'
 import { fetchAnomalyHistory, fetchExecutiveDashboard } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
-import type { AnomalyDashboardResponse, AnomalyFetchError, Severity } from '../../lib/dashboard/contracts'
+import type { AnomalyDashboardResponse, AnomalyFetchError, CycleQuality, Severity } from '../../lib/dashboard/contracts'
 import {
   classifyAnomalyErrorStatus,
   combineDiagnostics,
@@ -35,7 +35,7 @@ import { RetryableError } from '../../components/RetryableError'
 import { OverviewKpiRail } from '../../components/OverviewKpiRail'
 import { PageHeader } from '../../components/PageHeader'
 import { ExecutiveDecisionPanel } from '../../components/ExecutiveDecisionPanel'
-import { DataConfidenceStrip } from '../../components/DataConfidenceStrip'
+import { DataConfidenceStrip, buildDataConfidenceSummary } from '../../components/DataConfidenceStrip'
 import { DASHBOARD_PRODUCTION_PATH } from '../../routes'
 import { SEVERITY_BAR, levelLabel, levelSeverity } from '../../lib/dashboard/visuals'
 
@@ -78,10 +78,16 @@ function ProductionHealthHero({
   anomalyData,
   loading,
   error,
+  quality,
+  latestDataDate,
+  referenceMonth,
 }: {
   anomalyData: AnomalyDashboardResponse | null
   loading: boolean
   error: AnomalyFetchError | null
+  quality: CycleQuality
+  latestDataDate: string | null
+  referenceMonth: string
 }) {
   if (loading && !anomalyData) {
     return (
@@ -135,6 +141,7 @@ function ProductionHealthHero({
   const recent = latestProductionDays(anomalyData.daily, DEFAULT_PRODUCTION_PERIOD_DAYS)
   const alertSignal = productionAlertSignal(anomalyData.daily)
   const action = productionHealthAction(alertSignal.tone)
+  const confidence = buildDataConfidenceSummary(quality, latestDataDate)
   const performance = productionPerformancePercent(recent)
   const average = averageActualProduction(recent)
   const productionValues = recent
@@ -164,6 +171,12 @@ function ProductionHealthHero({
               </p>
               <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${PRODUCTION_HEALTH_CLASSES[alertSignal.tone]}`}>
                 {alertSignal.label}
+              </span>
+              <span
+                data-testid="production-health-confidence-badge"
+                className={`rounded-full border px-3 py-1 text-xs font-semibold ${PRODUCTION_HEALTH_CLASSES[confidence.tone]}`}
+              >
+                {confidence.label} · ciclo {referenceMonth}
               </span>
             </div>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-gray-950 md:text-3xl">
@@ -398,15 +411,10 @@ export function OverviewPage() {
           identifica o produto, não a rota atual — por isso um heading por
           módulo deixou de ser redundante. */}
       <PageHeader
-        eyebrow="Painel executivo"
+        eyebrow="Cockpit"
         title="Visão Geral"
-        description="Saúde, energia e resultado da sua usina em um só lugar."
+        description="Minha usina está bem hoje?"
         headingRef={headingRef}
-        insights={[
-          { label: 'Pergunta', value: 'A usina exige decisão agora?' },
-          { label: 'Leitura', value: 'Saúde, energia e caixa' },
-          { label: 'Saída', value: 'Prioridade executiva' },
-        ]}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0" />}
       />
 
@@ -428,15 +436,20 @@ export function OverviewPage() {
               anomalyData={anomalies.data}
               loading={anomalies.status === 'loading'}
               error={anomalies.error}
+              quality={quality}
+              latestDataDate={latestDataDate}
+              referenceMonth={data.current_cycle.reference_month}
             />
 
-            <section className="md:col-span-6 lg:col-span-12" aria-label="Confiança dos dados do ciclo">
-              <DataConfidenceStrip
-                quality={quality}
-                latestDataDate={latestDataDate}
-                referenceMonth={data.current_cycle.reference_month}
-              />
-            </section>
+            {buildDataConfidenceSummary(quality, latestDataDate).tone !== 'success' && (
+              <section className="md:col-span-6 lg:col-span-12" aria-label="Confiança dos dados do ciclo">
+                <DataConfidenceStrip
+                  quality={quality}
+                  latestDataDate={latestDataDate}
+                  referenceMonth={data.current_cycle.reference_month}
+                />
+              </section>
+            )}
 
             <section className="md:col-span-6 lg:col-span-12" aria-label="Decisão executiva do ciclo">
               <ExecutiveDecisionPanel
