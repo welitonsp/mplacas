@@ -48,6 +48,41 @@ function buildReturn(overrides: Partial<FinancialReturnResponse> = {}): Financia
 }
 
 describe('FinancialDecisionPanel', () => {
+  it('usa estado operacional enquanto ROI e payback ainda carregam', () => {
+    render(
+      <FinancialDecisionPanel
+        indicators={buildIndicators()}
+        referenceMonth="2026-07"
+        financialReturn={null}
+        financialReturnError={null}
+      />,
+    )
+
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('Decisão financeira')
+    expect(screen.getByRole('heading', { level: 2, name: 'Calculando retorno financeiro' })).toBeInTheDocument()
+    expect(status).toHaveTextContent('ROI e payback ainda estão sendo carregados.')
+    expect(status).toHaveTextContent('Aguardar leitura')
+
+    const plan = screen.getByRole('list', { name: 'Plano financeiro executivo' })
+    expect(within(plan).getByText('Aguardar retorno')).toBeInTheDocument()
+  })
+
+  it('usa estado operacional quando o retorno financeiro falha', () => {
+    render(
+      <FinancialDecisionPanel
+        indicators={buildIndicators()}
+        referenceMonth="2026-07"
+        financialReturn={null}
+        financialReturnError="Erro ao buscar retorno do investimento."
+      />,
+    )
+
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('Decisão financeira bloqueada')
+    expect(status).toHaveTextContent('ROI e payback não devem ser usados para decisão.')
+    expect(status).toHaveTextContent('Reprocessar hoje')
+  })
   it('orienta cadastrar CAPEX quando o ROI está bloqueado por investimento pendente', () => {
     const financialReturn = buildReturn({
       investment_amount_brl: null,

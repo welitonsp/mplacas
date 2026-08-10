@@ -18,6 +18,38 @@ function anomalyState(payload: unknown = anomalyPayload): AnomalyFetchState {
 }
 
 describe('ProductionDiagnosticPanel', () => {
+  it('usa estado operacional enquanto o diagnóstico de produção ainda está carregando', () => {
+    render(
+      <ProductionDiagnosticPanel
+        anomalyState={{ data: null, loading: true, error: null }}
+        expectedProduction={null}
+      />,
+    )
+
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('Diagnóstico de produção')
+    expect(screen.getByRole('heading', { level: 2, name: 'Montando diagnóstico de produção' })).toBeInTheDocument()
+    expect(status).toHaveTextContent('Aguardando histórico diário e referência esperada.')
+    expect(status).toHaveTextContent('A interface evita classificar perda antes de receber os dados mínimos.')
+
+    const signals = screen.getByRole('group', { name: 'Sinais do diagnóstico de produção' })
+    expect(within(signals).getByText('Pior dia')).toBeInTheDocument()
+    expect(within(signals).getByText('Desempenho do período')).toBeInTheDocument()
+  })
+
+  it('usa alerta operacional quando o histórico diário não carrega', () => {
+    render(
+      <ProductionDiagnosticPanel
+        anomalyState={{ data: null, loading: false, error: 'SERVER_ERROR' }}
+        expectedProduction={EXPECTED_PRODUCTION}
+      />,
+    )
+
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Diagnóstico indisponível')
+    expect(alert).toHaveTextContent('O histórico diário não carregou com sucesso.')
+    expect(alert).toHaveTextContent('Tentar atualizar o histórico de produção antes de decidir ação operacional.')
+  })
   it('transforma anomalia recorrente em causa, perda estimada e próxima ação', () => {
     render(
       <ProductionDiagnosticPanel
