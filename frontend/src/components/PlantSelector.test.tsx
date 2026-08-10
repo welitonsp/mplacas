@@ -33,6 +33,8 @@ describe('PlantSelector', () => {
     expect(select).toBeInTheDocument()
     expect(screen.getByRole('option', { name: PLANT_A.name })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: PLANT_B.name })).toBeInTheDocument()
+    expect(screen.getByText('48,6 kWp instalados')).toBeInTheDocument()
+    expect(select).toHaveAccessibleDescription('48,6 kWp instalados')
   })
 
   it('trocar a seleção no dropdown chama selectPlant com o id correto', () => {
@@ -62,8 +64,19 @@ describe('PlantSelector', () => {
     render(<PlantSelector />)
 
     expect(screen.getByText(PLANT_A.name)).toBeInTheDocument()
+    expect(screen.getByText('Usina ativa')).toBeInTheDocument()
+    expect(screen.getByText('48,6 kWp instalados')).toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     expect(document.querySelector('select')).not.toBeInTheDocument()
+  })
+
+  it('fica visível também em viewport móvel, sem classe hidden no chip operacional', () => {
+    setPlant({ plantId: PLANT_A.id, plants: [PLANT_A, PLANT_B] })
+    render(<PlantSelector />)
+
+    const chip = screen.getByRole('combobox', { name: /usina ativa/i }).closest('span')?.parentElement
+    expect(chip?.className).not.toMatch(/\bhidden\b/)
+    expect(chip?.className).toMatch(/\bflex\b/)
   })
 
   it('com zero usinas, não renderiza nada visível', () => {
