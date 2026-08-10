@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { DashboardNav } from './DashboardNav'
 import {
@@ -72,5 +72,20 @@ describe('DashboardNav', () => {
       expect(link.className).toMatch(/focus-visible:ring-2 focus-visible:ring-\[var\(--color-brand-primary\)\]/)
       expect(link.className).toMatch(/min-h-\[56px\]/)
     }
+  })
+
+  it('mostra o contexto executivo do módulo ativo e a rotina de leitura', () => {
+    renderNav(DASHBOARD_TECHNICAL_PATH)
+
+    const context = screen.getByRole('group', { name: 'Contexto do módulo ativo' })
+    expect(context).toHaveTextContent('Agora: Técnico')
+    expect(context).toHaveTextContent('Investigue PR, perdas, degradação e disponibilidade.')
+    expect(context).toHaveTextContent('Priorize a causa técnica com maior evidência e impacto.')
+
+    const routine = screen.getByRole('list', { name: 'Rotina executiva de leitura' })
+    expect(within(routine).getByText('Visão Geral')).toBeInTheDocument()
+    expect(within(routine).getByText('Produção')).toBeInTheDocument()
+    expect(within(routine).getByText('Financeiro')).toBeInTheDocument()
+    expect(within(routine).getByText('Técnico')).toHaveClass('font-semibold')
   })
 })
