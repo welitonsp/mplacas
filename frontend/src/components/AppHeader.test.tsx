@@ -98,6 +98,15 @@ describe('AppHeader — menu de usuário', () => {
     expect(trigger).toHaveAttribute('aria-controls', screen.getByRole('menu').id)
   })
 
+  it('mostra identidade operacional no botão do usuário em telas maiores', () => {
+    setAuth({ username: 'maria.operacao@mplacas.com' })
+    render(<AppHeader />)
+
+    const trigger = screen.getByRole('button', { name: /maria.operacao@mplacas.com/i })
+    expect(trigger).toHaveTextContent('Operador')
+    expect(trigger).toHaveTextContent('maria.operacao@mplacas.com')
+  })
+
   it('abre o menu via teclado (Enter/Space) e fecha com Escape', () => {
     setAuth()
     render(<AppHeader />)

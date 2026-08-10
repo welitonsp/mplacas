@@ -200,6 +200,14 @@ export function AppHeader() {
               >
                 {(username ?? '?').charAt(0).toUpperCase()}
               </span>
+              <span className="hidden min-w-0 text-left md:block">
+                <span className="block text-[12px] font-semibold uppercase leading-4 tracking-[0.12em] text-[var(--color-text-muted)]">
+                  Operador
+                </span>
+                <span className="block max-w-[10rem] truncate text-sm font-semibold leading-5 text-gray-900">
+                  {username ?? 'Usuário'}
+                </span>
+              </span>
               <span aria-hidden="true" className={`text-xs transition-transform duration-150 ${menuOpen ? 'rotate-180' : ''}`}>
                 ▾
               </span>
