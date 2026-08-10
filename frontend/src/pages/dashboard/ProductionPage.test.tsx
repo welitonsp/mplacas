@@ -356,7 +356,7 @@ describe('ProductionPage — histórico de produção não depende mais do basel
     await waitFor(() => {
       expect(within(section).getByRole('slider')).toBeInTheDocument()
     })
-    expect(within(section).getByText('40 kWh')).toBeInTheDocument()
+    expect(within(section).getAllByText('40 kWh').length).toBeGreaterThanOrEqual(1)
     expect(within(section).queryByText('Esperado')).not.toBeInTheDocument()
     expect(within(section).queryByText(/histórico de desempenho insuficiente/)).not.toBeInTheDocument()
     expect(within(section).queryByText(/primeiro ano de referência/)).not.toBeInTheDocument()

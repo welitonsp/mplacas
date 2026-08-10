@@ -60,6 +60,20 @@ export function ProductionHistoryChart({
     .map((day) => toNumber(day.actual_production_kwh))
     .filter((value): value is number => value != null)
   const showInlineDateLabels = daily.length <= 7
+  const productionDays = daily
+    .map((day) => ({ day, actual: toNumber(day.actual_production_kwh) }))
+    .filter((item): item is { day: AnomalyDailyPoint; actual: number } => item.actual != null)
+  const productionReadout =
+    productionDays.length === 0
+      ? null
+      : productionDays.reduce(
+          (acc, item) => ({
+            total: acc.total + item.actual,
+            best: item.actual > acc.best.actual ? item : acc.best,
+            worst: item.actual < acc.worst.actual ? item : acc.worst,
+          }),
+          { total: 0, best: productionDays[0], worst: productionDays[0] }
+        )
   const averageProduction = averageActualProduction(daily).average
   const averageLineY = averageProduction == null ? null : 100 - clampPercent((averageProduction / maxValue) * 100)
   const belowAverageDays =
@@ -259,6 +273,50 @@ export function ProductionHistoryChart({
           )}
         </div>
       </div>
+
+      {productionReadout != null && (
+        <div
+          data-testid="production-period-readout"
+          className="mt-4 grid gap-2 sm:grid-cols-3"
+          aria-label="Resumo executivo do período de produção"
+        >
+          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2.5">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+              Total produzido
+            </p>
+            <p className="mt-1 text-lg font-semibold text-gray-950 tabular-nums">
+              {formatNumber(productionReadout.total, 1)} kWh
+            </p>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {productionDays.length} {productionDays.length === 1 ? 'dia com dado' : 'dias com dado'}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--color-success)]/20 bg-[var(--color-success-light)] px-3 py-2.5">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-success-text)]/80">
+              Melhor dia
+            </p>
+            <p className="mt-1 text-lg font-semibold text-[var(--color-success-text)] tabular-nums">
+              {formatNumber(productionReadout.best.actual, 1)} kWh
+            </p>
+            <p className="mt-0.5 text-xs font-medium text-[var(--color-success-text)]/80 tabular-nums">
+              em {formatShortDate(productionReadout.best.day.date)}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--color-warning)]/25 bg-[var(--color-warning-light)] px-3 py-2.5">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-warning-text)]/80">
+              Pior dia
+            </p>
+            <p className="mt-1 text-lg font-semibold text-[var(--color-warning-text)] tabular-nums">
+              {formatNumber(productionReadout.worst.actual, 1)} kWh
+            </p>
+            <p className="mt-0.5 text-xs font-medium text-[var(--color-warning-text)]/80 tabular-nums">
+              em {formatShortDate(productionReadout.worst.day.date)}
+            </p>
+          </div>
+        </div>
+      )}
 
       {currentStreakDays > 0 && (
         <p className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--color-danger)]/20 bg-[var(--color-danger-light)] px-3 py-1.5 text-xs font-semibold text-[var(--color-danger-text)] shadow-sm">

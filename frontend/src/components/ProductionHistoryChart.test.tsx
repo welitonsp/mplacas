@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { ProductionHistoryChart } from './ProductionHistoryChart'
 import type { AnomalyDailyPoint } from '../lib/dashboard/contracts'
 
@@ -108,6 +108,20 @@ describe('ProductionHistoryChart — teclado e semântica ARIA', () => {
     expect(screen.queryAllByTestId('production-bar-date-label')).toHaveLength(0)
   })
 
+  it('mostra leitura executiva com total produzido, melhor dia e pior dia do período', () => {
+    render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
+
+    const readout = screen.getByTestId('production-period-readout')
+    expect(readout).toHaveTextContent('Total produzido')
+    expect(readout).toHaveTextContent('60 kWh')
+    expect(readout).toHaveTextContent('Melhor dia')
+    expect(readout).toHaveTextContent('30 kWh')
+    expect(readout).toHaveTextContent('em 03/07')
+    expect(readout).toHaveTextContent('Pior dia')
+    expect(readout).toHaveTextContent('10 kWh')
+    expect(readout).toHaveTextContent('em 01/07')
+  })
+
   it('mantém o dia selecionado explicitamente ao invés de resetar para o último dia', () => {
     render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
 
@@ -161,7 +175,9 @@ describe('ProductionHistoryChart — dia sem expectativa (level: null)', () => {
 
     render(<ProductionHistoryChart daily={dailyWithNullLevel} currentStreakDays={0} />)
 
-    expect(screen.getByText('40 kWh')).toBeInTheDocument()
+    const liveRegion = document.querySelector('[aria-live="polite"]')
+    expect(liveRegion).toBeInTheDocument()
+    expect(within(liveRegion as HTMLElement).getByText('40 kWh')).toBeInTheDocument()
     expect(screen.queryByText(/Esperado:/)).not.toBeInTheDocument()
     // Aparece duas vezes: uma na legenda (explicando a cor) e outra como
     // rótulo de nível do dia ativo no painel de detalhe.
