@@ -33,11 +33,21 @@ describe('ProductionDiagnosticPanel', () => {
     expect(screen.getByText(/Perda estimada de 10 kWh no período analisado/)).toBeInTheDocument()
     expect(screen.getByText(/cruzar com Técnico/)).toBeInTheDocument()
 
+    expect(screen.getByText('Monitorar próximos dias')).toBeInTheDocument()
+    expect(screen.getByText('Operação')).toBeInTheDocument()
+    expect(screen.getByText('Evidências usadas')).toBeInTheDocument()
+    expect(screen.getByText(/Pior dia: 29\/07\/2026/)).toBeInTheDocument()
+
     const signals = screen.getByRole('group', { name: 'Sinais do diagnóstico de produção' })
     expect(within(signals).getByText('Pior dia')).toBeInTheDocument()
     expect(within(signals).getByText('29/07/2026 · -13,6%')).toBeInTheDocument()
     expect(within(signals).getByText('Perda estimada')).toBeInTheDocument()
     expect(within(signals).getByText('6 kWh no pior dia · 10 kWh no período')).toBeInTheDocument()
+
+    const playbook = screen.getByRole('list', { name: 'Plano operacional de produção' })
+    expect(within(playbook).getByText('Acompanhar repetição')).toBeInTheDocument()
+    expect(within(playbook).getByText('Separar clima de falha')).toBeInTheDocument()
+    expect(within(playbook).getByText('Escalar se persistir')).toBeInTheDocument()
   })
 
   it('não fabrica perda quando há produção real, mas não há referência esperada', () => {
