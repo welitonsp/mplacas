@@ -20,7 +20,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from mplacas.alerts.ledger import InMemoryAlertDeliveryLedger
 from mplacas.alerts.models import AlertSeverity
 from mplacas.alerts.production_alert import (
-    DeviceProductionMetrics,
     ProductionAlertDataNotFoundError,
     ProductionAlertMetrics,
     ProductionAlertReason,
@@ -32,6 +31,7 @@ from mplacas.alerts.production_alert import (
 from mplacas.climate.db_models import DailyClimateObservationRecord
 from mplacas.db.base import Base
 from mplacas.db.models import DailyEnergy, DataStatus, Device, Plant
+from mplacas.devices.metrics import DeviceProductionMetrics
 from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
 
 EXPECTED_DAILY_PRODUCTION = Decimal("18.7")
