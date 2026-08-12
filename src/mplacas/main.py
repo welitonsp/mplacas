@@ -17,6 +17,7 @@ from mplacas.credentials.router import router as credentials_router
 from mplacas.credentials.router import users_router
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context
+from mplacas.devices.router import router as devices_router
 from mplacas.explanations.router import router as explanations_router
 from mplacas.intelligence.router import router as intelligence_router
 from mplacas.observability.context import (
@@ -161,6 +162,7 @@ app.include_router(organizations_router)
 app.include_router(plants_router)
 app.include_router(reports_router)
 app.include_router(photovoltaic_router)
+app.include_router(devices_router)
 app.include_router(web_router)
 
 
