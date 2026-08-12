@@ -2,6 +2,7 @@ import { FormEvent, useId, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import { useAuth } from '../contexts/AuthContext'
 import { BrandMark } from '../components/BrandMark'
+import { LoadingAnnouncement } from '../components/LoadingAnnouncement'
 
 const BENEFITS = [
   {
@@ -242,6 +243,7 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={loading}
+              aria-busy={loading}
               className="mt-2 inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[var(--color-brand-primary)] px-4 py-3 text-sm font-bold text-white shadow-[0_18px_36px_-20px_var(--color-brand-primary)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-brand-primary-dark)] hover:shadow-[0_22px_44px_-22px_var(--color-brand-primary)] active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 motion-reduce:transition-none"
             >
               {loading && (
@@ -252,6 +254,7 @@ export function LoginPage() {
               )}
               {loading ? 'Entrando...' : 'Entrar no painel'}
             </button>
+            <LoadingAnnouncement active={loading} message="Entrando, aguarde." />
 
             <p className="text-center text-xs leading-5 text-[var(--color-text-secondary)]">
               Sessão protegida por credenciais operacionais. O backend valida permissões a cada requisição.

@@ -202,7 +202,7 @@ describe('ProductionHistoryChart — dia sem expectativa (level: null)', () => {
   })
 })
 
-describe('ProductionHistoryChart — eixo Y e linha de "Esperado"', () => {
+describe('ProductionHistoryChart — eixo Y e linha de referência esperada (baseline sazonal)', () => {
   it('mostra o eixo Y com rótulos numéricos de 0, metade e máximo, baseados no maxValue real', () => {
     // maxValue = max(actual, expected) do conjunto (expected=50 em todo dia) * 1.1 = 55.
     render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
@@ -212,16 +212,23 @@ describe('ProductionHistoryChart — eixo Y e linha de "Esperado"', () => {
     expect(screen.getByText('0 kWh')).toBeInTheDocument()
   })
 
-  it('desenha a linha de "Esperado" como uma única polilinha contínua quando a expectativa está disponível', () => {
+  it('desenha a linha de referência esperada como uma única linha horizontal, não um traço por barra (o valor é o mesmo escalar em todos os dias)', () => {
     const { container } = render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
 
-    // Um único elemento de linha conectando os pontos, não N traços por barra.
-    const paths = container.querySelectorAll('path[stroke-dasharray]')
-    expect(paths).toHaveLength(1)
-    // `M`/`L` para os 3 dias — uma polilinha contínua, sem reiniciar o traço.
-    expect(paths[0].getAttribute('d')).toMatch(/^M0\.5 .+ L1\.5 .+ L2\.5 /)
+    // Um único elemento `<line>` de referência, não um `<path>`/traço por dia.
+    const referenceLines = container.querySelectorAll('line[stroke="var(--color-chart-reference)"]')
+    expect(referenceLines).toHaveLength(1)
+    // A linha cobre a largura inteira do gráfico (0 até o total de dias), não
+    // um segmento por barra — mesmo padrão da linha "Média do período".
+    expect(referenceLines[0]).toHaveAttribute('x1', '0')
+    expect(referenceLines[0]).toHaveAttribute('x2', String(DAILY.length))
+    expect(referenceLines[0].getAttribute('y1')).toBe(referenceLines[0].getAttribute('y2'))
+    expect(container.querySelectorAll('path[stroke-dasharray]')).toHaveLength(0)
 
-    expect(screen.getByText('Esperado')).toBeInTheDocument()
+    // Rótulo não afirma expectativa por dia — deixa explícito que é a média
+    // diária do período (baseline sazonal), não uma previsão diária.
+    expect(screen.getByText('Média diária esperada (baseline sazonal)')).toBeInTheDocument()
+    expect(screen.queryByText('Esperado')).not.toBeInTheDocument()
   })
 
   it('desenha uma linha de média do período e mostra o valor no painel de detalhe', () => {
@@ -234,14 +241,69 @@ describe('ProductionHistoryChart — eixo Y e linha de "Esperado"', () => {
     expect(container.querySelector('line[stroke="var(--color-brand-primary)"]')).toBeInTheDocument()
   })
 
-  it('não desenha a linha de "Esperado" quando expectedAvailable é false, mas as barras de produção real continuam', () => {
+  it('não desenha a linha de referência esperada quando expectedAvailable é false, mas as barras de produção real continuam', () => {
     const { container } = render(
       <ProductionHistoryChart daily={DAILY} currentStreakDays={0} expectedAvailable={false} />
     )
 
     expect(container.querySelectorAll('path[stroke-dasharray]')).toHaveLength(0)
+    expect(container.querySelectorAll('line[stroke="var(--color-chart-reference)"]')).toHaveLength(0)
+    expect(screen.queryByText('Média diária esperada (baseline sazonal)')).not.toBeInTheDocument()
     expect(screen.queryByText('Esperado')).not.toBeInTheDocument()
     // As barras de produção real continuam presentes.
     expect(screen.getByRole('slider')).toBeInTheDocument()
+  })
+
+  it('o painel de detalhe do dia rotula o valor como "Baseline esperado (período)" em kWh/dia, não como expectativa daquele dia', () => {
+    render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
+
+    const liveRegion = document.querySelector('[aria-live="polite"]') as HTMLElement
+    expect(within(liveRegion).getByText('Baseline esperado (período):')).toBeInTheDocument()
+    expect(within(liveRegion).getByText('50 kWh/dia')).toBeInTheDocument()
+    // Rótulo antigo, que sugeria uma expectativa específica do dia, não pode
+    // mais aparecer.
+    expect(within(liveRegion).queryByText('Esperado:')).not.toBeInTheDocument()
+  })
+
+  it('o texto acessível (aria-valuetext) do dia ativo descreve o valor esperado como baseline do período, não como expectativa do dia', () => {
+    render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
+
+    const slider = screen.getByRole('slider')
+    expect(slider).toHaveAttribute(
+      'aria-valuetext',
+      '03/07: 30 kWh produzidos. Baseline esperado do período: 50 kWh/dia. Nível: Normal.'
+    )
+  })
+})
+
+describe('ProductionHistoryChart — classificação por dia permanece inalterada pela correção de rótulo/desenho (T5)', () => {
+  it('mostra, para cada dia navegado, exatamente o nível e a severidade que o backend calculou em `level` — a mudança de rótulo/linha do "esperado" não recalcula nem reclassifica nada no cliente', () => {
+    // Três dias com níveis distintos vindos prontos do backend (mesmo valor
+    // escalar de `expected_production_kwh` em todos, como no payload real —
+    // ver `anomaly_service.py:145-171` — mas `level`/`deviation_percent` já
+    // diferem por dia, calculados por `assess_daily_performance` no backend,
+    // não recalculados aqui).
+    const mixedLevels: AnomalyDailyPoint[] = [
+      buildDaily('2026-07-01', 48, { level: 'NORMAL', deviation_percent: -4 }),
+      buildDaily('2026-07-02', 35, { level: 'ATTENTION', deviation_percent: -30 }),
+      buildDaily('2026-07-03', 15, { level: 'CRITICAL', deviation_percent: -70 }),
+    ]
+
+    render(<ProductionHistoryChart daily={mixedLevels} currentStreakDays={0} />)
+
+    const slider = screen.getByRole('slider')
+    const liveRegion = document.querySelector('[aria-live="polite"]') as HTMLElement
+
+    // Dia 3 (índice 2) é o padrão inicial — nível CRÍTICO, como veio do backend.
+    expect(within(liveRegion).getByText('Crítico')).toBeInTheDocument()
+
+    slider.focus()
+    fireEvent.keyDown(slider, { key: 'ArrowLeft' })
+    expect(slider).toHaveAttribute('aria-valuenow', '1')
+    expect(within(liveRegion).getByText('Atenção')).toBeInTheDocument()
+
+    fireEvent.keyDown(slider, { key: 'ArrowLeft' })
+    expect(slider).toHaveAttribute('aria-valuenow', '0')
+    expect(within(liveRegion).getByText('Normal')).toBeInTheDocument()
   })
 })

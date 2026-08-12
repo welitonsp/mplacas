@@ -24,8 +24,8 @@ export function ProductionHistoryChart({
   // `false` quando o baseline sazonal ainda não existe para a usina (ADR-065/068
   // — `expectedProduction.available === false` em `/photovoltaic/summary`). O
   // gráfico de produção real continua útil mesmo assim: só a linha/legenda de
-  // "Esperado" some, sem impedir o card inteiro de montar (ver
-  // `ProductionHistorySection`).
+  // referência esperada (baseline sazonal) some, sem impedir o card inteiro de
+  // montar (ver `ProductionHistorySection`).
   expectedAvailable?: boolean
 }) {
   // Dia selecionado. `null` = último dia (padrão inicial). Uma vez que o
@@ -79,34 +79,21 @@ export function ProductionHistoryChart({
   const belowAverageDays =
     averageProduction == null ? null : actualProductionValues.filter((value) => value < averageProduction).length
 
-  // Só existe algo pra desenhar como linha de "Esperado" quando o baseline
-  // está disponível E ao menos um dia do período tem valor não-nulo — mesmo
-  // tratamento de lacuna já usado para irradiância (`hasIrradiation` abaixo).
-  const hasExpected =
-    expectedAvailable && daily.some((d) => toNumber(d.expected_production_kwh) != null)
-
-  // Polilinha SVG contínua da produção esperada, na mesma escala (0–maxValue)
-  // das barras de produção real — ao contrário do traço tracejado por barra
-  // anterior, que virava ruído pontilhado em vez de uma linha de referência
-  // legível (ver diagnóstico do architect). Segue o mesmo padrão de
-  // `buildIrradiationPath` abaixo: `M`/`L` por ponto, reinicia o traço (`M`)
-  // quando encontra um dia sem valor em vez de interpolar sobre a lacuna.
-  function buildExpectedPath(): string {
-    let d = ''
-    let drawing = false
-    daily.forEach((day, i) => {
-      const v = toNumber(day.expected_production_kwh)
-      if (v == null) {
-        drawing = false
-        return
-      }
-      const x = i + 0.5
-      const y = 100 - clampPercent((v / maxValue) * 100)
-      d += `${drawing ? 'L' : 'M'}${x} ${y} `
-      drawing = true
-    })
-    return d.trim()
-  }
+  // `expected_production_kwh` é o MESMO valor escalar replicado pelo backend
+  // em todos os dias do período (baseline sazonal do período; não uma
+  // expectativa calculada por dia — ver `anomaly_service.py:145-171`, onde
+  // `expected_daily_production_kwh` é um parâmetro único atribuído sem
+  // variação dentro do laço `for current_day in ...`). Por isso a referência
+  // visual é UMA linha horizontal única (mesmo padrão de `averageLineY`
+  // abaixo), não mais uma polilinha ponto a ponto: desenhar ponto a ponto
+  // sugeria uma variação diária que não existe no dado. Qualquer dia com
+  // valor não-nulo serve pra achar a altura da linha — é sempre o mesmo
+  // número, não uma escolha entre valores diferentes.
+  const expectedDailyValue = expectedAvailable
+    ? (daily.map((d) => toNumber(d.expected_production_kwh)).find((v): v is number => v != null) ?? null)
+    : null
+  const hasExpected = expectedDailyValue != null
+  const expectedLineY = hasExpected ? 100 - clampPercent((expectedDailyValue / maxValue) * 100) : null
 
   // % de desempenho do período: soma do real dividido pela soma do esperado no
   // conjunto de dias exibido — derivado do array `daily` já em mãos, sem cálculo
@@ -152,13 +139,17 @@ export function ProductionHistoryChart({
   // (sem expectativa disponível pra esse dia), a frase NÃO pode dizer "0 kWh
   // esperados" nem citar um nível — isso fabricaria um valor e uma severidade
   // que o backend explicitamente não calculou (ver `AnomalyDailyPoint.level`).
+  // Quando o valor existe, a frase diz "baseline esperado do período", nunca
+  // "esperado hoje": é o mesmo escalar replicado em todos os dias do recorte
+  // (ver comentário de `expectedDailyValue` acima), não uma previsão deste
+  // dia específico.
   function buildDayValueText(day: AnomalyDailyPoint): string {
     const actualText = `${formatNumber(toNumber(day.actual_production_kwh) ?? 0)} kWh produzidos`
     const expected = toNumber(day.expected_production_kwh)
     if (expected == null || day.level === null) return `${formatShortDate(day.date)}: ${actualText}.`
-    return `${formatShortDate(day.date)}: ${actualText} de ${formatNumber(expected)} kWh esperados. Nível: ${levelLabel(
-      day.level
-    )}.`
+    return `${formatShortDate(day.date)}: ${actualText}. Baseline esperado do período: ${formatNumber(
+      expected
+    )} kWh/dia. Nível: ${levelLabel(day.level)}.`
   }
 
   function moveSelection(delta: number) {
@@ -256,7 +247,7 @@ export function ProductionHistoryChart({
           {hasExpected && (
             <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm">
               <span className="h-0 w-3 border-t border-dashed border-[var(--color-chart-reference)]" />
-              Esperado
+              Média diária esperada (baseline sazonal)
             </span>
           )}
           {averageProduction != null && (
@@ -383,16 +374,18 @@ export function ProductionHistoryChart({
                 </svg>
               )}
 
-              {hasExpected && (
+              {hasExpected && expectedLineY != null && (
                 <svg
                   className="pointer-events-none absolute inset-0 h-full w-full"
                   viewBox={`0 0 ${daily.length} 100`}
                   preserveAspectRatio="none"
                   aria-hidden="true"
                 >
-                  <path
-                    d={buildExpectedPath()}
-                    fill="none"
+                  <line
+                    x1="0"
+                    x2={daily.length}
+                    y1={expectedLineY}
+                    y2={expectedLineY}
                     stroke="var(--color-chart-reference)"
                     strokeWidth="1.5"
                     strokeDasharray="4 3"
@@ -502,15 +495,20 @@ export function ProductionHistoryChart({
             {formatNumber(activeDay.actual_production_kwh)} kWh
           </strong>
         </span>
-        {/* Sem cláusula "Esperado" quando `expected_production_kwh` é `null`
-            (sem expectativa disponível pra esse dia) — nunca "0 kWh
-            esperados" fabricado, mesmo princípio de `LatestDailyProductionCard`
-            para o mesmo caso. */}
+        {/* Sem cláusula quando `expected_production_kwh` é `null` (sem
+            expectativa disponível pra esse dia) — nunca "0 kWh esperados"
+            fabricado, mesmo princípio de `LatestDailyProductionCard` para o
+            mesmo caso. Rótulo diz "baseline esperado (período)", não
+            "esperado hoje": é o mesmo escalar replicado pelo backend em
+            todos os dias do recorte (baseline sazonal do período, ver
+            comentário de `expectedDailyValue` acima), não uma previsão
+            específica deste dia — daí também o sufixo "kWh/dia" em vez de
+            "kWh" (é uma taxa de referência, não o total do dia). */}
         {activeDay.expected_production_kwh != null && (
           <span>
-            Esperado:{' '}
+            Baseline esperado (período):{' '}
             <strong className="text-gray-900 tabular-nums">
-              {formatNumber(activeDay.expected_production_kwh)} kWh
+              {formatNumber(activeDay.expected_production_kwh)} kWh/dia
             </strong>
           </span>
         )}

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { API_URL } from '../env'
-import { fetchPlants } from './api'
+import { downloadMonthlyReportExport, fetchMonthlyReportExport, fetchPlants } from './api'
 import { TokenStore } from './auth'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -8,6 +8,23 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
+}
+
+// jsdom não implementa `URL.createObjectURL`/`revokeObjectURL` (ver
+// `frontend/src/lib/api.ts::downloadMonthlyReportExport`) — este stub some no
+// `afterEach` de cada describe abaixo, para não vazar entre testes de outros
+// arquivos que rodem no mesmo worker.
+function stubObjectUrl() {
+  const createObjectURL = vi.fn(() => 'blob:mock-url')
+  const revokeObjectURL = vi.fn()
+  Object.defineProperty(URL, 'createObjectURL', { value: createObjectURL, configurable: true, writable: true })
+  Object.defineProperty(URL, 'revokeObjectURL', { value: revokeObjectURL, configurable: true, writable: true })
+  return { createObjectURL, revokeObjectURL }
+}
+
+function clearObjectUrlStub() {
+  delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL
+  delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL
 }
 
 describe('fetchPlants', () => {
@@ -50,5 +67,222 @@ describe('fetchPlants', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ count: 1, items: [{ id: 'x' }] }))
 
     await expect(fetchPlants()).rejects.toThrow(/Resposta inválida da API/)
+  })
+})
+
+describe('fetchMonthlyReportExport', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    TokenStore.clear()
+  })
+
+  it('busca o formato pedido com plant_id na query string, sem os parâmetros deprecated', async () => {
+    TokenStore.set('token-abc')
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(new Blob(['a,b\n1,2']), { status: 200 }))
+
+    await fetchMonthlyReportExport('plant-1', 'csv')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${API_URL}/reports/monthly/latest.csv?plant_id=plant-1`)
+    expect(url).not.toContain('expected_production_kwh')
+    expect(url).not.toContain('stable_tolerance_percent')
+    expect((init.headers as Headers).get('Authorization')).toBe('Bearer token-abc')
+  })
+})
+
+describe('downloadMonthlyReportExport', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    clearObjectUrlStub()
+    TokenStore.clear()
+  })
+
+  it('baixa o blob, dispara o clique via <a> temporário com o nome do Content-Disposition, e revoga o object URL depois', async () => {
+    const { createObjectURL, revokeObjectURL } = stubObjectUrl()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const appendSpy = vi.spyOn(document.body, 'appendChild')
+    const blob = new Blob(['pdf-bytes'], { type: 'application/pdf' })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(blob, {
+        status: 200,
+        headers: { 'Content-Disposition': 'attachment; filename="mplacas-monthly-2026-07-plant-1.pdf"' },
+      })
+    )
+
+    await downloadMonthlyReportExport('plant-1', 'pdf')
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    const appendedLink = appendSpy.mock.calls[0]?.[0] as HTMLAnchorElement
+    expect(appendedLink.tagName).toBe('A')
+    expect(appendedLink.download).toBe('mplacas-monthly-2026-07-plant-1.pdf')
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1)
+    // Revogado depois do clique — prova de que a memória do object URL não vaza.
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1)
+    expect(revokeObjectURL).toHaveBeenCalledWith(createObjectURL.mock.results[0]?.value)
+  })
+
+  it('usa um nome de arquivo determinístico quando a resposta não traz Content-Disposition', async () => {
+    stubObjectUrl()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const appendSpy = vi.spyOn(document.body, 'appendChild')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob(['x']), { status: 200 }))
+
+    await downloadMonthlyReportExport('plant-1', 'xlsx')
+
+    const appendedLink = appendSpy.mock.calls[0]?.[0] as HTMLAnchorElement
+    expect(appendedLink.download).toMatch(/^mplacas-monthly-plant-1-\d{4}-\d{2}-\d{2}\.xlsx$/)
+  })
+
+  it('revoga o object URL mesmo que o clique de download lance uma exceção', async () => {
+    const { createObjectURL, revokeObjectURL } = stubObjectUrl()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {
+      throw new Error('boom')
+    })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob(['x']), { status: 200 }))
+
+    await expect(downloadMonthlyReportExport('plant-1', 'csv')).rejects.toThrow('boom')
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1)
+  })
+
+  it('lança erro genérico com o status quando o backend não consegue gerar o relatório', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 500 }))
+
+    await expect(downloadMonthlyReportExport('plant-1', 'csv')).rejects.toThrow(
+      'Não foi possível gerar o relatório (500).'
+    )
+  })
+
+  it('lança mensagem específica quando não há ciclo de faturamento fechado (404)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 404 }))
+
+    await expect(downloadMonthlyReportExport('plant-1', 'csv')).rejects.toThrow(
+      'Nenhum ciclo de faturamento fechado disponível para exportar ainda.'
+    )
+  })
+
+  it('cai no nome determinístico quando o Content-Disposition traz travessia de diretório (../..)', async () => {
+    stubObjectUrl()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const appendSpy = vi.spyOn(document.body, 'appendChild')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new Blob(['x']), {
+        status: 200,
+        headers: { 'Content-Disposition': 'attachment; filename="../../etc/passwd"' },
+      })
+    )
+
+    await downloadMonthlyReportExport('plant-1', 'csv')
+
+    const appendedLink = appendSpy.mock.calls[0]?.[0] as HTMLAnchorElement
+    expect(appendedLink.download).not.toContain('..')
+    expect(appendedLink.download).not.toContain('/')
+    expect(appendedLink.download).toMatch(/^mplacas-monthly-plant-1-\d{4}-\d{2}-\d{2}\.csv$/)
+  })
+
+  it('cai no nome determinístico quando o Content-Disposition traz caractere de controle', async () => {
+    stubObjectUrl()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const appendSpy = vi.spyOn(document.body, 'appendChild')
+    const dirtyFilename = `relatorio${String.fromCharCode(7)}.csv`
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new Blob(['x']), {
+        status: 200,
+        headers: { 'Content-Disposition': `attachment; filename="${dirtyFilename}"` },
+      })
+    )
+
+    await downloadMonthlyReportExport('plant-1', 'csv')
+
+    const appendedLink = appendSpy.mock.calls[0]?.[0] as HTMLAnchorElement
+    expect(appendedLink.download).not.toBe(dirtyFilename)
+    expect(appendedLink.download).toMatch(/^mplacas-monthly-plant-1-\d{4}-\d{2}-\d{2}\.csv$/)
+  })
+
+  it('cai no nome determinístico quando o Content-Disposition traz um override de direção Unicode (RLO)', async () => {
+    stubObjectUrl()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const appendSpy = vi.spyOn(document.body, 'appendChild')
+    // U+202E (RIGHT-TO-LEFT OVERRIDE): vetor clássico de spoofing de extensão —
+    // "relatorio<RLO>fdp.exe" pode ser renderizado como "relatorio.exe.pdf".
+    // A `Headers` real do fetch rejeita esse code point ao construir a
+    // resposta (ByteString-only), então a resposta é simulada com um objeto
+    // mínimo compatível com a interface que `downloadMonthlyReportExport`
+    // realmente usa (`.ok`, `.status`, `.headers.get`, `.blob`).
+    const spoofedFilename = `relatorio${String.fromCharCode(0x202e)}fdp.exe`
+    const fakeResponse = {
+      ok: true,
+      status: 200,
+      headers: {
+        get: (name: string) =>
+          name === 'Content-Disposition' ? `attachment; filename="${spoofedFilename}"` : null,
+      },
+      blob: async () => new Blob(['x']),
+    } as unknown as Response
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fakeResponse)
+
+    await downloadMonthlyReportExport('plant-1', 'csv')
+
+    const appendedLink = appendSpy.mock.calls[0]?.[0] as HTMLAnchorElement
+    expect(appendedLink.download).not.toBe(spoofedFilename)
+    expect(appendedLink.download).not.toContain(String.fromCharCode(0x202e))
+    expect(appendedLink.download).toMatch(/^mplacas-monthly-plant-1-\d{4}-\d{2}-\d{2}\.csv$/)
+  })
+
+  it('cai no nome determinístico quando o Content-Disposition traz extensão dupla divergente do formato pedido', async () => {
+    stubObjectUrl()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const appendSpy = vi.spyOn(document.body, 'appendChild')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new Blob(['x']), {
+        status: 200,
+        headers: { 'Content-Disposition': 'attachment; filename="fatura.csv.exe"' },
+      })
+    )
+
+    // Formato pedido é csv, mas o nome do header termina em .exe.
+    await downloadMonthlyReportExport('plant-1', 'csv')
+
+    const appendedLink = appendSpy.mock.calls[0]?.[0] as HTMLAnchorElement
+    expect(appendedLink.download).not.toBe('fatura.csv.exe')
+    expect(appendedLink.download).toMatch(/^mplacas-monthly-plant-1-\d{4}-\d{2}-\d{2}\.csv$/)
+  })
+
+  it('aceita o nome do Content-Disposition quando a extensão bate com o formato pedido', async () => {
+    stubObjectUrl()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const appendSpy = vi.spyOn(document.body, 'appendChild')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new Blob(['x']), {
+        status: 200,
+        headers: { 'Content-Disposition': 'attachment; filename="fatura-2026-07.pdf"' },
+      })
+    )
+
+    await downloadMonthlyReportExport('plant-1', 'pdf')
+
+    const appendedLink = appendSpy.mock.calls[0]?.[0] as HTMLAnchorElement
+    expect(appendedLink.download).toBe('fatura-2026-07.pdf')
+  })
+
+  it('cai no nome determinístico quando o Content-Disposition traz apenas "."', async () => {
+    stubObjectUrl()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const appendSpy = vi.spyOn(document.body, 'appendChild')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new Blob(['x']), {
+        status: 200,
+        headers: { 'Content-Disposition': 'attachment; filename="."' },
+      })
+    )
+
+    await downloadMonthlyReportExport('plant-1', 'csv')
+
+    const appendedLink = appendSpy.mock.calls[0]?.[0] as HTMLAnchorElement
+    expect(appendedLink.download).toMatch(/^mplacas-monthly-plant-1-\d{4}-\d{2}-\d{2}\.csv$/)
   })
 })

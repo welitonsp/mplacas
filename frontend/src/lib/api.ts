@@ -104,6 +104,17 @@ export async function fetchMonthlyProductionHistory(
   )
 }
 
+// Estado operacional por inversor (device) da usina para o dia mais recente
+// com qualquer `DailyEnergy` (ADR-074, Decisão 3, `GET /devices/daily-status`).
+// Mesma convenção de sempre-200-dentro-do-escopo das demais leituras deste
+// arquivo: um inversor sem comunicação nunca some da resposta — ele aparece
+// com `reporting_status: "NOT_REPORTED"` — e a indisponibilidade de
+// rendimento vem como campo + motivo, nunca como status HTTP de erro (ver
+// `device-contracts.ts::parseDeviceDailyStatus`).
+export async function fetchDeviceDailyStatus(plantId: string): Promise<Response> {
+  return apiFetch(`/devices/daily-status?plant_id=${encodeURIComponent(plantId)}`)
+}
+
 // Configuração financeira (CAPEX) da usina (ADR-067,
 // `GET/PATCH /plants/{plant_id}/financial-configuration`). `GET` usa `ReadPlantPath`,
 // `PATCH` usa `AdminPlantPath` — um chamador com credencial READ recebe 403 do
@@ -145,4 +156,137 @@ export async function updateFinancialConfiguration(
     method: 'PATCH',
     body: JSON.stringify(payload),
   })
+}
+
+// Formatos servidos pelo caminho síncrono de exportação (T2, plano de
+// auditoria 2026-08-12). O pipeline assíncrono (`POST /monthly/exports` +
+// polling de `exports/{task_id}`) fica fora de escopo — ver
+// `reports/router.py:202` em diante — só se justifica se o relatório demorar
+// a ponto de estourar timeout, o que não foi observado.
+export type MonthlyReportExportFormat = 'csv' | 'pdf' | 'xlsx'
+
+// Relatório mensal do ciclo mais recente já fechado, num dos três formatos
+// (`GET /reports/monthly/latest.csv|.pdf|.xlsx`, `reports/router.py:107,130,
+// 153`). `expected_production_kwh`/`stable_tolerance_percent` são parâmetros
+// legados marcados `deprecated=True` no backend (ignorados dentro de
+// `_build_report`, `reports/router.py:45-50`) — nunca enviados aqui. Devolve
+// o `Response` cru, como as demais funções deste arquivo: quem chama decide
+// como tratar erro e como converter o corpo em blob para o download.
+export async function fetchMonthlyReportExport(
+  plantId: string,
+  format: MonthlyReportExportFormat,
+): Promise<Response> {
+  return apiFetch(
+    `/reports/monthly/latest.${format}?plant_id=${encodeURIComponent(plantId)}`
+  )
+}
+
+// Nome de arquivo determinístico usado quando a resposta não traz
+// `Content-Disposition` (ou traz um valor que não passa na sanitização
+// abaixo). O backend sempre inclui o header (`_download_headers`,
+// `reports/router.py:72-83`), mas em requisição cross-origin — como é o
+// deploy real, frontend em `pages.dev` e API em `run.app` — o navegador só
+// deixa o JS ler headers de resposta que estejam em `expose_headers` do
+// `CORSMiddleware` (`main.py`). Este fallback é o caminho que roda sempre
+// que essa configuração faltar, mudar, ou o header vier ausente/inválido por
+// qualquer outro motivo — o download não pode travar nem sair sem nome.
+function fallbackExportFilename(plantId: string, format: MonthlyReportExportFormat): string {
+  const today = new Date().toISOString().slice(0, 10)
+  return `mplacas-monthly-${plantId}-${today}.${format}`
+}
+
+const MAX_DOWNLOAD_FILENAME_LENGTH = 200
+
+// U+202A–U+202E (embedding/override) e U+2066–U+2069 (isolate) são os
+// controles de direcionalidade Unicode usados no vetor clássico de spoofing
+// de extensão: um nome com RLO (U+202E) pode renderizar
+// "relatorio‮fdp.exe" como se fosse "relatorio.exe.pdf". Nenhum nome de
+// arquivo legítimo gerado pelo backend precisa desses caracteres.
+function hasUnicodeDirectionOverride(name: string): boolean {
+  for (let i = 0; i < name.length; i += 1) {
+    const code = name.charCodeAt(i)
+    if (code >= 0x202a && code <= 0x202e) return true
+    if (code >= 0x2066 && code <= 0x2069) return true
+  }
+  return false
+}
+
+// Valida o nome antes de usá-lo em `link.download`. O valor vem de um header
+// HTTP — não é confiável por construção, mesmo vindo do próprio backend —
+// então é defesa em profundidade contra travessia de diretório e nomes
+// malformados: rejeita separador de caminho (`/`, `\`), sequência de subida
+// de diretório (`..`), caracteres de controle, controles de direção Unicode
+// (ver `hasUnicodeDirectionOverride`), nomes vazios/só-ponto/iniciados por
+// ponto, e nomes vazios ou longos demais. Qualquer falha aqui cai no nome
+// determinístico.
+function isSafeDownloadFilename(name: string): boolean {
+  if (!name || name.length > MAX_DOWNLOAD_FILENAME_LENGTH) return false
+  if (name === '.' || name.startsWith('.')) return false
+  if (name.includes('/') || name.includes('\\') || name.includes('..')) return false
+  if (hasUnicodeDirectionOverride(name)) return false
+  for (let i = 0; i < name.length; i += 1) {
+    const code = name.charCodeAt(i)
+    if (code <= 0x1f || code === 0x7f) return false
+  }
+  return true
+}
+
+// Extrai o nome de arquivo de `Content-Disposition: attachment;
+// filename="..."` — formato exato devolvido por `_download_headers`
+// (`reports/router.py:79`, sempre aspas duplas, nunca `filename*=` RFC 5987).
+// Além de `isSafeDownloadFilename`, o nome só é aceito se terminar
+// exatamente com a extensão do `format` pedido (comparação
+// case-insensitive): sem essa checagem, um header malicioso ou malformado
+// como `filename="fatura.csv.exe"` passaria pela sanitização de caracteres
+// e ainda assim baixaria com extensão divergente da que o usuário pediu. Um
+// valor que falhe em qualquer uma das duas checagens é tratado como
+// ausente, para cair no fallback determinístico.
+function filenameFromContentDisposition(
+  headerValue: string | null,
+  format: MonthlyReportExportFormat,
+): string | null {
+  if (!headerValue) return null
+  const match = /filename="([^"]+)"/.exec(headerValue)
+  if (!match) return null
+  const filename = match[1]
+  if (!isSafeDownloadFilename(filename)) return null
+  if (!filename.toLowerCase().endsWith(`.${format}`)) return null
+  return filename
+}
+
+// Dispara o download autenticado de um relatório mensal no navegador. Um
+// `<a href>` cru não carregaria o `Authorization`: o token de acesso vive só
+// em memória (`lib/auth.ts:1`), não em cookie — por isso o corpo vem via
+// `apiFetch` (que já injeta o header) como `blob`, e o download é disparado
+// por um `<a>` temporário apontando para um `URL.createObjectURL`. O object
+// URL é sempre revogado no `finally` (sucesso ou falha do clique) para não
+// vazar memória.
+export async function downloadMonthlyReportExport(
+  plantId: string,
+  format: MonthlyReportExportFormat,
+): Promise<void> {
+  const response = await fetchMonthlyReportExport(plantId, format)
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error('Nenhum ciclo de faturamento fechado disponível para exportar ainda.')
+    }
+    throw new Error(`Não foi possível gerar o relatório (${response.status}).`)
+  }
+
+  const blob = await response.blob()
+  const filename =
+    filenameFromContentDisposition(response.headers.get('Content-Disposition'), format) ??
+    fallbackExportFilename(plantId, format)
+
+  const objectUrl = URL.createObjectURL(blob)
+  try {
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
 }

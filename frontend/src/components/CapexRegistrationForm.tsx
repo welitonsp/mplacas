@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { updateFinancialConfiguration } from '../lib/api'
+import { LoadingAnnouncement } from './LoadingAnnouncement'
 
 // Diálogo inline de cadastro do CAPEX, acionado a partir do próprio estado
 // `INVESTMENT_NOT_REGISTERED` da seção de ROI (ADR-067, Decisão item 7). Não é um
@@ -110,6 +111,7 @@ export function CapexRegistrationForm({
       <button
         type="submit"
         disabled={submitting}
+        aria-busy={submitting}
         className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-lg bg-[var(--color-brand-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-brand-primary-dark)] hover:shadow-md active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-primary)] focus:ring-offset-2 focus:ring-offset-[var(--color-surface)] focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-sm motion-reduce:transition-none"
       >
         {submitting && (
@@ -120,6 +122,7 @@ export function CapexRegistrationForm({
         )}
         {submitting ? 'Salvando...' : 'Cadastrar investimento'}
       </button>
+      <LoadingAnnouncement active={submitting} message="Salvando investimento, aguarde." />
     </form>
   )
 }

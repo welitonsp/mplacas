@@ -75,4 +75,28 @@ describe('CapexRegistrationForm', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/maior que zero/i)
     expect(updateSpy).not.toHaveBeenCalled()
   })
+
+  it('anuncia o envio por uma live region "polite" separada do botão, e volta a ficar em silêncio ao terminar (T10)', async () => {
+    let resolveUpdate: (value: Response) => void = () => {}
+    vi.spyOn(api, 'updateFinancialConfiguration').mockImplementation(
+      () => new Promise((resolve) => { resolveUpdate = resolve })
+    )
+
+    const { container } = render(<CapexRegistrationForm plantId="plant-1" onSuccess={vi.fn()} />)
+
+    const liveRegion = container.querySelector('[aria-live="polite"]') as HTMLElement
+    expect(liveRegion).toBeInTheDocument()
+    expect(liveRegion).toHaveTextContent('')
+
+    fireEvent.change(screen.getByLabelText(/valor investido/i), { target: { value: '48000' } })
+    const button = screen.getByRole('button', { name: /cadastrar investimento/i })
+    expect(button).toHaveAttribute('aria-busy', 'false')
+    fireEvent.click(button)
+
+    await waitFor(() => expect(liveRegion).toHaveTextContent('Salvando investimento, aguarde.'))
+    expect(screen.getByRole('button', { name: /salvando/i })).toHaveAttribute('aria-busy', 'true')
+
+    resolveUpdate(new Response(JSON.stringify({}), { status: 200 }))
+    await waitFor(() => expect(liveRegion).toHaveTextContent(''))
+  })
 })

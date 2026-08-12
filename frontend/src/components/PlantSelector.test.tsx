@@ -79,6 +79,14 @@ describe('PlantSelector', () => {
     expect(chip?.className).toMatch(/\bflex\b/)
   })
 
+  it('o <select> de usina tem alvo de toque mínimo de 44px (T10)', () => {
+    setPlant({ plantId: PLANT_A.id, plants: [PLANT_A, PLANT_B] })
+    render(<PlantSelector />)
+
+    const select = screen.getByRole('combobox', { name: /usina ativa/i })
+    expect(select.className).toMatch(/min-h-\[44px\]/)
+  })
+
   it('com zero usinas, não renderiza nada visível', () => {
     setPlant({ plantId: null, plants: [] })
     const { container } = render(<PlantSelector />)

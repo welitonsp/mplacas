@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
@@ -91,6 +91,44 @@ describe('LoginPage — redirecionamento declarativo quando já autenticado', ()
     expect(screen.getByText('Dashboard')).toBeInTheDocument()
 
     TokenStore.clear()
+  })
+})
+
+describe('LoginPage — anúncio acessível de carregamento (T10)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('anuncia "Entrando" por uma live region "polite" separada do botão, e volta a ficar em silêncio ao terminar', async () => {
+    let resolveFetch: (value: Response) => void = () => {}
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>((resolve) => { resolveFetch = resolve }))
+    )
+
+    const { container } = renderLoginPage()
+
+    const liveRegion = container.querySelector('[aria-live="polite"]') as HTMLElement
+    expect(liveRegion).toBeInTheDocument()
+    expect(liveRegion).toHaveTextContent('')
+
+    fireEvent.change(screen.getByLabelText('Usuário'), { target: { value: 'operador' } })
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'segredo123' } })
+
+    const button = screen.getByRole('button', { name: /entrar/i })
+    expect(button).toHaveAttribute('aria-busy', 'false')
+    fireEvent.click(button)
+
+    await waitFor(() => expect(liveRegion).toHaveTextContent('Entrando, aguarde.'))
+    expect(screen.getByRole('button', { name: /entrando/i })).toHaveAttribute('aria-busy', 'true')
+
+    // Caminho de erro (credenciais recusadas) mantém a página montada — evita
+    // acoplar este teste ao redirecionamento de login bem-sucedido, que é
+    // comportamento de outro conjunto de testes.
+    resolveFetch(new Response(JSON.stringify({ detail: 'unauthorized' }), { status: 401 }))
+
+    await waitFor(() => expect(liveRegion).toHaveTextContent(''))
+    expect(screen.getByRole('button', { name: /entrar/i })).toHaveAttribute('aria-busy', 'false')
   })
 })
 

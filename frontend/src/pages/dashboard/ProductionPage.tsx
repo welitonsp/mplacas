@@ -48,6 +48,18 @@ function formatKwh(value: number | null): string {
   return value === null ? '—' : `${formatNumber(value)} kWh`
 }
 
+// `expected_production_kwh` (de `/energy/anomalies/latest`) é o MESMO escalar
+// replicado pelo backend em todos os dias do recorte (baseline sazonal do
+// período, não uma previsão por dia — ver `anomaly_service.py:145-171` e o
+// mesmo tratamento em `ProductionHistoryChart.tsx`). O sufixo "kWh/dia"
+// reforça que é uma taxa de referência do período, não o total daquele dia
+// específico — mesma convenção de `formatDailyKwh` em `TechnicalPage.tsx`
+// (cópia local, cada módulo com sua própria instância — ver comentário de
+// `fallbackPvSummary` acima).
+function formatDailyKwh(value: number | null): string {
+  return value === null ? '—' : `${formatNumber(value)} kWh/dia`
+}
+
 function formatDeviation(value: number | null): string {
   if (value === null) return '—'
   const prefix = value > 0 ? '+' : ''
@@ -218,9 +230,9 @@ export function ProductionPage() {
             tone="brand"
           />
           <SummaryTile
-            label="Esperado no dia"
-            value={formatKwh(latestExpectedProduction)}
-            supportingText={latestExpectedProduction === null ? 'Baseline indisponível' : 'Referência diária'}
+            label="Baseline esperado (período)"
+            value={formatDailyKwh(latestExpectedProduction)}
+            supportingText={latestExpectedProduction === null ? 'Baseline indisponível' : 'Referência do período'}
             tone="neutral"
           />
           <SummaryTile
@@ -256,7 +268,7 @@ export function ProductionPage() {
               onRetry={monthlyHistory.refetch}
             />
           ) : (
-            <MonthlyProductionSection history={monthlyHistory.data} />
+            <MonthlyProductionSection history={monthlyHistory.data} plantId={plantId} />
           )}
         </section>
 

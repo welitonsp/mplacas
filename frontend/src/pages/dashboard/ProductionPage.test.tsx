@@ -96,13 +96,45 @@ describe('ProductionPage — resumo operacional', () => {
       expect(within(section).getByText('40 kWh')).toBeInTheDocument()
     })
     expect(within(section).getByText('Dado de 30/07/2026')).toBeInTheDocument()
-    expect(within(section).getByText('Esperado no dia')).toBeInTheDocument()
-    expect(within(section).getByText('44 kWh')).toBeInTheDocument()
+    // Rótulo alinhado com o do gráfico (ProductionHistoryChart, T5): não
+    // afirma expectativa daquele dia específico, e a unidade "kWh/dia" deixa
+    // claro que é uma taxa de referência do período, não o total do dia.
+    expect(within(section).getByText('Baseline esperado (período)')).toBeInTheDocument()
+    expect(within(section).getByText('44 kWh/dia')).toBeInTheDocument()
+    expect(within(section).getByText('Referência do período')).toBeInTheDocument()
+    expect(within(section).queryByText('Esperado no dia')).not.toBeInTheDocument()
     expect(within(section).getByText('Desvio')).toBeInTheDocument()
     expect(within(section).getByText('-9%')).toBeInTheDocument()
     expect(within(section).getByText('Sequência de atenção')).toBeInTheDocument()
     expect(within(section).getByText('2 dias')).toBeInTheDocument()
     expect(within(section).getByText('abaixo do esperado')).toBeInTheDocument()
+  })
+
+  it('mostra "Baseline indisponível" no tile de baseline esperado quando o último dia não tem expected_production_kwh, sem afirmar um valor', async () => {
+    vi.resetModules()
+    const noExpectedAnomalyPayload = {
+      ...anomalyPayload,
+      daily: anomalyPayload.daily.map((day, index) =>
+        index === anomalyPayload.daily.length - 1
+          ? { ...day, expected_production_kwh: null, level: null, deviation_percent: null }
+          : day
+      ),
+    }
+    installApiMock({ fetchAnomalyHistory: vi.fn(async () => jsonResponse(noExpectedAnomalyPayload)) })
+
+    await renderProductionPage()
+
+    const title = await screen.findByRole('heading', { level: 2, name: 'Resumo operacional' })
+    const section = title.closest('section') as HTMLElement
+
+    const label = await waitFor(() => within(section).getByText('Baseline esperado (período)'))
+    // Escopado ao próprio tile (não à seção inteira) porque o tile de "Desvio"
+    // também renderiza "—" quando `deviation_percent` é `null` no mesmo dia —
+    // sem escopar, `getByText('—')` encontraria mais de um elemento.
+    const tile = label.closest('article') as HTMLElement
+    expect(within(tile).getByText('—')).toBeInTheDocument()
+    expect(within(tile).getByText('Baseline indisponível')).toBeInTheDocument()
+    expect(within(section).queryByText('Referência do período')).not.toBeInTheDocument()
   })
 
   it('mostra diagnóstico de produção com pior dia, perda estimada e próxima ação antes dos gráficos', async () => {
@@ -322,7 +354,7 @@ describe('ProductionPage — histórico de produção não depende mais do basel
     expect(fetchAnomalyHistoryMock).toHaveBeenCalledWith(singlePlant.id)
   })
 
-  it('mostra o gráfico de histórico com produção real, sem linha "Esperado" e sem cair no fallback de dados insuficientes, quando a usina tem produção real mas não tem baseline sazonal', async () => {
+  it('mostra o gráfico de histórico com produção real, sem linha de referência esperada e sem cair no fallback de dados insuficientes, quando a usina tem produção real mas não tem baseline sazonal', async () => {
     vi.resetModules()
 
     const noBaselineAnomalyPayload = {
@@ -357,7 +389,7 @@ describe('ProductionPage — histórico de produção não depende mais do basel
       expect(within(section).getByRole('slider')).toBeInTheDocument()
     })
     expect(within(section).getAllByText('40 kWh').length).toBeGreaterThanOrEqual(1)
-    expect(within(section).queryByText('Esperado')).not.toBeInTheDocument()
+    expect(within(section).queryByText('Média diária esperada (baseline sazonal)')).not.toBeInTheDocument()
     expect(within(section).queryByText(/histórico de desempenho insuficiente/)).not.toBeInTheDocument()
     expect(within(section).queryByText(/primeiro ano de referência/)).not.toBeInTheDocument()
   })

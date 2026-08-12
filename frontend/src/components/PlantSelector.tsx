@@ -52,12 +52,19 @@ export function PlantSelector() {
         <span className="block text-[12px] font-semibold uppercase leading-4 tracking-[0.12em] text-[var(--color-text-muted)]">
           Usina ativa
         </span>
+        {/* Alvo de toque mínimo (~44px, WCAG 2.5.8) sem redesenhar o chip
+            compacto do header: `py-3`/`-my-3` alargam a caixa clicável do
+            `<select>` de forma simétrica (12px acima/abaixo) e a margem
+            negativa cancela o espaço extra no fluxo, então o rótulo "Usina
+            ativa"/potência instalada acima e abaixo não se deslocam. O
+            `<select>` é `border-0 bg-transparent`, então a área extra é
+            sempre invisível — só amplia onde o clique/toque é aceito. */}
         <select
           id={selectId}
           value={plantId ?? ''}
           onChange={(event) => selectPlant(event.target.value)}
           aria-describedby={activePower ? powerId : undefined}
-          className="block max-w-full truncate rounded-lg border-0 bg-transparent py-0 pr-7 text-sm font-semibold leading-5 text-gray-900 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+          className="block max-w-full min-h-[44px] -my-3 truncate rounded-lg border-0 bg-transparent py-3 pr-7 text-sm font-semibold leading-5 text-gray-900 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
         >
           {plants.map((plant) => (
             <option key={plant.id} value={plant.id}>

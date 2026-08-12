@@ -1,9 +1,92 @@
+import { useState } from 'react'
 import type { ColumnSeriesItem } from './charts/ColumnSeries'
 import { ColumnSeries } from './charts/ColumnSeries'
 import { Card } from './Card'
 import { EmptyState } from './EmptyState'
+import { LoadingAnnouncement } from './LoadingAnnouncement'
 import type { MonthlyProductionHistoryResponse } from '../lib/dashboard/monthly-history-contracts'
+import type { MonthlyReportExportFormat } from '../lib/api'
+import { downloadMonthlyReportExport } from '../lib/api'
 import { formatCycleLabel, formatNumber } from '../lib/format'
+
+const EXPORT_FORMAT_LABELS: Record<MonthlyReportExportFormat, string> = {
+  pdf: 'PDF',
+  xlsx: 'XLSX',
+  csv: 'CSV',
+}
+
+// Exportação síncrona do relatório mensal mais recente já fechado (T2, plano
+// de auditoria 2026-08-12) — `GET /reports/monthly/latest.<formato>`
+// (`reports/router.py:107,130,153`). O pipeline assíncrono (`POST
+// /monthly/exports` + polling) fica fora de escopo: o plano manda começar
+// pelo síncrono. Estado local porque a ação não alimenta mais nada da
+// página — nenhum outro bloco depende do resultado do download.
+function MonthlyExportControl({ plantId }: { plantId: string }) {
+  const [format, setFormat] = useState<MonthlyReportExportFormat>('pdf')
+  const [downloading, setDownloading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleExport() {
+    setError(null)
+    setDownloading(true)
+    try {
+      await downloadMonthlyReportExport(plantId, format)
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Não foi possível gerar o relatório. Tente novamente.'
+      )
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 flex flex-col gap-3 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+      <div className="flex items-center gap-2">
+        <label htmlFor="monthly-export-format" className="text-xs font-medium text-gray-600">
+          Exportar relatório do ciclo mais recente
+        </label>
+        <select
+          id="monthly-export-format"
+          value={format}
+          onChange={(event) => setFormat(event.target.value as MonthlyReportExportFormat)}
+          disabled={downloading}
+          className="min-h-[44px] rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-900 transition-colors duration-150 focus:border-[var(--color-brand-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-primary)] focus-visible:ring-2 disabled:opacity-50"
+        >
+          <option value="pdf">PDF</option>
+          <option value="xlsx">XLSX</option>
+          <option value="csv">CSV</option>
+        </select>
+      </div>
+      <button
+        type="button"
+        onClick={handleExport}
+        disabled={downloading}
+        aria-busy={downloading}
+        className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-[var(--color-brand-primary)] px-4 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-brand-primary-dark)] hover:shadow-md active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-primary)] focus:ring-offset-2 focus:ring-offset-[var(--color-surface)] focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-sm motion-reduce:transition-none"
+      >
+        {downloading && (
+          <span
+            aria-hidden="true"
+            className="h-3.5 w-3.5 rounded-full border-2 border-white/45 border-t-white animate-spin"
+          />
+        )}
+        {downloading ? `Gerando ${EXPORT_FORMAT_LABELS[format]}...` : `Baixar ${EXPORT_FORMAT_LABELS[format]}`}
+      </button>
+      <LoadingAnnouncement
+        active={downloading}
+        message={`Gerando arquivo ${EXPORT_FORMAT_LABELS[format]}, aguarde.`}
+      />
+      {error && (
+        <p role="alert" className="w-full text-xs text-[var(--color-danger-text)]">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
 
 // Seção "Produção por ciclo de faturamento": um `ColumnSeries` (kWh por
 // ciclo fechado, colunas verticais em ordem cronológica — o tempo se lê da
@@ -16,8 +99,10 @@ import { formatCycleLabel, formatNumber } from '../lib/format'
 // carrega).
 export function MonthlyProductionSection({
   history,
+  plantId,
 }: {
   history: MonthlyProductionHistoryResponse | null
+  plantId: string
 }) {
   if (history === null) {
     return (
@@ -96,6 +181,7 @@ export function MonthlyProductionSection({
           Comparação disponível a partir do segundo ciclo fechado.
         </p>
       )}
+      <MonthlyExportControl plantId={plantId} />
     </Card>
   )
 }

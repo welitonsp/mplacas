@@ -45,7 +45,7 @@ describe('ProductionHistorySection', () => {
     window.localStorage.clear()
   })
 
-  it('mostra o percentual de desempenho e a legenda "Esperado" quando a produção esperada está disponível', () => {
+  it('mostra o percentual de desempenho e a legenda "Média diária esperada (baseline sazonal)" quando a produção esperada está disponível', () => {
     const anomalyState: AnomalyFetchState = {
       loading: false,
       error: null,
@@ -55,7 +55,7 @@ describe('ProductionHistorySection', () => {
     render(<ProductionHistorySection anomalyState={anomalyState} expectedProduction={AVAILABLE} />)
 
     expect(screen.getByText(/Desempenho:/)).toBeInTheDocument()
-    expect(screen.getByText('Esperado')).toBeInTheDocument()
+    expect(screen.getByText('Média diária esperada (baseline sazonal)')).toBeInTheDocument()
   })
 
   it('filtra o gráfico por 7 dias por padrão e permite alternar para 30 e 90 dias', () => {
@@ -185,7 +185,7 @@ describe('ProductionHistorySection', () => {
 
       expect(screen.getByText(expectedMessage)).toBeInTheDocument()
       expect(screen.queryByText(/Desempenho:/)).not.toBeInTheDocument()
-      expect(screen.queryByText('Esperado')).not.toBeInTheDocument()
+      expect(screen.queryByText('Média diária esperada (baseline sazonal)')).not.toBeInTheDocument()
     }
   )
 
@@ -233,8 +233,8 @@ describe('ProductionHistorySection', () => {
     // Não cai no fallback de texto "dados insuficientes" — o gráfico monta.
     expect(screen.getByRole('slider')).toBeInTheDocument()
     expect(screen.queryByText(/histórico de desempenho insuficiente/)).not.toBeInTheDocument()
-    // Sem a linha/legenda de "Esperado", já que a produção esperada não está disponível.
-    expect(screen.queryByText('Esperado')).not.toBeInTheDocument()
+    // Sem a linha/legenda de referência esperada, já que a produção esperada não está disponível.
+    expect(screen.queryByText('Média diária esperada (baseline sazonal)')).not.toBeInTheDocument()
   })
 
   it('mostra o fallback de "dados insuficientes" quando não há produção real nenhuma e a esperada está indisponível', () => {
@@ -263,8 +263,8 @@ describe('ProductionHistorySection', () => {
     // `expectedProduction` (de `/photovoltaic/summary`) diz que está
     // disponível, mas o payload de anomalias (fonte real usada pelo gráfico)
     // diz que não está — a seção precisa seguir o payload de anomalias, não
-    // fabricar a linha "Esperado" com base numa segunda chamada de API que
-    // pode divergir dela.
+    // fabricar a linha de referência esperada com base numa segunda chamada
+    // de API que pode divergir dela.
     const anomalyState: AnomalyFetchState = {
       loading: false,
       error: null,
@@ -278,7 +278,7 @@ describe('ProductionHistorySection', () => {
     render(<ProductionHistorySection anomalyState={anomalyState} expectedProduction={AVAILABLE} />)
 
     expect(screen.getByRole('slider')).toBeInTheDocument()
-    expect(screen.queryByText('Esperado')).not.toBeInTheDocument()
+    expect(screen.queryByText('Média diária esperada (baseline sazonal)')).not.toBeInTheDocument()
     expect(screen.queryByText(/Desempenho:/)).not.toBeInTheDocument()
   })
 
