@@ -222,6 +222,12 @@ jobs:
           # in the deployment workflow. Placeholder values are used here for CI only.
           VITE_API_URL: https://ci-placeholder.example.com
         run: npm run build
+      - name: Check bundle budget
+        # T8, plano de auditoria de frontend 2026-08-12: falha o build se
+        # qualquer chunk de dist/assets/ (vendor, CSS, cada módulo do
+        # dashboard, LoginPage) ultrapassar o teto deliberado em
+        # frontend/scripts/check-bundle-budget.mjs.
+        run: npm run check-bundle-budget
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

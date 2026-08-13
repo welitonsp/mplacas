@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "type-check": "tsc -b --force",
+    "check-bundle-budget": "node scripts/check-bundle-budget.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
