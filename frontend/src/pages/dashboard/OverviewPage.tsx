@@ -581,7 +581,7 @@ export function OverviewPage() {
               <div className={`grid gap-6 ${data.trend ? 'lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]' : ''}`}>
                 <div className={data.trend ? '' : 'lg:max-w-3xl'}>
                   <SectionTitle as="h2">Atenção e próximos passos</SectionTitle>
-                  <DiagnosticsCard diagnostics={diagnostics} />
+                  <DiagnosticsCard diagnostics={diagnostics} plantId={plantId} />
                 </div>
 
                 {data.trend && (

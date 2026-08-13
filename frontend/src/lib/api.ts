@@ -115,6 +115,21 @@ export async function fetchDeviceDailyStatus(plantId: string): Promise<Response>
   return apiFetch(`/devices/daily-status?plant_id=${encodeURIComponent(plantId)}`)
 }
 
+// Explicação em linguagem natural do estado executivo do ciclo atual
+// (`GET /energy/explanations/latest`, `explanations/router.py:27`, T4 do
+// plano de auditoria 2026-08-12) — camada interpretativa OPCIONAL sobre os
+// diagnósticos já calculados por `build_executive_dashboard` (mesma fonte de
+// `DiagnosticsCard`). Nunca produz um número novo: o texto só nasce quando
+// `explanation_api_url` está configurado (`explanations/router.py:36`) e,
+// mesmo aí, cai para a mesma resposta determinística sempre que o provedor
+// externo falhar (`explanations/service.py::explain_with_fallback`) — os
+// dois casos voltam como `200` com `source: 'DETERMINISTIC'`, nunca erro.
+// Buscado só sob demanda (ação explícita do usuário) — nunca no carregamento
+// da página, ver `AiExplanationPanel`.
+export async function fetchLatestExplanation(plantId: string): Promise<Response> {
+  return apiFetch(`/energy/explanations/latest?plant_id=${encodeURIComponent(plantId)}`)
+}
+
 // Configuração financeira (CAPEX) da usina (ADR-067,
 // `GET/PATCH /plants/{plant_id}/financial-configuration`). `GET` usa `ReadPlantPath`,
 // `PATCH` usa `AdminPlantPath` — um chamador com credencial READ recebe 403 do

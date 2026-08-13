@@ -3,6 +3,8 @@ import { render, screen, within } from '@testing-library/react'
 import { DiagnosticsCard } from './DiagnosticsCard'
 import { combineDiagnostics, type Diagnostic, type ExecutiveDashboardResponse } from '../lib/dashboard/contracts'
 
+const PLANT_ID = '11111111-1111-1111-1111-111111111111'
+
 function buildDashboard(diagnostics: {
   currentCycle?: Diagnostic[]
   trend?: Diagnostic[]
@@ -76,7 +78,7 @@ describe('DiagnosticsCard', () => {
       ],
     })
 
-    render(<DiagnosticsCard diagnostics={combineDiagnostics(dashboard)} />)
+    render(<DiagnosticsCard diagnostics={combineDiagnostics(dashboard)} plantId={PLANT_ID} />)
 
     const items = screen.getAllByRole('listitem')
     expect(items).toHaveLength(2)
@@ -93,9 +95,16 @@ describe('DiagnosticsCard', () => {
   })
 
   it('mostra estado vazio explícito quando não há diagnósticos', () => {
-    render(<DiagnosticsCard diagnostics={[]} />)
+    render(<DiagnosticsCard diagnostics={[]} plantId={PLANT_ID} />)
 
     expect(screen.getByText('Nenhum diagnóstico neste ciclo.')).toBeInTheDocument()
     expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
+  })
+
+  it('mostra a ação de pedir explicação por IA em repouso, sem buscar nada sozinho', () => {
+    render(<DiagnosticsCard diagnostics={[]} plantId={PLANT_ID} />)
+
+    expect(screen.getByRole('button', { name: /pedir explicação por ia/i })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: /explicação interpretativa por ia/i })).not.toBeInTheDocument()
   })
 })
