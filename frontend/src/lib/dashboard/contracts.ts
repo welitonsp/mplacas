@@ -302,6 +302,34 @@ function numberValue(source: Record<string, unknown>, key: string): number {
   throw new Error(`Resposta inválida da API: ${key}`)
 }
 
+// Compatibilidade com backend uma versão atrás — campos introduzidos depois de
+// um deploy do frontend.
+//
+// A distinção que estas duas funções preservam é a que importa: **chave ausente
+// não é a mesma coisa que valor malformado**. Ausente significa que o servidor
+// ainda não conhece o campo (deploy do frontend chegou antes do backend, ou
+// rollback do backend) — é estado legítimo e vira indisponibilidade explícita,
+// que é como o projeto trata falta de dado em todo lugar. Presente com tipo
+// errado continua lançando, porque aí o contrato foi de fato violado.
+//
+// Sem isso, um frontend novo contra um backend antigo derruba a página inteira
+// em vez de esconder um card: `parseAnomalyDashboard` lançaria em toda resposta
+// e `ProductionPage` pararia por completo. Mesmo princípio de
+// `optionalStringOrMissing` logo abaixo.
+function metricValueOrMissing(source: Record<string, unknown>, key: string): MetricValue {
+  if (!(key in source) || source[key] === undefined) return null
+  return metricValue(source, key)
+}
+
+function numberValueOrMissing(
+  source: Record<string, unknown>,
+  key: string,
+  fallback: number
+): number {
+  if (!(key in source) || source[key] === undefined) return fallback
+  return numberValue(source, key)
+}
+
 const TREND_DIRECTIONS: ReadonlySet<string> = new Set(['UP', 'DOWN', 'STABLE'])
 
 function requireDirection(source: Record<string, unknown>, key: string): TrendDirection {
@@ -446,8 +474,8 @@ export function parseAnomalyDaily(value: unknown): AnomalyDailyPoint {
     diagnostics: parseAnomalyDiagnostics(value),
     deviation_percent: metricValue(value, 'deviation_percent'),
     irradiation_kwh_m2: metricValue(value, 'irradiation_kwh_m2'),
-    yield_kwh_per_kwh_m2: metricValue(value, 'yield_kwh_per_kwh_m2'),
-    yield_deviation_from_period_percent: metricValue(value, 'yield_deviation_from_period_percent'),
+    yield_kwh_per_kwh_m2: metricValueOrMissing(value, 'yield_kwh_per_kwh_m2'),
+    yield_deviation_from_period_percent: metricValueOrMissing(value, 'yield_deviation_from_period_percent'),
   }
 }
 
@@ -461,9 +489,9 @@ export function parseAnomalyDashboard(payload: unknown): AnomalyDashboardRespons
     current_streak_days: numberValue(payload, 'current_streak_days'),
     worst_level: optionalAnomalyLevel(payload, 'worst_level'),
     expected_unavailable_reason: optionalStringOrMissing(payload, 'expected_unavailable_reason'),
-    period_yield_kwh_per_kwh_m2: metricValue(payload, 'period_yield_kwh_per_kwh_m2'),
-    yield_atypical_threshold_percent: metricValue(payload, 'yield_atypical_threshold_percent'),
-    period_yield_sample_days: numberValue(payload, 'period_yield_sample_days'),
+    period_yield_kwh_per_kwh_m2: metricValueOrMissing(payload, 'period_yield_kwh_per_kwh_m2'),
+    yield_atypical_threshold_percent: metricValueOrMissing(payload, 'yield_atypical_threshold_percent'),
+    period_yield_sample_days: numberValueOrMissing(payload, 'period_yield_sample_days', 0),
     daily: daily.map(parseAnomalyDaily),
   }
 }

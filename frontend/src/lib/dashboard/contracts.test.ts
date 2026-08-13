@@ -232,9 +232,43 @@ describe('parseAnomalyDashboard — contrato novo (200 sempre, campos por dia nu
     expect(result.period_yield_sample_days).toBe(2)
   })
 
-  it('rejeita payload malformado sem period_yield_sample_days', () => {
-    const payload = buildAnomalyPayload()
-    delete (payload as Record<string, unknown>).period_yield_sample_days
+  // Compatibilidade com backend uma versão atrás. Este teste afirmava o
+  // oposto — que a ausência do campo era payload malformado. A premissa estava
+  // errada e teria derrubado o painel em produção: o deploy do frontend chega
+  // antes do backend, a API responde sem os campos de rendimento, e
+  // `parseAnomalyDashboard` lançaria em TODA resposta — quebrando a
+  // `ProductionPage` inteira e o indicador principal da Visão Geral, não só os
+  // cards novos. Chave ausente é servidor desatualizado (estado legítimo, vira
+  // indisponibilidade); valor com tipo errado continua sendo contrato violado.
+  it('aceita payload de backend antigo, sem os campos de rendimento, sem derrubar a tela', () => {
+    const payload = buildAnomalyPayload() as Record<string, unknown>
+    delete payload.period_yield_sample_days
+    delete payload.period_yield_kwh_per_kwh_m2
+    delete payload.yield_atypical_threshold_percent
+    for (const day of payload.daily as Record<string, unknown>[]) {
+      delete day.yield_kwh_per_kwh_m2
+      delete day.yield_deviation_from_period_percent
+    }
+
+    const result = parseAnomalyDashboard(payload)
+
+    expect(result.period_yield_kwh_per_kwh_m2).toBeNull()
+    expect(result.yield_atypical_threshold_percent).toBeNull()
+    expect(result.period_yield_sample_days).toBe(0)
+    expect(result.daily[0].yield_kwh_per_kwh_m2).toBeNull()
+    expect(result.daily[0].yield_deviation_from_period_percent).toBeNull()
+    // O resto do payload continua parseado normalmente — é isso que mantém a
+    // página de pé enquanto o backend não sobe.
+    expect(result.days_analyzed).toBe(payload.days_analyzed)
+    expect(result.daily.length).toBeGreaterThan(0)
+    expect(result.daily[0].date).toBeTruthy()
+  })
+
+  // A tolerância acima não pode virar leniência geral: presente com tipo
+  // errado segue sendo erro de contrato.
+  it('continua rejeitando campo de rendimento presente com tipo inválido', () => {
+    const payload = buildAnomalyPayload() as Record<string, unknown>
+    payload.period_yield_sample_days = 'dois'
 
     expect(() => parseAnomalyDashboard(payload)).toThrow()
   })

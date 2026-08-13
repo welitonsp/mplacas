@@ -857,6 +857,38 @@ rendimento e transformaria "−12%" de mistério em "dia quente".
 
 ---
 
+### [ ] T11 — `App.test.tsx` é intermitente (flaky)
+
+Descoberto em 2026-08-13 ao validar a compatibilidade retroativa do parser.
+
+**Evidência de intermitência**, não de regressão:
+
+| Execução | Resultado |
+|---|---|
+| suíte completa, sem a mudança de parser | 926/926 ✓ |
+| suíte completa, com a mudança, 1ª | 1 falha — `troca de usina preserva a rota atual` |
+| suíte completa, com a mudança, 2ª | mesma falha |
+| suíte completa, com a mudança, 3ª | **927/927 ✓** |
+| `App.test.tsx` isolado, **sem** a mudança | **3 falhas** |
+| `App.test.tsx` isolado, **com** a mudança | 2 falhas |
+
+Dois fatos que separam instabilidade de regressão: o arquivo falha **mais** isolado sem a
+mudança do que com ela, e a suíte completa passa integralmente na terceira execução. A mudança de
+parser é estritamente **mais permissiva** (aceita payload que antes derrubava), então não pode
+introduzir falha de corretude — mas alterou o tempo o bastante para expor a instabilidade.
+
+**Por que importa:** um teste que falha 2 de 3 vezes treina o time a reexecutar até passar, e é
+assim que uma regressão real entra despercebida. O arquivo também depende de ordem de execução
+(falha isolado, passa na suíte), o que é um segundo defeito.
+
+**Critério de aceite:**
+- [ ] Causa da intermitência identificada (provável: `waitFor` sobre navegação assíncrona sem
+      âncora determinística).
+- [ ] Teste passa 10 execuções consecutivas, isolado **e** na suíte.
+- [ ] Nenhum `waitFor` sem asserção de estado observável estável.
+
+---
+
 ### [ ] T7c — A guarda estática tem isenção que anula o invariante
 
 `no-client-computed-yield-deviation.test.ts:78-85` **exclui `ProductionHistoryChart.tsx`** da
