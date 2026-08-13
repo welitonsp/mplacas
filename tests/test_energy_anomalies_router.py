@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import mplacas.db.session as db_session
 import mplacas.intelligence.router as anomalies_router
+from mplacas.climate.db_models import DailyClimateObservationRecord
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import encode_access_token
 from mplacas.core.security import OperationsRole
@@ -214,6 +215,204 @@ def test_expectation_resolved_server_side_when_parameter_absent(resolvable_plant
     body = response.json()
     assert body["daily"][0]["expected_production_kwh"] == "90.000"
     assert body["daily"][0]["actual_production_kwh"] == "90.000"
+
+
+def test_yield_fields_present_but_null_without_a_climate_observation(resolvable_plant) -> None:
+    """Plan T7: the yield fields are always present in the envelope, even
+    when they can't be computed. `resolvable_plant` never seeds a
+    `DailyClimateObservationRecord`, so there is no irradiation reading —
+    the period aggregate and every per-day yield must be `null`, not `0` or
+    absent from the payload. The threshold, being a fixed policy value
+    rather than a derived one, is present regardless."""
+    client = TestClient(app)
+    response = client.get(
+        "/energy/anomalies/latest",
+        headers=_bearer(resolvable_plant["org_id"]),
+        params={"plant_id": str(resolvable_plant["plant_id"]), "days": 1},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["period_yield_kwh_per_kwh_m2"] is None
+    assert body["yield_atypical_threshold_percent"] == "20"
+    assert body["period_yield_sample_days"] == 0
+    assert body["daily"][0]["yield_kwh_per_kwh_m2"] is None
+    assert body["daily"][0]["yield_deviation_from_period_percent"] is None
+
+
+def test_yield_fields_computed_end_to_end_when_irradiation_is_available(monkeypatch) -> None:
+    """Same aggregate/deviation formula proven in `test_anomaly_service.py`,
+    exercised through the actual HTTP route: `GET /energy/anomalies/latest`
+    -> `analyze_recent_persisted_anomalies` -> `_serialize_anomalies`."""
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
+    get_settings.cache_clear()
+
+    factory = asyncio.run(_factory())
+    monkeypatch.setattr(db_session, "SessionFactory", factory)
+    monkeypatch.setattr(anomalies_router, "SessionFactory", factory)
+
+    org_id = uuid.uuid4()
+    plant_id = uuid.uuid4()
+    # `analyze_recent_persisted_anomalies` is called by the router without an
+    # explicit `end_date`, so it defaults to `date.today()` (see
+    # `resolvable_plant`'s own `today = date.today()` for the same reason).
+    day_b = date.today()
+    day_a = day_b - timedelta(days=1)
+
+    async def _seed_plant_with_irradiation() -> None:
+        async with factory() as session:
+            session.add(
+                OrganizationRecord(id=org_id, name="Org", slug=f"org-{org_id.hex[:8]}", active=True)
+            )
+            session.add(Plant(id=plant_id, organization_id=org_id, name="Usina com irradiância"))
+            await session.flush()
+            device = Device(plant_id=plant_id, serial_number=f"DEV-{plant_id.hex[:8]}")
+            session.add(device)
+            await session.flush()
+            session.add_all(
+                [
+                    # yield = 10/4 = 2.5 -> +25% vs period yield (2.0).
+                    DailyEnergy(
+                        device_id=device.id,
+                        production_date=day_a,
+                        energy_kwh=Decimal("10"),
+                        status=DataStatus.CONSOLIDATED,
+                    ),
+                    DailyClimateObservationRecord(
+                        plant_id=plant_id,
+                        observation_date=day_a,
+                        irradiation_kwh_m2=Decimal("4"),
+                        source="SYNTHETIC",
+                    ),
+                    # yield = 6/4 = 1.5 -> -25% vs period yield.
+                    DailyEnergy(
+                        device_id=device.id,
+                        production_date=day_b,
+                        energy_kwh=Decimal("6"),
+                        status=DataStatus.CONSOLIDATED,
+                    ),
+                    DailyClimateObservationRecord(
+                        plant_id=plant_id,
+                        observation_date=day_b,
+                        irradiation_kwh_m2=Decimal("4"),
+                        source="SYNTHETIC",
+                    ),
+                ]
+            )
+            await session.commit()
+
+    asyncio.run(_seed_plant_with_irradiation())
+
+    client = TestClient(app)
+    response = client.get(
+        "/energy/anomalies/latest",
+        headers=_bearer(org_id),
+        params={"plant_id": str(plant_id), "days": 2},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert Decimal(body["period_yield_kwh_per_kwh_m2"]) == Decimal("2")
+    assert body["yield_atypical_threshold_percent"] == "20"
+    assert body["period_yield_sample_days"] == 2
+    by_date = {item["date"]: item for item in body["daily"]}
+    # Decimal division carries extra scale (e.g. "25.00" instead of "25") —
+    # the frontend's `toNumber`/`formatNumber` already normalizes this at
+    # render time (same as every other Decimal-as-string field in this
+    # payload), so the value is compared numerically here, not as a raw
+    # string.
+    assert Decimal(by_date[day_a.isoformat()]["yield_kwh_per_kwh_m2"]) == Decimal("2.5")
+    assert Decimal(
+        by_date[day_a.isoformat()]["yield_deviation_from_period_percent"]
+    ) == Decimal("25")
+    assert Decimal(by_date[day_b.isoformat()]["yield_kwh_per_kwh_m2"]) == Decimal("1.5")
+    assert Decimal(
+        by_date[day_b.isoformat()]["yield_deviation_from_period_percent"]
+    ) == Decimal("-25")
+
+    get_settings.cache_clear()
+
+
+def test_zero_production_day_with_sun_gets_a_defined_yield_end_to_end(monkeypatch) -> None:
+    """Plan T7b, P1 ("dia de produção zero com sol desaparece"): a full
+    outage (0 kWh) under a positive irradiation reading must round-trip
+    through the HTTP route with a defined `yield_kwh_per_kwh_m2` of `"0"`
+    and the worst possible deviation (`"-100"`) — never absent, and never
+    counted in `period_yield_sample_days`."""
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
+    get_settings.cache_clear()
+
+    factory = asyncio.run(_factory())
+    monkeypatch.setattr(db_session, "SessionFactory", factory)
+    monkeypatch.setattr(anomalies_router, "SessionFactory", factory)
+
+    org_id = uuid.uuid4()
+    plant_id = uuid.uuid4()
+    day_b = date.today()
+    day_a = day_b - timedelta(days=1)
+
+    async def _seed_plant_with_an_outage_day() -> None:
+        async with factory() as session:
+            session.add(
+                OrganizationRecord(id=org_id, name="Org", slug=f"org-{org_id.hex[:8]}", active=True)
+            )
+            session.add(Plant(id=plant_id, organization_id=org_id, name="Usina com apagão"))
+            await session.flush()
+            device = Device(plant_id=plant_id, serial_number=f"DEV-{plant_id.hex[:8]}")
+            session.add(device)
+            await session.flush()
+            session.add_all(
+                [
+                    # Normal day: yield = 10/4 = 2.5 -> period yield is 2.5,
+                    # the only day feeding the aggregate.
+                    DailyEnergy(
+                        device_id=device.id,
+                        production_date=day_a,
+                        energy_kwh=Decimal("10"),
+                        status=DataStatus.CONSOLIDATED,
+                    ),
+                    DailyClimateObservationRecord(
+                        plant_id=plant_id,
+                        observation_date=day_a,
+                        irradiation_kwh_m2=Decimal("4"),
+                        source="SYNTHETIC",
+                    ),
+                    # Full outage under sun: 0 kWh produced, irradiation
+                    # positive -> excluded from the aggregate, but its own
+                    # ratio is a defined 0, not None.
+                    DailyEnergy(
+                        device_id=device.id,
+                        production_date=day_b,
+                        energy_kwh=Decimal("0"),
+                        status=DataStatus.CONSOLIDATED,
+                    ),
+                    DailyClimateObservationRecord(
+                        plant_id=plant_id,
+                        observation_date=day_b,
+                        irradiation_kwh_m2=Decimal("5"),
+                        source="SYNTHETIC",
+                    ),
+                ]
+            )
+            await session.commit()
+
+    asyncio.run(_seed_plant_with_an_outage_day())
+
+    client = TestClient(app)
+    response = client.get(
+        "/energy/anomalies/latest",
+        headers=_bearer(org_id),
+        params={"plant_id": str(plant_id), "days": 2},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert Decimal(body["period_yield_kwh_per_kwh_m2"]) == Decimal("2.5")
+    assert body["period_yield_sample_days"] == 1
+    by_date = {item["date"]: item for item in body["daily"]}
+    assert Decimal(by_date[day_b.isoformat()]["yield_kwh_per_kwh_m2"]) == Decimal("0")
+    assert Decimal(
+        by_date[day_b.isoformat()]["yield_deviation_from_period_percent"]
+    ) == Decimal("-100")
+
+    get_settings.cache_clear()
 
 
 def test_wrong_client_supplied_expectation_is_ignored(resolvable_plant) -> None:

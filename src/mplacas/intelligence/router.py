@@ -147,6 +147,29 @@ def _serialize_anomalies(result) -> dict[str, object]:
         "current_streak_days": result.current_streak_days,
         "worst_level": result.worst_level.value if result.worst_level is not None else None,
         "expected_unavailable_reason": result.expected_unavailable_reason,
+        # Rendimento do período (produção ÷ irradiância) e o limiar de
+        # severidade que marca um dia como atípico em relação a ele — movidos
+        # de `frontend/src/lib/dashboard/yield.ts` para
+        # `intelligence/anomaly_service.py::analyze_recent_persisted_anomalies`
+        # (2026-08-13, plano T7). `period_yield_kwh_per_kwh_m2` é `None` sob a
+        # mesma condição de qualquer `yield_kwh_per_kwh_m2` por dia: nenhum
+        # dia do período teve produção E irradiância positivas ao mesmo
+        # tempo. `yield_atypical_threshold_percent` é sempre uma string —
+        # limiar fixo, não um dado que possa faltar (mesmo padrão de
+        # `devices/serialization.py::device_normal_threshold`).
+        "period_yield_kwh_per_kwh_m2": (
+            str(result.period_yield_kwh_per_kwh_m2)
+            if result.period_yield_kwh_per_kwh_m2 is not None
+            else None
+        ),
+        "yield_atypical_threshold_percent": str(result.yield_atypical_threshold_percent),
+        # How many of `daily` actually fed `period_yield_kwh_per_kwh_m2`
+        # (plan T7b, P1 "o rótulo usa a contagem errada"). Deliberately NOT
+        # `days_analyzed`: that counts every day with a persisted production
+        # row, while the yield aggregate only counts days with both
+        # production and irradiation positive — the frontend must label the
+        # yield card with this field, never with `days_analyzed`.
+        "period_yield_sample_days": result.period_yield_sample_days,
         "daily": [
             {
                 "date": item.observation_date.isoformat(),
@@ -169,6 +192,16 @@ def _serialize_anomalies(result) -> dict[str, object]:
                     str(item.assessment.deviation_percent)
                     if item.assessment is not None
                     and item.assessment.deviation_percent is not None
+                    else None
+                ),
+                "yield_kwh_per_kwh_m2": (
+                    str(item.yield_kwh_per_kwh_m2)
+                    if item.yield_kwh_per_kwh_m2 is not None
+                    else None
+                ),
+                "yield_deviation_from_period_percent": (
+                    str(item.yield_deviation_from_period_percent)
+                    if item.yield_deviation_from_period_percent is not None
                     else None
                 ),
                 "diagnostics": (

@@ -383,3 +383,167 @@ async def test_rejects_period_without_persisted_production() -> None:
             )
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_period_yield_and_per_day_deviation_moved_from_frontend() -> None:
+    """Plan T7: `computeYieldStats` moved from `frontend/src/lib/dashboard/
+    yield.ts` into this module. Reproduces the same aggregate (total
+    production / total irradiation across the window) and per-day percent
+    deviation the frontend used to compute.
+
+    Revised for plan T7b (P1, "dia de produção zero com sol desaparece"): a
+    day with zero production but a positive irradiation reading (day C) now
+    gets a *defined* yield of `0` (worst possible deviation, -100%) instead
+    of `None` — it is still excluded from the aggregate itself (`sample_days`
+    only counts A and B), so it cannot drag down the reference it is judged
+    against. A day with no positive irradiation reading at all (day D) still
+    has no ratio, `None`, because there is no denominator to divide by.
+    """
+    from mplacas.intelligence.anomaly_service import YIELD_ATYPICAL_THRESHOLD_PERCENT
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as session:
+        plant = Plant(name="Yield synthetic plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        device = Device(plant_id=plant.id, serial_number="SYNTHETIC-YIELD-001")
+        session.add(device)
+        await session.flush()
+        session.add_all(
+            [
+                # Day A: yield = 10/4 = 2.5 -> +25% vs period yield (2.0).
+                DailyEnergy(
+                    device_id=device.id,
+                    production_date=date(2026, 7, 10),
+                    energy_kwh=Decimal("10"),
+                    status=DataStatus.CONSOLIDATED,
+                ),
+                DailyClimateObservationRecord(
+                    plant_id=plant.id,
+                    observation_date=date(2026, 7, 10),
+                    irradiation_kwh_m2=Decimal("4"),
+                    source="SYNTHETIC",
+                ),
+                # Day B: yield = 6/4 = 1.5 -> -25% vs period yield.
+                DailyEnergy(
+                    device_id=device.id,
+                    production_date=date(2026, 7, 11),
+                    energy_kwh=Decimal("6"),
+                    status=DataStatus.CONSOLIDATED,
+                ),
+                DailyClimateObservationRecord(
+                    plant_id=plant.id,
+                    observation_date=date(2026, 7, 11),
+                    irradiation_kwh_m2=Decimal("4"),
+                    source="SYNTHETIC",
+                ),
+                # Day C: zero production with a positive irradiation reading
+                # -> excluded from the aggregate, but its own yield is a
+                # defined 0 (plan T7b P1), not None.
+                DailyEnergy(
+                    device_id=device.id,
+                    production_date=date(2026, 7, 12),
+                    energy_kwh=Decimal("0"),
+                    status=DataStatus.CONSOLIDATED,
+                ),
+                DailyClimateObservationRecord(
+                    plant_id=plant.id,
+                    observation_date=date(2026, 7, 12),
+                    irradiation_kwh_m2=Decimal("5"),
+                    source="SYNTHETIC",
+                ),
+                # Day D: production reported, but no climate row at all ->
+                # excluded from the aggregate; own yield is None.
+                DailyEnergy(
+                    device_id=device.id,
+                    production_date=date(2026, 7, 13),
+                    energy_kwh=Decimal("5"),
+                    status=DataStatus.CONSOLIDATED,
+                ),
+            ]
+        )
+        await session.commit()
+
+        result = await analyze_recent_persisted_anomalies(
+            session,
+            plant_id=plant.id,
+            expected_daily_production_kwh=None,
+            days=4,
+            end_date=date(2026, 7, 13),
+            expected_unavailable_reason="NO_PERFORMANCE_HISTORY",
+        )
+
+        assert result.days_analyzed == 4
+        # (10 + 6) / (4 + 4) = 2.0 -- days C and D excluded from both sums.
+        assert result.period_yield_kwh_per_kwh_m2 == Decimal("2")
+        assert result.yield_atypical_threshold_percent == YIELD_ATYPICAL_THRESHOLD_PERCENT
+        assert result.yield_atypical_threshold_percent == Decimal("20")
+        # Plan T7b P1 ("o rótulo usa a contagem errada"): only days A and B
+        # fed the aggregate, even though 4 days have a production row
+        # (`days_analyzed`) — the frontend must label the yield with this
+        # field, not with `days_analyzed`.
+        assert result.period_yield_sample_days == 2
+
+        by_date = {item.observation_date: item for item in result.daily}
+        assert by_date[date(2026, 7, 10)].yield_kwh_per_kwh_m2 == Decimal("2.5")
+        assert by_date[date(2026, 7, 10)].yield_deviation_from_period_percent == Decimal("25")
+        assert by_date[date(2026, 7, 11)].yield_kwh_per_kwh_m2 == Decimal("1.5")
+        assert by_date[date(2026, 7, 11)].yield_deviation_from_period_percent == Decimal("-25")
+        # Day C: zero production under sun (irradiation=5) -> defined yield
+        # of 0, and the worst possible deviation (-100%) — it must be
+        # visible as an atypical day, not silently dropped as "no data".
+        assert by_date[date(2026, 7, 12)].yield_kwh_per_kwh_m2 == Decimal("0")
+        assert by_date[date(2026, 7, 12)].yield_deviation_from_period_percent == Decimal("-100")
+        # Day D: no climate row at all -> genuinely no ratio possible.
+        assert by_date[date(2026, 7, 13)].yield_kwh_per_kwh_m2 is None
+        assert by_date[date(2026, 7, 13)].yield_deviation_from_period_percent is None
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_period_yield_unavailable_when_no_day_has_both_production_and_irradiation() -> None:
+    """Mirrors `computeYieldStats`'s `periodYield == null` early return: no
+    day in the window qualifies, so the aggregate — and every per-day yield
+    — is `None`, never `0` or a fabricated number."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as session:
+        plant = Plant(name="No irradiation synthetic plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        device = Device(plant_id=plant.id, serial_number="SYNTHETIC-NO-IRRADIATION-001")
+        session.add(device)
+        await session.flush()
+        session.add(
+            DailyEnergy(
+                device_id=device.id,
+                production_date=date(2026, 7, 12),
+                energy_kwh=Decimal("10"),
+                status=DataStatus.CONSOLIDATED,
+            )
+        )
+        await session.commit()
+
+        result = await analyze_recent_persisted_anomalies(
+            session,
+            plant_id=plant.id,
+            expected_daily_production_kwh=None,
+            days=1,
+            end_date=date(2026, 7, 12),
+        )
+
+        assert result.period_yield_kwh_per_kwh_m2 is None
+        assert result.daily[0].yield_kwh_per_kwh_m2 is None
+        assert result.daily[0].yield_deviation_from_period_percent is None
+        assert result.period_yield_sample_days == 0
+
+    await engine.dispose()
