@@ -203,7 +203,7 @@ export function ProductionHistorySection({
                   type="button"
                   aria-pressed={active}
                   onClick={() => handlePeriodSelect(days)}
-                  className={`min-h-[40px] rounded-full border px-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none ${
+                  className={`min-h-[44px] rounded-full border px-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none ${
                     active
                       ? 'border-[var(--color-brand-primary)] bg-[var(--color-brand-primary)] text-white shadow-sm'
                       : 'border-gray-200 bg-[var(--color-surface)] text-gray-700 hover:-translate-y-0.5 hover:bg-white hover:text-gray-950 hover:shadow-sm'
@@ -275,7 +275,23 @@ export function ProductionHistorySection({
           currentStreakDays={anomalyState.data.current_streak_days}
           expectedAvailable={expectedAvailable}
         />
-        <YieldCard daily={filteredDaily} />
+        {/* `YieldCard` recebe `anomalyState.data.daily` INTEIRO, não
+            `filteredDaily` (plano T7b, P0: "o card afirma o que não
+            verificou"). `period_yield_kwh_per_kwh_m2`/
+            `yield_deviation_from_period_percent` de cada dia já vêm do
+            backend calculados sobre a janela cheia analisada (hoje até 90
+            dias, ver `lib/api.ts::fetchAnomalyHistory` — este módulo sempre
+            busca o máximo, `filteredDaily` é só um recorte visual client-side
+            do seletor de período acima). Passar `filteredDaily` faria o
+            cabeçalho anunciar "N dias analisados" tendo varrido só o
+            recorte visível — e faria a lista de dias atípicos mudar ao
+            trocar o recorte sem o cabeçalho acompanhar. */}
+        <YieldCard
+          daily={anomalyState.data.daily}
+          periodYieldKwhPerKwhM2={anomalyState.data.period_yield_kwh_per_kwh_m2}
+          yieldAtypicalThresholdPercent={anomalyState.data.yield_atypical_threshold_percent}
+          periodYieldSampleDays={anomalyState.data.period_yield_sample_days}
+        />
       </div>
     </div>
   )

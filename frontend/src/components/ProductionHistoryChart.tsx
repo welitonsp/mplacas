@@ -11,7 +11,6 @@ import {
   levelSeverity,
   performanceSeverity,
 } from '../lib/dashboard/visuals'
-import { computeYieldStats } from '../lib/dashboard/yield'
 import { Card } from './Card'
 
 export function ProductionHistoryChart({
@@ -74,6 +73,14 @@ export function ProductionHistoryChart({
           }),
           { total: 0, best: productionDays[0], worst: productionDays[0] }
         )
+  // Rotulado "janela exibida" (não "período") na legenda/painel de detalhe
+  // abaixo — `daily` aqui é o recorte visível escolhido no seletor de
+  // período da tela (7/30/90 dias, ver `ProductionHistorySection`), que é
+  // menor que a janela completa que o backend analisou para o rendimento
+  // (`YieldCard`, ao lado). As duas usavam a mesma palavra "período" para
+  // janelas diferentes, o que fazia parecer o mesmo número (plano T7b, P1
+  // "dois período diferentes na mesma viewport") — agora só `YieldCard`
+  // usa "período/janela analisada" para a janela cheia do backend.
   const averageProduction = averageActualProduction(daily).average
   const averageLineY = averageProduction == null ? null : 100 - clampPercent((averageProduction / maxValue) * 100)
   const belowAverageDays =
@@ -201,9 +208,15 @@ export function ProductionHistoryChart({
     return d.trim()
   }
 
-  const yieldStats = computeYieldStats(daily)
   const activeIrradiation = toNumber(activeDay.irradiation_kwh_m2)
-  const activeYieldInfo = yieldStats.days.find((d) => d.date === activeDay.date) ?? null
+  // Rendimento e desvio já prontos do backend (`yield_kwh_per_kwh_m2`/
+  // `yield_deviation_from_period_percent`, ver `intelligence/anomaly_service.py::
+  // _compute_period_yield` — 2026-08-13, plano T7). `null` quando o dia não
+  // tem produção/irradiância positivas ao mesmo tempo, ou quando nenhum dia
+  // do período analisado qualifica — nunca recalculado aqui (ver
+  // `no-client-computed-yield-deviation.test.ts`).
+  const activeYieldValue = toNumber(activeDay.yield_kwh_per_kwh_m2)
+  const activeYieldDeviationPercent = toNumber(activeDay.yield_deviation_from_period_percent)
 
   return (
     // `interactive`: as barras do gráfico respondem a clique/foco (seleção do
@@ -253,7 +266,7 @@ export function ProductionHistoryChart({
           {averageProduction != null && (
             <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm">
               <span className="h-0 w-3 border-t-2 border-[var(--color-brand-primary)]" />
-              Média do período
+              Média da janela exibida
             </span>
           )}
           {hasIrradiation && (
@@ -519,7 +532,7 @@ export function ProductionHistoryChart({
         )}
         {averageProduction != null && (
           <span>
-            Média do período:{' '}
+            Média da janela exibida:{' '}
             <strong className="text-[var(--color-brand-primary)] tabular-nums">
               {formatNumber(averageProduction, 1)} kWh/dia
             </strong>
@@ -543,16 +556,18 @@ export function ProductionHistoryChart({
             </strong>
           </span>
         )}
-        {activeYieldInfo && (
+        {activeYieldValue != null && (
           <span>
             Rendimento:{' '}
             <strong className="text-[var(--color-data-secondary)] tabular-nums">
-              {formatNumber(activeYieldInfo.yieldValue, 2)} kWh por kWh/m²
+              {formatNumber(activeYieldValue, 2)} kWh por kWh/m²
             </strong>{' '}
-            <span className="text-gray-500 tabular-nums">
-              ({activeYieldInfo.deviationPercent > 0 ? '+' : ''}
-              {formatNumber(activeYieldInfo.deviationPercent, 0)}% vs. média do período)
-            </span>
+            {activeYieldDeviationPercent != null && (
+              <span className="text-gray-500 tabular-nums">
+                ({activeYieldDeviationPercent > 0 ? '+' : ''}
+                {formatNumber(activeYieldDeviationPercent, 0)}% vs. período analisado)
+              </span>
+            )}
           </span>
         )}
       </div>

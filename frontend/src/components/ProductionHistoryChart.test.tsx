@@ -11,6 +11,9 @@ function buildDaily(date: string, actual: number, overrides: Partial<AnomalyDail
     level: 'NORMAL',
     deviation_percent: -9,
     irradiation_kwh_m2: null,
+    yield_kwh_per_kwh_m2: null,
+    yield_deviation_from_period_percent: null,
+    diagnostics: [],
     ...overrides,
   }
 }
@@ -219,7 +222,7 @@ describe('ProductionHistoryChart — eixo Y e linha de referência esperada (bas
     const referenceLines = container.querySelectorAll('line[stroke="var(--color-chart-reference)"]')
     expect(referenceLines).toHaveLength(1)
     // A linha cobre a largura inteira do gráfico (0 até o total de dias), não
-    // um segmento por barra — mesmo padrão da linha "Média do período".
+    // um segmento por barra — mesmo padrão da linha "Média da janela exibida".
     expect(referenceLines[0]).toHaveAttribute('x1', '0')
     expect(referenceLines[0]).toHaveAttribute('x2', String(DAILY.length))
     expect(referenceLines[0].getAttribute('y1')).toBe(referenceLines[0].getAttribute('y2'))
@@ -231,10 +234,10 @@ describe('ProductionHistoryChart — eixo Y e linha de referência esperada (bas
     expect(screen.queryByText('Esperado')).not.toBeInTheDocument()
   })
 
-  it('desenha uma linha de média do período e mostra o valor no painel de detalhe', () => {
+  it('desenha uma linha de média da janela exibida e mostra o valor no painel de detalhe', () => {
     const { container } = render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
 
-    expect(screen.getByText('Média do período')).toBeInTheDocument()
+    expect(screen.getByText('Média da janela exibida')).toBeInTheDocument()
     expect(screen.getByText('20 kWh/dia')).toBeInTheDocument()
     expect(screen.getByText('1 dia abaixo da média')).toBeInTheDocument()
     expect(screen.getByText('Vs. média: +50%')).toBeInTheDocument()
@@ -305,5 +308,41 @@ describe('ProductionHistoryChart — classificação por dia permanece inalterad
     fireEvent.keyDown(slider, { key: 'ArrowLeft' })
     expect(slider).toHaveAttribute('aria-valuenow', '0')
     expect(within(liveRegion).getByText('Normal')).toBeInTheDocument()
+  })
+})
+
+describe('ProductionHistoryChart — rendimento do dia ativo (plano T7: valor pronto do backend, nunca recalculado)', () => {
+  it('mostra rendimento e desvio do dia ativo lendo `yield_kwh_per_kwh_m2`/`yield_deviation_from_period_percent` prontos, sem recomputar', () => {
+    const daily: AnomalyDailyPoint[] = [
+      buildDaily('2026-07-01', 10, {
+        irradiation_kwh_m2: 4,
+        yield_kwh_per_kwh_m2: 2.5,
+        yield_deviation_from_period_percent: 25,
+        diagnostics: [],
+      }),
+    ]
+
+    render(<ProductionHistoryChart daily={daily} currentStreakDays={0} />)
+
+    const liveRegion = document.querySelector('[aria-live="polite"]') as HTMLElement
+    expect(within(liveRegion).getByText('Rendimento:')).toBeInTheDocument()
+    expect(within(liveRegion).getByText('2,5 kWh por kWh/m²')).toBeInTheDocument()
+    expect(within(liveRegion).getByText('(+25% vs. período analisado)')).toBeInTheDocument()
+  })
+
+  it('não mostra a linha de rendimento quando o dia não tem rendimento calculável (sem irradiância ou sem produção positiva)', () => {
+    const daily: AnomalyDailyPoint[] = [
+      buildDaily('2026-07-01', 10, {
+        irradiation_kwh_m2: null,
+        yield_kwh_per_kwh_m2: null,
+        yield_deviation_from_period_percent: null,
+        diagnostics: [],
+      }),
+    ]
+
+    render(<ProductionHistoryChart daily={daily} currentStreakDays={0} />)
+
+    const liveRegion = document.querySelector('[aria-live="polite"]') as HTMLElement
+    expect(within(liveRegion).queryByText('Rendimento:')).not.toBeInTheDocument()
   })
 })

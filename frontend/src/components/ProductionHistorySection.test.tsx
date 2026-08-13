@@ -12,6 +12,9 @@ function buildDaily(overrides: Partial<AnomalyDailyPoint> = {}): AnomalyDailyPoi
     level: 'NORMAL',
     deviation_percent: -9,
     irradiation_kwh_m2: null,
+    yield_kwh_per_kwh_m2: null,
+    yield_deviation_from_period_percent: null,
+    diagnostics: [],
     ...overrides,
   }
 }
@@ -27,6 +30,9 @@ function buildAnomalyData(overrides: {
     current_streak_days: 0,
     worst_level: overrides.worstLevel ?? 'NORMAL',
     expected_unavailable_reason: overrides.expectedUnavailableReason ?? null,
+    period_yield_kwh_per_kwh_m2: null,
+    yield_atypical_threshold_percent: '20',
+    period_yield_sample_days: 0,
     daily: overrides.daily ?? [buildDaily()],
   }
 }
