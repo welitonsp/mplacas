@@ -539,7 +539,7 @@ os dois de uma vez.
 
 ---
 
-### [ ] T4 — Explicações por IA na interface
+### [x] T4 — Explicações por IA na interface
 
 **Problema:** `GET /explanations/latest` existe (`explanations/router.py:27`) e o frontend
 nunca chama.
@@ -548,6 +548,12 @@ nunca chama.
 O provider é opcional — só é instanciado se `settings.explanation_api_url` estiver
 configurado (`explanations/router.py:35-36`), com **fallback determinístico** quando não há.
 
+**Correção de rota (verificado em 2026-08-13):** o endpoint real é `GET
+/energy/explanations/latest` (`router = APIRouter(prefix="/energy/explanations", ...)`,
+`explanations/router.py:21-27`) — o prefixo do plano estava incompleto. `plant_id` é query
+param obrigatório resolvido por `ReadPlant` (`core/tenancy.py:110`), mesmo padrão das demais
+funções de `lib/api.ts`.
+
 **Guardas inegociáveis:**
 - A IA **interpreta** número já calculado. Ela **nunca** produz o número oficial. Se a
   explicação divergir do valor determinístico exibido, o determinístico prevalece.
@@ -555,11 +561,37 @@ configurado (`explanations/router.py:35-36`), com **fallback determinístico** q
 - Acione **sob demanda** (ação explícita do usuário), não como texto sempre presente.
 - Trate o caso "provider não configurado" como estado normal, não como erro.
 
+**Escolha de local — `DiagnosticsCard` (não `TechnicalDiagnosticPanel`):** o endpoint monta a
+explicação a partir do mesmo `build_executive_dashboard`/`current_cycle.intelligence.diagnostics`
+que alimenta `DiagnosticsCard` (`explanations/executive.py::executive_explanation_request`,
+`explanations/router.py:51-61`) — é literalmente a mesma evidência, só reformulada em texto.
+`TechnicalDiagnosticPanel` deriva de `PhotovoltaicSummaryResponse` (PR, disponibilidade,
+perdas), uma fonte de dado completamente diferente que o endpoint de explicação nunca toca —
+colocar o painel ali criaria a impressão de que a IA interpreta dado técnico que não vê.
+
+**Implementação:**
+- `frontend/src/lib/dashboard/explanation-contracts.ts` (novo) — parser de
+  `LatestExplanation` + `classifyExplanationErrorStatus` (404 = nenhum ciclo confirmado ainda,
+  5xx/rede = erro, 401 = `null`) + `explanationSourceLabel`. Os 3 casos do §2.2: payload válido
+  (dois testes, AI_ASSISTED e DETERMINISTIC), "campo indisponível" (aqui expresso como status
+  HTTP 404, já que todo campo de um 200 é garantido não-vazio pelo backend — ver comentário do
+  arquivo), payload malformado.
+- `fetchLatestExplanation(plantId)` em `lib/api.ts`, comentada no estilo das vizinhas.
+- `frontend/src/components/AiExplanationPanel.tsx` (novo) — painel sob demanda (só busca ao
+  clique em "Pedir explicação por IA"), estados idle/loading (`LoadingAnnouncement` reusado)/
+  erro (404 tratado como informativo, 5xx/rede com nova tentativa, 401 silencioso)/sucesso.
+  Resultado sempre rotulado (`explanationSourceLabel`) + selo "Camada interpretativa — não é
+  dado auditável" + caixa com borda tracejada (mesmo vocabulário visual de "estimativa" já
+  usado em `Card dashed`/`EnergyFlowDiagram`) + disclaimer do backend sempre visível.
+- `DiagnosticsCard.tsx` ganhou prop `plantId` e renderiza `AiExplanationPanel` nos dois ramos
+  (com e sem diagnósticos).
+
 **Critério de aceite:**
-- [ ] Painel sob demanda em `DiagnosticsCard` ou `TechnicalDiagnosticPanel`.
-- [ ] Origem do texto rotulada como interpretação assistida.
-- [ ] Fallback/ausência de provider tratado sem erro na tela.
-- [ ] Gate §0.4 verde.
+- [x] Painel sob demanda em `DiagnosticsCard` (justificativa acima).
+- [x] Origem do texto rotulada como interpretação assistida (`explanationSourceLabel`).
+- [x] Fallback/ausência de provider tratado sem erro na tela — `source: 'DETERMINISTIC'`
+      renderiza normalmente, mesmo painel, sem branch de erro.
+- [x] Gate §0.4 verde — ver linha da tabela de execução.
 
 ---
 
@@ -652,7 +684,7 @@ Verifique se dá para reutilizar em vez de escrever fórmula nova — **não dup
 
 ---
 
-### [ ] T8 — Orçamento de bundle no CI
+### [x] T8 — Orçamento de bundle no CI
 
 **Problema:** desde a divisão em 4 módulos (ADR-072) ninguém mede o custo por rota. Referência
 histórica das skills do projeto ("~99 kB gzip total") está defasada.
@@ -661,8 +693,48 @@ histórica das skills do projeto ("~99 kB gzip total") está defasada.
 Valores de partida (da seção 1.4, com folga): vendor ≤ 65 kB, cada módulo do dashboard ≤ 15 kB,
 CSS ≤ 13 kB. Falhar o build ao estourar.
 
-- [ ] Gate implementado e falhando de propósito uma vez (prove que funciona).
-- [ ] Limites documentados junto do script.
+**Implementação:** `frontend/scripts/check-bundle-budget.mjs` (novo) — lê os arquivos reais de
+`dist/assets/` (não o texto impresso por `vite build`, cujo formato não é API estável entre
+versões), calcula o tamanho gzip de cada chunk orçado com `zlib.gzipSync` e falha
+(`process.exit(1)`) se algum ultrapassar o teto. Os 7 limites (vendor, CSS, 4 módulos do
+dashboard, `LoginPage`) ficam num único array `BUDGETS` no topo do arquivo, com comentário
+explicando que são orçamento deliberado — não a medição do dia (mesma lição da T8b: um gate
+que sempre reflete o valor atual nunca protege nada). Um chunk orçado que **desaparece** do
+build (renomeado/removido) também é tratado como falha, não como "nada a checar" — mesma razão.
+Rodado em `.github/workflows/ci.yml`, job `frontend`, novo passo "Check bundle budget" logo
+após "Build" e antes de "Upload build artifact" (`npm run check-bundle-budget`).
+
+**Prova de mutação (2026-08-13):** dois limites foram temporariamente quebrados no script —
+`ProductionPage` de 15 kB para 1 kB (força "ESTOUROU") e o regex do `LoginPage` para um prefixo
+inexistente (força "AUSENTE") — e o script foi rodado antes de restaurar:
+
+```
+chunk                  medido      teto      status
+vendor (index-*.js)    59.53 kB    65.00 kB  ok
+CSS (index-*.css)      10.74 kB    13.00 kB  ok
+módulo OverviewPage    12.61 kB    15.00 kB  ok
+módulo ProductionPage  13.56 kB    1.00 kB   ESTOUROU
+módulo FinancialPage   7.30 kB     15.00 kB  ok
+módulo TechnicalPage   8.26 kB     15.00 kB  ok
+LoginPage              —           5.00 kB   AUSENTE
+
+Orçamento de bundle FALHOU (2 de 7 categorias):
+
+  - módulo ProductionPage: 13.56 kB gzip, acima do teto de 1.00 kB (arquivo: ProductionPage-Bh_agD0M.js). Excedente: 12.56 kB.
+  - LoginPage: NENHUM arquivo em dist/assets/ casou com /^LoginPageNOPE-.*\.js$/ — chunk esperado sumiu (...)
+EXIT CODE: 1
+```
+
+Restaurado a partir de backup (`diff` confirmou arquivos idênticos) e reexecutado: `EXIT CODE:
+0`, todos os 7 chunks `ok`. Números atuais medidos por este script (nota: ~2-3% abaixo do
+número impresso por `npm run build`, algoritmo de gzip do Vite não é API pública estável — ver
+comentário de metodologia no script): vendor 59,53 kB/65, CSS 10,74 kB/13, `OverviewPage` 12,61
+kB/15, `ProductionPage` 13,56 kB/15 (o mais apertado), `FinancialPage` 7,30 kB/15,
+`TechnicalPage` 8,26 kB/15, `LoginPage` 2,90 kB/5.
+
+- [x] Gate implementado e falhando de propósito uma vez (prove que funciona) — ver prova acima.
+- [x] Limites documentados junto do script — bloco `BUDGETS` comentado em
+      `frontend/scripts/check-bundle-budget.mjs`.
 
 ---
 
@@ -901,12 +973,12 @@ O sistema agora responde, na interface, **qual inversor** está com problema.
 | T2b | 2026-08-12 | não commitado | `tests/test_cors_expose_headers.py` (novo), `lib/api.ts`, `lib/api.test.ts` | backend **840** passed/6 skipped; frontend **814** | verificado pelo orquestrador (mutação + suíte completa) |
 | T6 | 2026-08-12 | não commitado | `docs/ADR-073-sessao-em-memoria.md` (novo) | n/a (documentação) | escrito pelo orquestrador |
 | T3 | | | | | |
-| T4 | | | | | |
+| T4 | 2026-08-13 | não commitado | `lib/dashboard/explanation-contracts.ts(.test)` (novos), `components/AiExplanationPanel.tsx(.test)` (novos), `lib/api.ts`, `DiagnosticsCard.tsx(.test)`, `OverviewPage.tsx` | backend 860/6 sem regressão; frontend **84 arquivos, 926 testes**, type-check 0 | não tocou auth/billing/credentials/organizations/audit/migrations — reviewer não acionado (regra 0.3.7) |
 | T5 | 2026-08-12 | não commitado | `ProductionHistoryChart.tsx(.test)`, `ProductionHistorySection.test.tsx`, `ProductionPage.test.tsx` | 796 passando (+3), type-check 0, −0,01 kB gzip | verificado pelo orquestrador |
 | T5b | 2026-08-12 | não commitado | `ProductionPage.tsx(.test)` | 808 passando (+1), type-check 0 | verificado pelo orquestrador |
 | T6 | | | | | |
 | T7 | | | | | |
-| T8 | | | | | |
+| T8 | 2026-08-13 | não commitado | `frontend/scripts/check-bundle-budget.mjs` (novo), `frontend/package.json`, `.github/workflows/ci.yml` | build ok, gate `check-bundle-budget` verde (7/7 chunks); provado por mutação (ESTOUROU + AUSENTE), depois restaurado e verde de novo | verificado pelo orquestrador (mutação + restauração por diff) |
 | T9 | 2026-08-12 | não commitado | 8 snapshots → `docs/snapshots-historicos/` + README | n/a (sem código) | verificado pelo orquestrador |
 | T10 | 2026-08-12 | não commitado | `LoadingAnnouncement.tsx(.test)` (novos), `MonthlyProductionSection.*`, `CapexRegistrationForm.*`, `PlantSelector.*`, `LoginPage.*` | 74 arquivos, **826** testes, type-check 0 | verificado pelo orquestrador |
 
