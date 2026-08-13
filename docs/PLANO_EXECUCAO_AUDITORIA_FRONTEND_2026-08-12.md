@@ -91,10 +91,28 @@ Backend (se a tarefa tocou `.py`):
 Frontend (se a tarefa tocou `frontend/`):
 ```bash
 cd frontend
-npm run type-check
 npm run test
-npm run build
+npm run build      # <- ESTE é o type-check real
 ```
+
+> ## ⛔ `npm run type-check` é NO-OP neste repositório — não o use como evidência
+>
+> **Provado por mutação em 2026-08-12.** Um arquivo com erro de tipo óbvio
+> (`const probe: number = "texto"`) **passa** por `npm run type-check` e **falha** em
+> `npm run build` (`error TS2322`).
+>
+> Causa: `frontend/tsconfig.json` é um *solution file* (`"files": []`, só `references`), e
+> `tsc --noEmit` **sem `-b`** não percorre os projetos referenciados. Confirme você mesmo:
+> ```bash
+> npx tsc --noEmit --listFiles | wc -l    # retorna 0
+> ```
+> A checagem de tipo real acontece em `npm run build`, que roda `tsc -b && vite build`.
+>
+> **Consequência para quem lê o registro de execução abaixo:** toda menção a "type-check 0 erros"
+> nas tarefas desta sessão é verificação vazia. Nenhum erro de tipo escapou, porque `npm run build`
+> foi executado junto em todas elas — mas a evidência citada era a errada.
+>
+> Corrigir o script (`tsc -b --noEmit` ou equivalente) está registrado como **T8b**.
 
 **Baseline verificado em 2026-08-12 (se seu resultado for pior, você quebrou algo):**
 - `npm run test` → **73 arquivos, 793 testes, 793 passando** (~181s)
@@ -461,6 +479,24 @@ cat src/mplacas/alerts/db_models.py                          # esperado: só Ale
 grep -rn "Alert" frontend/src/components/ | grep -v test | grep -v production-alerts
 ```
 
+> ## ⛔ ESTA SEÇÃO ESTAVA ERRADA — ver `docs/ADR-075-central-de-alertas-in-app.md`
+>
+> **O diagnóstico abaixo tem premissa falsa e foi refutado com evidência.** A afirmação de que
+> "o conteúdo do alerta não é persistido" veio de olhar apenas `alerts/db_models.py` e concluir a
+> partir da ausência ali — **exatamente o erro que a §0.1 deste mesmo documento manda evitar**.
+> O conteúdo É persistido: `src/mplacas/alerts/outbox.py:80-90` grava `severity`, `title`,
+> `message`, `recommended_action` e `occurred_at` em `outbox_events.payload_json`, com checksum,
+> FK de usina e RLS ativa. **Nenhuma migration jamais foi necessária.**
+>
+> Pior: o valor real **já trafega e é descartado**. `intelligence/router.py:200-208` serializa
+> `diagnostics[]` por dia (código, mensagem, ação recomendada), o frontend pede **90 dias**
+> (`lib/api.ts:72-74`), e `parseAnomalyDaily` (`contracts.ts:352-362`) **não lê o campo**.
+>
+> Decisão do ADR-075: **não construir central de alertas.** Em vez disso, uma linha do tempo de
+> episódios sobre o dado já trafegado — zero backend, zero migration, zero endpoint.
+>
+> O texto abaixo fica como registro do erro, não como instrução.
+
 **Estado real (já investigado — não repita a investigação, apenas confirme):**
 
 1. `alerts/router.py` expõe apenas `POST /run` (gatilho de job). Não há endpoint de consulta.
@@ -683,9 +719,109 @@ do mínimo de 44px que a própria T10 estabeleceu. A T10 varreu selects e botõe
 em carregamento; este caso escapou porque é um botão de ação simples.
 
 **Critério de aceite:**
-- [ ] Botão de retry com alvo ≥44px, sem quebrar o layout dos consumidores existentes.
-- [ ] Varredura de `min-h-[3xpx]`/`min-h-[4[0-3]px]` em todo `frontend/src` para pegar irmãos.
+- [x] Botão de retry com alvo ≥44px.
+- [x] Varredura ampla executada — e revelou que o problema era **maior do que a revisão viu**.
+      A T10 corrigiu os `<select>` e deixou **todos os botões** abaixo do mínimo. Seis ocorrências:
+      `CapexRegistrationForm.tsx:115` (40px), `EpisodeTimelineSection.tsx:155` (40px, arquivo criado
+      horas antes), `ErrorBoundary.tsx:39` (40px), `ProductionHistorySection.tsx:206` (40px),
+      `RefreshBar.tsx:51` (**38px** — justamente o componente usado como *referência de padrão
+      correto* pela T10), `RetryableError.tsx:28` (40px).
 - [ ] Gate §0.4 verde.
+
+**Lição:** a T10 declarou ter "eliminado a classe do problema" tendo corrigido só um dos dois
+padrões. A varredura de irmãos que este item exigia é o que transforma correção pontual em
+correção de classe — e ela só foi feita porque a revisão da T1c tropeçou num caso residual.
+
+---
+
+### [ ] T7b — Achados do `solar-domain-specialist` sobre a janela de rendimento
+
+Parecer consultivo obtido após a T7. A transposição do cálculo está **aritmeticamente fiel** — a
+fórmula, o limiar de 20%, o filtro de "ambos os lados positivos", a propagação de `null` em vez de
+zero e o uso de `Decimal` estão corretos e **não devem ser mexidos**. Os achados são de janela de
+referência e de rótulo.
+
+**[ ] P0 — o card afirma o que não verificou (bloqueante).**
+`ProductionHistorySection.tsx:278-283` passa `daily={filteredDaily}` (recorte visível, 7 dias por
+padrão) e `daysAnalyzed={days_analyzed}` (janela cheia, 90). Em `YieldCard.tsx`, o cabeçalho (`:68`)
+anuncia "período analisado (90 dias)", a varredura de dias atípicos (`:56-63`) percorre só os 7
+visíveis, e o estado vazio (`:78`) conclui **"Rendimento estável"** sobre os 90.
+Um O&M lê "90 dias estáveis" e não abre o histórico. Pior: trocar o recorte faz a lista aparecer e
+sumir sem o cabeçalho mudar — o card contradiz a si mesmo entre dois cliques.
+*Correção:* ou restringir a afirmação ao recorte, ou varrer `daily` completo. Hoje é a pior
+combinação das duas.
+
+**[ ] P1 — o rótulo usa a contagem errada.**
+`days_analyzed` é `len(daily)` (dias com linha de produção, `anomaly_service.py:297`), mas o
+rendimento só usa dias com produção **e** irradiância positivas (`:143`). O próprio teste do worker
+prova a divergência: `tests/test_anomaly_service.py:475-477` tem `days_analyzed == 4` com
+`period_yield` calculado sobre **2** dias. Expor `period_yield_sample_days` e rotular com ele.
+
+**[ ] P1 — dia de produção zero com sol desaparece** (pré-existente, preservado pela T7).
+`anomaly_service.py:143` exclui `actual <= 0`. Excluir da **referência** é correto; excluir do
+**valor exibido do dia** não é — `0 ÷ 5 kWh/m²` é razão definida e é o evento de rendimento mais
+grave possível (−100%). Hoje a usina pode produzir 0 kWh sob sol pleno e o card dizer "estável".
+
+**[ ] P1 — dois "período" diferentes na mesma viewport.**
+`ProductionHistoryChart.tsx:261,527` rotula "Média do período" (média de kWh do recorte visível);
+`YieldCard.tsx:68` rotula "período analisado" (90 dias). Nada na tela diz que são janelas
+diferentes.
+
+**⚠ P1 — janela de referência sazonalmente enviesada (exige decisão, não é correção óbvia).**
+O denominador é irradiância **horizontal** (GHI — `climate/open_meteo.py:46`), e produção/GHI não é
+estacionário: transposição POA/GHI, temperatura de célula e sujidade derivam de forma sistemática
+**5–15% dentro de uma janela de 90 dias** nesta latitude. Contra limiar de 20%, isso consome metade
+da margem de detecção e desloca todos os dias recentes para o mesmo lado. Além disso, o dia julgado
+está dentro da própria referência: **degradação crônica arrasta a referência e nunca é flagrada**.
+*Recomendação do especialista:* manter `period_yield` como número informativo, mas mover o flag de
+"dia atípico" para a **mediana rolante de 30 dias** que o projeto já implementou duas vezes
+(`production_alert.py:705-732`, `devices/metrics.py:202-254`) — o que **reduz** duplicação em vez de
+aumentar. Não é escopo da T7, que era mover e não redesenhar.
+
+**[ ] P2 — dados servidos e descartados.** `period.start_date`/`end_date` chegam
+(`intelligence/router.py:142-145`) e `parseAnomalyDashboard` os joga fora (`contracts.ts:371-380`).
+`temperature_mean_c` é coletada e persistida, mas não serializada — é o segundo maior driver do
+rendimento e transformaria "−12%" de mistério em "dia quente".
+
+---
+
+### [ ] T7c — A guarda estática tem isenção que anula o invariante
+
+`no-client-computed-yield-deviation.test.ts:78-85` **exclui `ProductionHistoryChart.tsx`** da
+varredura de substring, com justificativa de que o arquivo já tem `* 100` legítimos (posicionamento
+em pixel). O efeito colateral é que a forma proibida sobrevive justamente ali:
+
+- `ProductionHistoryChart.tsx:124-127` — `((activeActual - averageProduction) / averageProduction) * 100`
+- `ProductionHistoryChart.tsx:103-112` — `performancePercent`, composição de kWh no cliente
+
+É pré-existente (era T5), não introduzido pela T7 — mas a isenção garante que **nunca será pego**.
+Uma guarda com carve-out no único lugar onde a violação existe não é guarda.
+
+*Correção sugerida:* varrer por padrão semântico (ex.: identificadores de grandeza física perto de
+aritmética) em vez de substring crua, ou mover o cálculo para o backend e então remover a isenção.
+
+---
+
+### [ ] T8b — Corrigir `npm run type-check`, que é no-op silencioso
+
+**Descoberto durante a T7 e provado por mutação (ver §0.4).** O script não checa arquivo nenhum:
+`frontend/tsconfig.json` é solution file e `tsc --noEmit` sem `-b` não percorre as referências.
+
+**Gravidade:** é uma verificação que dá certo sempre, inclusive quando deveria falhar. Todo agente
+e todo CI que confiaram nela receberam garantia falsa. Só não houve dano porque `npm run build`
+roda `tsc -b` e foi executado junto.
+
+**Critério de aceite:**
+- [x] `npm run type-check` passa a checar os arquivos reais — agora `tsc -b --force`.
+- [x] **Provado por mutação:** com `export const probe: number = "erro proposital"` o script falha
+      com `error TS2322`; sem ele, passa limpo. Antes da correção, **passava nos dois casos**.
+- [x] CI verificado: **dois** workflows dependiam do comando quebrado —
+      `.github/workflows/ci.yml:208` e `.github/workflows/deploy-frontend.yml:60`. Ambos tinham um
+      passo de type-check que não podia falhar. Nenhum código ruim foi publicado porque os dois
+      rodam `npm run build` na sequência (`ci.yml:224`, `deploy-frontend.yml:65`), que fazia a
+      checagem real — mas o degrau era falso, inclusive no caminho de deploy.
+
+**✅ T8b CONCLUÍDA** (2026-08-13).
 
 ---
 
@@ -749,6 +885,17 @@ Preencha ao fechar cada tarefa. **Não marque `[x]` na seção da tarefa sem pre
 
 **✅ T1 COMPLETA** (2026-08-12) — ADR-074 + movimento puro + endpoint + UI + correção dos 2 P1.
 O sistema agora responde, na interface, **qual inversor** está com problema.
+
+> **Correção factual descoberta durante o ADR-075:** ao longo da execução da T1 foi dito, várias
+> vezes, que "o backend já avisa qual inversor caiu, mas só por Telegram". **Isso é impreciso.**
+> `send_production_alert` (`alerts/production_alert.py:392`) **não tem nenhum chamador de
+> produção** — as únicas referências fora da própria definição estão em
+> `tests/test_production_alert.py`. Verificado com
+> `grep -rn "send_production_alert" src/ tests/`.
+>
+> Ou seja: a avaliação por inversor existia como código, era testada, e **nunca chegava a
+> ninguém por canal nenhum**. Isso não reduz o valor da T1 — aumenta: o endpoint e a tela criados
+> aqui são hoje o **único** caminho pelo qual essa análise alcança um ser humano.
 | T2 | 2026-08-12 | não commitado | `lib/api.ts`, `lib/api.test.ts`, `MonthlyProductionSection.tsx(.test)`, `ProductionPage.tsx` | 807 passando (+11), type-check 0, +0,95 kB gzip | `reviewer` — **1 P1 (ver T2a), 2 P2, 1 P3** |
 | T2a | 2026-08-12 | não commitado | `src/mplacas/main.py` (1 linha), `lib/api.ts`, `lib/api.test.ts` | backend 838/6 sem regressão; frontend 810 | `reviewer` (2ª passada) — 1 P1 + 2 P2 → T2b |
 | T2b | 2026-08-12 | não commitado | `tests/test_cors_expose_headers.py` (novo), `lib/api.ts`, `lib/api.test.ts` | backend **840** passed/6 skipped; frontend **814** | verificado pelo orquestrador (mutação + suíte completa) |
