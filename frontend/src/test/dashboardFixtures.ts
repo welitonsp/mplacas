@@ -199,6 +199,18 @@ export const anomalyPayload = {
   current_streak_days: 2,
   worst_level: 'ATTENTION',
   expected_unavailable_reason: null,
+  // Sem irradiância neste fixture (ambos os dias com `irradiation_kwh_m2:
+  // null`), então o backend também não teria como calcular rendimento —
+  // `null` nos dois campos de rendimento do período é o mesmo estado real
+  // que `GET /energy/anomalies/latest` devolveria (ver
+  // `intelligence/anomaly_service.py::_compute_period_yield`). O limiar
+  // continua presente mesmo assim: é política fixa, não dado derivado.
+  period_yield_kwh_per_kwh_m2: null,
+  yield_atypical_threshold_percent: '20',
+  // Sem irradiância neste fixture, nenhum dia alimenta o rendimento
+  // agregado (mesma razão do `null` acima, ver `PersistedAnomalySummary.
+  // period_yield_sample_days`).
+  period_yield_sample_days: 0,
   daily: [
     {
       date: '2026-07-29',
@@ -207,6 +219,8 @@ export const anomalyPayload = {
       level: 'ATTENTION',
       deviation_percent: -13.6,
       irradiation_kwh_m2: null,
+      yield_kwh_per_kwh_m2: null,
+      yield_deviation_from_period_percent: null,
     },
     {
       date: '2026-07-30',
@@ -215,6 +229,8 @@ export const anomalyPayload = {
       level: 'NORMAL',
       deviation_percent: -9,
       irradiation_kwh_m2: null,
+      yield_kwh_per_kwh_m2: null,
+      yield_deviation_from_period_percent: null,
     },
   ],
 }

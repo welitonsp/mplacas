@@ -108,6 +108,21 @@ export interface ExecutiveDashboardResponse {
 export type AnomalyLevel = 'NORMAL' | 'ATTENTION' | 'ANOMALY' | 'CRITICAL'
 export const ANOMALY_LEVELS: ReadonlySet<string> = new Set(['NORMAL', 'ATTENTION', 'ANOMALY', 'CRITICAL'])
 
+// Diagnóstico por dia dentro de `AnomalyDailyPoint.diagnostics` (ADR-075,
+// Decisão 4.1) — motor determinístico, mesmo objeto que já alimenta o
+// alerta de anomalia por Telegram (`alerts/candidates.py`). Vocabulário
+// próprio: aqui é `level` (reusa `AnomalyLevel`/`ANOMALY_LEVELS` acima),
+// nunca `severity`/`DiagnosticSeverity` do executivo — as duas taxonomias
+// não se misturam (ver `intelligence/router.py::latest_energy_anomalies`,
+// `:200-208`, e `intelligence/anomaly_engine.py:134-241` para os 6 códigos
+// possíveis).
+export interface AnomalyDiagnostic {
+  code: string
+  level: AnomalyLevel
+  message: string
+  recommended_action: string
+}
+
 export interface AnomalyDailyPoint {
   date: string
   actual_production_kwh: MetricValue
@@ -117,11 +132,40 @@ export interface AnomalyDailyPoint {
   // campo malformado. Nunca fabricar um nível a partir de um dia sem
   // expectativa (ver `intelligence/anomaly_service.py::analyze_recent_persisted_anomalies`).
   level: AnomalyLevel | null
+  // Diagnósticos do dia — hoje sempre 0 ou 1 item (`assessment.diagnostics`
+  // é uma tupla de um elemento em todo ramo de `assess_daily_performance`,
+  // `anomaly_engine.py:134-241`), mas tratado como lista porque é o que o
+  // payload manda. `[]` quando o dia não tem assessment (`level: null`) —
+  // mesmo caso, não um erro. Fonte de `episodes.ts::buildAnomalyEpisodes`
+  // (ADR-075, Decisão 4.2): agrupa dias consecutivos com o mesmo `code` numa
+  // linha do tempo, sem inventar nenhum dado novo.
+  diagnostics: AnomalyDiagnostic[]
   deviation_percent: MetricValue
   // Preenchido só quando a usina tem coordenadas configuradas (coleta Open-Meteo
   // ativa). Em qualquer organização nova vem `null` — todo consumidor deste campo
   // precisa tratar ausência sem quebrar (ver YieldCard e overlay de irradiância).
   irradiation_kwh_m2: MetricValue
+  // production_kwh / irradiation_kwh_m2 deste dia, já pronto do backend
+  // (`intelligence/anomaly_service.py::_compute_period_yield`). `null` só
+  // quando não há irradiância positiva nesse dia (sem denominador, sem
+  // razão possível). Um dia com produção zero SOB irradiância positiva vem
+  // como `0` — real, não fabricado: é a razão perfeitamente definida do
+  // pior evento de rendimento possível (apagão sob sol), e precisa
+  // continuar aparecendo, não sumir como se não houvesse dado (plano T7b,
+  // P1 "dia de produção zero com sol desaparece"). Ver
+  // `no-client-computed-yield-deviation.test.ts` para a guarda estática que
+  // impede recomputar isto no cliente.
+  yield_kwh_per_kwh_m2: MetricValue
+  // Desvio percentual deste dia em relação ao rendimento agregado do período
+  // (`AnomalyDashboardResponse.period_yield_kwh_per_kwh_m2`), pronto do
+  // backend — `((yield_kwh_per_kwh_m2 / period_yield) − 1) × 100`. `null` sob
+  // a mesma condição de `yield_kwh_per_kwh_m2`, ou quando o rendimento do
+  // período inteiro também é `null`. Movido do antigo
+  // `lib/dashboard/yield.ts` (arquivo removido, 2026-08-13, plano T7):
+  // deslocar o ponto de referência do zero é cálculo de domínio, não
+  // conversão de unidade — mesma razão de
+  // `device-contracts.ts::relative_to_own_median_deviation_percent`.
+  yield_deviation_from_period_percent: MetricValue
 }
 
 export interface AnomalyDashboardResponse {
@@ -139,6 +183,27 @@ export interface AnomalyDashboardResponse {
   // `_derive_baseline_unavailable_reason` no backend). `null` = expectativa
   // disponível.
   expected_unavailable_reason: string | null
+  // Rendimento agregado do período (produção total ÷ irradiância total dos
+  // dias com ambos disponíveis) — `null` quando nenhum dia do recorte
+  // qualifica. Ver comentário de `AnomalyDailyPoint.yield_kwh_per_kwh_m2`
+  // para a fórmula e a distinção em relação à mediana histórica por
+  // inversor (`device-contracts.ts::rendimento_median`).
+  period_yield_kwh_per_kwh_m2: MetricValue
+  // Limiar fixo de severidade (%) que marca um dia como "rendimento
+  // atípico" em relação ao rendimento do período — sempre presente, mesmo
+  // quando `period_yield_kwh_per_kwh_m2` é `null` (é política, não dado
+  // derivado; mesmo padrão de `device-contracts.ts::device_normal_threshold`).
+  yield_atypical_threshold_percent: MetricValue
+  // Quantos dias de `daily` realmente alimentaram `period_yield_kwh_per_kwh_m2`
+  // (produção E irradiância positivas nesse dia) — deliberadamente
+  // DIFERENTE de `days_analyzed` (todo dia com linha de produção
+  // persistida, mesmo sem irradiância). Rotular o rendimento do período com
+  // `days_analyzed` afirma ter varrido dias que na verdade não entraram na
+  // conta (plano T7b, P1 "o rótulo usa a contagem errada" —
+  // `intelligence/anomaly_service.py::PersistedAnomalySummary.
+  // period_yield_sample_days`). `YieldCard` deve rotular com este campo,
+  // nunca com `days_analyzed`.
+  period_yield_sample_days: number
   daily: AnomalyDailyPoint[]
 }
 
@@ -323,6 +388,54 @@ function optionalAnomalyLevel(source: Record<string, unknown>, key: string): Ano
   return value as AnomalyLevel
 }
 
+// Diferente de `parseDiagnostic`/`parseDiagnostics` (executivo, campo
+// `severity`, lança em item malformado): esta validação é tolerante por
+// item, não por chamador — ver `parseAnomalyDiagnostics` logo abaixo para o
+// porquê (ADR-075, Decisão 4.1).
+function isValidAnomalyDiagnostic(value: unknown): value is {
+  code: string
+  level: AnomalyLevel
+  message: string
+  recommended_action: string
+} {
+  if (!isRecord(value)) return false
+  const { code, level, message, recommended_action } = value
+  return (
+    typeof code === 'string' &&
+    code.trim() !== '' &&
+    typeof level === 'string' &&
+    ANOMALY_LEVELS.has(level) &&
+    typeof message === 'string' &&
+    message.trim() !== '' &&
+    typeof recommended_action === 'string' &&
+    recommended_action.trim() !== ''
+  )
+}
+
+// `diagnostics` é um campo aditivo do dia (ADR-075, Decisão 4.1): ausente ou
+// não-array vira `[]`, nunca lança — diferente de `daily`, que é estrutural
+// (`parseAnomalyDashboard` continua exigindo o array). Um backend antigo, ou
+// qualquer mudança aditiva futura no mesmo objeto, não pode derrubar a tela
+// inteira por causa de um campo que o cliente só passou a ler agora. Item
+// malformado dentro do array é descartado individualmente — o dia sobrevive,
+// nunca se inventa `code`/`level`/`message`/`recommended_action` a partir de
+// um item incompleto.
+function parseAnomalyDiagnostics(source: Record<string, unknown>): AnomalyDiagnostic[] {
+  const value = source.diagnostics
+  if (!Array.isArray(value)) return []
+  const diagnostics: AnomalyDiagnostic[] = []
+  for (const item of value) {
+    if (!isValidAnomalyDiagnostic(item)) continue
+    diagnostics.push({
+      code: item.code,
+      level: item.level,
+      message: item.message,
+      recommended_action: item.recommended_action,
+    })
+  }
+  return diagnostics
+}
+
 export function parseAnomalyDaily(value: unknown): AnomalyDailyPoint {
   if (!isRecord(value)) throw new Error('Resposta inválida da API: daily')
   return {
@@ -330,8 +443,11 @@ export function parseAnomalyDaily(value: unknown): AnomalyDailyPoint {
     actual_production_kwh: metricValue(value, 'actual_production_kwh'),
     expected_production_kwh: metricValue(value, 'expected_production_kwh'),
     level: optionalAnomalyLevel(value, 'level'),
+    diagnostics: parseAnomalyDiagnostics(value),
     deviation_percent: metricValue(value, 'deviation_percent'),
     irradiation_kwh_m2: metricValue(value, 'irradiation_kwh_m2'),
+    yield_kwh_per_kwh_m2: metricValue(value, 'yield_kwh_per_kwh_m2'),
+    yield_deviation_from_period_percent: metricValue(value, 'yield_deviation_from_period_percent'),
   }
 }
 
@@ -345,6 +461,9 @@ export function parseAnomalyDashboard(payload: unknown): AnomalyDashboardRespons
     current_streak_days: numberValue(payload, 'current_streak_days'),
     worst_level: optionalAnomalyLevel(payload, 'worst_level'),
     expected_unavailable_reason: optionalStringOrMissing(payload, 'expected_unavailable_reason'),
+    period_yield_kwh_per_kwh_m2: metricValue(payload, 'period_yield_kwh_per_kwh_m2'),
+    yield_atypical_threshold_percent: metricValue(payload, 'yield_atypical_threshold_percent'),
+    period_yield_sample_days: numberValue(payload, 'period_yield_sample_days'),
     daily: daily.map(parseAnomalyDaily),
   }
 }

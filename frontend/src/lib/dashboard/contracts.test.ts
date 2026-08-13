@@ -17,6 +17,9 @@ function buildDaily(overrides: Partial<AnomalyDailyPoint> = {}): AnomalyDailyPoi
     level: 'NORMAL',
     deviation_percent: -9,
     irradiation_kwh_m2: null,
+    yield_kwh_per_kwh_m2: null,
+    yield_deviation_from_period_percent: null,
+    diagnostics: [],
     ...overrides,
   }
 }
@@ -159,6 +162,9 @@ function buildAnomalyPayload(overrides: Record<string, unknown> = {}): unknown {
     current_streak_days: 0,
     worst_level: 'ATTENTION',
     expected_unavailable_reason: null,
+    period_yield_kwh_per_kwh_m2: null,
+    yield_atypical_threshold_percent: '20',
+    period_yield_sample_days: 0,
     daily: [buildDaily()],
     ...overrides,
   }
@@ -175,6 +181,9 @@ describe('parseAnomalyDashboard — contrato novo (200 sempre, campos por dia nu
           level: null,
           deviation_percent: null,
           irradiation_kwh_m2: null,
+          yield_kwh_per_kwh_m2: null,
+          yield_deviation_from_period_percent: null,
+          diagnostics: [],
         },
       ],
     })
@@ -210,6 +219,22 @@ describe('parseAnomalyDashboard — contrato novo (200 sempre, campos por dia nu
     const payload = buildAnomalyPayload({
       daily: [{ ...buildDaily(), level: 'UNKNOWN_LEVEL' }],
     })
+
+    expect(() => parseAnomalyDashboard(payload)).toThrow()
+  })
+
+  it('faz o parse de period_yield_sample_days separado de days_analyzed (plano T7b, P1)', () => {
+    const payload = buildAnomalyPayload({ days_analyzed: 4, period_yield_sample_days: 2 })
+
+    const result = parseAnomalyDashboard(payload)
+
+    expect(result.days_analyzed).toBe(4)
+    expect(result.period_yield_sample_days).toBe(2)
+  })
+
+  it('rejeita payload malformado sem period_yield_sample_days', () => {
+    const payload = buildAnomalyPayload()
+    delete (payload as Record<string, unknown>).period_yield_sample_days
 
     expect(() => parseAnomalyDashboard(payload)).toThrow()
   })

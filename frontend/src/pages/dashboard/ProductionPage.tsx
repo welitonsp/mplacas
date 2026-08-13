@@ -20,6 +20,7 @@ import { RetryableError } from '../../components/RetryableError'
 import { PageHeader } from '../../components/PageHeader'
 import { SummaryTile } from '../../components/SummaryTile'
 import { ProductionDiagnosticPanel } from '../../components/ProductionDiagnosticPanel'
+import { EpisodeTimelineSection } from '../../components/EpisodeTimelineSection'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
 // 401): garante um `expectedProduction.available: false` explícito para
@@ -252,6 +253,21 @@ export function ProductionPage() {
 
       <section className="mb-6" aria-label="Diagnóstico de produção do período">
         <ProductionDiagnosticPanel anomalyState={anomalyState} expectedProduction={expectedProduction} />
+      </section>
+
+      {/* Episódios (ADR-075, Decisão 4) — construído sobre `daily[].diagnostics`,
+          que a API já devolvia e o parser descartava. Fica logo abaixo do painel
+          de diagnóstico porque responde a pergunta seguinte: o painel diz o que
+          está acontecendo AGORA, a linha do tempo diz quando começou e quanto
+          durou. É o único eixo que nenhuma seção existente cobre. Deliberadamente
+          NÃO se chama "alertas": o produto não tem central de alertas, e a tela
+          não pode sugerir que tem (ADR-075, Decisão 3). */}
+      <section className="mb-6" aria-label="Episódios de produção">
+        <EpisodeTimelineSection
+          anomalyState={anomalyState}
+          expectedProduction={expectedProduction}
+          onRetry={anomalies.refetch}
+        />
       </section>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">

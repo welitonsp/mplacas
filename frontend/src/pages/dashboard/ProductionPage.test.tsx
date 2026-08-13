@@ -363,6 +363,9 @@ describe('ProductionPage — histórico de produção não depende mais do basel
       current_streak_days: 0,
       worst_level: null,
       expected_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE',
+      period_yield_kwh_per_kwh_m2: null,
+      yield_atypical_threshold_percent: '20',
+      period_yield_sample_days: 0,
       daily: [
         {
           date: '2026-07-30',
@@ -371,6 +374,8 @@ describe('ProductionPage — histórico de produção não depende mais do basel
           level: null,
           deviation_percent: null,
           irradiation_kwh_m2: null,
+          yield_kwh_per_kwh_m2: null,
+          yield_deviation_from_period_percent: null,
         },
       ],
     }

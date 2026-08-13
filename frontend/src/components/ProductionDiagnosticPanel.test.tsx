@@ -89,6 +89,9 @@ describe('ProductionDiagnosticPanel', () => {
       current_streak_days: 7,
       worst_level: 'ANOMALY',
       expected_unavailable_reason: null,
+      period_yield_kwh_per_kwh_m2: null,
+      yield_atypical_threshold_percent: '20',
+      period_yield_sample_days: 0,
       daily: Array.from({ length: 7 }, (_, index) => ({
         date: `2026-08-${String(index + 1).padStart(2, '0')}`,
         actual_production_kwh: 70,
@@ -96,6 +99,8 @@ describe('ProductionDiagnosticPanel', () => {
         level: 'ANOMALY',
         deviation_percent: -30,
         irradiation_kwh_m2: null,
+        yield_kwh_per_kwh_m2: null,
+        yield_deviation_from_period_percent: null,
       })),
     })
 
@@ -119,6 +124,9 @@ describe('ProductionDiagnosticPanel', () => {
       current_streak_days: 0,
       worst_level: null,
       expected_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE',
+      period_yield_kwh_per_kwh_m2: null,
+      yield_atypical_threshold_percent: '20',
+      period_yield_sample_days: 0,
       daily: [
         {
           date: '2026-07-30',
@@ -127,6 +135,8 @@ describe('ProductionDiagnosticPanel', () => {
           level: null,
           deviation_percent: null,
           irradiation_kwh_m2: null,
+          yield_kwh_per_kwh_m2: null,
+          yield_deviation_from_period_percent: null,
         },
       ],
     })
@@ -148,6 +158,9 @@ describe('ProductionDiagnosticPanel', () => {
       current_streak_days: 0,
       worst_level: 'NORMAL',
       expected_unavailable_reason: null,
+      period_yield_kwh_per_kwh_m2: null,
+      yield_atypical_threshold_percent: '20',
+      period_yield_sample_days: 0,
       daily: [
         {
           date: '2026-07-29',
@@ -156,6 +169,8 @@ describe('ProductionDiagnosticPanel', () => {
           level: 'NORMAL',
           deviation_percent: 2.3,
           irradiation_kwh_m2: null,
+          yield_kwh_per_kwh_m2: null,
+          yield_deviation_from_period_percent: null,
         },
         {
           date: '2026-07-30',
@@ -164,6 +179,8 @@ describe('ProductionDiagnosticPanel', () => {
           level: 'NORMAL',
           deviation_percent: 0,
           irradiation_kwh_m2: null,
+          yield_kwh_per_kwh_m2: null,
+          yield_deviation_from_period_percent: null,
         },
       ],
     })

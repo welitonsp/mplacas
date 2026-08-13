@@ -2,7 +2,7 @@ import type { AnomalyDashboardResponse, AnomalyDailyPoint, AnomalyFetchState, Se
 import { productionAlertSignal } from '../lib/dashboard/production-alerts'
 import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-contracts'
 import { baselineUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
-import { levelLabel, levelSeverity, SEVERITY_BG, SEVERITY_TEXT } from '../lib/dashboard/visuals'
+import { LEVEL_RANK, levelLabel, levelSeverity, SEVERITY_BG, SEVERITY_TEXT } from '../lib/dashboard/visuals'
 import { formatFullDate, formatNumber, toNumber } from '../lib/format'
 import { Card } from './Card'
 import { OperationalState } from './OperationalState'
@@ -19,13 +19,6 @@ interface ProductionDiagnosis {
   evidenceSummary?: string
   playbook?: Array<{ title: string; detail: string }>
   signals: Array<{ label: string; value: string; tone: Severity }>
-}
-
-const LEVEL_RANK: Record<NonNullable<AnomalyDailyPoint['level']>, number> = {
-  CRITICAL: 0,
-  ANOMALY: 1,
-  ATTENTION: 2,
-  NORMAL: 3,
 }
 
 function formatKwh(value: number | null, maximumFractionDigits = 0): string {

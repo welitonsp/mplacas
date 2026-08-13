@@ -68,6 +68,18 @@ export const LEVEL_LABEL: Record<AnomalyLevel, string> = {
   CRITICAL: 'Crítico',
 }
 
+// Ordem de gravidade dos níveis de anomalia por dia, mais crítico primeiro —
+// única declaração no projeto (ADR-075, Decisão 4.2: "extrair para módulo
+// compartilhado, nunca duplicar"). Reusada por `ProductionDiagnosticPanel`
+// (pior dia do período analisado) e por
+// `episodes.ts::buildAnomalyEpisodes` (pior dia de um episódio agrupado).
+export const LEVEL_RANK: Record<AnomalyLevel, number> = {
+  CRITICAL: 0,
+  ANOMALY: 1,
+  ATTENTION: 2,
+  NORMAL: 3,
+}
+
 // Rótulo textual pareado com `levelSeverity`: `null` vira uma frase explícita
 // ("Sem expectativa"), nunca `undefined`/uma chave ausente no objeto acima —
 // evitar isso é o que faz `LEVEL_LABEL[activeDay.level]` quebrar quando o dia
