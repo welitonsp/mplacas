@@ -1,7 +1,8 @@
-import { fetchPhotovoltaicSummary } from '../../lib/api'
+import { fetchDeviceDailyStatus, fetchPhotovoltaicSummary } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
+import { parseDeviceDailyStatus } from '../../lib/dashboard/device-contracts'
 import type { PhotovoltaicLossItem, PhotovoltaicSummaryResponse } from '../../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary, ratioToPercent } from '../../lib/dashboard/photovoltaic-contracts'
 import type { Severity } from '../../lib/dashboard/contracts'
@@ -11,6 +12,7 @@ import {
   LOSS_CATEGORY_LABEL,
   performanceSeverity,
 } from '../../lib/dashboard/visuals'
+import { DeviceStatusSection } from '../../components/DeviceStatusSection'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
@@ -74,10 +76,12 @@ function topLossCandidate(losses: PhotovoltaicLossItem[] | null): PhotovoltaicLo
   return candidates[0] ?? null
 }
 
-// Módulo Técnico (ADR-072, Etapa 2) — o menor dos 4, um único recurso
-// (`/photovoltaic/summary`, ver ADR seção 2). Sem o toggle expandir/colapsar
-// que `TechnicalPerformanceSection` tinha antes desta etapa: a rota já é a
-// divulgação progressiva.
+// Módulo Técnico (ADR-072, Etapa 2) — originalmente o menor dos 4, com um
+// único recurso (`/photovoltaic/summary`, ver ADR seção 2). ADR-074, Decisão
+// 5 acrescenta um segundo recurso (`/devices/daily-status`, estado por
+// inversor) — 2 requisições ao entrar no módulo, custo aceito no próprio ADR.
+// Sem o toggle expandir/colapsar que `TechnicalPerformanceSection` tinha
+// antes desta etapa: a rota já é a divulgação progressiva.
 export function TechnicalPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
@@ -89,6 +93,19 @@ export function TechnicalPage() {
     fetcher: fetchPhotovoltaicSummary,
     parse: parsePhotovoltaicSummary,
     errorMessage: 'Erro ao buscar resumo fotovoltaico.',
+  })
+
+  // Segundo recurso do módulo (ADR-074, Decisão 5): estado por inversor —
+  // drill-down do agregado "Disponibilidade dos dados" acima. Fronteira de
+  // fetch própria (ADR-072, Decisão 3), isolada de `pvSummaryResource`: uma
+  // falha de `/devices/daily-status` nunca apaga PR/perdas/degradação, e
+  // vice-versa. O módulo passa de 1 para 2 requisições ao entrar — custo
+  // aceito no ADR (o mais barato do painel hoje, §1.4 do plano de auditoria).
+  const deviceStatusResource = usePlantResource({
+    plantId,
+    fetcher: fetchDeviceDailyStatus,
+    parse: parseDeviceDailyStatus,
+    errorMessage: 'Erro ao buscar status dos inversores.',
   })
 
   // Enquanto a lista de usinas (`PlantContext`) ainda carrega, nenhuma
@@ -132,6 +149,15 @@ export function TechnicalPage() {
   // `DashboardPage`).
   const pvSummary = pvSummaryResource.status === 'error' ? fallbackPvSummary(plantId) : pvSummaryResource.data
   const loading = pvSummaryResource.status === 'loading'
+  // Refetch único para os 2 recursos deste módulo, mesmo padrão de
+  // `refreshAll` em `FinancialPage.tsx` — o botão "Atualizar" força uma nova
+  // tentativa dos dois ao mesmo tempo; cada recurso mantém seu próprio
+  // estado de erro/retry independente.
+  const refreshAll = () => {
+    pvSummaryResource.refetch()
+    deviceStatusResource.refetch()
+  }
+  const anyLoading = loading || deviceStatusResource.status === 'loading'
   const performanceRatio = ratioToPercent(pvSummary?.performance?.performance_ratio ?? null)
   const correctedPerformanceRatio = ratioToPercent(
     pvSummary?.performance?.temperature_corrected_performance_ratio ?? null
@@ -159,7 +185,7 @@ export function TechnicalPage() {
           { label: 'Leitura', value: 'PR, perdas e disponibilidade' },
           { label: 'Saída', value: 'Plano de investigação' },
         ]}
-        actions={<RefreshBar onRefresh={pvSummaryResource.refetch} loading={loading} className="mb-0 lg:justify-self-end" />}
+        actions={<RefreshBar onRefresh={refreshAll} loading={anyLoading} className="mb-0 lg:justify-self-end" />}
       />
       <section className="mb-6">
         <SectionTitle as="h2">Resumo técnico</SectionTitle>
@@ -207,6 +233,13 @@ export function TechnicalPage() {
 
       <section className="mb-6">
         <TechnicalDiagnosticPanel summary={pvSummary} />
+      </section>
+
+      {/* Visão por inversor (ADR-074, Decisão 5) — entre o diagnóstico de
+          causa e o desempenho técnico agregado: drill-down direto do tile
+          "Disponibilidade dos dados" acima, resposta ao lado da pergunta. */}
+      <section className="mb-6">
+        <DeviceStatusSection resource={deviceStatusResource} />
       </section>
 
       <TechnicalPerformanceSection summary={pvSummary} />

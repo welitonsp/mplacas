@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
-import { jsonResponse, photovoltaicSummaryPayload, singlePlant } from '../../test/dashboardFixtures'
+import {
+  deviceDailyStatusPayload,
+  jsonResponse,
+  photovoltaicSummaryPayload,
+  singlePlant,
+} from '../../test/dashboardFixtures'
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
 // módulo — não há `.env.local` no ambiente de teste (ver `LoginPage.test.tsx`,
@@ -10,14 +15,16 @@ vi.mock('../../env', () => ({
 }))
 
 // `TechnicalPage` (e, transitivamente, `PlantProvider`/`AuthProvider` usados
-// por `renderModule`) só depende de 3 exports de `../../lib/api`: o recurso
-// do módulo (`fetchPhotovoltaicSummary`), `fetchPlants` (`PlantContext`) e
+// por `renderModule`) só depende de 4 exports de `../../lib/api`: os dois
+// recursos do módulo (`fetchPhotovoltaicSummary`, e — desde ADR-074, Decisão
+// 5 — `fetchDeviceDailyStatus`), `fetchPlants` (`PlantContext`) e
 // `configureApi` (`AuthContext`, chamado incondicionalmente a cada render).
-// Nenhum dos outros 4 fetchers de `../../lib/api` é importado por este
-// módulo — se algum teste abaixo os disparasse, o mock (que não os declara)
-// já provaria a fronteira de fetch por módulo (ADR-072, Decisão 3).
+// Nenhum outro fetcher de `../../lib/api` é importado por este módulo — se
+// algum teste abaixo os disparasse, o mock (que não os declara) já provaria
+// a fronteira de fetch por módulo (ADR-072, Decisão 3).
 interface ApiMockOverrides {
   fetchPhotovoltaicSummary?: (plantId: string) => Promise<Response>
+  fetchDeviceDailyStatus?: (plantId: string) => Promise<Response>
   fetchPlants?: () => Promise<unknown[]>
 }
 
@@ -25,6 +32,8 @@ function installApiMock(overrides: ApiMockOverrides = {}) {
   vi.doMock('../../lib/api', () => ({
     fetchPhotovoltaicSummary:
       overrides.fetchPhotovoltaicSummary ?? vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
+    fetchDeviceDailyStatus:
+      overrides.fetchDeviceDailyStatus ?? vi.fn(async () => jsonResponse(deviceDailyStatusPayload)),
     fetchPlants: overrides.fetchPlants ?? vi.fn(async () => [singlePlant]),
     configureApi: vi.fn(),
   }))
@@ -37,10 +46,14 @@ async function renderTechnicalPage() {
 }
 
 describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
-  it('dispara exatamente 1 requisição de dados — só /photovoltaic/summary', async () => {
+  it('dispara exatamente 2 requisições de dados — /photovoltaic/summary e /devices/daily-status (ADR-074, Decisão 5)', async () => {
     vi.resetModules()
     const fetchPhotovoltaicSummaryMock = vi.fn(async () => jsonResponse(photovoltaicSummaryPayload))
-    installApiMock({ fetchPhotovoltaicSummary: fetchPhotovoltaicSummaryMock })
+    const fetchDeviceDailyStatusMock = vi.fn(async () => jsonResponse(deviceDailyStatusPayload))
+    installApiMock({
+      fetchPhotovoltaicSummary: fetchPhotovoltaicSummaryMock,
+      fetchDeviceDailyStatus: fetchDeviceDailyStatusMock,
+    })
 
     await renderTechnicalPage()
 
@@ -53,8 +66,53 @@ describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
     await screen.findByText('Bruto')
     await waitFor(() => {
       expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(1)
+      expect(fetchDeviceDailyStatusMock).toHaveBeenCalledTimes(1)
     })
     expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledWith(singlePlant.id)
+    expect(fetchDeviceDailyStatusMock).toHaveBeenCalledWith(singlePlant.id)
+  })
+
+  it('mostra a lista de inversores entre o diagnóstico de causa e o desempenho técnico (ADR-074, Decisão 5)', async () => {
+    vi.resetModules()
+    installApiMock()
+
+    await renderTechnicalPage()
+
+    const inverterHeading = await screen.findByRole('heading', { level: 2, name: 'Inversores' })
+    const region = screen.getByRole('region', { name: 'Inversores' })
+    expect(inverterHeading).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(within(region).getByText('SN-1234567890')).toBeInTheDocument()
+      expect(within(region).getByText('SN-0987654321')).toBeInTheDocument()
+    })
+    // O inversor silencioso nunca vira "0" nem some — aparece nomeado.
+    expect(within(region).getByText('Não reportou')).toBeInTheDocument()
+
+    // Ordem no DOM: diagnóstico de causa -> inversores -> desempenho técnico.
+    const diagnosticHeading = screen.getByText('Diagnóstico de causa')
+    const performanceHeading = screen.getByRole('heading', { level: 2, name: 'Desempenho técnico' })
+    expect(
+      diagnosticHeading.compareDocumentPosition(inverterHeading) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(
+      inverterHeading.compareDocumentPosition(performanceHeading) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it('erro de /devices/daily-status não derruba PR/perdas/degradação renderizados por /photovoltaic/summary', async () => {
+    vi.resetModules()
+    installApiMock({
+      fetchDeviceDailyStatus: vi.fn(async () => jsonResponse({ error: 'boom' }, 500)),
+    })
+
+    await renderTechnicalPage()
+
+    await screen.findByText('Bruto')
+    const region = screen.getByRole('region', { name: 'Inversores' })
+    expect(within(region).getByRole('alert')).toBeInTheDocument()
+    // PR/perdas continuam renderizados normalmente apesar do erro isolado.
+    expect(screen.getByText('PR bruto 82%')).toBeInTheDocument()
   })
 
   it('destaca o resumo técnico com saúde, disponibilidade, suspeita principal e produção esperada', async () => {

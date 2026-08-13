@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { cleanup, screen } from '@testing-library/react'
 import {
   anomalyPayload,
+  deviceDailyStatusPayload,
   executivePayload,
   financialReturnUnavailablePayload,
   jsonResponse,
@@ -27,6 +28,7 @@ function installApiMock() {
     fetchExecutiveDashboard: vi.fn(async () => jsonResponse(executivePayload)),
     fetchAnomalyHistory: vi.fn(async () => jsonResponse(anomalyPayload)),
     fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(photovoltaicSummaryPayload)),
+    fetchDeviceDailyStatus: vi.fn(async () => jsonResponse(deviceDailyStatusPayload)),
     fetchMonthlyProductionHistory: vi.fn(async () => jsonResponse(monthlyHistoryPayload)),
     fetchFinancialReturn: vi.fn(async () => jsonResponse(financialReturnUnavailablePayload)),
     fetchPlants: vi.fn(async () => [singlePlant]),

@@ -36,6 +36,9 @@ function installApiMock(fetchPlantsImpl: () => Promise<unknown[]>) {
     fetchPhotovoltaicSummary: vi.fn(async () => {
       throw new Error('mock: sem rede em App.test.tsx')
     }),
+    fetchDeviceDailyStatus: vi.fn(async () => {
+      throw new Error('mock: sem rede em App.test.tsx')
+    }),
     fetchFinancialReturn: vi.fn(async () => {
       throw new Error('mock: sem rede em App.test.tsx')
     }),

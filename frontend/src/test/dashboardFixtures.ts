@@ -71,6 +71,58 @@ export const photovoltaicSummaryPayload = {
   expected_daily_production_unavailable_reason: null,
 }
 
+// Resposta de exemplo para `GET /devices/daily-status` (ADR-074, Decisão 3) —
+// usada pelo módulo Técnico (`TechnicalPage.test.tsx`, ADR-074 T1c). Dois
+// inversores: um reportando com queda de rendimento (DROPPED), outro
+// silencioso (`reporting_status: "NOT_REPORTED"`) — exercita simultaneamente
+// a Restrição 1 do ADR (o inversor mudo nunca some da resposta) e a "armadilha
+// obrigatória" da Decisão 3 (`yield_status` nunca deriva de `dropped` sozinho).
+export const deviceDailyStatusPayload = {
+  plant_id: 'plant-1',
+  observation_date: '2026-08-11',
+  observation_date_unavailable_reason: null,
+  irradiation_kwh_m2: '4.890',
+  irradiation_unavailable_reason: null,
+  device_count: 2,
+  reporting_device_count: 1,
+  device_normal_threshold: '0.85',
+  units: {
+    production: 'kWh',
+    irradiation: 'kWh/m2',
+    rendimento: 'kWh/(kWh/m2)',
+    relative_to_own_median: 'ratio',
+    relative_to_own_median_deviation: 'percent',
+  },
+  devices: [
+    {
+      device_id: '11111111-1111-1111-1111-111111111111',
+      serial_number: 'SN-1234567890',
+      reporting_status: 'REPORTED',
+      production_kwh: '12.500',
+      last_reported_date: '2026-08-11',
+      rendimento: '2.437',
+      rendimento_median: '3.390',
+      relative_to_own_median: '0.719',
+      relative_to_own_median_deviation_percent: '-28.1',
+      yield_status: 'DROPPED',
+      yield_unavailable_reason: null,
+    },
+    {
+      device_id: '22222222-2222-2222-2222-222222222222',
+      serial_number: 'SN-0987654321',
+      reporting_status: 'NOT_REPORTED',
+      production_kwh: null,
+      last_reported_date: '2026-07-28',
+      rendimento: null,
+      rendimento_median: null,
+      relative_to_own_median: null,
+      relative_to_own_median_deviation_percent: null,
+      yield_status: 'UNKNOWN',
+      yield_unavailable_reason: 'NOT_REPORTED',
+    },
+  ],
+}
+
 // Resposta de exemplo para `GET /energy/executive/latest` — usada pelo módulo
 // Financeiro (`FinancialPage.test.tsx`, ADR-072 Etapa 3), que precisa do
 // recurso executivo inteiro (não só um endpoint financeiro dedicado) porque
