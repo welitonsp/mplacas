@@ -25,7 +25,7 @@ export function RetryableError({
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex min-h-[40px] shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--color-danger)] px-4 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-danger-text)] hover:shadow-md active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)] focus-visible:ring-offset-2 motion-reduce:transition-none"
+          className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--color-danger)] px-4 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-danger-text)] hover:shadow-md active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)] focus-visible:ring-offset-2 motion-reduce:transition-none"
         >
           <svg
             viewBox="0 0 20 20"

@@ -36,7 +36,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="mt-6 inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-[var(--color-brand-primary)] px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-[var(--color-brand-primary-dark)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
+                className="mt-6 inline-flex min-h-[44px] w-full items-center justify-center rounded-lg bg-[var(--color-brand-primary)] px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-[var(--color-brand-primary-dark)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
               >
                 Recarregar
               </button>
