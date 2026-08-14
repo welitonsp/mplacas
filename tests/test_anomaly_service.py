@@ -491,17 +491,27 @@ async def test_period_yield_and_per_day_deviation_moved_from_frontend() -> None:
 
         by_date = {item.observation_date: item for item in result.daily}
         assert by_date[date(2026, 7, 10)].yield_kwh_per_kwh_m2 == Decimal("2.5")
-        assert by_date[date(2026, 7, 10)].yield_deviation_from_period_percent == Decimal("25")
         assert by_date[date(2026, 7, 11)].yield_kwh_per_kwh_m2 == Decimal("1.5")
-        assert by_date[date(2026, 7, 11)].yield_deviation_from_period_percent == Decimal("-25")
         # Day C: zero production under sun (irradiation=5) -> defined yield
-        # of 0, and the worst possible deviation (-100%) — it must be
-        # visible as an atypical day, not silently dropped as "no data".
+        # of 0 — it must be visible, not silently dropped as "no data".
         assert by_date[date(2026, 7, 12)].yield_kwh_per_kwh_m2 == Decimal("0")
-        assert by_date[date(2026, 7, 12)].yield_deviation_from_period_percent == Decimal("-100")
         # Day D: no climate row at all -> genuinely no ratio possible.
         assert by_date[date(2026, 7, 13)].yield_kwh_per_kwh_m2 is None
-        assert by_date[date(2026, 7, 13)].yield_deviation_from_period_percent is None
+
+        # Plano T7b, P1 "janela de referência sazonalmente enviesada" (decisão
+        # do usuário, 2026-08-13): o desvio deixou de ser medido contra a média
+        # da janela e passou a ser medido contra a mediana rolante dos 30 dias
+        # ANTERIORES a cada dia. Esta usina sintética tem 4 dias e nenhum
+        # histórico, então nenhum dia alcança o piso de
+        # `MINIMUM_RENDIMENTO_SAMPLE_DAYS` e todos ficam sem referência.
+        #
+        # `None` aqui é a resposta honesta — indisponibilidade explícita. O
+        # erro que esta asserção trava é o oposto: devolver `0`/"normal" por
+        # falta de histórico faria a UI afirmar que o dia está bem quando ela
+        # não tem como saber. Ver o teste de degradação progressiva abaixo para
+        # o comportamento com histórico suficiente.
+        for observation_date in by_date:
+            assert by_date[observation_date].yield_deviation_from_period_percent is None
 
     await engine.dispose()
 
@@ -623,5 +633,157 @@ async def test_period_yield_unavailable_when_no_day_has_both_production_and_irra
         assert result.daily[0].yield_kwh_per_kwh_m2 is None
         assert result.daily[0].yield_deviation_from_period_percent is None
         assert result.period_yield_sample_days == 0
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_yield_deviation_uses_trailing_median_so_a_day_never_judges_itself() -> None:
+    """Plano T7b, P1 — a referência é a mediana dos dias ANTERIORES.
+
+    Antes desta mudança o dia julgado entrava na própria referência (média
+    ponderada da janela inteira). Aqui um único dia catastrófico é comparado
+    contra a mediana dos 30 dias anteriores, que ele não contamina — então o
+    desvio reflete a queda real, e não uma versão diluída dela.
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as session:
+        plant = Plant(name="Trailing median plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        device = Device(plant_id=plant.id, serial_number="TRAILING-001")
+        session.add(device)
+        await session.flush()
+
+        last_day = date(2026, 7, 31)
+        # 20 dias estáveis de rendimento 2.0 (10 kWh / 5 kWh/m2), seguidos de
+        # um dia com metade da produção sob a mesma irradiância.
+        for offset in range(20, 0, -1):
+            current = last_day - timedelta(days=offset)
+            session.add(
+                DailyEnergy(
+                    device_id=device.id,
+                    production_date=current,
+                    energy_kwh=Decimal("10"),
+                    status=DataStatus.CONSOLIDATED,
+                )
+            )
+            session.add(
+                DailyClimateObservationRecord(
+                    plant_id=plant.id,
+                    observation_date=current,
+                    source="TEST",
+                    irradiation_kwh_m2=Decimal("5"),
+                )
+            )
+        session.add(
+            DailyEnergy(
+                device_id=device.id,
+                production_date=last_day,
+                energy_kwh=Decimal("5"),
+                status=DataStatus.CONSOLIDATED,
+            )
+        )
+        session.add(
+            DailyClimateObservationRecord(
+                plant_id=plant.id,
+                observation_date=last_day,
+                source="TEST",
+                irradiation_kwh_m2=Decimal("5"),
+            )
+        )
+        await session.commit()
+
+        result = await analyze_recent_persisted_anomalies(
+            session,
+            plant_id=plant.id,
+            expected_daily_production_kwh=None,
+            days=1,
+            end_date=last_day,
+            expected_unavailable_reason="NO_PERFORMANCE_HISTORY",
+        )
+
+        day = result.daily[0]
+        assert day.observation_date == last_day
+        assert day.yield_kwh_per_kwh_m2 == Decimal("1")
+        # Mediana dos anteriores = 2.0; (1.0 / 2.0 - 1) * 100 = -50%.
+        # Se o próprio dia entrasse na referência, o desvio seria menor em
+        # módulo — é exatamente essa diluição que a janela atrasada elimina.
+        assert day.yield_deviation_from_period_percent == Decimal("-50")
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_progressive_degradation_is_flagged_instead_of_looking_stable() -> None:
+    """Plano T7b, P1 — o caso que a referência anterior NÃO flagrava.
+
+    Uma usina perdendo rendimento de forma lenta e contínua arrastava a média
+    do período junto de si, e todo dia parecia normal em relação a ela: a tela
+    exibia "rendimento estável" enquanto a geração caía. Contra uma mediana
+    rolante e atrasada, cada dia é comparado ao passado recente e a queda
+    aparece. Este teste é a justificativa da mudança inteira.
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as session:
+        plant = Plant(name="Degrading plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        device = Device(plant_id=plant.id, serial_number="DEGRADING-001")
+        session.add(device)
+        await session.flush()
+
+        last_day = date(2026, 7, 31)
+        total_days = 60
+        # Queda linear e contínua: 1% de produção por dia, mesma irradiância.
+        # Nenhum degrau, nenhum outlier — só deterioração.
+        for offset in range(total_days, -1, -1):
+            current = last_day - timedelta(days=offset)
+            produced = Decimal("10") * (Decimal("1") - Decimal("0.01") * (total_days - offset))
+            session.add(
+                DailyEnergy(
+                    device_id=device.id,
+                    production_date=current,
+                    energy_kwh=produced,
+                    status=DataStatus.CONSOLIDATED,
+                )
+            )
+            session.add(
+                DailyClimateObservationRecord(
+                    plant_id=plant.id,
+                    observation_date=current,
+                    source="TEST",
+                    irradiation_kwh_m2=Decimal("5"),
+                )
+            )
+        await session.commit()
+
+        result = await analyze_recent_persisted_anomalies(
+            session,
+            plant_id=plant.id,
+            expected_daily_production_kwh=None,
+            days=30,
+            end_date=last_day,
+            expected_unavailable_reason="NO_PERFORMANCE_HISTORY",
+        )
+
+        deviations = [
+            item.yield_deviation_from_period_percent
+            for item in result.daily
+            if item.yield_deviation_from_period_percent is not None
+        ]
+        assert deviations, "todo dia deveria ter mediana rolante disponível aqui"
+        # Toda a série está em queda, então todo dia fica ABAIXO da mediana dos
+        # seus 30 dias anteriores. O sinal negativo consistente é o que a
+        # referência antiga não produzia.
+        assert all(value < 0 for value in deviations)
 
     await engine.dispose()

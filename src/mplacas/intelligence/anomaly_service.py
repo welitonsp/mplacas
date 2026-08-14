@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from bisect import bisect_left
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -12,6 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.climate.db_models import DailyClimateObservationRecord
 from mplacas.db.models import DailyEnergy, DataStatus, Device
+
+# Reusados de `devices.metrics` de propósito: o projeto passa a ter UMA
+# definição de janela e piso de amostra para mediana de rendimento, em vez de
+# uma terceira. Ver `_trailing_rendimento_medians`.
+from mplacas.devices.metrics import (
+    MINIMUM_RENDIMENTO_SAMPLE_DAYS,
+    RENDIMENTO_LOOKBACK_DAYS,
+)
 from mplacas.intelligence.anomaly_engine import (
     AnomalyLevel,
     DailyAnomalyAssessment,
@@ -192,13 +201,65 @@ def _compute_period_yield(
     return total_actual / total_irradiation, day_yields, sample_days
 
 
-def _yield_deviation_from_period_percent(
-    day_yield: Decimal | None, period_yield: Decimal | None
+def _yield_deviation_percent(
+    day_yield: Decimal | None, reference: Decimal | None
 ) -> Decimal | None:
-    """`((day_yield / period_yield) - 1) * 100`, `None` unless both sides are known."""
-    if day_yield is None or period_yield is None or period_yield <= 0:
+    """`((day_yield / reference) - 1) * 100`, `None` unless both sides são conhecidos."""
+    if day_yield is None or reference is None or reference <= 0:
         return None
-    return (day_yield - period_yield) / period_yield * Decimal("100")
+    return (day_yield - reference) / reference * Decimal("100")
+
+
+def _trailing_rendimento_medians(
+    day_yields: dict[date, Decimal], *, analyzed_days: Iterable[date]
+) -> dict[date, Decimal]:
+    """Mediana rolante do rendimento dos dias ESTRITAMENTE anteriores a cada dia.
+
+    Substitui a média ponderada de 90 dias como referência para marcar um dia
+    como atípico (plano T7b, P1 "janela de referência sazonalmente enviesada",
+    decisão do usuário em 2026-08-13). O parecer do `solar-domain-specialist`
+    mostrou três defeitos da referência anterior, todos corrigidos aqui:
+
+    1. **Viés sazonal.** O denominador do rendimento é irradiância *horizontal*
+       (GHI, `climate/open_meteo.py`), e produção/GHI não é estacionário:
+       transposição POA/GHI, temperatura de célula e sujidade derivam de forma
+       sistemática 5–15% dentro de 90 dias nesta latitude — metade da margem de
+       um limiar de 20%. Uma janela de 30 dias acompanha essa deriva em vez de
+       ser atravessada por ela.
+    2. **Autodiluição.** Na referência anterior o dia julgado entrava na própria
+       referência. Aqui a janela é `[dia − 30, dia − 1]`: o dia nunca se
+       autojulga, e não há vazamento de futuro.
+    3. **Degradação crônica invisível.** Uma queda lenta e contínua arrastava a
+       média do período junto, e a usina exibia "rendimento estável" enquanto
+       perdia geração. Contra uma referência rolante e atrasada, cada dia é
+       comparado ao passado recente e a queda aparece.
+
+    Mediana, não média, pelo mesmo motivo que
+    `devices.metrics._device_rendimento_medians` já usava mediana: uma média é
+    contaminada justamente pelos outliers que a métrica existe para detectar.
+
+    Reusa `RENDIMENTO_LOOKBACK_DAYS`/`MINIMUM_RENDIMENTO_SAMPLE_DAYS` de
+    `devices.metrics` de propósito — o objetivo desta mudança é ter **uma**
+    definição de mediana de rendimento no projeto, não uma terceira. Dia sem
+    amostras suficientes não recebe mediana: o chamador devolve desvio `None`,
+    nunca um número fabricado nem "normal" por omissão.
+    """
+    sorted_days = sorted(day_yields)
+    values_by_day = [day_yields[day] for day in sorted_days]
+    medians: dict[date, Decimal] = {}
+
+    for current_day in analyzed_days:
+        window_start = current_day - timedelta(days=RENDIMENTO_LOOKBACK_DAYS)
+        # `bisect_left` sobre as datas ordenadas dá a fatia sem varrer tudo a
+        # cada dia; o limite superior é exclusivo do próprio dia.
+        low = bisect_left(sorted_days, window_start)
+        high = bisect_left(sorted_days, current_day)
+        window = values_by_day[low:high]
+        if len(window) < MINIMUM_RENDIMENTO_SAMPLE_DAYS:
+            continue
+        medians[current_day] = median(window)
+
+    return medians
 
 
 async def analyze_recent_persisted_anomalies(
@@ -218,6 +279,13 @@ async def analyze_recent_persisted_anomalies(
     last_day = end_date or date.today()
     first_day = last_day - timedelta(days=days - 1)
 
+    # Alargada para trás pelo mesmo motivo que a consulta de clima abaixo já
+    # era: semear a mediana rolante de rendimento
+    # (`_trailing_rendimento_medians`). Sem isso os primeiros dias da janela
+    # analisada não teriam histórico anterior e ficariam sem referência. A
+    # janela ANALISADA continua sendo `[first_day, last_day]` — os dias extras
+    # existem só como histórico e nunca entram em `daily`.
+    rendimento_history_start = first_day - timedelta(days=RENDIMENTO_LOOKBACK_DAYS)
     energy_rows = list(
         (
             await session.execute(
@@ -225,13 +293,16 @@ async def analyze_recent_persisted_anomalies(
                 .join(Device)
                 .where(
                     Device.plant_id == plant_id,
-                    DailyEnergy.production_date >= first_day,
+                    DailyEnergy.production_date >= rendimento_history_start,
                     DailyEnergy.production_date <= last_day,
                 )
             )
         ).scalars()
     )
-    if not energy_rows:
+    # A checagem continua sendo sobre a janela analisada, não sobre o histórico:
+    # uma usina com produção só antes de `first_day` não tem o que analisar, e
+    # precisa levantar como antes desta mudança.
+    if not any(row.production_date >= first_day for row in energy_rows):
         raise AnomalyDataNotFoundError("daily production not found for requested period")
 
     # The climate query reaches back further than `first_day` purely to seed
@@ -250,9 +321,17 @@ async def analyze_recent_persisted_anomalies(
         ).scalars()
     )
 
-    energy_by_day: dict[date, list[DailyEnergy]] = {}
+    # `history_energy_by_day` cobre a janela alargada (histórico + analisada) e
+    # só alimenta a mediana rolante; `energy_by_day` é estritamente a janela
+    # analisada e é a única que gera itens em `daily`.
+    history_energy_by_day: dict[date, list[DailyEnergy]] = {}
     for row in energy_rows:
-        energy_by_day.setdefault(row.production_date, []).append(row)
+        history_energy_by_day.setdefault(row.production_date, []).append(row)
+    energy_by_day = {
+        production_date: rows
+        for production_date, rows in history_energy_by_day.items()
+        if production_date >= first_day
+    }
     climate_by_day = {row.observation_date: row for row in climate_rows}
 
     # Sorted (date, irradiation) pairs feed the local median for each day
@@ -270,6 +349,12 @@ async def analyze_recent_persisted_anomalies(
     period_yield, day_yields, period_yield_sample_days = _compute_period_yield(
         energy_by_day, climate_by_day
     )
+    # Rendimento dos dias do histórico alargado, usado APENAS para semear a
+    # mediana rolante — não entra em `period_yield` nem em `daily`.
+    _, history_day_yields, _ = _compute_period_yield(history_energy_by_day, climate_by_day)
+    rendimento_medians = _trailing_rendimento_medians(
+        history_day_yields, analyzed_days=sorted(energy_by_day)
+    )
 
     daily: list[DailyPersistedAnomaly] = []
     for current_day in sorted(energy_by_day):
@@ -285,7 +370,13 @@ async def analyze_recent_persisted_anomalies(
         irradiation_median = median(historical_values) if historical_values else None
 
         day_yield = day_yields.get(current_day)
-        yield_deviation_percent = _yield_deviation_from_period_percent(day_yield, period_yield)
+        # Referência é a mediana rolante dos 30 dias anteriores a ESTE dia, não
+        # a média da janela inteira (ver `_trailing_rendimento_medians`). Sem
+        # amostras suficientes o desvio fica `None` — indisponibilidade
+        # explícita, nunca "normal" por omissão.
+        yield_deviation_percent = _yield_deviation_percent(
+            day_yield, rendimento_medians.get(current_day)
+        )
 
         if expected_daily_production_kwh is None:
             daily.append(

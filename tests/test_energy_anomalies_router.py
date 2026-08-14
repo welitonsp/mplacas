@@ -320,13 +320,14 @@ def test_yield_fields_computed_end_to_end_when_irradiation_is_available(monkeypa
     # payload), so the value is compared numerically here, not as a raw
     # string.
     assert Decimal(by_date[day_a.isoformat()]["yield_kwh_per_kwh_m2"]) == Decimal("2.5")
-    assert Decimal(
-        by_date[day_a.isoformat()]["yield_deviation_from_period_percent"]
-    ) == Decimal("25")
     assert Decimal(by_date[day_b.isoformat()]["yield_kwh_per_kwh_m2"]) == Decimal("1.5")
-    assert Decimal(
-        by_date[day_b.isoformat()]["yield_deviation_from_period_percent"]
-    ) == Decimal("-25")
+    # O desvio passou a ser medido contra a mediana rolante dos 30 dias
+    # anteriores a cada dia (plano T7b, P1). Esta usina sintetica tem dois dias
+    # e nenhum historico, entao nao alcanca o piso de amostra e o desvio fica
+    # `null` — indisponibilidade explicita, nunca "normal" por omissao. O
+    # rendimento do dia (`yield_kwh_per_kwh_m2`) continua sendo calculado.
+    assert by_date[day_a.isoformat()]["yield_deviation_from_period_percent"] is None
+    assert by_date[day_b.isoformat()]["yield_deviation_from_period_percent"] is None
 
     get_settings.cache_clear()
 
@@ -407,10 +408,12 @@ def test_zero_production_day_with_sun_gets_a_defined_yield_end_to_end(monkeypatc
     assert Decimal(body["period_yield_kwh_per_kwh_m2"]) == Decimal("2.5")
     assert body["period_yield_sample_days"] == 1
     by_date = {item["date"]: item for item in body["daily"]}
+    # O dia de producao zero sob sol continua com rendimento DEFINIDO (0), que
+    # e o ponto deste teste: ele nao pode sumir como se nao houvesse dado.
     assert Decimal(by_date[day_b.isoformat()]["yield_kwh_per_kwh_m2"]) == Decimal("0")
-    assert Decimal(
-        by_date[day_b.isoformat()]["yield_deviation_from_period_percent"]
-    ) == Decimal("-100")
+    # O desvio fica `null` por falta de historico para a mediana rolante, nao
+    # por falta de rendimento (ver comentario no teste acima).
+    assert by_date[day_b.isoformat()]["yield_deviation_from_period_percent"] is None
 
     get_settings.cache_clear()
 
