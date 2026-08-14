@@ -6,6 +6,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { DASHBOARD_MODULE_SEGMENTS, DASHBOARD_ROOT_PATH } from './routes'
 
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })))
+const PublicHomePage = lazy(() => import('./pages/PublicHomePage').then((module) => ({ default: module.default })))
 const DashboardLayout = lazy(() =>
   import('./pages/dashboard/DashboardLayout').then((module) => ({ default: module.DashboardLayout }))
 )
@@ -50,6 +51,7 @@ export function App() {
       <AuthProvider>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
+            <Route path="/" element={<PublicHomePage />} />
             <Route path="/login" element={<LoginPage />} />
             {/* Rota de layout aninhada (ADR-072, Decisão 1): `PlantProvider`
                 monta uma única vez aqui, não dentro de cada rota filha — é o
