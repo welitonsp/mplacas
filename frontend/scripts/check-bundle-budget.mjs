@@ -82,7 +82,36 @@ const BUDGETS = [
     match: /^LoginPage-.*\.js$/,
     limitKb: 5,
   },
+  {
+    // Página pública (`PublicHomePage`), entrou depois deste gate e por isso
+    // não tinha categoria. JS e CSS juntos porque é uma superfície só, e
+    // porque a landing traz CSS próprio de peso comparável ao script.
+    name: 'PublicHomePage (js+css)',
+    match: /^PublicHomePage-.*\.(js|css)$/,
+    limitKb: 15,
+  },
 ]
+
+// ---------------------------------------------------------------------------
+// CATEGORIA COLETORA — o que consertou a falha real deste gate.
+//
+// As categorias acima nomeiam chunks específicos. Isso deixava um buraco: TODO
+// arquivo cujo nome não casasse com nenhuma delas entrava no bundle sem ser
+// medido por nada. Quando a landing pública foi adicionada, os 11,8 kB dela
+// passaram inteiros por este gate sem disparar nada — e junto havia outros
+// ~34 kB (`components-*`, `PlantContext-*`, `PageHeader-*`,
+// `DashboardLayout-*`, primitivas de gráfico) igualmente invisíveis.
+//
+// Um gate que só mede o que alguém lembrou de nomear protege o passado, não o
+// futuro. Esta categoria fecha o conjunto: soma tudo que sobrou e impõe teto.
+// Chunk novo agora aparece aqui até que alguém decida se merece categoria
+// própria — a decisão vira explícita em vez de silenciosa.
+const CATCH_ALL = {
+  name: 'demais chunks (soma)',
+  limitKb: 42,
+  // medido em 2026-08-14: ~34,3 kB somando tudo que não casa com as regras
+  // acima. Teto com folga deliberada, não espelho da medição.
+}
 // ---------------------------------------------------------------------------
 
 // Nota de metodologia: o tamanho gzip mostrado por `npm run build` (relatório
@@ -152,6 +181,33 @@ function main() {
     }
   }
 
+  // Categoria coletora: tudo que nenhuma regra acima reivindicou. Arquivos de
+  // mapa de origem e afins ficam de fora porque não são baixados pelo usuário.
+  const claimed = new Set(BUDGETS.flatMap((budget) => files.filter((name) => budget.match.test(name))))
+  const leftovers = files
+    .filter((name) => !claimed.has(name) && /\.(js|css)$/.test(name))
+    .map((name) => ({ name, kb: gzipKb(path.join(ASSETS_DIR, name)) }))
+    .sort((a, b) => b.kb - a.kb)
+  const leftoverTotal = leftovers.reduce((sum, item) => sum + item.kb, 0)
+
+  rows.push({
+    name: CATCH_ALL.name,
+    actual: leftoverTotal,
+    limit: CATCH_ALL.limitKb,
+    files: leftovers.map((item) => item.name),
+    status: leftoverTotal > CATCH_ALL.limitKb ? 'ESTOUROU' : 'ok',
+  })
+
+  if (leftoverTotal > CATCH_ALL.limitKb) {
+    failures.push(
+      `${CATCH_ALL.name}: ${formatKb(leftoverTotal)} gzip, acima do teto de ` +
+        `${formatKb(CATCH_ALL.limitKb)}. Excedente: ${formatKb(leftoverTotal - CATCH_ALL.limitKb)}. ` +
+        'Estes chunks não têm categoria própria — decida se algum merece uma (e teto ' +
+        'próprio) ou reduza o conjunto:\n' +
+        leftovers.map((item) => `      ${item.name.padEnd(36)} ${formatKb(item.kb)}`).join('\n')
+    )
+  }
+
   console.log('Orçamento de bundle (gzip, dist/assets/):\n')
   const nameWidth = Math.max(...rows.map((row) => row.name.length), 'chunk'.length)
   console.log(`${'chunk'.padEnd(nameWidth)}  medido      teto      status`)
@@ -163,8 +219,23 @@ function main() {
   }
   console.log('')
 
+  // Composição por arquivo. A auditoria externa v6 registrou como pendência
+  // (`[ABR]`) justamente não saber QUAIS arquivos o regex de cada categoria
+  // casava — chegou a supor que uma categoria pudesse estar somando vários
+  // arquivos sem que ninguém percebesse. Imprimir sempre, e não atrás de uma
+  // flag, torna a pergunta impossível de reaparecer.
+  console.log('Composição (arquivo → categoria):\n')
+  for (const row of rows) {
+    if (row.files.length === 0) continue
+    for (const name of row.files) {
+      const kb = formatKb(gzipKb(path.join(ASSETS_DIR, name)))
+      console.log(`  ${name.padEnd(36)} ${kb.padStart(10)}   ${row.name}`)
+    }
+  }
+  console.log('')
+
   if (failures.length > 0) {
-    console.error(`Orçamento de bundle FALHOU (${failures.length} de ${BUDGETS.length} categorias):\n`)
+    console.error(`Orçamento de bundle FALHOU (${failures.length} de ${rows.length} categorias):\n`)
     for (const failure of failures) {
       console.error(`  - ${failure}`)
     }
