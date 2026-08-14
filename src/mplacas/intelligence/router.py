@@ -204,6 +204,16 @@ def _serialize_anomalies(result) -> dict[str, object]:
                     if item.yield_deviation_from_period_percent is not None
                     else None
                 ),
+                # Collected (`climate/open_meteo.py`) and persisted
+                # (`climate/db_models.py::DailyClimateObservationRecord.
+                # temperature_mean_c`) since before this endpoint existed, but
+                # never serialized here (plan T7b, P2 "dados servidos e
+                # descartados"). `None` when there is no climate observation
+                # for the day — indisponibilidade explícita, nunca zero
+                # fabricado.
+                "temperature_mean_c": (
+                    str(item.temperature_mean_c) if item.temperature_mean_c is not None else None
+                ),
                 "diagnostics": (
                     [
                         {

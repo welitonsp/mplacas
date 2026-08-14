@@ -14,6 +14,7 @@ function buildDaily(overrides: Partial<AnomalyDailyPoint> = {}): AnomalyDailyPoi
     irradiation_kwh_m2: null,
     yield_kwh_per_kwh_m2: null,
     yield_deviation_from_period_percent: null,
+    temperature_mean_c: null,
     diagnostics: [],
     ...overrides,
   }
@@ -28,6 +29,7 @@ function buildAnomalyData(overrides: {
     plant_id: 'p1',
     days_analyzed: 1,
     current_streak_days: 0,
+    period: null,
     worst_level: overrides.worstLevel ?? 'NORMAL',
     expected_unavailable_reason: overrides.expectedUnavailableReason ?? null,
     period_yield_kwh_per_kwh_m2: null,

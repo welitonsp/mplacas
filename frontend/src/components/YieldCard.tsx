@@ -1,4 +1,4 @@
-import type { AnomalyDailyPoint, MetricValue } from '../lib/dashboard/contracts'
+import type { AnomalyDailyPoint, AnomalyPeriod, MetricValue } from '../lib/dashboard/contracts'
 import { formatNumber, formatShortDate, toNumber } from '../lib/format'
 import { Card } from './Card'
 
@@ -44,11 +44,19 @@ export function YieldCard({
   periodYieldKwhPerKwhM2,
   yieldAtypicalThresholdPercent,
   periodYieldSampleDays,
+  // Recorte de calendário efetivamente pedido ao backend (`AnomalyPeriod`,
+  // plano T7b P2) — DIFERENTE de `periodYieldSampleDays` (quantos desses dias
+  // tinham produção e irradiância suficientes para entrar no rendimento
+  // agregado). Opcional/`null` só quando o backend ainda não emite o campo
+  // (compat retroativa, ver `contracts.ts::optionalPeriodOrMissing`) — o card
+  // continua funcionando sem ele, só sem a data explícita.
+  period = null,
 }: {
   daily: AnomalyDailyPoint[]
   periodYieldKwhPerKwhM2: MetricValue
   yieldAtypicalThresholdPercent: MetricValue
   periodYieldSampleDays: number
+  period?: AnomalyPeriod | null
 }) {
   const periodYield = toNumber(periodYieldKwhPerKwhM2)
 
@@ -79,6 +87,19 @@ export function YieldCard({
         Rendimento médio da janela analisada ({periodYieldSampleDays}{' '}
         {periodYieldSampleDays === 1 ? 'dia' : 'dias'})
       </p>
+      {/* Data explícita do recorte pedido ao backend (plano T7b, P2) — sem
+          isto, "janela analisada" não dizia QUAIS dias, e um O&M não
+          conseguia julgar se o recorte atravessou a virada de estação seca
+          (o que distorce a comparação de rendimento). Deliberadamente uma
+          linha própria, não fundida ao rótulo acima: mistura-las sugeriria
+          que o intervalo de calendário e `periodYieldSampleDays` são o mesmo
+          número, quando divergem sempre que algum dia do intervalo não
+          qualifica para o agregado (mesma armadilha do plano T7b P1). */}
+      {period != null && (
+        <p className="mt-0.5 text-xs text-gray-500">
+          Período coberto: {formatShortDate(period.start_date)}–{formatShortDate(period.end_date)}
+        </p>
+      )}
       <p className="mt-1 text-xs text-gray-500">kWh gerados por kWh/m² de sol recebido</p>
       <p className="mt-2 text-2xl font-semibold text-[var(--color-data-secondary)] tabular-nums">
         {formatNumber(periodYield, 2)}

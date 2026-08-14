@@ -74,6 +74,14 @@ class DailyPersistedAnomaly:
     #: `mplacas.devices.metrics.DeviceYieldAssessment.
     #: relative_to_own_median_deviation_percent`).
     yield_deviation_from_period_percent: Decimal | None = None
+    #: Mean ambient temperature for the day (`climate/db_models.py::
+    #: DailyClimateObservationRecord.temperature_mean_c`), collected but
+    #: never previously serialized (plan T7b, P2 "dados servidos e
+    #: descartados"). `None` whenever there is no climate observation for
+    #: the day — never fabricated as `0`. Second-largest driver of yield
+    #: after solar geometry: it turns a "-12%" deviation from mystery into
+    #: "hot day" on the day readout.
+    temperature_mean_c: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +278,7 @@ async def analyze_recent_persisted_anomalies(
         complete = all(row.status is DataStatus.CONSOLIDATED for row in rows)
         climate = climate_by_day.get(current_day)
         irradiation = climate.irradiation_kwh_m2 if climate is not None else None
+        temperature_mean_c = climate.temperature_mean_c if climate is not None else None
 
         historical_count = bisect_left(irradiation_dates, current_day)
         historical_values = irradiation_values[:historical_count]
@@ -288,6 +297,7 @@ async def analyze_recent_persisted_anomalies(
                     assessment=None,
                     yield_kwh_per_kwh_m2=day_yield,
                     yield_deviation_from_period_percent=yield_deviation_percent,
+                    temperature_mean_c=temperature_mean_c,
                 )
             )
             continue
@@ -311,6 +321,7 @@ async def analyze_recent_persisted_anomalies(
                 assessment=assessment,
                 yield_kwh_per_kwh_m2=day_yield,
                 yield_deviation_from_period_percent=yield_deviation_percent,
+                temperature_mean_c=temperature_mean_c,
             )
         )
 

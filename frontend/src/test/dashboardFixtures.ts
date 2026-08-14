@@ -198,6 +198,10 @@ export const anomalyPayload = {
   days_analyzed: 3,
   current_streak_days: 2,
   worst_level: 'ATTENTION',
+  // Cobre os 3 dias de `days_analyzed`, não só os 2 presentes em `daily`
+  // abaixo (`intelligence/router.py::_serialize_anomalies`, `period.
+  // start_date`/`end_date` — plano T7b, P2 "dados servidos e descartados").
+  period: { start_date: '2026-07-28', end_date: '2026-07-30' },
   expected_unavailable_reason: null,
   // Sem irradiância neste fixture (ambos os dias com `irradiation_kwh_m2:
   // null`), então o backend também não teria como calcular rendimento —
@@ -221,6 +225,10 @@ export const anomalyPayload = {
       irradiation_kwh_m2: null,
       yield_kwh_per_kwh_m2: null,
       yield_deviation_from_period_percent: null,
+      // Sem leitura de clima persistida neste fixture (mesma razão de
+      // `irradiation_kwh_m2: null` acima) — indisponibilidade explícita, não
+      // um `0` fabricado.
+      temperature_mean_c: null,
     },
     {
       date: '2026-07-30',
@@ -231,6 +239,7 @@ export const anomalyPayload = {
       irradiation_kwh_m2: null,
       yield_kwh_per_kwh_m2: null,
       yield_deviation_from_period_percent: null,
+      temperature_mean_c: null,
     },
   ],
 }

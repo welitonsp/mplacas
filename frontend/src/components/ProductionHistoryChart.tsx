@@ -217,6 +217,13 @@ export function ProductionHistoryChart({
   // `no-client-computed-yield-deviation.test.ts`).
   const activeYieldValue = toNumber(activeDay.yield_kwh_per_kwh_m2)
   const activeYieldDeviationPercent = toNumber(activeDay.yield_deviation_from_period_percent)
+  // Temperatura média ambiente do dia — coletada e persistida há tempo, mas
+  // só chega até aqui a partir do plano T7b (P2 "dados servidos e
+  // descartados"). Segundo maior direcionador de rendimento depois da
+  // geometria solar: junto de irradiância e rendimento (acima), transforma
+  // um desvio de "-12%" de mistério em "dia quente". `null` quando não há
+  // leitura de clima para o dia — nunca fabricado.
+  const activeTemperature = toNumber(activeDay.temperature_mean_c)
 
   return (
     // `interactive`: as barras do gráfico respondem a clique/foco (seleção do
@@ -568,6 +575,14 @@ export function ProductionHistoryChart({
                 {formatNumber(activeYieldDeviationPercent, 0)}% vs. período analisado)
               </span>
             )}
+          </span>
+        )}
+        {activeTemperature != null && (
+          <span>
+            Temperatura média:{' '}
+            <strong className="text-gray-900 tabular-nums">
+              {formatNumber(activeTemperature, 1)} °C
+            </strong>
           </span>
         )}
       </div>

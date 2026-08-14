@@ -18,6 +18,7 @@ function buildDaily(overrides: Partial<AnomalyDailyPoint> = {}): AnomalyDailyPoi
     irradiation_kwh_m2: 5,
     yield_kwh_per_kwh_m2: 8,
     yield_deviation_from_period_percent: 0,
+    temperature_mean_c: null,
     diagnostics: [],
     ...overrides,
   }
@@ -147,5 +148,38 @@ describe('YieldCard', () => {
     expect(items).toHaveLength(1)
     expect(items[0]).toHaveTextContent('01/08')
     expect(items[0]).toHaveTextContent('abaixo da média em 100%')
+  })
+
+  // Plano T7b, P2 ("dados servidos e descartados"): sem a data explícita, o
+  // cabeçalho diz "janela analisada (N dias)" sem dizer QUAIS dias — um O&M
+  // não conseguia julgar se o recorte atravessou a virada de estação seca.
+  it('mostra o período coberto (start_date–end_date) quando o backend o envia', () => {
+    render(
+      <YieldCard
+        daily={[buildDaily()]}
+        periodYieldKwhPerKwhM2="8"
+        yieldAtypicalThresholdPercent="20"
+        periodYieldSampleDays={7}
+        period={{ start_date: '2026-07-01', end_date: '2026-08-01' }}
+      />
+    )
+
+    expect(screen.getByText('Período coberto: 01/07–01/08')).toBeInTheDocument()
+  })
+
+  // Compatibilidade com backend uma versão atrás (`contracts.ts::
+  // optionalPeriodOrMissing`): `period` ausente/`null` não pode derrubar o
+  // card nem deixar um traço de texto quebrado — só a linha de data some.
+  it('não renderiza a linha de período quando o backend ainda não envia o campo', () => {
+    render(
+      <YieldCard
+        daily={[buildDaily()]}
+        periodYieldKwhPerKwhM2="8"
+        yieldAtypicalThresholdPercent="20"
+        periodYieldSampleDays={7}
+      />
+    )
+
+    expect(screen.queryByText(/Período coberto/)).not.toBeInTheDocument()
   })
 })

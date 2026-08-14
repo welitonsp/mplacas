@@ -507,6 +507,84 @@ async def test_period_yield_and_per_day_deviation_moved_from_frontend() -> None:
 
 
 @pytest.mark.asyncio
+async def test_temperature_mean_c_is_populated_from_climate_and_null_when_missing() -> None:
+    """Plan T7b, P2 ("dados servidos e descartados"): `temperature_mean_c` is
+    collected (`climate/open_meteo.py`) and persisted
+    (`climate/db_models.py`), but was never carried through this domain
+    layer. Day A has a climate observation with a temperature reading, day B
+    has a climate observation without one (`temperature_mean_c=None`), and
+    day C has no climate observation at all — all three must round-trip
+    correctly, `None` never fabricated as `0`.
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as session:
+        plant = Plant(name="Temperature synthetic plant", timezone="America/Sao_Paulo")
+        session.add(plant)
+        await session.flush()
+        device = Device(plant_id=plant.id, serial_number="SYNTHETIC-TEMPERATURE-001")
+        session.add(device)
+        await session.flush()
+        session.add_all(
+            [
+                DailyEnergy(
+                    device_id=device.id,
+                    production_date=date(2026, 7, 10),
+                    energy_kwh=Decimal("10"),
+                    status=DataStatus.CONSOLIDATED,
+                ),
+                DailyClimateObservationRecord(
+                    plant_id=plant.id,
+                    observation_date=date(2026, 7, 10),
+                    irradiation_kwh_m2=Decimal("4"),
+                    temperature_mean_c=Decimal("31.50"),
+                    source="SYNTHETIC",
+                ),
+                DailyEnergy(
+                    device_id=device.id,
+                    production_date=date(2026, 7, 11),
+                    energy_kwh=Decimal("6"),
+                    status=DataStatus.CONSOLIDATED,
+                ),
+                DailyClimateObservationRecord(
+                    plant_id=plant.id,
+                    observation_date=date(2026, 7, 11),
+                    irradiation_kwh_m2=Decimal("4"),
+                    temperature_mean_c=None,
+                    source="SYNTHETIC",
+                ),
+                # Day C: production reported, but no climate row at all.
+                DailyEnergy(
+                    device_id=device.id,
+                    production_date=date(2026, 7, 12),
+                    energy_kwh=Decimal("5"),
+                    status=DataStatus.CONSOLIDATED,
+                ),
+            ]
+        )
+        await session.commit()
+
+        result = await analyze_recent_persisted_anomalies(
+            session,
+            plant_id=plant.id,
+            expected_daily_production_kwh=None,
+            days=3,
+            end_date=date(2026, 7, 12),
+            expected_unavailable_reason="NO_PERFORMANCE_HISTORY",
+        )
+
+        by_date = {item.observation_date: item for item in result.daily}
+        assert by_date[date(2026, 7, 10)].temperature_mean_c == Decimal("31.50")
+        assert by_date[date(2026, 7, 11)].temperature_mean_c is None
+        assert by_date[date(2026, 7, 12)].temperature_mean_c is None
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_period_yield_unavailable_when_no_day_has_both_production_and_irradiation() -> None:
     """Mirrors `computeYieldStats`'s `periodYield == null` early return: no
     day in the window qualifies, so the aggregate — and every per-day yield

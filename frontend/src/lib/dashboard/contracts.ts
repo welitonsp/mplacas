@@ -166,12 +166,42 @@ export interface AnomalyDailyPoint {
   // conversão de unidade — mesma razão de
   // `device-contracts.ts::relative_to_own_median_deviation_percent`.
   yield_deviation_from_period_percent: MetricValue
+  // Temperatura média ambiente do dia (`climate/db_models.py::
+  // DailyClimateObservationRecord.temperature_mean_c`), coletada há tempo mas
+  // só serializada aqui a partir do plano T7b (P2 "dados servidos e
+  // descartados"). Segundo maior direcionador de rendimento depois da
+  // geometria solar — transforma um desvio de rendimento de mistério em "dia
+  // quente". `null` quando não há leitura de clima para o dia (usina sem
+  // coordenadas configuradas, ou dia sem observação persistida) — nunca um
+  // `0` fabricado. °C sempre explícito onde exibido.
+  temperature_mean_c: MetricValue
+}
+
+// Recorte de calendário que o backend efetivamente analisou
+// (`intelligence/router.py::_serialize_anomalies`, `period.start_date`/
+// `end_date`) — SEMPRE presente no payload real, mas tratado como campo
+// tolerante (`optionalPeriodOrMissing` abaixo) pelo mesmo motivo de
+// `expected_unavailable_reason`: é a primeira vez que o frontend o lê, então
+// um backend uma versão atrás (ou um fixture de teste anterior a este plano)
+// não pode derrubar o parse inteiro por não emiti-lo ainda.
+//
+// Diferente de `AnomalyDashboardResponse.period_yield_sample_days`: este é o
+// intervalo de calendário PEDIDO (`days` da query, até 90), não quantos
+// desses dias tinham produção e irradiância suficientes para entrar no
+// rendimento agregado — os dois números divergem sempre que algum dia do
+// intervalo não qualifica (mesma distinção que motivou T7b P1).
+export interface AnomalyPeriod {
+  start_date: string
+  end_date: string
 }
 
 export interface AnomalyDashboardResponse {
   plant_id: string
   days_analyzed: number
   current_streak_days: number
+  // `null` só quando o backend ainda não emite o campo (compat retroativa) —
+  // ver comentário de `AnomalyPeriod` acima.
+  period: AnomalyPeriod | null
   // `null` quando nenhum dia do período teve expectativa disponível pra
   // calcular severidade (ver `expected_unavailable_reason` abaixo) — não é o
   // mesmo caso de "sem dado nenhum" (esse continua sendo 404, ver
@@ -404,6 +434,24 @@ function optionalStringOrMissing(source: Record<string, unknown>, key: string): 
   throw new Error(`Resposta inválida da API: ${key}`)
 }
 
+// Mesmo padrão de tolerância de `optionalStringOrMissing`/
+// `metricValueOrMissing`: chave ausente (backend uma versão atrás, ou
+// fixture de teste anterior a este campo) vira `null`; chave presente com
+// forma errada (não é um record, ou falta `start_date`/`end_date`) continua
+// lançando — o contrato foi de fato violado nesse caso.
+function optionalPeriodOrMissing(
+  source: Record<string, unknown>,
+  key: string
+): AnomalyPeriod | null {
+  const value = source[key]
+  if (value === undefined || value === null) return null
+  if (!isRecord(value)) throw new Error(`Resposta inválida da API: ${key}`)
+  return {
+    start_date: requireString(value, 'start_date'),
+    end_date: requireString(value, 'end_date'),
+  }
+}
+
 // `null` é um valor válido e explícito (sem expectativa pra calcular
 // severidade nesse dia/período) — só valores fora do vocabulário conhecido
 // (nem `null`, nem um `AnomalyLevel` válido) contam como campo malformado.
@@ -476,6 +524,7 @@ export function parseAnomalyDaily(value: unknown): AnomalyDailyPoint {
     irradiation_kwh_m2: metricValue(value, 'irradiation_kwh_m2'),
     yield_kwh_per_kwh_m2: metricValueOrMissing(value, 'yield_kwh_per_kwh_m2'),
     yield_deviation_from_period_percent: metricValueOrMissing(value, 'yield_deviation_from_period_percent'),
+    temperature_mean_c: metricValueOrMissing(value, 'temperature_mean_c'),
   }
 }
 
@@ -487,6 +536,7 @@ export function parseAnomalyDashboard(payload: unknown): AnomalyDashboardRespons
     plant_id: requireString(payload, 'plant_id'),
     days_analyzed: numberValue(payload, 'days_analyzed'),
     current_streak_days: numberValue(payload, 'current_streak_days'),
+    period: optionalPeriodOrMissing(payload, 'period'),
     worst_level: optionalAnomalyLevel(payload, 'worst_level'),
     expected_unavailable_reason: optionalStringOrMissing(payload, 'expected_unavailable_reason'),
     period_yield_kwh_per_kwh_m2: metricValueOrMissing(payload, 'period_yield_kwh_per_kwh_m2'),

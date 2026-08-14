@@ -291,6 +291,7 @@ export function ProductionHistorySection({
           periodYieldKwhPerKwhM2={anomalyState.data.period_yield_kwh_per_kwh_m2}
           yieldAtypicalThresholdPercent={anomalyState.data.yield_atypical_threshold_percent}
           periodYieldSampleDays={anomalyState.data.period_yield_sample_days}
+          period={anomalyState.data.period}
         />
       </div>
     </div>

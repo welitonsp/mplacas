@@ -13,6 +13,7 @@ function buildDaily(date: string, actual: number, overrides: Partial<AnomalyDail
     irradiation_kwh_m2: null,
     yield_kwh_per_kwh_m2: null,
     yield_deviation_from_period_percent: null,
+    temperature_mean_c: null,
     diagnostics: [],
     ...overrides,
   }
@@ -344,5 +345,30 @@ describe('ProductionHistoryChart — rendimento do dia ativo (plano T7: valor pr
 
     const liveRegion = document.querySelector('[aria-live="polite"]') as HTMLElement
     expect(within(liveRegion).queryByText('Rendimento:')).not.toBeInTheDocument()
+  })
+})
+
+describe('ProductionHistoryChart — temperatura do dia ativo (plano T7b, P2: dado servido e antes descartado)', () => {
+  it('mostra a temperatura média do dia ativo, com unidade °C sempre visível', () => {
+    const daily: AnomalyDailyPoint[] = [
+      buildDaily('2026-07-01', 10, { temperature_mean_c: 31.5 }),
+    ]
+
+    render(<ProductionHistoryChart daily={daily} currentStreakDays={0} />)
+
+    const liveRegion = document.querySelector('[aria-live="polite"]') as HTMLElement
+    expect(within(liveRegion).getByText('Temperatura média:')).toBeInTheDocument()
+    expect(within(liveRegion).getByText('31,5 °C')).toBeInTheDocument()
+  })
+
+  it('não mostra a linha de temperatura quando o dia não tem leitura de clima (indisponibilidade explícita, nunca 0 fabricado)', () => {
+    const daily: AnomalyDailyPoint[] = [
+      buildDaily('2026-07-01', 10, { temperature_mean_c: null }),
+    ]
+
+    render(<ProductionHistoryChart daily={daily} currentStreakDays={0} />)
+
+    const liveRegion = document.querySelector('[aria-live="polite"]') as HTMLElement
+    expect(within(liveRegion).queryByText('Temperatura média:')).not.toBeInTheDocument()
   })
 })

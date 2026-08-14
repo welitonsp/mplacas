@@ -415,6 +415,82 @@ def test_zero_production_day_with_sun_gets_a_defined_yield_end_to_end(monkeypatc
     get_settings.cache_clear()
 
 
+def test_temperature_mean_c_serialized_per_day_end_to_end(monkeypatch) -> None:
+    """Plan T7b, P2: `temperature_mean_c` round-trips through the HTTP route
+    as a string when present, and as `null` — never `0` — for a day whose
+    climate observation exists but has no temperature reading."""
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
+    get_settings.cache_clear()
+
+    factory = asyncio.run(_factory())
+    monkeypatch.setattr(db_session, "SessionFactory", factory)
+    monkeypatch.setattr(anomalies_router, "SessionFactory", factory)
+
+    org_id = uuid.uuid4()
+    plant_id = uuid.uuid4()
+    day_b = date.today()
+    day_a = day_b - timedelta(days=1)
+
+    async def _seed_plant_with_temperature() -> None:
+        async with factory() as session:
+            session.add(
+                OrganizationRecord(id=org_id, name="Org", slug=f"org-{org_id.hex[:8]}", active=True)
+            )
+            session.add(Plant(id=plant_id, organization_id=org_id, name="Usina com temperatura"))
+            await session.flush()
+            device = Device(plant_id=plant_id, serial_number=f"DEV-{plant_id.hex[:8]}")
+            session.add(device)
+            await session.flush()
+            session.add_all(
+                [
+                    DailyEnergy(
+                        device_id=device.id,
+                        production_date=day_a,
+                        energy_kwh=Decimal("10"),
+                        status=DataStatus.CONSOLIDATED,
+                    ),
+                    DailyClimateObservationRecord(
+                        plant_id=plant_id,
+                        observation_date=day_a,
+                        irradiation_kwh_m2=Decimal("4"),
+                        temperature_mean_c=Decimal("28.30"),
+                        source="SYNTHETIC",
+                    ),
+                    DailyEnergy(
+                        device_id=device.id,
+                        production_date=day_b,
+                        energy_kwh=Decimal("6"),
+                        status=DataStatus.CONSOLIDATED,
+                    ),
+                    DailyClimateObservationRecord(
+                        plant_id=plant_id,
+                        observation_date=day_b,
+                        irradiation_kwh_m2=Decimal("4"),
+                        temperature_mean_c=None,
+                        source="SYNTHETIC",
+                    ),
+                ]
+            )
+            await session.commit()
+
+    asyncio.run(_seed_plant_with_temperature())
+
+    client = TestClient(app)
+    response = client.get(
+        "/energy/anomalies/latest",
+        headers=_bearer(org_id),
+        params={"plant_id": str(plant_id), "days": 2},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["period"] == {"start_date": day_a.isoformat(), "end_date": day_b.isoformat()}
+    by_date = {item["date"]: item for item in body["daily"]}
+    assert by_date[day_a.isoformat()]["temperature_mean_c"] == "28.30"
+    assert by_date[day_b.isoformat()]["temperature_mean_c"] is None
+
+    get_settings.cache_clear()
+
+
 def test_wrong_client_supplied_expectation_is_ignored(resolvable_plant) -> None:
     """The parameter is accepted (validated by `Query(gt=0)`) but never used:
     a deliberately absurd value must produce the exact same result as when

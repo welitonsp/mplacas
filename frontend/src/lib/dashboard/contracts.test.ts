@@ -3,6 +3,7 @@ import {
   classifyAnomalyErrorStatus,
   combineDiagnostics,
   latestNonNullProductionDate,
+  parseAnomalyDaily,
   parseAnomalyDashboard,
   parseExecutiveDashboard,
   type AnomalyDailyPoint,
@@ -19,6 +20,7 @@ function buildDaily(overrides: Partial<AnomalyDailyPoint> = {}): AnomalyDailyPoi
     irradiation_kwh_m2: null,
     yield_kwh_per_kwh_m2: null,
     yield_deviation_from_period_percent: null,
+    temperature_mean_c: null,
     diagnostics: [],
     ...overrides,
   }
@@ -271,6 +273,66 @@ describe('parseAnomalyDashboard — contrato novo (200 sempre, campos por dia nu
     payload.period_yield_sample_days = 'dois'
 
     expect(() => parseAnomalyDashboard(payload)).toThrow()
+  })
+})
+
+// Plano T7b, P2 ("dados servidos e descartados"): `period.start_date`/
+// `end_date` chegam do backend desde a origem deste endpoint
+// (`intelligence/router.py::_serialize_anomalies`) mas eram descartados
+// inteiros pelo parser. Três casos obrigatórios (§2.2): payload válido,
+// campo ausente/indisponível, payload malformado.
+describe('parseAnomalyDashboard — period (plano T7b, P2)', () => {
+  it('faz o parse de period.start_date/end_date quando presente', () => {
+    const payload = buildAnomalyPayload({
+      period: { start_date: '2026-07-01', end_date: '2026-07-30' },
+    })
+
+    const result = parseAnomalyDashboard(payload)
+
+    expect(result.period).toEqual({ start_date: '2026-07-01', end_date: '2026-07-30' })
+  })
+
+  it('aceita period ausente (backend uma versão atrás) sem derrubar o parse — vira null', () => {
+    const payload = buildAnomalyPayload() as Record<string, unknown>
+    delete payload.period
+
+    const result = parseAnomalyDashboard(payload)
+
+    expect(result.period).toBeNull()
+  })
+
+  it('rejeita period presente com forma inválida (falta end_date)', () => {
+    const payload = buildAnomalyPayload({
+      period: { start_date: '2026-07-01' },
+    })
+
+    expect(() => parseAnomalyDashboard(payload)).toThrow()
+  })
+})
+
+// Plano T7b, P2: `temperature_mean_c` é coletado (`climate/open_meteo.py`) e
+// persistido (`climate/db_models.py`) há tempo, mas nunca chegava ao
+// contrato do frontend. Mesmos três casos obrigatórios, agora por dia.
+describe('parseAnomalyDaily — temperature_mean_c (plano T7b, P2)', () => {
+  it('faz o parse de temperature_mean_c quando presente', () => {
+    const result = parseAnomalyDaily({ ...buildDaily(), temperature_mean_c: '31.50' })
+
+    expect(result.temperature_mean_c).toBe('31.50')
+  })
+
+  it('aceita temperature_mean_c ausente (backend uma versão atrás) sem lançar — vira null', () => {
+    const payload = buildDaily() as unknown as Record<string, unknown>
+    delete payload.temperature_mean_c
+
+    const result = parseAnomalyDaily(payload)
+
+    expect(result.temperature_mean_c).toBeNull()
+  })
+
+  it('rejeita temperature_mean_c presente com tipo inválido', () => {
+    const payload = { ...buildDaily(), temperature_mean_c: { value: 31.5 } }
+
+    expect(() => parseAnomalyDaily(payload)).toThrow()
   })
 })
 
