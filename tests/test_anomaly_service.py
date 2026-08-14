@@ -511,7 +511,7 @@ async def test_period_yield_and_per_day_deviation_moved_from_frontend() -> None:
         # não tem como saber. Ver o teste de degradação progressiva abaixo para
         # o comportamento com histórico suficiente.
         for observation_date in by_date:
-            assert by_date[observation_date].yield_deviation_from_period_percent is None
+            assert by_date[observation_date].yield_deviation_from_median_percent is None
 
     await engine.dispose()
 
@@ -631,7 +631,7 @@ async def test_period_yield_unavailable_when_no_day_has_both_production_and_irra
 
         assert result.period_yield_kwh_per_kwh_m2 is None
         assert result.daily[0].yield_kwh_per_kwh_m2 is None
-        assert result.daily[0].yield_deviation_from_period_percent is None
+        assert result.daily[0].yield_deviation_from_median_percent is None
         assert result.period_yield_sample_days == 0
 
     await engine.dispose()
@@ -713,7 +713,7 @@ async def test_yield_deviation_uses_trailing_median_so_a_day_never_judges_itself
         # Mediana dos anteriores = 2.0; (1.0 / 2.0 - 1) * 100 = -50%.
         # Se o próprio dia entrasse na referência, o desvio seria menor em
         # módulo — é exatamente essa diluição que a janela atrasada elimina.
-        assert day.yield_deviation_from_period_percent == Decimal("-50")
+        assert day.yield_deviation_from_median_percent == Decimal("-50")
 
     await engine.dispose()
 
@@ -776,9 +776,9 @@ async def test_progressive_degradation_is_flagged_instead_of_looking_stable() ->
         )
 
         deviations = [
-            item.yield_deviation_from_period_percent
+            item.yield_deviation_from_median_percent
             for item in result.daily
-            if item.yield_deviation_from_period_percent is not None
+            if item.yield_deviation_from_median_percent is not None
         ]
         assert deviations, "todo dia deveria ter mediana rolante disponível aqui"
         # Toda a série está em queda, então todo dia fica ABAIXO da mediana dos

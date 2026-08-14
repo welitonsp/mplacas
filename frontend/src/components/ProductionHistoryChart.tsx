@@ -210,13 +210,13 @@ export function ProductionHistoryChart({
 
   const activeIrradiation = toNumber(activeDay.irradiation_kwh_m2)
   // Rendimento e desvio já prontos do backend (`yield_kwh_per_kwh_m2`/
-  // `yield_deviation_from_period_percent`, ver `intelligence/anomaly_service.py::
+  // `yield_deviation_from_median_percent`, ver `intelligence/anomaly_service.py::
   // _compute_period_yield` — 2026-08-13, plano T7). `null` quando o dia não
   // tem produção/irradiância positivas ao mesmo tempo, ou quando nenhum dia
   // do período analisado qualifica — nunca recalculado aqui (ver
   // `no-client-computed-yield-deviation.test.ts`).
   const activeYieldValue = toNumber(activeDay.yield_kwh_per_kwh_m2)
-  const activeYieldDeviationPercent = toNumber(activeDay.yield_deviation_from_period_percent)
+  const activeYieldDeviationPercent = toNumber(activeDay.yield_deviation_from_median_percent)
   // Temperatura média ambiente do dia — coletada e persistida há tempo, mas
   // só chega até aqui a partir do plano T7b (P2 "dados servidos e
   // descartados"). Segundo maior direcionador de rendimento depois da
@@ -572,7 +572,8 @@ export function ProductionHistoryChart({
             {activeYieldDeviationPercent != null && (
               <span className="text-gray-500 tabular-nums">
                 ({activeYieldDeviationPercent > 0 ? '+' : ''}
-                {formatNumber(activeYieldDeviationPercent, 0)}% vs. período analisado)
+                {formatNumber(activeYieldDeviationPercent, 0)}% vs. mediana dos 30 dias
+                anteriores)
               </span>
             )}
           </span>

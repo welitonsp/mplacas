@@ -15,8 +15,8 @@ import { describe, expect, it } from 'vitest'
 // não apresentação.
 //
 // O cálculo foi movido para `intelligence/anomaly_service.py::
-// _compute_period_yield`/`_yield_deviation_from_period_percent`, que agora
-// expõe `yield_kwh_per_kwh_m2`/`yield_deviation_from_period_percent` por dia
+// _compute_period_yield`/`_yield_deviation_from_median_percent`, que agora
+// expõe `yield_kwh_per_kwh_m2`/`yield_deviation_from_median_percent` por dia
 // e `period_yield_kwh_per_kwh_m2`/`yield_atypical_threshold_percent` no
 // envelope de `GET /energy/anomalies/latest` — `contracts.ts` só valida
 // forma, `YieldCard.tsx`/`ProductionHistoryChart.tsx` só formatam.

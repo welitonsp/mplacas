@@ -156,16 +156,23 @@ export interface AnomalyDailyPoint {
   // `no-client-computed-yield-deviation.test.ts` para a guarda estática que
   // impede recomputar isto no cliente.
   yield_kwh_per_kwh_m2: MetricValue
-  // Desvio percentual deste dia em relação ao rendimento agregado do período
-  // (`AnomalyDashboardResponse.period_yield_kwh_per_kwh_m2`), pronto do
-  // backend — `((yield_kwh_per_kwh_m2 / period_yield) − 1) × 100`. `null` sob
-  // a mesma condição de `yield_kwh_per_kwh_m2`, ou quando o rendimento do
-  // período inteiro também é `null`. Movido do antigo
-  // `lib/dashboard/yield.ts` (arquivo removido, 2026-08-13, plano T7):
-  // deslocar o ponto de referência do zero é cálculo de domínio, não
-  // conversão de unidade — mesma razão de
-  // `device-contracts.ts::relative_to_own_median_deviation_percent`.
-  yield_deviation_from_period_percent: MetricValue
+  // Desvio percentual deste dia em relação à **mediana rolante dos 30 dias
+  // estritamente anteriores a ele** — não em relação à média da janela
+  // exibida. Pronto do backend
+  // (`intelligence/anomaly_service.py::_trailing_rendimento_medians`).
+  //
+  // A referência mudou em 2026-08-13 (plano T7b, P1): produção/irradiância
+  // horizontal não é estacionária, então uma média de 90 dias carrega 5–15%
+  // de deriva sazonal para dentro de um limiar de 20%, o dia julgado entrava
+  // na própria referência, e degradação lenta arrastava a referência junto
+  // sem nunca aparecer. O campo foi renomeado junto da semântica: manter
+  // `from_period` seria um nome que mente.
+  //
+  // `null` quando o dia não tem rendimento OU quando não há amostras
+  // suficientes na janela anterior — indisponibilidade explícita, nunca
+  // "normal" por omissão. Ver `no-client-computed-yield-deviation.test.ts`
+  // para a guarda que impede recalcular isto no cliente.
+  yield_deviation_from_median_percent: MetricValue
   // Temperatura média ambiente do dia (`climate/db_models.py::
   // DailyClimateObservationRecord.temperature_mean_c`), coletada há tempo mas
   // só serializada aqui a partir do plano T7b (P2 "dados servidos e
@@ -523,7 +530,7 @@ export function parseAnomalyDaily(value: unknown): AnomalyDailyPoint {
     deviation_percent: metricValue(value, 'deviation_percent'),
     irradiation_kwh_m2: metricValue(value, 'irradiation_kwh_m2'),
     yield_kwh_per_kwh_m2: metricValueOrMissing(value, 'yield_kwh_per_kwh_m2'),
-    yield_deviation_from_period_percent: metricValueOrMissing(value, 'yield_deviation_from_period_percent'),
+    yield_deviation_from_median_percent: metricValueOrMissing(value, 'yield_deviation_from_median_percent'),
     temperature_mean_c: metricValueOrMissing(value, 'temperature_mean_c'),
   }
 }

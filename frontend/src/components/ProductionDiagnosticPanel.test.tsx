@@ -100,7 +100,7 @@ describe('ProductionDiagnosticPanel', () => {
         deviation_percent: -30,
         irradiation_kwh_m2: null,
         yield_kwh_per_kwh_m2: null,
-        yield_deviation_from_period_percent: null,
+        yield_deviation_from_median_percent: null,
       })),
     })
 
@@ -136,7 +136,7 @@ describe('ProductionDiagnosticPanel', () => {
           deviation_percent: null,
           irradiation_kwh_m2: null,
           yield_kwh_per_kwh_m2: null,
-          yield_deviation_from_period_percent: null,
+          yield_deviation_from_median_percent: null,
         },
       ],
     })
@@ -170,7 +170,7 @@ describe('ProductionDiagnosticPanel', () => {
           deviation_percent: 2.3,
           irradiation_kwh_m2: null,
           yield_kwh_per_kwh_m2: null,
-          yield_deviation_from_period_percent: null,
+          yield_deviation_from_median_percent: null,
         },
         {
           date: '2026-07-30',
@@ -180,7 +180,7 @@ describe('ProductionDiagnosticPanel', () => {
           deviation_percent: 0,
           irradiation_kwh_m2: null,
           yield_kwh_per_kwh_m2: null,
-          yield_deviation_from_period_percent: null,
+          yield_deviation_from_median_percent: null,
         },
       ],
     })

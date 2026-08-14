@@ -8,11 +8,11 @@ import { Card } from './Card'
 // (normal), produção baixa com irradiância alta é problema real.
 //
 // Movido do frontend para o backend (2026-08-13, plano T7):
-// `yield_kwh_per_kwh_m2`/`yield_deviation_from_period_percent` por dia e
+// `yield_kwh_per_kwh_m2`/`yield_deviation_from_median_percent` por dia e
 // `period_yield_kwh_per_kwh_m2`/`yield_atypical_threshold_percent` do
 // período já vêm prontos de `GET /energy/anomalies/latest`
 // (`intelligence/anomaly_service.py::_compute_period_yield`/
-// `_yield_deviation_from_period_percent`) — este componente só lê e formata,
+// `_yield_deviation_from_median_percent`) — este componente só lê e formata,
 // nunca soma/divide/reescala valores entre si (ver
 // `no-client-computed-yield-deviation.test.ts`, a guarda estática que impede
 // a reintrodução do cálculo aqui).
@@ -73,7 +73,7 @@ export function YieldCard({
   const threshold = toNumber(yieldAtypicalThresholdPercent) ?? Infinity
 
   const atypicalDays = daily
-    .map((d) => ({ date: d.date, deviationPercent: toNumber(d.yield_deviation_from_period_percent) }))
+    .map((d) => ({ date: d.date, deviationPercent: toNumber(d.yield_deviation_from_median_percent) }))
     .filter(
       (d): d is { date: string; deviationPercent: number } =>
         d.deviationPercent != null && Math.abs(d.deviationPercent) >= threshold
@@ -108,7 +108,8 @@ export function YieldCard({
 
       {atypicalDays.length === 0 ? (
         <p className="mt-4 text-xs text-gray-500">
-          Rendimento estável — nenhum dia com desvio relevante em relação à janela analisada.
+          Rendimento estável — nenhum dia com desvio relevante em relação à mediana dos 30
+          dias anteriores a ele.
         </p>
       ) : (
         <>

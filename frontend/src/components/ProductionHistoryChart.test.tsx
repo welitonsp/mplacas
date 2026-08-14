@@ -12,7 +12,7 @@ function buildDaily(date: string, actual: number, overrides: Partial<AnomalyDail
     deviation_percent: -9,
     irradiation_kwh_m2: null,
     yield_kwh_per_kwh_m2: null,
-    yield_deviation_from_period_percent: null,
+    yield_deviation_from_median_percent: null,
     temperature_mean_c: null,
     diagnostics: [],
     ...overrides,
@@ -313,12 +313,12 @@ describe('ProductionHistoryChart — classificação por dia permanece inalterad
 })
 
 describe('ProductionHistoryChart — rendimento do dia ativo (plano T7: valor pronto do backend, nunca recalculado)', () => {
-  it('mostra rendimento e desvio do dia ativo lendo `yield_kwh_per_kwh_m2`/`yield_deviation_from_period_percent` prontos, sem recomputar', () => {
+  it('mostra rendimento e desvio do dia ativo lendo `yield_kwh_per_kwh_m2`/`yield_deviation_from_median_percent` prontos, sem recomputar', () => {
     const daily: AnomalyDailyPoint[] = [
       buildDaily('2026-07-01', 10, {
         irradiation_kwh_m2: 4,
         yield_kwh_per_kwh_m2: 2.5,
-        yield_deviation_from_period_percent: 25,
+        yield_deviation_from_median_percent: 25,
         diagnostics: [],
       }),
     ]
@@ -328,7 +328,7 @@ describe('ProductionHistoryChart — rendimento do dia ativo (plano T7: valor pr
     const liveRegion = document.querySelector('[aria-live="polite"]') as HTMLElement
     expect(within(liveRegion).getByText('Rendimento:')).toBeInTheDocument()
     expect(within(liveRegion).getByText('2,5 kWh por kWh/m²')).toBeInTheDocument()
-    expect(within(liveRegion).getByText('(+25% vs. período analisado)')).toBeInTheDocument()
+    expect(within(liveRegion).getByText(/\(\+25% vs\. mediana dos 30 dias\s+anteriores\)/)).toBeInTheDocument()
   })
 
   it('não mostra a linha de rendimento quando o dia não tem rendimento calculável (sem irradiância ou sem produção positiva)', () => {
@@ -336,7 +336,7 @@ describe('ProductionHistoryChart — rendimento do dia ativo (plano T7: valor pr
       buildDaily('2026-07-01', 10, {
         irradiation_kwh_m2: null,
         yield_kwh_per_kwh_m2: null,
-        yield_deviation_from_period_percent: null,
+        yield_deviation_from_median_percent: null,
         diagnostics: [],
       }),
     ]

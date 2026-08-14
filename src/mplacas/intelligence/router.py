@@ -199,9 +199,9 @@ def _serialize_anomalies(result) -> dict[str, object]:
                     if item.yield_kwh_per_kwh_m2 is not None
                     else None
                 ),
-                "yield_deviation_from_period_percent": (
-                    str(item.yield_deviation_from_period_percent)
-                    if item.yield_deviation_from_period_percent is not None
+                "yield_deviation_from_median_percent": (
+                    str(item.yield_deviation_from_median_percent)
+                    if item.yield_deviation_from_median_percent is not None
                     else None
                 ),
                 # Collected (`climate/open_meteo.py`) and persisted

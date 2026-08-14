@@ -17,7 +17,7 @@ function buildDaily(overrides: Partial<AnomalyDailyPoint> = {}): AnomalyDailyPoi
     deviation_percent: -9,
     irradiation_kwh_m2: 5,
     yield_kwh_per_kwh_m2: 8,
-    yield_deviation_from_period_percent: 0,
+    yield_deviation_from_median_percent: 0,
     temperature_mean_c: null,
     diagnostics: [],
     ...overrides,
@@ -28,7 +28,7 @@ describe('YieldCard', () => {
   it('não renderiza nada quando o backend não conseguiu calcular rendimento do período (sem irradiância)', () => {
     const { container } = render(
       <YieldCard
-        daily={[buildDaily({ yield_kwh_per_kwh_m2: null, yield_deviation_from_period_percent: null })]}
+        daily={[buildDaily({ yield_kwh_per_kwh_m2: null, yield_deviation_from_median_percent: null })]}
         periodYieldKwhPerKwhM2={null}
         yieldAtypicalThresholdPercent="20"
         periodYieldSampleDays={7}
@@ -56,8 +56,8 @@ describe('YieldCard', () => {
     render(
       <YieldCard
         daily={[
-          buildDaily({ date: '2026-08-01', yield_deviation_from_period_percent: 5 }),
-          buildDaily({ date: '2026-08-02', yield_deviation_from_period_percent: -10 }),
+          buildDaily({ date: '2026-08-01', yield_deviation_from_median_percent: 5 }),
+          buildDaily({ date: '2026-08-02', yield_deviation_from_median_percent: -10 }),
         ]}
         periodYieldKwhPerKwhM2="8"
         yieldAtypicalThresholdPercent="20"
@@ -66,7 +66,7 @@ describe('YieldCard', () => {
     )
 
     expect(
-      screen.getByText('Rendimento estável — nenhum dia com desvio relevante em relação à janela analisada.')
+      screen.getByText(/Rendimento estável — nenhum dia com desvio relevante em relação à mediana dos 30\s+dias anteriores a ele\./)
     ).toBeInTheDocument()
     expect(screen.queryByText('Dias com rendimento fora do padrão')).not.toBeInTheDocument()
   })
@@ -75,11 +75,11 @@ describe('YieldCard', () => {
     render(
       <YieldCard
         daily={[
-          buildDaily({ date: '2026-08-01', yield_deviation_from_period_percent: 22 }),
-          buildDaily({ date: '2026-08-02', yield_deviation_from_period_percent: -33 }),
-          buildDaily({ date: '2026-08-03', yield_deviation_from_period_percent: 5 }), // abaixo do limiar
-          buildDaily({ date: '2026-08-04', yield_deviation_from_period_percent: 27 }),
-          buildDaily({ date: '2026-08-05', yield_deviation_from_period_percent: -21 }),
+          buildDaily({ date: '2026-08-01', yield_deviation_from_median_percent: 22 }),
+          buildDaily({ date: '2026-08-02', yield_deviation_from_median_percent: -33 }),
+          buildDaily({ date: '2026-08-03', yield_deviation_from_median_percent: 5 }), // abaixo do limiar
+          buildDaily({ date: '2026-08-04', yield_deviation_from_median_percent: 27 }),
+          buildDaily({ date: '2026-08-05', yield_deviation_from_median_percent: -21 }),
         ]}
         periodYieldKwhPerKwhM2="8"
         yieldAtypicalThresholdPercent="20"
@@ -109,7 +109,7 @@ describe('YieldCard', () => {
           buildDaily({
             date: '2026-08-01',
             yield_kwh_per_kwh_m2: null,
-            yield_deviation_from_period_percent: null,
+            yield_deviation_from_median_percent: null,
             diagnostics: [],
           }),
         ]}
@@ -120,22 +120,22 @@ describe('YieldCard', () => {
     )
 
     expect(
-      screen.getByText('Rendimento estável — nenhum dia com desvio relevante em relação à janela analisada.')
+      screen.getByText(/Rendimento estável — nenhum dia com desvio relevante em relação à mediana dos 30\s+dias anteriores a ele\./)
     ).toBeInTheDocument()
   })
 
   it('mostra um dia de produção zero sob sol pleno como o desvio mais grave (plano T7b, P1: "dia de produção zero com sol desaparece")', () => {
-    // `yield_kwh_per_kwh_m2: 0`/`yield_deviation_from_period_percent: -100`
+    // `yield_kwh_per_kwh_m2: 0`/`yield_deviation_from_median_percent: -100`
     // é exatamente o que o backend devolve pra um apagão (0 kWh) com
     // irradiância positiva — uma razão definida, não ausente (ver
     // `anomaly_service.py::_compute_period_yield`). Antes desta correção, um
-    // dia assim tinha `yield_deviation_from_period_percent: null` e sumia da
+    // dia assim tinha `yield_deviation_from_median_percent: null` e sumia da
     // lista de atípicos, como se não houvesse dado algum.
     render(
       <YieldCard
         daily={[
-          buildDaily({ date: '2026-08-01', yield_kwh_per_kwh_m2: 0, yield_deviation_from_period_percent: -100 }),
-          buildDaily({ date: '2026-08-02', yield_deviation_from_period_percent: 5 }),
+          buildDaily({ date: '2026-08-01', yield_kwh_per_kwh_m2: 0, yield_deviation_from_median_percent: -100 }),
+          buildDaily({ date: '2026-08-02', yield_deviation_from_median_percent: 5 }),
         ]}
         periodYieldKwhPerKwhM2="8"
         yieldAtypicalThresholdPercent="20"

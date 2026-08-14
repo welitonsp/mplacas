@@ -224,7 +224,7 @@ export const anomalyPayload = {
       deviation_percent: -13.6,
       irradiation_kwh_m2: null,
       yield_kwh_per_kwh_m2: null,
-      yield_deviation_from_period_percent: null,
+      yield_deviation_from_median_percent: null,
       // Sem leitura de clima persistida neste fixture (mesma razão de
       // `irradiation_kwh_m2: null` acima) — indisponibilidade explícita, não
       // um `0` fabricado.
@@ -238,7 +238,7 @@ export const anomalyPayload = {
       deviation_percent: -9,
       irradiation_kwh_m2: null,
       yield_kwh_per_kwh_m2: null,
-      yield_deviation_from_period_percent: null,
+      yield_deviation_from_median_percent: null,
       temperature_mean_c: null,
     },
   ],

@@ -375,7 +375,7 @@ describe('ProductionPage — histórico de produção não depende mais do basel
           deviation_percent: null,
           irradiation_kwh_m2: null,
           yield_kwh_per_kwh_m2: null,
-          yield_deviation_from_period_percent: null,
+          yield_deviation_from_median_percent: null,
         },
       ],
     }

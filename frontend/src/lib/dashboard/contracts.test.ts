@@ -19,7 +19,7 @@ function buildDaily(overrides: Partial<AnomalyDailyPoint> = {}): AnomalyDailyPoi
     deviation_percent: -9,
     irradiation_kwh_m2: null,
     yield_kwh_per_kwh_m2: null,
-    yield_deviation_from_period_percent: null,
+    yield_deviation_from_median_percent: null,
     temperature_mean_c: null,
     diagnostics: [],
     ...overrides,
@@ -184,7 +184,7 @@ describe('parseAnomalyDashboard — contrato novo (200 sempre, campos por dia nu
           deviation_percent: null,
           irradiation_kwh_m2: null,
           yield_kwh_per_kwh_m2: null,
-          yield_deviation_from_period_percent: null,
+          yield_deviation_from_median_percent: null,
           diagnostics: [],
         },
       ],
@@ -249,7 +249,7 @@ describe('parseAnomalyDashboard — contrato novo (200 sempre, campos por dia nu
     delete payload.yield_atypical_threshold_percent
     for (const day of payload.daily as Record<string, unknown>[]) {
       delete day.yield_kwh_per_kwh_m2
-      delete day.yield_deviation_from_period_percent
+      delete day.yield_deviation_from_median_percent
     }
 
     const result = parseAnomalyDashboard(payload)
@@ -258,7 +258,7 @@ describe('parseAnomalyDashboard — contrato novo (200 sempre, campos por dia nu
     expect(result.yield_atypical_threshold_percent).toBeNull()
     expect(result.period_yield_sample_days).toBe(0)
     expect(result.daily[0].yield_kwh_per_kwh_m2).toBeNull()
-    expect(result.daily[0].yield_deviation_from_period_percent).toBeNull()
+    expect(result.daily[0].yield_deviation_from_median_percent).toBeNull()
     // O resto do payload continua parseado normalmente — é isso que mantém a
     // página de pé enquanto o backend não sobe.
     expect(result.days_analyzed).toBe(payload.days_analyzed)

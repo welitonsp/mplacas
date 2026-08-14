@@ -278,7 +278,7 @@ export function ProductionHistorySection({
         {/* `YieldCard` recebe `anomalyState.data.daily` INTEIRO, não
             `filteredDaily` (plano T7b, P0: "o card afirma o que não
             verificou"). `period_yield_kwh_per_kwh_m2`/
-            `yield_deviation_from_period_percent` de cada dia já vêm do
+            `yield_deviation_from_median_percent` de cada dia já vêm do
             backend calculados sobre a janela cheia analisada (hoje até 90
             dias, ver `lib/api.ts::fetchAnomalyHistory` — este módulo sempre
             busca o máximo, `filteredDaily` é só um recorte visual client-side

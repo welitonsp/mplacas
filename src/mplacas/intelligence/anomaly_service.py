@@ -73,16 +73,24 @@ class DailyPersistedAnomaly:
     #: reference it would be judged against — its own ratio is defined, the
     #: aggregate it is compared to is not contaminated by it.
     yield_kwh_per_kwh_m2: Decimal | None = None
-    #: `((yield_kwh_per_kwh_m2 / period_yield) - 1) * 100` — this day's yield
-    #: re-expressed as a percent deviation from the analyzed window's own
-    #: aggregate yield. `None` whenever either side of that ratio is
-    #: unavailable — never invented. Moved from
-    #: `frontend/src/lib/dashboard/yield.ts::computeYieldStats` (2026-08-13,
-    #: plan T7): subtracting the constant `1` before rescaling to percent is
-    #: domain math, not a unit conversion (same reasoning as
+    #: `((yield_kwh_per_kwh_m2 / trailing_median) - 1) * 100` — this day's
+    #: yield re-expressed as a percent deviation from the **rolling median of
+    #: the 30 days strictly before it** (`_trailing_rendimento_medians`), not
+    #: from the analyzed window's aggregate. The reference changed on
+    #: 2026-08-13 (plan T7b, P1 "janela de referência sazonalmente
+    #: enviesada"): production/GHI is not stationary, so a 90-day mean carries
+    #: 5–15% of seasonal drift into a 20% threshold, the judged day used to sit
+    #: inside its own reference, and slow chronic degradation dragged that
+    #: reference along and never surfaced. The field was renamed with the
+    #: semantics — `from_period` would now be a lie.
+    #:
+    #: `None` whenever the day has no yield, or fewer than
+    #: `MINIMUM_RENDIMENTO_SAMPLE_DAYS` prior samples exist — never invented,
+    #: never silently "normal". Subtracting the constant `1` before rescaling
+    #: to percent is domain math, not a unit conversion (same reasoning as
     #: `mplacas.devices.metrics.DeviceYieldAssessment.
     #: relative_to_own_median_deviation_percent`).
-    yield_deviation_from_period_percent: Decimal | None = None
+    yield_deviation_from_median_percent: Decimal | None = None
     #: Mean ambient temperature for the day (`climate/db_models.py::
     #: DailyClimateObservationRecord.temperature_mean_c`), collected but
     #: never previously serialized (plan T7b, P2 "dados servidos e
@@ -387,7 +395,7 @@ async def analyze_recent_persisted_anomalies(
                     irradiation_kwh_m2=irradiation,
                     assessment=None,
                     yield_kwh_per_kwh_m2=day_yield,
-                    yield_deviation_from_period_percent=yield_deviation_percent,
+                    yield_deviation_from_median_percent=yield_deviation_percent,
                     temperature_mean_c=temperature_mean_c,
                 )
             )
@@ -411,7 +419,7 @@ async def analyze_recent_persisted_anomalies(
                 irradiation_kwh_m2=irradiation,
                 assessment=assessment,
                 yield_kwh_per_kwh_m2=day_yield,
-                yield_deviation_from_period_percent=yield_deviation_percent,
+                yield_deviation_from_median_percent=yield_deviation_percent,
                 temperature_mean_c=temperature_mean_c,
             )
         )

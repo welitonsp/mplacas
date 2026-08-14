@@ -236,7 +236,7 @@ def test_yield_fields_present_but_null_without_a_climate_observation(resolvable_
     assert body["yield_atypical_threshold_percent"] == "20"
     assert body["period_yield_sample_days"] == 0
     assert body["daily"][0]["yield_kwh_per_kwh_m2"] is None
-    assert body["daily"][0]["yield_deviation_from_period_percent"] is None
+    assert body["daily"][0]["yield_deviation_from_median_percent"] is None
 
 
 def test_yield_fields_computed_end_to_end_when_irradiation_is_available(monkeypatch) -> None:
@@ -326,8 +326,8 @@ def test_yield_fields_computed_end_to_end_when_irradiation_is_available(monkeypa
     # e nenhum historico, entao nao alcanca o piso de amostra e o desvio fica
     # `null` — indisponibilidade explicita, nunca "normal" por omissao. O
     # rendimento do dia (`yield_kwh_per_kwh_m2`) continua sendo calculado.
-    assert by_date[day_a.isoformat()]["yield_deviation_from_period_percent"] is None
-    assert by_date[day_b.isoformat()]["yield_deviation_from_period_percent"] is None
+    assert by_date[day_a.isoformat()]["yield_deviation_from_median_percent"] is None
+    assert by_date[day_b.isoformat()]["yield_deviation_from_median_percent"] is None
 
     get_settings.cache_clear()
 
@@ -413,7 +413,7 @@ def test_zero_production_day_with_sun_gets_a_defined_yield_end_to_end(monkeypatc
     assert Decimal(by_date[day_b.isoformat()]["yield_kwh_per_kwh_m2"]) == Decimal("0")
     # O desvio fica `null` por falta de historico para a mediana rolante, nao
     # por falta de rendimento (ver comentario no teste acima).
-    assert by_date[day_b.isoformat()]["yield_deviation_from_period_percent"] is None
+    assert by_date[day_b.isoformat()]["yield_deviation_from_median_percent"] is None
 
     get_settings.cache_clear()
 

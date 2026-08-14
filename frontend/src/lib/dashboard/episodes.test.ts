@@ -25,7 +25,7 @@ function day(date: string, diagnostics: AnomalyDiagnostic[]): AnomalyDailyPoint 
     deviation_percent: -20,
     irradiation_kwh_m2: null,
     yield_kwh_per_kwh_m2: null,
-    yield_deviation_from_period_percent: null,
+    yield_deviation_from_median_percent: null,
     temperature_mean_c: null,
     diagnostics,
   }
