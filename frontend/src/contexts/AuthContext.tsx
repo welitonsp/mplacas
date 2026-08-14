@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react'
-import { configureApi, apiFetch } from '../lib/api'
+import { AUTH_TIMEOUT_MS, configureApi, apiFetch, withTimeout } from '../lib/api'
 import { TokenStore } from '../lib/auth'
 import { API_URL } from '../env'
 import { SELECTED_PLANT_STORAGE_KEY } from './PlantContext'
@@ -51,11 +51,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   configureApi(getRefreshToken, setRefreshToken, logout)
 
   const login = useCallback(async (username: string, password: string) => {
-    const response = await fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    })
+    // Prazo de autenticação (auditoria v6, A-03): sem ele, um servidor que
+    // aceita a conexão e não responde deixava o botão em "Entrando..." para
+    // sempre, sem erro e sem saída — o pior estado possível numa tela de
+    // login, porque o usuário não sabe se deve esperar ou tentar de novo.
+    const deadline = withTimeout(AUTH_TIMEOUT_MS)
+    let response: Response
+    try {
+      response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+        signal: deadline.signal,
+      })
+    } catch {
+      throw new Error('O servidor demorou para responder. Verifique sua conexão e tente novamente.')
+    } finally {
+      deadline.clear()
+    }
 
     if (!response.ok) {
       const status = response.status

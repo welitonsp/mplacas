@@ -2,6 +2,61 @@ import { API_URL } from '../env'
 import { TokenStore } from './auth'
 import { parsePlantsResponse, type Plant } from './dashboard/plant-contracts'
 
+// Timeout de rede (auditoria v6, achado A-03). Nenhuma chamada tinha limite:
+// uma conexão que abre e nunca responde — rede móvel instável, captive portal,
+// balanceador que engole a requisição — deixava a interface em "carregando"
+// para sempre, sem erro e sem saída. `fetch` não expira sozinho.
+//
+// Dois valores porque as operações não têm o mesmo perfil: autenticação é
+// interativa e o usuário está olhando; leitura de dados pode legitimamente
+// demorar mais (relatório, janela de 90 dias). Ambos generosos o bastante para
+// não cortar requisição sadia em rede ruim.
+export const AUTH_TIMEOUT_MS = 15_000
+export const DATA_TIMEOUT_MS = 30_000
+
+// Combina o prazo interno com um `AbortController` externo, quando o chamador
+// tiver um (desmontagem de componente, troca de usina). Cancelar por qualquer
+// um dos dois motivos aborta a requisição; o `clear` devolvido evita que o
+// timer sobreviva à resposta e dispare um abort tardio sobre nada.
+export function withTimeout(
+  timeoutMs: number,
+  externalSignal?: AbortSignal | null
+): { signal: AbortSignal; clear: () => void; timedOut: () => boolean } {
+  const controller = new AbortController()
+  let expired = false
+
+  const timer = setTimeout(() => {
+    expired = true
+    controller.abort()
+  }, timeoutMs)
+
+  const forward = () => controller.abort()
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort()
+    else externalSignal.addEventListener('abort', forward, { once: true })
+  }
+
+  return {
+    signal: controller.signal,
+    clear: () => {
+      clearTimeout(timer)
+      externalSignal?.removeEventListener('abort', forward)
+    },
+    timedOut: () => expired,
+  }
+}
+
+// Erro distinto para o caso de prazo esgotado. A interface precisa poder
+// diferenciar "servidor demorou demais" de "servidor recusou" e de "usuário
+// saiu da tela" — as três situações pedem mensagens e ações diferentes, e
+// tratar todas como falha genérica de rede foi o que a auditoria apontou.
+export class RequestTimeoutError extends Error {
+  constructor(path: string, timeoutMs: number) {
+    super(`A requisição para ${path} excedeu ${timeoutMs}ms.`)
+    this.name = 'RequestTimeoutError'
+  }
+}
+
 type RefreshTokenGetter = () => string | null
 type RefreshTokenSetter = (token: string) => void
 type LogoutFn = () => void
@@ -45,11 +100,23 @@ async function performRefresh(): Promise<string | null> {
   const refreshToken = _getRefreshToken()
   if (!refreshToken) return null
 
-  const refreshResponse = await fetch(`${API_URL}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  })
+  const deadline = withTimeout(AUTH_TIMEOUT_MS)
+  let refreshResponse: Response
+  try {
+    refreshResponse = await fetch(`${API_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+      signal: deadline.signal,
+    })
+  } catch {
+    // Timeout ou falha de rede na renovação: tratado como renovação falha, o
+    // que leva a `_logout()` no chamador. Deixar a promessa pendurada aqui
+    // travaria toda requisição que estivesse aguardando esta renovação.
+    return null
+  } finally {
+    deadline.clear()
+  }
 
   if (!refreshResponse.ok) return null
 
@@ -95,7 +162,22 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   if (token) headers.set('Authorization', `Bearer ${token}`)
   headers.set('Content-Type', 'application/json')
 
-  const response = await fetch(`${API_URL}${path}`, { ...init, headers })
+  // O prazo interno convive com o `signal` que o chamador tenha passado: quem
+  // cancela por desmontagem de componente continua funcionando, e quem não
+  // passa nada ganha o prazo mesmo assim.
+  const deadline = withTimeout(DATA_TIMEOUT_MS, init.signal)
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}${path}`, { ...init, headers, signal: deadline.signal })
+  } catch (error) {
+    // Distingue prazo esgotado de cancelamento do usuário: a interface trata
+    // os dois de forma diferente — o primeiro merece mensagem e nova
+    // tentativa, o segundo é silencioso porque a tela já saiu.
+    if (deadline.timedOut()) throw new RequestTimeoutError(path, DATA_TIMEOUT_MS)
+    throw error
+  } finally {
+    deadline.clear()
+  }
 
   if (response.status !== 401) return response
 
@@ -109,7 +191,19 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   const retryHeaders = new Headers(init.headers)
   retryHeaders.set('Authorization', `Bearer ${accessToken}`)
   retryHeaders.set('Content-Type', 'application/json')
-  return fetch(`${API_URL}${path}`, { ...init, headers: retryHeaders })
+  const retryDeadline = withTimeout(DATA_TIMEOUT_MS, init.signal)
+  try {
+    return await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: retryHeaders,
+      signal: retryDeadline.signal,
+    })
+  } catch (error) {
+    if (retryDeadline.timedOut()) throw new RequestTimeoutError(path, DATA_TIMEOUT_MS)
+    throw error
+  } finally {
+    retryDeadline.clear()
+  }
 }
 
 // Dashboard executivo do ciclo de faturamento atual (`GET /energy/executive/latest`) —

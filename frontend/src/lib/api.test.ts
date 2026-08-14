@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { API_URL } from '../env'
-import { apiFetch, configureApi, downloadMonthlyReportExport, fetchMonthlyReportExport, fetchPlants } from './api'
+import { DATA_TIMEOUT_MS, RequestTimeoutError, apiFetch, configureApi, downloadMonthlyReportExport, fetchMonthlyReportExport, fetchPlants, withTimeout } from './api'
 import { TokenStore } from './auth'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -378,5 +378,73 @@ describe('apiFetch — renovação single-flight (A-02)', () => {
     expect(setRefresh).not.toHaveBeenCalled()
     expect(logout).toHaveBeenCalled()
     expect(TokenStore.get()).toBe('token-velho')
+  })
+})
+
+// A-03 da auditoria v6: nenhuma chamada tinha prazo. `fetch` não expira
+// sozinho, entao uma conexao que abre e nunca responde deixava a interface em
+// "carregando" para sempre — sem erro e sem saida.
+describe('withTimeout / apiFetch — prazo e cancelamento (A-03)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+    TokenStore.clear()
+    configureApi(() => null, () => {}, () => {})
+  })
+
+  it('aborta e sinaliza prazo esgotado quando o servidor nao responde', async () => {
+    vi.useFakeTimers()
+    const deadline = withTimeout(1000)
+
+    expect(deadline.signal.aborted).toBe(false)
+    expect(deadline.timedOut()).toBe(false)
+
+    vi.advanceTimersByTime(1000)
+
+    expect(deadline.signal.aborted).toBe(true)
+    expect(deadline.timedOut()).toBe(true)
+    deadline.clear()
+  })
+
+  // A distincao que a auditoria pediu: prazo esgotado e cancelamento do usuario
+  // exigem tratamento diferente na interface — o primeiro merece mensagem e
+  // nova tentativa, o segundo e silencioso porque a tela ja saiu.
+  it('cancelamento externo aborta sem marcar como prazo esgotado', () => {
+    const external = new AbortController()
+    const deadline = withTimeout(60_000, external.signal)
+
+    external.abort()
+
+    expect(deadline.signal.aborted).toBe(true)
+    expect(deadline.timedOut()).toBe(false)
+    deadline.clear()
+  })
+
+  it('sinal externo ja abortado antes da chamada aborta imediatamente', () => {
+    const external = new AbortController()
+    external.abort()
+
+    const deadline = withTimeout(60_000, external.signal)
+
+    expect(deadline.signal.aborted).toBe(true)
+    deadline.clear()
+  })
+
+  it('apiFetch converte prazo esgotado em RequestTimeoutError', async () => {
+    TokenStore.set('token')
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+      // Simula servidor que nunca responde: so rejeita quando o sinal aborta.
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () =>
+          reject(new DOMException('Aborted', 'AbortError'))
+        )
+      })
+    ))
+
+    vi.useFakeTimers()
+    const pending = apiFetch('/lento')
+    const assertion = expect(pending).rejects.toBeInstanceOf(RequestTimeoutError)
+    await vi.advanceTimersByTimeAsync(DATA_TIMEOUT_MS)
+    await assertion
   })
 })
