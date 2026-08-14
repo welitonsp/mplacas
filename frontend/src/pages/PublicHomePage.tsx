@@ -21,9 +21,13 @@ import {
   X,
 } from "lucide-react";
 
-const heroImage = "https://images.unsplash.com/photo-1509391366360-2e959784a276?auto=format&fit=crop&w=2200&q=88";
-const energyImage = "https://images.unsplash.com/photo-1509391366360-2e959784a276?auto=format&fit=crop&w=1800&q=85";
-const climateImage = "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1800&q=85";
+// Imagens auto-hospedadas (auditoria v6, A-16/A-15). Vinham do Unsplash e
+// eram bloqueadas pela CSP do projeto (`img-src 'self' data:`), entao o
+// heroi renderizava vazio em producao. Servidas de `public/images/` em
+// WebP, dimensionadas para o uso real de cada secao.
+const heroImage = "/images/solar-hero.webp";
+const energyImage = "/images/solar-story.webp";
+const climateImage = "/images/climate-story.webp";
 const logoImage = "/mplacas-mark.svg";
 
 const navItems = [
