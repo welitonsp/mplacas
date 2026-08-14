@@ -806,7 +806,7 @@ correção de classe — e ela só foi feita porque a revisão da T1c tropeçou 
 
 ---
 
-### [ ] T7b — Achados do `solar-domain-specialist` sobre a janela de rendimento
+### [~] T7b — Achados do `solar-domain-specialist` sobre a janela de rendimento (P2 concluído; P0/P1 pendentes)
 
 Parecer consultivo obtido após a T7. A transposição do cálculo está **aritmeticamente fiel** — a
 fórmula, o limiar de 20%, o filtro de "ambos os lados positivos", a propagação de `null` em vez de
@@ -850,14 +850,43 @@ está dentro da própria referência: **degradação crônica arrasta a referên
 (`production_alert.py:705-732`, `devices/metrics.py:202-254`) — o que **reduz** duplicação em vez de
 aumentar. Não é escopo da T7, que era mover e não redesenhar.
 
-**[ ] P2 — dados servidos e descartados.** `period.start_date`/`end_date` chegam
+**[x] P2 — dados servidos e descartados.** `period.start_date`/`end_date` chegam
 (`intelligence/router.py:142-145`) e `parseAnomalyDashboard` os joga fora (`contracts.ts:371-380`).
 `temperature_mean_c` é coletada e persistida, mas não serializada — é o segundo maior driver do
 rendimento e transformaria "−12%" de mistério em "dia quente".
 
+Implementado em 2026-08-13:
+- **2.1 Período coberto:** `AnomalyPeriod`/`optionalPeriodOrMissing` em `contracts.ts` (tolerante
+  a backend uma versão atrás, mesmo padrão de `expected_unavailable_reason`); `YieldCard.tsx`
+  exibe "Período coberto: dd/mm–dd/mm" abaixo do rótulo "janela analisada (N dias)", como linha
+  própria — não fundida ao rótulo, porque `period` (recorte de calendário pedido) e
+  `periodYieldSampleDays` (dias que efetivamente alimentaram o agregado) são números diferentes.
+  Nenhum campo novo no backend: `period` já era serializado desde a origem do endpoint, só não
+  era parseado.
+- **2.2 Temperatura:** `DailyPersistedAnomaly.temperature_mean_c` (novo campo, domínio —
+  `anomaly_service.py`) populado a partir de `DailyClimateObservationRecord.temperature_mean_c`
+  já persistido; serializado em `intelligence/router.py::_serialize_anomalies` (`null` quando não
+  há observação de clima para o dia). `contracts.ts::AnomalyDailyPoint.temperature_mean_c`
+  (tolerante, `metricValueOrMissing`); exibido no readout do dia ativo de
+  `ProductionHistoryChart.tsx` como "Temperatura média: N °C", ao lado de irradiância e
+  rendimento, só quando não-nulo.
+
+Backend: `862 passed, 6 skipped` (baseline 860 passed + 2 testes novos —
+`test_temperature_mean_c_is_populated_from_climate_and_null_when_missing` em
+`tests/test_anomaly_service.py`, `test_temperature_mean_c_serialized_per_day_end_to_end` em
+`tests/test_energy_anomalies_router.py`), `ruff check .` limpo, mypy 194 arquivos sem erro.
+
+Frontend: `937 passed` (baseline 927 + 10 novos — 6 em `contracts.test.ts` cobrindo os 3 casos
+obrigatórios de `period` e de `temperature_mean_c` cada, 2 em `YieldCard.test.tsx`, 2 em
+`ProductionHistoryChart.test.tsx`), `npm run build`/`type-check` sem erro, orçamento de bundle
+7/7 dentro do teto (`ProductionPage` 13,65 kB / 15 kB gzip).
+
+Nenhum cálculo novo no cliente (ambos os campos são leitura/formatação); `null` explícito nunca
+`0` fabricado; unidade `°C` sempre visível junto do valor.
+
 ---
 
-### [ ] T11 — `App.test.tsx` é intermitente (flaky)
+### [x] T11 — `App.test.tsx` é intermitente (flaky)
 
 Descoberto em 2026-08-13 ao validar a compatibilidade retroativa do parser.
 
@@ -882,10 +911,61 @@ assim que uma regressão real entra despercebida. O arquivo também depende de o
 (falha isolado, passa na suíte), o que é um segundo defeito.
 
 **Critério de aceite:**
-- [ ] Causa da intermitência identificada (provável: `waitFor` sobre navegação assíncrona sem
-      âncora determinística).
-- [ ] Teste passa 10 execuções consecutivas, isolado **e** na suíte.
-- [ ] Nenhum `waitFor` sem asserção de estado observável estável.
+- [x] Causa da intermitência identificada — **a hipótese registrada acima foi parcialmente
+      refutada, não confirmada**. Ver "Causa raiz real" abaixo.
+- [x] Teste passa 10 execuções consecutivas, isolado **e** na suíte (ver "Prova" abaixo).
+- [x] Nenhum `waitFor` sem asserção de estado observável estável — todas as âncoras já checavam
+      estado real; nenhuma âncora foi alterada.
+
+**Causa raiz real (2026-08-13, confirmada por reprodução direta — não a hipótese original).**
+
+A hipótese registrada era "`waitFor` sobre navegação assíncrona sem âncora determinística". Isso é
+**falso**: toda âncora deste arquivo já checa estado observável real (`window.location.pathname`,
+contagem de chamadas de mock, presença de um elemento por `role`). O problema nunca foi a âncora —
+foi o **orçamento de tempo** que `waitFor`/`findBy*` dão a essa âncora antes de desistir.
+
+`renderApp()` (usado pelos 9 testes) chama `vi.resetModules()` e reimporta `./App` a cada teste,
+forçando o registro de módulos do Vitest a reavaliar do zero toda a árvore de rotas `lazy()`
+(`DashboardLayout`, `OverviewPage`, `ProductionPage`, ...). O primeiro teste — em **ordem de
+execução**, não necessariamente o primeiro do arquivo-fonte — a acionar um chunk específico paga o
+custo de resolução "fria" dessa importação dinâmica; os demais reaproveitam o módulo já
+transformado pelo Vite e são rápidos. `waitFor`/`findBy*` usam por padrão
+`asyncUtilTimeout: 1000` (`node_modules/@testing-library/dom/dist/config.js:15`),
+**independente** de `testTimeout: 15000` (`vitest.config.ts:19`) — o mesmo comentário em
+`vitest.config.ts` já registrava que a suíte completa em paralelo havia estourado um timeout de 5s
+antes, e a correção então (subir `testTimeout` para 15000) nunca chegou ao timeout interno próprio
+do `waitFor`, que ficou esquecido em 1000ms.
+
+Reproduzido em duas frentes distintas, confirmando as duas causas aparentes do plano como a MESMA
+causa raiz, não dois defeitos:
+- **Contenção de CPU (suíte completa):** rodando a suíte inteira (84 arquivos em paralelo) uma
+  segunda vez após a mudança de parser, `findByRole('combobox', {name: /usina ativa/i})` (linha do
+  teste "troca de usina") estourou o timeout de 1000ms com o DOM ainda preso no fallback
+  `<Suspense>` ("Carregando tela") — o app estava correto, só não tinha renderizado a tempo.
+- **Dependência de ordem (arquivo isolado):** `npx vitest run src/App.test.tsx --sequence.shuffle`
+  reproduziu falha em 2 de 4 execuções **mesmo isolado**, sem nenhuma outra suíte rodando — sempre
+  em `waitFor(() => expect(fetchPlants).toHaveBeenCalledTimes(1))` (teste "PlantProvider não
+  remonta"), nunca em um valor incorreto. Isso confirma que "depende de ordem" e "é lento sob
+  contenção" são a mesma causa: qual teste paga o custo frio de importação depende da ordem, e
+  se esse custo frio ultrapassa 1000ms (mais provável sob carga), aquele teste falha — não porque
+  algo vazou entre testes, mas porque o teste que por acaso é o primeiro a tocar um chunk específico
+  precisa de mais que 1000ms.
+
+**Correção:** `configure({ asyncUtilTimeout: 15000 })` (de `@testing-library/react`) no topo de
+`src/App.test.tsx`, alinhando o timeout interno do `waitFor`/`findBy*` ao `testTimeout` que já
+existia — não é afrouxar asserção nem mascarar: um teste genuinamente travado ainda falha, agora
+em até 15s (o mesmo teto que `testTimeout` já impunha ao teste inteiro), não mais em 1s. Nenhuma
+âncora foi alterada, nenhum `sleep` foi adicionado. Comentário extenso no próprio arquivo explica a
+causa e por que não é o mesmo padrão de "aumentar timeout pra mascarar" — ver `App.test.tsx:11-27`.
+
+**Prova (2026-08-13, após a correção):**
+- `npx vitest run src/App.test.tsx` × 10, isolado: **10/10 execuções, 9 testes passando em todas**
+  (nenhuma falha).
+- `npx vitest run src/App.test.tsx --sequence.shuffle` × 5, isolado (cenário que reproduzia a
+  dependência de ordem antes da correção): **5/5 execuções, 9/9 passando em todas**.
+- `npm run test` (suíte completa) × 3: **84 arquivos passed / 927 testes passed** nas três
+  execuções (durações 320,60s / 335,95s / 208,81s — variação de carga real da máquina, sem
+  nenhuma falha).
 
 ---
 
