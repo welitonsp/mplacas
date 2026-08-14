@@ -3,6 +3,7 @@ import { configureApi, apiFetch } from '../lib/api'
 import { TokenStore } from '../lib/auth'
 import { API_URL } from '../env'
 import { SELECTED_PLANT_STORAGE_KEY } from './PlantContext'
+import { safeStorage } from '../lib/storage'
 
 interface AuthContextValue {
   isAuthenticated: boolean
@@ -26,7 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // A usina selecionada é estado de sessão (ADR-069, seção 5) — limpa junto
     // do token para não vazar seleção entre logins de usuários diferentes no
     // mesmo navegador.
-    window.localStorage.removeItem(SELECTED_PLANT_STORAGE_KEY)
+    safeStorage.remove(SELECTED_PLANT_STORAGE_KEY)
     refreshTokenRef.current = null
     setIsAuthenticated(false)
     setUsername(null)

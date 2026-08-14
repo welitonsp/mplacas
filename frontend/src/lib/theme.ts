@@ -5,6 +5,8 @@
 // por causa do CSP sem `unsafe-inline`/nonce, então um flash cosmético breve
 // é aceito conscientemente em vez disso).
 
+import { safeStorage } from './storage'
+
 export type Theme = 'light' | 'dark'
 export type ThemePreference = Theme | 'system'
 
@@ -20,7 +22,7 @@ function prefersDark(): boolean {
  * versão antiga etc.) cai para a preferência do SO via `matchMedia`.
  */
 export function resolveInitialTheme(): Theme {
-  const saved = window.localStorage.getItem(STORAGE_KEY)
+  const saved = safeStorage.get(STORAGE_KEY)
   if (saved === 'light' || saved === 'dark') {
     return saved
   }
@@ -41,7 +43,7 @@ export function applyTheme(theme: Theme): void {
  * estados: o que pintar na tela).
  */
 export function getThemePreference(): ThemePreference {
-  const saved = window.localStorage.getItem(STORAGE_KEY)
+  const saved = safeStorage.get(STORAGE_KEY)
   if (saved === 'light' || saved === 'dark') {
     return saved
   }
@@ -56,10 +58,10 @@ export function getThemePreference(): ThemePreference {
  */
 export function setThemePreference(preference: ThemePreference): void {
   if (preference === 'system') {
-    window.localStorage.removeItem(STORAGE_KEY)
+    safeStorage.remove(STORAGE_KEY)
     return
   }
-  window.localStorage.setItem(STORAGE_KEY, preference)
+  safeStorage.set(STORAGE_KEY, preference)
 }
 
 /**
@@ -89,7 +91,7 @@ export function watchSystemTheme(onChange: (theme: Theme) => void): () => void {
   const media = window.matchMedia('(prefers-color-scheme: dark)')
 
   const listener = (event: MediaQueryListEvent) => {
-    if (window.localStorage.getItem(STORAGE_KEY) !== null) {
+    if (safeStorage.get(STORAGE_KEY) !== null) {
       // Existe um override salvo — a preferência do SO não deve mais reaplicar.
       return
     }

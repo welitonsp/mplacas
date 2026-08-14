@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { useSearchParams } from 'react-router'
 import { fetchPlants } from '../lib/api'
 import type { Plant } from '../lib/dashboard/plant-contracts'
+import { safeStorage } from '../lib/storage'
 
 // Chave de `localStorage` usada para lembrar a última usina escolhida entre
 // sessões (ADR-069, seção 5). Exportada para que `AuthContext.logout()` limpe
@@ -31,7 +32,7 @@ function resolvePlantId(plants: Plant[], queryPlantId: string | null): string | 
     return queryPlantId
   }
 
-  const stored = window.localStorage.getItem(SELECTED_PLANT_STORAGE_KEY)
+  const stored = safeStorage.get(SELECTED_PLANT_STORAGE_KEY)
   if (stored && plants.some((plant) => plant.id === stored)) {
     return stored
   }
@@ -87,7 +88,7 @@ export function PlantProvider({ children }: { children: React.ReactNode }) {
   const selectPlant = useCallback(
     (id: string) => {
       setPlantId(id)
-      window.localStorage.setItem(SELECTED_PLANT_STORAGE_KEY, id)
+      safeStorage.set(SELECTED_PLANT_STORAGE_KEY, id)
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev)

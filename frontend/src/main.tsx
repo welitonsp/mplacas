@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { applyTheme, resolveInitialTheme } from './lib/theme'
+import { safeStorage } from './lib/storage'
 
 // Resolve e aplica o tema (claro/escuro) antes de qualquer render — ADR-071,
 // Decisão 2. Side-effect de módulo, roda uma única vez no bootstrap, fora de
@@ -21,7 +22,7 @@ try {
 
 // Migração de segurança do dashboard FastAPI removido. Nunca lemos o
 // valor: apenas apagamos a credencial de longa duração deixada por versões antigas.
-window.localStorage.removeItem('mplacas_creds_v1')
+safeStorage.remove('mplacas_creds_v1')
 
 const rootElement = document.getElementById('root')
 if (!rootElement) {

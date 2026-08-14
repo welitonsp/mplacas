@@ -18,6 +18,7 @@ import { EmptyState } from './EmptyState'
 import { ProductionHistoryChart } from './ProductionHistoryChart'
 import { RetryableError } from './RetryableError'
 import { YieldCard } from './YieldCard'
+import { safeStorage } from '../lib/storage'
 
 const SIGNAL_STYLES: Record<Severity, string> = {
   success: 'border-[var(--color-success)]/20 bg-[var(--color-success-light)] text-[var(--color-success-text)]',
@@ -44,7 +45,7 @@ function readStoredPeriodPreference(): ProductionPeriodDays {
   }
 
   try {
-    return parseStoredPeriodPreference(window.localStorage.getItem(PERIOD_STORAGE_KEY))
+    return parseStoredPeriodPreference(safeStorage.get(PERIOD_STORAGE_KEY))
   } catch {
     return DEFAULT_PRODUCTION_PERIOD_DAYS
   }
@@ -56,7 +57,7 @@ function saveStoredPeriodPreference(days: ProductionPeriodDays) {
   }
 
   try {
-    window.localStorage.setItem(PERIOD_STORAGE_KEY, String(days))
+    safeStorage.set(PERIOD_STORAGE_KEY, String(days))
   } catch {
     // LocalStorage pode estar bloqueado em alguns navegadores/modos privados.
     // A seleção visual continua funcionando pela memória do React.
