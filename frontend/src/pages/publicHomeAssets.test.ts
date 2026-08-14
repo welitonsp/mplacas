@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 // Guarda de origem externa na página pública (auditoria v6, achados A-16/A-15).
 //
@@ -77,5 +79,40 @@ describe('mockup do painel expõe nome acessível válido (A-11)', () => {
     expect(tag).not.toBeNull()
     expect(tag?.[1]).toContain('role=')
     expect(tag?.[1]).toContain('aria-label=')
+  })
+})
+
+// Achado desta sessão (não estava na auditoria v6). `public-home.css` entra por
+// chunk lazy junto de `PublicHomePage`, e CSS de chunk carregado NÃO é
+// descarregado ao navegar. Uma regra em `:root` aqui, portanto, não fica na
+// landing: acompanha o usuário para o painel e sobrescreve `index.css` no app
+// inteiro — tipografia, cor e fundo.
+describe('CSS da landing não vaza para o resto do app', () => {
+  // Lido do disco, e não por `import.meta.glob('?raw')` como o resto deste
+  // arquivo: o Vitest não processa CSS por padrão, então o import devolve
+  // string VAZIA. A primeira versão desta guarda usava o glob e passava no
+  // teste de "encontrou o arquivo" (`''` é `defined`) enquanto afirmava sobre
+  // conteúdo nenhum — uma guarda que não podia falhar.
+  const landingCss = readFileSync(
+    resolve(process.cwd(), 'src/pages/public-home.css'),
+    'utf-8'
+  )
+
+  it('a guarda está lendo conteúdo real, não string vazia', () => {
+    expect(landingCss.length).toBeGreaterThan(500)
+  })
+
+  it('nenhuma regra usa o seletor global `:root`', () => {
+    // Comentários citam `:root` em prosa ao explicar o porquê; só interessa
+    // seletor no início de regra.
+    const rules = landingCss
+      .split('\n')
+      .filter((line: string) => /^\s*:root[\s{]/.test(line))
+
+    expect(rules).toEqual([])
+  })
+
+  it('as variáveis de tema vivem no contêiner da própria landing', () => {
+    expect(landingCss).toMatch(/\.site-shell\s*\{[^}]*--navy:/)
   })
 })

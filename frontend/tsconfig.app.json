@@ -15,6 +15,18 @@
     "jsx": "react-jsx",
     "noEmit": true,
 
+    /* "node" entra por causa das guardas estaticas nos arquivos de teste, que
+       leem o texto-fonte do disco para impedir regressoes que nenhum teste de
+       comportamento pega: calculo no cliente, origem externa bloqueada pela
+       CSP, CSS da landing vazando para o app. Elas precisam de "node:fs"
+       porque o Vitest nao processa CSS - um import raw de .css devolve string
+       VAZIA, e a guarda passaria afirmando sobre nada.
+       Contrapartida aceita: codigo de aplicacao passa a type-checar mesmo se
+       usar API de node por engano. O risco e baixo - "noEmit" esta ativo aqui,
+       entao isto e so checagem, e o build real quebraria de qualquer forma ao
+       tentar empacotar "node:fs" para o navegador. */
+    "types": ["node"],
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,

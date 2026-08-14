@@ -81,7 +81,17 @@
 }
 
 /* MPlacas · Observatório Solar: navy profundo, teal mineral, âmbar solar, tipografia editorial e assimetria intencional. */
-:root { font-family: "Manrope", sans-serif; color: #18262b; background: #f3f4ee; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -webkit-font-smoothing: antialiased; --navy: #102126; --navy-2: #172f35; --teal: #4bb9a9; --teal-dark: #278b83; --amber: #e6ae58; --paper: #f3f4ee; --paper-2: #e8ebe4; --ink: #18262b; --muted: #647579; --line: rgba(24, 38, 43, 0.14); --display: "Space Grotesk", sans-serif; }
+/* Escopado em `.site-shell`, não em `:root` (achado desta sessão, não estava
+   na auditoria v6). Este arquivo entra por chunk lazy junto de
+   `PublicHomePage`, e CSS de chunk carregado NÃO é descarregado ao navegar.
+   Com a regra em `:root`, quem passava pela landing e ia para o painel levava
+   junto a tipografia, a cor e o fundo da página pública, sobrescrevendo o
+   `system-ui` de `index.css` no app inteiro.
+
+   As 11 variáveis de tema continuam aqui porque todas as 76 utilizações vivem
+   dentro de `.site-shell` — a landing renderiza tudo dentro dele (`<div
+   className="site-shell" id="top">`) e não usa portal. */
+.site-shell { font-family: "Manrope", sans-serif; color: #18262b; background: #f3f4ee; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -webkit-font-smoothing: antialiased; --navy: #102126; --navy-2: #172f35; --teal: #4bb9a9; --teal-dark: #278b83; --amber: #e6ae58; --paper: #f3f4ee; --paper-2: #e8ebe4; --ink: #18262b; --muted: #647579; --line: rgba(24, 38, 43, 0.14); --display: "Space Grotesk", sans-serif; }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
