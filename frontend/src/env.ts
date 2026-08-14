@@ -9,10 +9,29 @@ function requireEnv(key: string): string {
 }
 
 export const API_URL = (() => {
-  const url = requireEnv('VITE_API_URL')
-  // Em produção, exigir HTTPS
-  if (import.meta.env.PROD && !url.startsWith('https://')) {
-    throw new Error('VITE_API_URL must use HTTPS in production')
+  const raw = requireEnv('VITE_API_URL')
+
+  // Validação por `new URL()` em vez de `startsWith('https://')` (auditoria v6,
+  // achado A-14). Prefixo não é forma: `https://` sozinho, `https:// `, ou
+  // `https://?x=1` passam pelo teste de prefixo e não são endereço utilizável.
+  // O erro apareceria só na primeira requisição, longe da causa — enquanto uma
+  // variável de ambiente malformada deve falhar no startup, com mensagem que
+  // aponta o que está errado.
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    throw new Error(`VITE_API_URL is not a valid URL: ${raw}`)
   }
-  return url.replace(/\/$/, '') // sem trailing slash
+
+  if (parsed.hostname === '') {
+    throw new Error(`VITE_API_URL has no hostname: ${raw}`)
+  }
+
+  // Em produção, exigir HTTPS. Fora dela, `http://localhost` é legítimo.
+  if (import.meta.env.PROD && parsed.protocol !== 'https:') {
+    throw new Error(`VITE_API_URL must use HTTPS in production (got ${parsed.protocol})`)
+  }
+
+  return raw.replace(/\/$/, '') // sem trailing slash
 })()

@@ -58,3 +58,24 @@ describe('página pública não carrega origem externa bloqueada pela CSP', () =
     expect(offendersIn(htmlFiles)).toEqual([])
   })
 })
+
+// A-11 da auditoria v6: `aria-label` num `div` genérico. A role implícita de
+// `div` não aceita nome acessível, então parte dos leitores de tela ignora o
+// rótulo — o elemento fica sem nome, não com o nome pretendido.
+describe('mockup do painel expõe nome acessível válido (A-11)', () => {
+  const source = Object.values(sourceFiles).find((content) =>
+    content.includes('dashboard-mockup')
+  )
+
+  it('a guarda encontrou o componente', () => {
+    expect(source).toBeDefined()
+  })
+
+  it('o contêiner com aria-label declara role explícito', () => {
+    // Casa a abertura da tag do mockup e exige que `role` apareça nela.
+    const tag = /<div className="dashboard-mockup"([^>]*)>/.exec(source ?? '')
+    expect(tag).not.toBeNull()
+    expect(tag?.[1]).toContain('role=')
+    expect(tag?.[1]).toContain('aria-label=')
+  })
+})

@@ -145,7 +145,23 @@ describe('LoginPage — erro do formulário associado ao campo', () => {
 
     expect(username).toHaveAttribute('aria-describedby', alert.id)
     expect(password).toHaveAttribute('aria-describedby', alert.id)
-    expect(username).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  // Auditoria v6, A-12. Esta asserção afirmava o oposto — que os campos
+  // recebiam `aria-invalid="true"`. A premissa estava errada: todo erro desta
+  // tela vem de `login()` (credencial recusada, excesso de tentativas, serviço
+  // indisponível) e nenhum deles é de campo. Marcar ambos como inválidos
+  // anunciava ao leitor de tela que os dois estavam malformados, mandando o
+  // usuário procurar defeito onde não havia — inclusive quando o que falhou
+  // foi o serviço, e não o que ele digitou.
+  it('não marca campo como inválido quando o erro é global, não de campo', () => {
+    renderLoginPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
+
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(screen.getByLabelText('Usuário')).not.toHaveAttribute('aria-invalid')
+    expect(screen.getByLabelText('Senha')).not.toHaveAttribute('aria-invalid')
   })
 })
 

@@ -90,7 +90,14 @@ function SectionLabel({ children, dark = false }: { children: ReactNode; dark?: 
 
 function DashboardMockup() {
   return (
-    <div className="dashboard-mockup" aria-label="Prévia ilustrativa do painel MPlacas">
+    // `role="img"` junto do `aria-label` (auditoria v6, A-11): `aria-label`
+    // sozinho num `div` genérico é ignorado por parte dos leitores de tela,
+    // porque a role implícita de `div` não aceita nome acessível. A composição
+    // inteira é uma ilustração — números, rótulos e gráfico são fictícios —,
+    // então expor um nome único e não a árvore interna é o que descreve a
+    // realidade. Mesmo padrão que o `<svg role="img">` mais abaixo neste
+    // arquivo já usava corretamente.
+    <div className="dashboard-mockup" role="img" aria-label="Prévia ilustrativa do painel MPlacas">
       <div className="dashboard-mockup__topbar">
         <div className="dashboard-mockup__window-dots"><span /><span /><span /></div>
         <span className="dashboard-mockup__path">visão executiva / usina lagoa</span>

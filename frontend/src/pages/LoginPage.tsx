@@ -193,7 +193,14 @@ export function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={loading}
-                aria-invalid={error ? true : undefined}
+                // Sem `aria-invalid` (auditoria v6, A-12): todo erro desta
+                // tela vem de `login()` — credencial recusada, excesso de
+                // tentativas, serviço indisponível — e nenhum deles é de
+                // campo. Marcar os dois campos como inválidos anunciava ao
+                // leitor de tela que ambos estavam malformados, o que é falso
+                // e manda o usuário procurar defeito onde não há. A mensagem
+                // segue anunciada pela região `role="alert"`, e o
+                // `aria-describedby` liga o campo a ela — isso é verdadeiro.
                 aria-describedby={error ? errorId : undefined}
                 className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-[var(--color-text-primary)] shadow-sm outline-none transition-all duration-200 placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-brand-primary)] focus:ring-4 focus:ring-[var(--color-brand-primary)]/15 disabled:opacity-50"
                 placeholder="Seu usuário"
@@ -213,7 +220,7 @@ export function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
-                  aria-invalid={error ? true : undefined}
+                  // Mesma razão do campo de usuário acima (A-12).
                   aria-describedby={error ? errorId : undefined}
                   className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 pr-24 text-[var(--color-text-primary)] shadow-sm outline-none transition-all duration-200 placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-brand-primary)] focus:ring-4 focus:ring-[var(--color-brand-primary)]/15 disabled:opacity-50"
                   placeholder="********"
