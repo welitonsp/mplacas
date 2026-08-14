@@ -20,6 +20,75 @@ export function configureApi(
   _logout = logout
 }
 
+// Renovação em voo, compartilhada por todas as requisições concorrentes
+// (single-flight). Achado A-02 da auditoria de frontend v6, severidade S1.
+//
+// O backend ROTACIONA o refresh token a cada renovação e, ao detectar
+// reutilização de um token já consumido, revoga a FAMÍLIA inteira de sessões
+// (`src/mplacas/auth/session_service.py`, `_handle_failed_rotation`). Isso é
+// política de segurança correta — o problema estava aqui.
+//
+// Antes desta correção cada requisição que recebia 401 disparava seu próprio
+// refresh. Com duas chamadas em paralelo expirando juntas — situação normal nos
+// módulos do painel, que buscam vários recursos ao mesmo tempo — a sequência
+// era: ambas recebem 401, ambas renovam, a primeira consome e rotaciona o
+// token, a segunda apresenta o token já consumido, o backend classifica como
+// reutilização e derruba a família. O usuário era deslogado pelo controle de
+// segurança funcionando exatamente como projetado.
+//
+// Agora a primeira requisição a precisar de renovação cria a promessa; as
+// demais aguardam a MESMA promessa e reexecutam com o token que ela produziu.
+// O refresh token é apresentado uma única vez por rotação.
+let refreshInFlight: Promise<string | null> | null = null
+
+async function performRefresh(): Promise<string | null> {
+  const refreshToken = _getRefreshToken()
+  if (!refreshToken) return null
+
+  const refreshResponse = await fetch(`${API_URL}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+
+  if (!refreshResponse.ok) return null
+
+  const payload = (await refreshResponse.json()) as unknown
+  // Validação em runtime: uma asserção de tipo não existe depois da
+  // compilação, e uma resposta 200 malformada gravaria lixo no `TokenStore`,
+  // deixando a sessão num estado pior que o 401 original.
+  if (
+    typeof payload !== 'object' ||
+    payload === null ||
+    typeof (payload as { access_token?: unknown }).access_token !== 'string' ||
+    typeof (payload as { refresh_token?: unknown }).refresh_token !== 'string'
+  ) {
+    return null
+  }
+
+  const { access_token, refresh_token } = payload as {
+    access_token: string
+    refresh_token: string
+  }
+  TokenStore.set(access_token)
+  _setRefreshToken(refresh_token)
+  return access_token
+}
+
+// Devolve o novo token de acesso, ou `null` quando a renovação falhou. Uma
+// única renovação roda por vez; chamadas concorrentes compartilham o resultado.
+// O `finally` limpa a referência mesmo em caso de exceção — sem isso, uma falha
+// de rede deixaria uma promessa rejeitada em cache e toda requisição seguinte
+// herdaria esse erro para sempre.
+function refreshAccessToken(): Promise<string | null> {
+  if (refreshInFlight === null) {
+    refreshInFlight = performRefresh().finally(() => {
+      refreshInFlight = null
+    })
+  }
+  return refreshInFlight
+}
+
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const token = TokenStore.get()
   const headers = new Headers(init.headers)
@@ -30,28 +99,15 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 
   if (response.status !== 401) return response
 
-  // Tenta refresh uma única vez.
-  const refreshToken = _getRefreshToken()
-  if (!refreshToken) { _logout(); return response }
-
-  const refreshResponse = await fetch(`${API_URL}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  })
-
-  if (!refreshResponse.ok) { _logout(); return response }
-
-  const { access_token, refresh_token } = await refreshResponse.json() as {
-    access_token: string
-    refresh_token: string
+  const accessToken = await refreshAccessToken()
+  if (accessToken === null) {
+    _logout()
+    return response
   }
-  TokenStore.set(access_token)
-  _setRefreshToken(refresh_token)
 
-  // Repete a chamada original com o novo token.
+  // Repete a chamada original com o token renovado.
   const retryHeaders = new Headers(init.headers)
-  retryHeaders.set('Authorization', `Bearer ${access_token}`)
+  retryHeaders.set('Authorization', `Bearer ${accessToken}`)
   retryHeaders.set('Content-Type', 'application/json')
   return fetch(`${API_URL}${path}`, { ...init, headers: retryHeaders })
 }
