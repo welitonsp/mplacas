@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { configure, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import {
   DASHBOARD_DEFAULT_PATH,
   DASHBOARD_FINANCIAL_PATH,
@@ -7,6 +7,26 @@ import {
   DASHBOARD_ROOT_PATH,
   DASHBOARD_TECHNICAL_PATH,
 } from './routes'
+
+// Causa raiz confirmada por reprodução (não a hipótese original de "waitFor sem
+// âncora determinística" — todas as âncoras deste arquivo já checam estado
+// observável real). Cada teste chama `vi.resetModules()` + reimporta `./App`,
+// forçando o registro de módulos do Vitest a reavaliar do zero toda a árvore de
+// rotas `lazy()` (DashboardLayout, OverviewPage, ProductionPage, ...). O
+// primeiro teste do arquivo — em ORDEM DE EXECUÇÃO, não necessariamente o
+// primeiro do arquivo-fonte — a acionar um chunk específico paga o custo de
+// transformação "fria" dessa importação dinâmica; os demais reaproveitam o
+// módulo já transformado pelo Vite e são rápidos. `waitFor`/`findBy*` usam por
+// padrão `asyncUtilTimeout: 1000` (`@testing-library/dom/dist/config.js`),
+// **independente** de `testTimeout: 15000` (`vitest.config.ts`) — a mesma
+// classe de problema que motivou aquele valor nunca chegou ao timeout interno
+// do `waitFor`. Sob 84 arquivos rodando em paralelo (contenção de CPU) o custo
+// frio ocasionalmente estoura 1000ms; reproduzido também isolado com
+// `--sequence.shuffle`, onde a ordem aleatória muda qual teste paga o custo
+// frio. Alinhar os dois timeouts fecha a lacuna sem afrouxar nenhuma asserção:
+// um teste genuinamente travado ainda falha, agora em até 15s (o mesmo teto
+// que `testTimeout` já impunha ao teste inteiro), não mais em 1s.
+configure({ asyncUtilTimeout: 15000 })
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
 // módulo — não há `.env.local` no ambiente de teste (ver `LoginPage.test.tsx`).
