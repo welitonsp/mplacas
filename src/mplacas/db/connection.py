@@ -5,6 +5,10 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 _UNSUPPORTED_ASYNCPG_QUERY_PARAMS = frozenset({"sslmode", "channel_binding"})
 
+# Hosts que não saem da máquina, únicos em que trafegar sem TLS é aceitável.
+# Um hostname vazio significa socket Unix, que também não atravessa a rede.
+_LOCAL_HOSTNAMES = frozenset({"", "localhost", "127.0.0.1", "::1", "[::1]"})
+
 
 def normalize_database_url(raw: str) -> str:
     """Normalize database URLs for SQLAlchemy asyncpg without exposing credentials."""
@@ -29,11 +33,19 @@ def normalize_database_url(raw: str) -> str:
 
 
 def database_connect_args(database_url: str) -> dict[str, object]:
-    """Return driver arguments required by the target database provider."""
+    """Return driver arguments required to reach the target database safely.
+
+    TLS é exigido para qualquer host remoto, não só para um provedor específico.
+    A versão anterior desta função casava apenas ``*.neon.tech``, o que fazia
+    qualquer outro banco remoto — outro provedor, um endpoint de staging, uma
+    URL trocada por engano — conectar em texto claro, silenciosamente. O padrão
+    seguro é o inverso: exigir TLS por omissão e abrir exceção só para o que
+    comprovadamente não atravessa a rede.
+    """
     hostname = (urlsplit(database_url).hostname or "").lower()
-    if hostname == "neon.tech" or hostname.endswith(".neon.tech"):
-        return {"ssl": "require"}
-    return {}
+    if hostname in _LOCAL_HOSTNAMES:
+        return {}
+    return {"ssl": "require"}
 
 
 def require_postgresql_async_url(raw: str) -> str:

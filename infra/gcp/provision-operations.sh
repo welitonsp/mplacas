@@ -16,15 +16,36 @@ readonly OPERATIONAL_COMMANDS=(
   "retention"
 )
 
+# Janela operacional única, 06:00-06:32 (America/Sao_Paulo).
+#
+# Por que uma janela em vez de horários espalhados
+# ------------------------------------------------
+# O Neon suspende o compute após 5 minutos sem conexão, e cobra por hora
+# acordado — não por trabalho feito. O agendamento anterior tinha dois jobs em
+# "*/5 * * * *", ou seja, uma conexão a cada 5 minutos contra um timeout de 5
+# minutos: o banco nunca chegava a dormir. Ficava ligado 24 h/dia (~720 h/mês)
+# para fazer poucos minutos de trabalho, e em 2026-08-21 isso esgotou a cota do
+# plano, derrubou 100% dos jobs por 4 dias e quebrou o backup diário.
+#
+# Os intervalos abaixo são de 4 minutos: curtos o bastante para o banco não
+# suspender no meio da janela (senão cada job vira um despertar novo), e longos
+# o bastante para cada job terminar antes do próximo começar — as execuções
+# medidas levavam 1-2 min de trabalho.
+#
+# Resultado: ~39 min acordado por dia (~20 h/mês) em vez de 720 h/mês.
+#
+# A ordem respeita a dependência real entre os jobs: coletar antes de calcular,
+# calcular antes de despachar o alerta que o cálculo gera, e o watchdog por
+# último, para conferir que o pipeline do dia de fato rodou.
 declare -Ar OPERATIONAL_SCHEDULES=(
-  [collect]="0 6 * * *"
-  [daily-pipeline]="30 6 * * *"
-  [dispatch-outbox]="*/5 * * * *"
-  [drain-collection]="15 * * * *"
-  [drain-report-exports]="*/5 * * * *"
-  [daily-digest]="0 8 * * *"
-  [operational-watchdog]="5 * * * *"
-  [retention]="30 3 * * *"
+  [collect]="0 6 * * *"               # busca telemetria do fornecedor
+  [drain-collection]="4 6 * * *"      # drena a fila de coleta
+  [daily-pipeline]="8 6 * * *"        # calcula a análise do dia
+  [dispatch-outbox]="12 6 * * *"      # envia os alertas que o pipeline gerou
+  [daily-digest]="16 6 * * *"         # envia o resumo diário
+  [drain-report-exports]="20 6 * * *" # processa exportações pedidas
+  [retention]="24 6 * * *"            # limpa dado fora da janela de retenção
+  [operational-watchdog]="32 6 * * *" # confere que o pipeline do dia rodou
 )
 
 require_operational_config() {
