@@ -1,0 +1,34 @@
+# Configuração do gitleaks para o Mplacas.
+#
+# Motivo desta config existir
+# ---------------------------
+# Antes, os falsos positivos das fixtures de teste eram silenciados pelo
+# `.gitleaksignore`, que suprime por *fingerprint* — e o fingerprint inclui o SHA
+# do commit (`<commit>:<arquivo>:<regra>:<linha>`). Consequência: cada novo
+# arquivo de teste que usasse a mesma fixture gerava um fingerprint novo, que
+# não estava na lista, e o gate voltava a ficar vermelho. A lista nunca
+# alcançava o repositório. Em 2026-08-24 o scan acusava 21 achados, todos o
+# mesmo literal sintético.
+#
+# A allowlist abaixo suprime exclusivamente pelo *valor* do segredo detectado.
+#
+# Nota importante sobre `paths`: uma tentativa anterior combinava
+# `paths = ['''^tests/.*\.py$''']` com o regex do valor. Isso NÃO funciona como
+# um AND — o `paths` age como pré-filtro e faz o gitleaks pular o arquivo
+# inteiro (`scanned ~0 bytes`), desligando a varredura em toda a suíte de
+# testes. Verificado por mutação: um par de credenciais AWS plantado em
+# tests/test_jwt.py passava despercebido. Por isso a allowlist é só por regex:
+# apenas este literal específico é tolerado, e qualquer outro segredo em
+# `tests/` continua sendo detectado normalmente.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = """
+Fixture sintética de JWT usada na suíte de testes do backend. Não é credencial:
+o valor é literal no código, existe só para satisfazer o comprimento mínimo de
+32 bytes exigido por MPLACAS_JWT_SECRET, e nunca corresponde a um segredo de
+produção (esses vivem no Secret Manager, conforme docs/runbook-producao.md).
+"""
+regexes = ['''^test-jwt-secret-at-least-32-bytes-long$''']
