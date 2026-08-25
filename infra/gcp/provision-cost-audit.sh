@@ -7,6 +7,12 @@ source "${SCRIPT_DIR}/lib.sh"
 
 readonly AUDIT_JOB_COMMAND="cost-audit"
 
+# Encaixa na janela operacional única definida em provision-operations.sh
+# (06:00-06:32, America/Sao_Paulo), entre retention (06:24) e o watchdog (06:32).
+# Rodar às 04:00, como antes, acordava o banco uma vez a mais por dia sem
+# necessidade — ver a justificativa completa naquele arquivo.
+readonly AUDIT_SCHEDULE="28 6 * * *"
+
 # Read-only roles only. This service account never receives
 # roles/secretmanager.secretAccessor or roles/billing.viewer — billing scope
 # is outside the project and is skipped by audit-costs.sh in job mode via
@@ -105,7 +111,7 @@ upsert_audit_schedule() {
     gcloud scheduler jobs update http "$name" \
       --location "$GCP_REGION" \
       --project "$GCP_PROJECT_ID" \
-      --schedule "0 4 * * *" \
+      --schedule "$AUDIT_SCHEDULE" \
       --time-zone "$MPLACAS_TIMEZONE" \
       --uri "$uri" \
       --http-method POST \
@@ -118,7 +124,7 @@ upsert_audit_schedule() {
     gcloud scheduler jobs create http "$name" \
       --location "$GCP_REGION" \
       --project "$GCP_PROJECT_ID" \
-      --schedule "0 4 * * *" \
+      --schedule "$AUDIT_SCHEDULE" \
       --time-zone "$MPLACAS_TIMEZONE" \
       --uri "$uri" \
       --http-method POST \
