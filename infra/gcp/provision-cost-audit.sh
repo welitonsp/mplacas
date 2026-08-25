@@ -5,18 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=infra/gcp/lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
-readonly AUDIT_JOB_COMMAND="cost-audit"
+if [[ -f "${SCRIPT_DIR}/SUSPENDED.md" ]]; then
+  die "MPlacas GCP is administratively suspended; cost-audit provisioning is blocked while infra/gcp/SUSPENDED.md exists"
+fi
 
-# Encaixa na janela operacional única definida em provision-operations.sh
-# (06:00-06:32, America/Sao_Paulo), entre retention (06:24) e o watchdog (06:32).
-# Rodar às 04:00, como antes, acordava o banco uma vez a mais por dia sem
-# necessidade — ver a justificativa completa naquele arquivo.
+readonly AUDIT_JOB_COMMAND="cost-audit"
 readonly AUDIT_SCHEDULE="28 6 * * *"
 
-# Read-only roles only. This service account never receives
-# roles/secretmanager.secretAccessor or roles/billing.viewer — billing scope
-# is outside the project and is skipped by audit-costs.sh in job mode via
-# MPLACAS_AUDIT_SKIP_BILLING=1.
 readonly AUDITOR_ROLES=(
   "roles/serviceusage.serviceUsageViewer"
   "roles/run.viewer"
@@ -45,12 +40,6 @@ ensure_auditor_read_only_access() {
   log "auditor service account holds ${#AUDITOR_ROLES[@]} read-only role(s)"
 }
 
-# gcloud builds submit --tag runs `docker build -t "$TAG" .` against the
-# supplied source directory, always looking for a file literally named
-# "Dockerfile" at its root. infra/gcp/Dockerfile.audit's COPY directives
-# expect an infra/gcp/ prefix (so lib.sh's repo_root()/config_file() resolve
-# correctly at runtime), so a scratch build context is assembled here instead
-# of building from the repository root directly.
 build_and_push_image() {
   local image="$1"
   local root
