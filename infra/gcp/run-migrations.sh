@@ -5,6 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=infra/gcp/lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
+if [[ -f "${SCRIPT_DIR}/SUSPENDED.md" ]]; then
+  die "MPlacas GCP is administratively suspended; migration execution is blocked while infra/gcp/SUSPENDED.md exists"
+fi
+
 load_config
 require_gcloud
 require_authenticated_gcloud
