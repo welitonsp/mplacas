@@ -33,7 +33,7 @@ class MetricsRuntime:
             # próprio shutdown (ver `_ticker`/`shutdown` no pacote
             # opentelemetry-sdk). Um force_flush() explícito antes disso
             # duplica a exportação do mesmo lote de métricas em sequência
-            # quase simultânea, e o Cloud Monitoring rejeita a segunda
+            # quase simultânea, e backends de métricas rejeitam a segunda
             # gravação por violar o intervalo mínimo de amostragem.
             self.provider.shutdown(timeout_millis=5000)
 
@@ -46,12 +46,12 @@ def configure_metrics(
 ) -> MetricsRuntime:
     """Configura o MeterProvider global quando as métricas estão habilitadas.
 
-    Quando ``cloud_metrics_enabled`` é falso e nenhum ``reader`` de teste é
+    Quando ``metrics_enabled`` é falso e nenhum ``reader`` de teste é
     fornecido, o provider global permanece no-op e as gravações são descartadas
     sem custo relevante.
     """
     global _runtime
-    if not settings.cloud_metrics_enabled and reader is None:
+    if not settings.metrics_enabled and reader is None:
         return MetricsRuntime()
     if _runtime is not None:
         return _runtime
@@ -64,14 +64,17 @@ def configure_metrics(
         }
     )
     if reader is None:
-        from opentelemetry.exporter.cloud_monitoring import CloudMonitoringMetricsExporter
+        # Extra opcional `mplacas[otlp]` — ver nota equivalente em tracing.py.
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+            OTLPMetricExporter,
+        )
 
         reader = PeriodicExportingMetricReader(
-            CloudMonitoringMetricsExporter(project_id=settings.gcp_project_id),
+            OTLPMetricExporter(endpoint=f"{settings.otlp_endpoint}/v1/metrics"),
             export_interval_millis=settings.metrics_export_interval_seconds * 1000,
         )
     provider = MeterProvider(resource=resource, metric_readers=[reader])
-    if settings.cloud_metrics_enabled:
+    if settings.metrics_enabled:
         metrics.set_meter_provider(provider)
     _runtime = MetricsRuntime(provider=provider)
     return _runtime

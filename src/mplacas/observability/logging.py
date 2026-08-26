@@ -85,13 +85,12 @@ def _json_safe(value: object) -> object:
     return str(value)
 
 
-class CloudJsonFormatter(logging.Formatter):
-    """Render one Cloud Logging-compatible JSON object per line."""
+class StructuredJsonFormatter(logging.Formatter):
+    """Render one vendor-neutral JSON object per line on stdout."""
 
-    def __init__(self, *, service_name: str, project_id: str | None) -> None:
+    def __init__(self, *, service_name: str) -> None:
         super().__init__()
         self._service_name = service_name
-        self._project_id = project_id
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, object] = {
@@ -113,12 +112,6 @@ class CloudJsonFormatter(logging.Formatter):
                 payload["request_id"] = correlation.request_id
             if correlation.span_id is not None:
                 payload["span_id"] = correlation.span_id
-                payload["logging.googleapis.com/spanId"] = correlation.span_id
-            if self._project_id is not None:
-                payload["logging.googleapis.com/trace"] = (
-                    f"projects/{self._project_id}/traces/{correlation.trace_id}"
-                )
-                payload["logging.googleapis.com/trace_sampled"] = correlation.trace_sampled
 
         if record.exc_text:
             payload["exception"] = record.exc_text
@@ -131,14 +124,13 @@ def configure_logging(
     *,
     level: str,
     service_name: str,
-    project_id: str | None,
     structured: bool,
 ) -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.addFilter(SecretRedactionFilter())
     if structured:
         handler.setFormatter(
-            CloudJsonFormatter(service_name=service_name, project_id=project_id)
+            StructuredJsonFormatter(service_name=service_name)
         )
     else:
         handler.setFormatter(

@@ -656,7 +656,7 @@ def test_list_organization_plants_orders_by_name_then_id(monkeypatch) -> None:
 
 
 def test_daily_pipeline_cli_exits_non_zero_on_partial_failure(monkeypatch) -> None:
-    """The Cloud Scheduler / Cloud Run Job needs a non-zero exit to alert on."""
+    """O agendador precisa de saída diferente de zero para alertar."""
 
     async def failing_run(**_kwargs):
         raise RuntimeError("daily pipeline failed for plant(s): Usina B (...)")

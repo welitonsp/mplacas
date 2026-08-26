@@ -95,11 +95,8 @@ async def _process_task(task_id: uuid.UUID) -> None:
     settings = get_settings()
     artifact_url: str | None = None
     stored_bytes: bytes | None = artifact_bytes
-    if settings.report_export_bucket is not None:
-        storage = make_artifact_storage(
-            bucket=settings.report_export_bucket,
-            url_ttl_seconds=settings.report_export_url_ttl_seconds,
-        )
+    if settings.report_export_directory is not None:
+        storage = make_artifact_storage(directory=settings.report_export_directory)
         key = f"reports/{plant_id}/{task.reference_month}/{task.format}/report.{task.format}"
         artifact_url = await storage.upload(key, artifact_bytes, content_type)
         stored_bytes = None

@@ -713,7 +713,7 @@ async def _list_organization_plants(
     Ordered by ``Plant.name`` then ``Plant.id`` -- same tie-break as the
     HTTP fan-out resolver (``core.tenancy.resolve_admin_plant_fanout``,
     ADR-069 § E.11.3) -- so job runs process plants in a stable order across
-    executions. No cap on plant count: the Cloud Run Job runs with
+    executions. No cap on plant count: the scheduled job runs with
     ``--task-timeout 30m`` (ADR-069 § E.11.1 achado B), unlike the 60s HTTP
     fan-out that needs ``fanout_max_plants``.
     """

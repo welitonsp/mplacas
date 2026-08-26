@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
-from typing import Any, Protocol, runtime_checkable
+from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -33,48 +33,31 @@ class InMemoryArtifactStorage:
         return self._store.get(key)
 
 
-class GcsArtifactStorage:
-    """GCS-backed artifact storage that returns v4 signed download URLs.
+class LocalDirectoryArtifactStorage:
+    """Filesystem-backed artifact storage returning ``file://`` URLs.
 
-    The google-cloud-storage package is imported lazily so that the module can
-    be imported in environments where the package is not installed (e.g. tests
-    that do not exercise GCS paths).
+    Substitui o antigo GcsArtifactStorage (ver ADR-076). Não depende de SDK de
+    nenhum provedor: escreve sob um diretório base e serve para disco local ou
+    volume montado. Para object storage compatível com S3, implemente uma nova
+    classe aderente ao Protocol ``ArtifactStorage`` — nada mais precisa mudar.
     """
 
-    _client: Any
-
-    def __init__(
-        self,
-        bucket_name: str,
-        url_ttl_seconds: int = 900,
-        client: Any = None,
-    ) -> None:
-        import google.cloud.storage as gcs  # type: ignore[import-untyped]
-
-        self._bucket_name = bucket_name
-        self._url_ttl_seconds = url_ttl_seconds
-        self._client = client if client is not None else gcs.Client()
+    def __init__(self, base_directory: str | Path) -> None:
+        self._base = Path(base_directory)
 
     async def upload(self, key: str, content: bytes, content_type: str) -> str:
-        bucket = self._client.bucket(self._bucket_name)
-        blob = bucket.blob(key)
+        target = self._base / key
 
-        def _do_upload() -> str:
-            blob.upload_from_string(content, content_type=content_type)
-            url: str = blob.generate_signed_url(
-                expiration=timedelta(seconds=self._url_ttl_seconds),
-                method="GET",
-                version="v4",
-            )
-            return url
+        def _do_write() -> str:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            return target.resolve().as_uri()
 
-        return await asyncio.to_thread(_do_upload)
+        return await asyncio.to_thread(_do_write)
 
 
-def make_artifact_storage(
-    *, bucket: str | None, url_ttl_seconds: int = 900
-) -> ArtifactStorage:
-    """Return a GcsArtifactStorage when *bucket* is set, InMemoryArtifactStorage otherwise."""
-    if bucket:
-        return GcsArtifactStorage(bucket, url_ttl_seconds=url_ttl_seconds)
+def make_artifact_storage(*, directory: str | None) -> ArtifactStorage:
+    """Return a LocalDirectoryArtifactStorage when *directory* is set, in-memory otherwise."""
+    if directory:
+        return LocalDirectoryArtifactStorage(directory)
     return InMemoryArtifactStorage()

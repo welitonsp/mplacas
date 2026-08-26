@@ -101,34 +101,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  gcp-deployment-contract:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install ShellCheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: Bash syntax
-        run: |
-          while IFS= read -r -d '' script; do
-            echo "Validating ${script}"
-            bash -n "$script"
-          done < <(find infra/gcp -maxdepth 2 -type f -name '*.sh' -print0 | sort -z)
-      - name: ShellCheck
-        run: |
-          if ! shellcheck infra/gcp/*.sh infra/gcp/drill/*.sh > shellcheck-report.txt 2>&1; then
-            cat shellcheck-report.txt
-            exit 1
-          fi
-          cat shellcheck-report.txt
-      - name: Upload ShellCheck report
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: shellcheck-report
-          path: shellcheck-report.txt
-          if-no-files-found: error
-          retention-days: 7
-
   postgres-integration:
     runs-on: ubuntu-latest
     services:
@@ -243,8 +215,8 @@ jobs:
       id-token: write
       attestations: write
     env:
-      IMAGE_NAME: mplacas-cloud-run:test
-      CONTAINER_NAME: mplacas-cloud-run-smoke
+      IMAGE_NAME: mplacas-api:test
+      CONTAINER_NAME: mplacas-api-smoke
     services:
       postgres:
         image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20

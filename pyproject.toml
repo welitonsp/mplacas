@@ -21,18 +21,21 @@ dependencies = [
   "xlsxwriter>=3.2,<4",
   "pyjwt>=2.8,<3",
   "argon2-cffi>=23.1,<26",
-  "google-cloud-storage>=2.10,<4",
   "tzdata>=2025.2",
   "opentelemetry-api>=1.44,<2",
   "opentelemetry-sdk>=1.44,<2",
   "opentelemetry-instrumentation-fastapi>=0.65b0,<1",
   "opentelemetry-instrumentation-sqlalchemy>=0.65b0,<1",
   "opentelemetry-instrumentation-httpx>=0.65b0,<1",
-  "opentelemetry-exporter-gcp-trace>=1.12,<2",
-  "opentelemetry-exporter-gcp-monitoring>=1.12.0a0,<2",
 ]
 
 [project.optional-dependencies]
+# Exportador OTLP: extra opcional, instalado apenas quando houver um backend de
+# observabilidade configurado (MPLACAS_OTLP_ENDPOINT). Fora do lock de runtime
+# de proposito — o projeto roda sem nenhum backend de tracing/metricas.
+otlp = [
+  "opentelemetry-exporter-otlp-proto-http>=1.44,<2",
+]
 dev = [
   "editables==0.6",
   "hatchling>=1.27,<2",
@@ -68,3 +71,11 @@ packages = ["mplacas"]
 mypy_path = "typings"
 check_untyped_defs = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# Extra opcional `mplacas[otlp]`, deliberadamente fora do lock: o projeto roda
+# sem backend de observabilidade. Os imports em observability/tracing.py e
+# observability/metrics.py sao preguicosos e so executam quando
+# MPLACAS_OTLP_ENDPOINT esta configurado.
+module = ["opentelemetry.exporter.otlp.*"]
+ignore_missing_imports = true

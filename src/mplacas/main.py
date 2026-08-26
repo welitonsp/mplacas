@@ -36,7 +36,6 @@ from mplacas.web.router import router as web_router
 logger = logging.getLogger(__name__)
 _REQUEST_ID_HEADER = "X-Request-ID"
 _TRACE_ID_HEADER = "X-Trace-ID"
-_CLOUD_TRACE_HEADER = "X-Cloud-Trace-Context"
 _TRACEPARENT_HEADER = "traceparent"
 _MAX_REQUEST_ID_LENGTH = 128
 
@@ -83,7 +82,6 @@ if _cors_origins:
 async def request_id_middleware(request: Request, call_next):
     request_id = _normalize_request_id(request.headers.get(_REQUEST_ID_HEADER))
     correlation = resolve_correlation_context(
-        cloud_trace_header=request.headers.get(_CLOUD_TRACE_HEADER),
         traceparent_header=request.headers.get(_TRACEPARENT_HEADER),
         request_id=request_id,
     )

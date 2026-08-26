@@ -3,24 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_dockerfile_uses_cloud_run_entrypoint_and_non_root_user() -> None:
+def test_dockerfile_uses_server_entrypoint_and_non_root_user() -> None:
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
 
     assert "FROM python:3.12-slim-bookworm" in dockerfile
     assert "USER mplacas" in dockerfile
-    assert 'CMD ["python", "-m", "mplacas.cloud_run"]' in dockerfile
+    assert 'CMD ["python", "-m", "mplacas.server"]' in dockerfile
     assert "alembic upgrade" not in dockerfile
-    assert "pytest" not in dockerfile
-    assert "ruff" not in dockerfile
-    assert "mypy" not in dockerfile
-
-
-def test_audit_dockerfile_uses_non_root_user_and_isolated_entrypoint() -> None:
-    dockerfile = Path("infra/gcp/Dockerfile.audit").read_text(encoding="utf-8")
-
-    assert "USER mplacas" in dockerfile
-    assert 'ENTRYPOINT ["bash", "infra/gcp/audit-costs.sh"]' in dockerfile
-    assert "COPY infra/gcp/audit-costs.sh infra/gcp/lib.sh ./infra/gcp/" in dockerfile
     assert "pytest" not in dockerfile
     assert "ruff" not in dockerfile
     assert "mypy" not in dockerfile

@@ -184,7 +184,7 @@ MPLACAS_JWT_SECRET="restore-drill-jwt-secret-at-least-32-bytes" \
 MPLACAS_OPERATIONS_API_KEY="restore-drill-operations-key" \
 MPLACAS_CLOUD_TRACE_ENABLED=false \
 MPLACAS_CLOUD_METRICS_ENABLED=false \
-python -m mplacas.cloud_run >"${WORK_DIR}/api.log" 2>&1 &
+python -m mplacas.server >"${WORK_DIR}/api.log" 2>&1 &
 API_PID="$!"
 
 READY=false

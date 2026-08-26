@@ -21,9 +21,14 @@ Data: 2026-08-03. Estado: **RLS ativo e aprovado em produção no head 0041**.
 
 Use exclusivamente o endpoint direto de migrations. Não exiba ou grave a URL:
 
+> **Atualização 2026-08-26 (ADR-076):** o passo abaixo lia o segredo do Secret Manager do Google
+> Cloud, que não está mais disponível. Obtenha a URL do endpoint direto de migrations no console do
+> Neon (ou no cofre que vier a ser adotado) e atribua-a à variável sem exibi-la ou gravá-la.
+
 ```powershell
-$migrationSecret = gcloud secrets versions access latest `
-  --secret=mplacas-migration-database-url --project=mplacas
+$migrationSecret = Read-Host -AsSecureString "URL direta de migrations (Neon)" |
+  ForEach-Object { [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($_)) }
 $env:MPLACAS_MIGRATION_DATABASE_URL = $migrationSecret
 try {
   .venv\Scripts\python.exe scripts/validate-rls-canary.py
@@ -78,7 +83,7 @@ O job normal não recebe a variável de aprovação e deve falhar fechado na 004
    outbox.
 6. Monitore erros de policy, HTTP 5xx e latência por pelo menos uma janela operacional definida.
 
-Não habilite a variável no serviço web e não a salve em Secret Manager.
+Não habilite a variável no serviço web e não a salve em nenhum cofre de segredos.
 
 ### Incidente preventivo do primeiro rollout — 2026-08-03
 

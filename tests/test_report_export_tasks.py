@@ -13,8 +13,8 @@ from mplacas.reports.db_models import ReportExportTask
 from mplacas.reports.export_service import InvalidExportFormat, ReportExportService
 from mplacas.reports.storage import (
     ArtifactStorage,
-    GcsArtifactStorage,
     InMemoryArtifactStorage,
+    LocalDirectoryArtifactStorage,
     make_artifact_storage,
 )
 
@@ -184,47 +184,37 @@ async def test_pending_ids_returns_oldest_first(session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# GcsArtifactStorage
+# LocalDirectoryArtifactStorage
 # ---------------------------------------------------------------------------
 
 
-def _make_gcs_client(signed_url: str = "https://signed.example.com/obj") -> MagicMock:
-    blob = MagicMock()
-    blob.generate_signed_url.return_value = signed_url
-    bucket = MagicMock()
-    bucket.blob.return_value = blob
-    client = MagicMock()
-    client.bucket.return_value = bucket
-    return client
+@pytest.mark.asyncio
+async def test_local_storage_writes_file_and_returns_file_url(tmp_path) -> None:
+    storage = LocalDirectoryArtifactStorage(tmp_path)
+    content = b"PDF bytes"
+
+    url = await storage.upload("reports/1/2026-06/pdf/report.pdf", content, "application/pdf")
+
+    written = tmp_path / "reports" / "1" / "2026-06" / "pdf" / "report.pdf"
+    assert written.read_bytes() == content
+    assert url == written.resolve().as_uri()
+    assert url.startswith("file://")
 
 
 @pytest.mark.asyncio
-async def test_gcs_upload_calls_blob_and_returns_signed_url() -> None:
-    fake_client = _make_gcs_client("https://signed.example.com/report.pdf")
-    gcs_module = MagicMock()
-    gcs_module.Client.return_value = MagicMock()
-    with patch.dict("sys.modules", {"google.cloud.storage": gcs_module}):
-        storage = GcsArtifactStorage("my-bucket", url_ttl_seconds=300, client=fake_client)
-    content = b"PDF bytes"
-    url = await storage.upload("reports/1/2026-06/pdf/report.pdf", content, "application/pdf")
-    assert url == "https://signed.example.com/report.pdf"
-    blob = fake_client.bucket.return_value.blob.return_value
-    blob.upload_from_string.assert_called_once_with(content, content_type="application/pdf")
-    blob.generate_signed_url.assert_called_once()
-    assert blob.generate_signed_url.call_args.kwargs.get("version") == "v4"
-    assert blob.generate_signed_url.call_args.kwargs.get("method") == "GET"
+async def test_local_storage_creates_nested_directories(tmp_path) -> None:
+    storage = LocalDirectoryArtifactStorage(tmp_path / "nao" / "existe")
+
+    await storage.upload("a/b/c.xlsx", b"x", "application/vnd.ms-excel")
+
+    assert (tmp_path / "nao" / "existe" / "a" / "b" / "c.xlsx").is_file()
 
 
-def test_make_artifact_storage_no_bucket_returns_in_memory() -> None:
-    storage = make_artifact_storage(bucket=None)
+def test_make_artifact_storage_no_directory_returns_in_memory() -> None:
+    storage = make_artifact_storage(directory=None)
     assert isinstance(storage, InMemoryArtifactStorage)
 
 
-def test_make_artifact_storage_with_bucket_returns_gcs() -> None:
-    gcs_module = MagicMock()
-    gcs_module.Client.return_value = MagicMock()
-    with patch.dict("sys.modules", {"google.cloud.storage": gcs_module}):
-        storage = make_artifact_storage(bucket="my-bucket", url_ttl_seconds=600)
-    assert isinstance(storage, GcsArtifactStorage)
-    assert storage._bucket_name == "my-bucket"
-    assert storage._url_ttl_seconds == 600
+def test_make_artifact_storage_with_directory_returns_local(tmp_path) -> None:
+    storage = make_artifact_storage(directory=str(tmp_path))
+    assert isinstance(storage, LocalDirectoryArtifactStorage)

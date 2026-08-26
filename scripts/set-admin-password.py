@@ -4,8 +4,11 @@ Uso:
     MPLACAS_DATABASE_URL=<url> python3 scripts/set-admin-password.py --username <nome> --check-user
     MPLACAS_DATABASE_URL=<url> python3 scripts/set-admin-password.py --username <nome>
 
-A senha nunca é aceita por argumento. Ela é lida sem eco ou, opcionalmente,
-obtida do Secret Manager quando MPLACAS_ADMIN_PASSWORD_SECRET está definido.
+A senha nunca é aceita por argumento. Ela é lida sem eco no terminal ou, em
+execução não interativa, da entrada padrão — o que permite encadear qualquer
+gerenciador de segredo sem acoplar o script a um provedor:
+
+    op read op://cofre/mplacas/admin | python3 scripts/set-admin-password.py --username admin
 """
 
 from __future__ import annotations
@@ -58,36 +61,6 @@ def _sanitize_exception_message(exc: Exception, *database_urls: str) -> str:
     return message[:500] if message else "falha sem detalhes públicos"
 
 
-def _read_from_secret_manager(secret_name: str) -> str:
-    """Read the latest enabled password secret without logging its value."""
-    try:
-        from google.cloud import secretmanager  # type: ignore[import-untyped]
-    except ImportError:
-        print(
-            "google-cloud-secret-manager não está instalado. "
-            "Remova MPLACAS_ADMIN_PASSWORD_SECRET para usar o prompt interativo.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1) from None
-
-    project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCLOUD_PROJECT")
-    if not project:
-        print(
-            "GOOGLE_CLOUD_PROJECT é obrigatório quando MPLACAS_ADMIN_PASSWORD_SECRET é usado.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
-
-    client = secretmanager.SecretManagerServiceClient()
-    resource = f"projects/{project}/secrets/{secret_name}/versions/latest"
-    response = client.access_secret_version(request={"name": resource})
-    value = response.payload.data.decode("utf-8").strip()
-    if not value:
-        print("O Secret Manager retornou uma senha vazia.", file=sys.stderr)
-        raise SystemExit(1)
-    return value
-
-
 def _validate_password(password: str) -> str:
     if not password:
         print("Senha vazia rejeitada.", file=sys.stderr)
@@ -108,10 +81,10 @@ def _read_password_interactively() -> str:
 
 
 def _read_password() -> str:
-    secret_name = os.environ.get("MPLACAS_ADMIN_PASSWORD_SECRET", "").strip()
-    if secret_name:
-        print(f"Lendo senha do Secret Manager: {secret_name}", file=sys.stderr)
-        return _validate_password(_read_from_secret_manager(secret_name))
+    if not sys.stdin.isatty():
+        # Execução não interativa: a senha chega por pipe e nunca toca o disco,
+        # o histórico do shell ou a lista de processos.
+        return _validate_password(sys.stdin.readline().strip())
     return _read_password_interactively()
 
 

@@ -9,14 +9,10 @@ from typing import Iterator
 
 from opentelemetry.trace import get_current_span
 
-_CLOUD_TRACE_PATTERN = re.compile(
-    r"^(?P<trace>[0-9a-fA-F]{32})/(?P<span>[0-9]{1,20})(?:;o=(?P<sampled>[01]))?$"
-)
 _TRACEPARENT_PATTERN = re.compile(
     r"^00-(?P<trace>[0-9a-fA-F]{32})-"
     r"(?P<span>[0-9a-fA-F]{16})-(?P<flags>[0-9a-fA-F]{2})$"
 )
-_MAX_SPAN_ID = (1 << 64) - 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,23 +27,6 @@ _CORRELATION: ContextVar[CorrelationContext | None] = ContextVar(
     "mplacas_correlation",
     default=None,
 )
-
-
-def parse_cloud_trace_context(value: str | None) -> CorrelationContext | None:
-    if value is None:
-        return None
-    match = _CLOUD_TRACE_PATTERN.fullmatch(value.strip())
-    if match is None:
-        return None
-    trace_id = match.group("trace").lower()
-    span_number = int(match.group("span"))
-    if int(trace_id, 16) == 0 or not 0 < span_number <= _MAX_SPAN_ID:
-        return None
-    return CorrelationContext(
-        trace_id=trace_id,
-        span_id=f"{span_number:016x}",
-        trace_sampled=match.group("sampled") == "1",
-    )
 
 
 def parse_traceparent(value: str | None) -> CorrelationContext | None:
@@ -81,14 +60,12 @@ def new_correlation_context(*, request_id: str | None = None) -> CorrelationCont
 
 def resolve_correlation_context(
     *,
-    cloud_trace_header: str | None,
     traceparent_header: str | None,
     request_id: str | None,
 ) -> CorrelationContext:
     active = active_span_context()
     resolved = (
         active
-        or parse_cloud_trace_context(cloud_trace_header)
         or parse_traceparent(traceparent_header)
         or new_correlation_context()
     )

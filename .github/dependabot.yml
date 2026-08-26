@@ -22,7 +22,3 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
-  - package-ecosystem: docker
-    directory: "/infra/gcp"
-    schedule:
-      interval: weekly

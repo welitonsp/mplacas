@@ -116,15 +116,6 @@ def test_images_and_actions_are_immutable() -> None:
     assert postgres_images and all(postgres_images)
 
 
-def test_audit_image_is_pinned_by_digest() -> None:
-    dockerfile = (ROOT / "infra" / "gcp" / "Dockerfile.audit").read_text(encoding="utf-8")
-    assert re.search(
-        r"^FROM gcr\.io/google\.com/cloudsdktool/google-cloud-cli:slim@sha256:[0-9a-f]{64}$",
-        dockerfile,
-        re.M,
-    )
-
-
 def test_automated_updates_scans_and_provenance_are_versioned() -> None:
     dependabot = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
     security = (ROOT / ".github" / "workflows" / "security.yml").read_text(encoding="utf-8")
@@ -157,11 +148,10 @@ def test_container_smoke_uses_valid_configuration_and_preserves_failure_logs() -
 
 
 def test_ignore_files_do_not_exclude_python_reports_package() -> None:
-    for name in (".dockerignore", ".gcloudignore"):
-        entries = (ROOT / name).read_text(encoding="utf-8").splitlines()
+    entries = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
 
-        assert "/reports/" in entries
-        assert "reports/" not in entries
+    assert "/reports/" in entries
+    assert "reports/" not in entries
 
 
 def test_gitleaks_exceptions_are_exact_fingerprints() -> None:
