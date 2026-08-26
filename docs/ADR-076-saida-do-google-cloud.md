@@ -152,8 +152,11 @@ podem ser descartadas.
 - **Sem armazenamento de objetos.** Exports voltam a ser persistidos no banco (comportamento padrão
   que já existia) ou em disco local. Para volume maior, implementar uma classe aderente ao Protocol
   `ArtifactStorage` — nada além dela precisa mudar.
-- **Recursos ainda declarados no projeto GCP.** Inertes com faturamento desativado. Reativar o
-  faturamento os traria de volta; a limpeza definitiva no console fica como tarefa do usuário.
+- ~~**Recursos ainda declarados no projeto GCP.**~~ **Resolvido em 2026-08-26:** o projeto
+  `mplacas` foi excluído (`lifecycleState: DELETE_REQUESTED`), levando junto o serviço e os 12
+  Cloud Run Jobs. A exclusão é reversível por 30 dias; passado o prazo, é definitiva. Restaurar o
+  projeto nessa janela é a única forma de reintroduzir cobrança, e está proibido por
+  `docs/POLITICA_SEM_GOOGLE_CLOUD.md`.
 
 ## Consequências
 

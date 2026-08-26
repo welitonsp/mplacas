@@ -27,16 +27,25 @@ Enquanto esta política existir, estão proibidos:
 Permanecem permitidos: limpeza, auditoria somente-leitura, e o que for necessário para
 desvincular ou manter desativado o faturamento.
 
-## Estado do projeto GCP em 2026-08-26
+## Estado do projeto GCP
 
-Verificado por `gcloud` antes da remoção:
+**O projeto `mplacas` foi excluído em 2026-08-26.** Verificado por `gcloud projects describe mplacas`:
 
-- `billingEnabled: false` no projeto `mplacas`;
-- as duas contas de faturamento da conta Google estão fechadas (`OPEN: False`);
-- o serviço `mplacas-api` e 12 Cloud Run Jobs **ainda existem declarados, porém inertes**.
+```
+lifecycleState: DELETE_REQUESTED
+projectNumber: '104231254500'
+```
 
-Reativar o faturamento traria esses recursos de volta a cobrar. A limpeza definitiva no console
-segue pendente e é a única ação recomendada ainda em aberto do lado do Google Cloud.
+O que isso significa, com precisão:
+
+- os recursos foram desligados e **nada mais pode gerar cobrança**;
+- o faturamento já estava desativado antes da exclusão (`billingEnabled: false`), e as duas contas
+  de faturamento da conta Google estão fechadas;
+- a exclusão é **reversível por 30 dias**. Depois desse prazo o projeto é apagado em definitivo e o
+  `projectId` `mplacas` não volta.
+
+Nenhuma ação pendente do lado do Google Cloud. A única coisa a **não** fazer é restaurar o projeto
+dentro da janela de 30 dias — o que reativaria o serviço e os 12 Cloud Run Jobs que existiam nele.
 
 ## Arquitetura em vigor
 
