@@ -286,6 +286,7 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 - outbox transacional de alertas: `docs/ADR-040-transactional-alert-outbox.md`;
 - observabilidade estruturada e Cloud Trace: `docs/ADR-041-structured-observability-and-cloud-trace.md`;
 - relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
+- **auditoria vigente — começar por ela ao retomar o projeto**: `docs/AUDITORIA_BIG_TECH_2026-08-26.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - auditoria técnica profunda: `docs/AUDITORIA_TECNICA_PROFUNDA_2026-07-16.md`;
 - checkpoint histórico: `docs/CHECKPOINT_PROJETO_2026-07-12.md`;
