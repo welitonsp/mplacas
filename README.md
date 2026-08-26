@@ -189,10 +189,11 @@ docker build -t mplacas-api:local .
 ```
 
 A imagem não depende de nenhum provedor: qualquer host que execute um contêiner e forneça
-`PORT` e as variáveis de ambiente serve. **Não há plataforma de implantação definida no
-momento** — ver ADR-076 para o contexto da saída do Google Cloud e as opções em avaliação.
+`PORT` e as variáveis de ambiente serve. A implantação atual é **Render (plano free) para a API e
+GitHub Actions para os jobs agendados**, custo zero — ver `docs/RUNBOOK_DEPLOY.md` para o passo a
+passo e `docs/ADR-076-saida-do-google-cloud.md` para o porquê de cada escolha.
 
-Jobs operacionais disponíveis:
+Jobs operacionais disponíveis (agendados em `.github/workflows/operational-jobs.yml`):
 
 ```bash
 python -m mplacas.cloud_jobs migrate
@@ -214,7 +215,8 @@ Query strings não entram nos spans e o token presente no path do Telegram é ma
 
 Documentação operacional:
 
-- `docs/ADR-076-saida-do-google-cloud.md` — saída do Google Cloud e escolha de plataforma em aberto;
+- `docs/RUNBOOK_DEPLOY.md` — colocar no ar (Render + GitHub Actions), custo zero;
+- `docs/ADR-076-saida-do-google-cloud.md` — saída do Google Cloud e escolha da plataforma atual;
 - `docs/ADR-025-google-cloud-run-platform.md` e `docs/ADR-026-google-cloud-deployment-automation.md`
   — decisões de plataforma **substituídas**, mantidas como histórico.
 

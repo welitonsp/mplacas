@@ -1,0 +1,56 @@
+# Blueprint do Render para a API do Mplacas (ADR-076).
+#
+# Substitui o serviço Cloud Run `mplacas-api`. Plano free: sem cartão de crédito,
+# 512 MB de RAM (mesma memória que o Cloud Run usava), Docker de primeira classe.
+#
+# Comportamento do plano free que é preciso conhecer, não contornar:
+#   - o serviço hiberna após 15 minutos sem tráfego de entrada;
+#   - a primeira requisição depois disso leva de 30 a 60 segundos (cold start);
+#   - a franquia é de 750 horas de instância por mês, por workspace.
+# Para um dashboard de um único usuário isso é aceitável, e a hibernação ainda
+# ajuda o Neon a dormir — foi justamente banco acordado 24h que estourou a cota
+# de compute no incidente de 2026-08-21.
+#
+# NÃO adicione um "keep-alive" pingando o serviço para evitar o cold start: isso
+# consome as 750 horas (o mês tem ~730), mantém o Neon acordado e reintroduz o
+# problema que acabou de ser resolvido.
+#
+# Os jobs operacionais NÃO vivem aqui — cron job no Render é recurso pago. Eles
+# rodam no GitHub Actions, em .github/workflows/operational-jobs.yml.
+services:
+  - type: web
+    name: mplacas-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: MPLACAS_ENVIRONMENT
+        value: production
+      - key: MPLACAS_TIMEZONE
+        value: America/Sao_Paulo
+      - key: MPLACAS_LOG_LEVEL
+        value: INFO
+      # URL exata do frontend no Cloudflare Pages — nunca curinga (*).
+      - key: MPLACAS_CORS_ALLOWED_ORIGINS
+        value: https://mplacas-frontend.pages.dev
+      - key: MPLACAS_DASHBOARD_URL
+        value: https://mplacas-frontend.pages.dev/dashboard
+      # sync: false = valor preenchido no dashboard do Render e nunca versionado.
+      # Obrigatório: este repositório é PÚBLICO.
+      - key: MPLACAS_DATABASE_URL # endpoint POOLED do Neon (hostname com "-pooler")
+        sync: false
+      - key: MPLACAS_OPERATIONS_API_KEY
+        sync: false
+      - key: MPLACAS_JWT_SECRET
+        sync: false
+      - key: MPLACAS_TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: MPLACAS_TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: MPLACAS_NEP_ACCOUNT
+        sync: false
+      - key: MPLACAS_NEP_PASSWORD
+        sync: false

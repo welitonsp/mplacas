@@ -5,8 +5,9 @@
 **Aceito — 2026-08-26.** Decisão do usuário (dono do produto e responsável financeiro) após
 cobrança não prevista no projeto GCP `mplacas`, sem orçamento para sustentá-la.
 
-A decisão aceita aqui é **sair do Google Cloud e remover o acoplamento no código**. A escolha da
-plataforma substituta é **explicitamente deixada em aberto** — ver § *Decisão em aberto*.
+Duas decisões, ambas aceitas: **sair do Google Cloud e remover o acoplamento no código**, e
+**adotar a arquitetura gratuita descrita em § _Plataforma substituta_**, escolhida em 2026-08-26
+após verificação nas fontes primárias de cada provedor.
 
 ## Contexto
 
@@ -81,30 +82,70 @@ observabilidade, e o import só executa quando `MPLACAS_OTLP_ENDPOINT` está con
   descreviam decisões revogadas foram marcados como substituídos (`ADR-025`, `ADR-026`) ou
   parcialmente substituídos (`ADR-041`, `ADR-042`).
 
-## Decisão em aberto (requer o usuário)
+## Plataforma substituta
 
-**Nenhuma plataforma substituta foi escolhida.** A aplicação está portátil, mas sem destino. Três
-necessidades precisam de resposta, e elas são separáveis:
+Restrição do usuário: **sem orçamento**. A solução precisa ser gratuita de verdade, não trial.
 
-1. **API HTTP** — servir o dashboard. Único consumidor real hoje: o próprio dono da usina.
-2. **Agendamento** — 7 jobs recorrentes (coleta, pipeline diário, digest, drain de outbox e de
-   exports, watchdog, retenção). São lote, não exigem servidor sempre ligado.
-3. **Cofre de segredos** — credencial NEPViewer, URL do banco, chave operacional, token do Telegram.
+### Verificação feita nas fontes primárias em 2026-08-26
 
-O ponto de partida recomendado é reconhecer que **(2) é o volume de trabalho e não precisa de
-servidor**: agendador de CI (ex.: GitHub Actions, já disponível e gratuito no repositório, com
-segredos próprios) cobre os 7 jobs sem host algum. Isso reduz o problema a hospedar apenas a API.
+Opções descartadas, com o motivo verificado — não por memória:
 
-Qualquer free tier citado numa avaliação futura **deve ser reconferido na fonte antes do
-compromisso** — as condições mudam e a cobrança inesperada que originou este ADR é exatamente o
-custo de não fazer isso.
+| Opção | Por que caiu |
+|---|---|
+| Fly.io | Free tier **descontinuado em 2024-10-07**; em 2026 só há trial de 2 h de VM ou 7 dias |
+| Koyeb | Adquirida pela Mistral AI no início de 2026; tier Starter gratuito **fechado a novos usuários** |
+| Oracle Always Free | **Recupera instância ociosa** quando CPU (p95), rede e memória ficam abaixo de 20% por 7 dias — exatamente o perfil de uma API de um único usuário. Além disso cortou o limite de 4 OCPU/24 GB para 2 OCPU/12 GB em 2026-06-15, sem aviso público, com e-mails de terminação para quem excedesse |
+| Cron job no Render | Recurso **pago**; o plano free cobre apenas web service, Postgres e key-value |
+
+### Arquitetura adotada
+
+A peça que destrava tudo: **o repositório é público**, e Actions em runner padrão é gratuito e
+ilimitado para repositório público. Os 8 jobs são lote e não precisam de servidor.
+
+| Peça | Onde | Custo |
+|---|---|---|
+| Frontend | Cloudflare Pages | grátis (já estava) |
+| Banco | Neon free tier | grátis (já estava, nunca foi GCP) |
+| API HTTP | Render, plano free, Docker | grátis, **sem cartão** |
+| 8 jobs operacionais | GitHub Actions cron | grátis e ilimitado (repo público) |
+| Migrações | GitHub Actions, acionamento manual | idem |
+| Segredos da API | variáveis do Render marcadas `sync: false` | grátis |
+| Segredos dos jobs | GitHub Secrets | grátis |
+| Alerta operacional | notificação de falha do GitHub Actions + Telegram | grátis |
+
+Arquivos: `render.yaml`, `.github/workflows/operational-jobs.yml`, `.github/workflows/migrate.yml`.
+
+### Mudança de desenho nos jobs, deliberada
+
+No GCP eram 8 agendas independentes separadas por 4 minutos, e a ordem correta dependia de nenhuma
+atrasar. Agora são **passos sequenciais de um único job**: a ordem é garantida por construção, e um
+único gatilho de cron reduz a exposição ao descarte de agendas que o GitHub admite em carga alta.
+Cada passo usa `if: always()`, então a falha de um não impede os seguintes, mas derruba o workflow —
+e a notificação de falha do GitHub vira o alerta externo que as policies de Cloud Monitoring faziam.
+
+O horário passou de 06:00 America/Sao_Paulo para **09:07 UTC** (= 06:07 local; o cron do GitHub é
+sempre UTC e não aceita timezone). O minuto 7 é proposital: o GitHub documenta que agendas no topo
+da hora atrasam e podem ser descartadas.
+
+### Limitações conhecidas desta escolha
+
+- **Cold start.** O web service free do Render hiberna após 15 min sem tráfego; a primeira
+  requisição seguinte leva de 30 a 60 s. Aceito: o dashboard tem um usuário. **Não** criar keep-alive
+  para contornar — consumiria as 750 h/mês (o mês tem ~730) e manteria o Neon acordado, que é
+  exatamente o que estourou a cota de compute em 2026-08-21.
+- **Agendas somem após 60 dias de repositório parado.** O GitHub desabilita automaticamente
+  workflows agendados em repositório público sem atividade por 60 dias. O sinal prático de que isso
+  aconteceu é o **digest diário parar de chegar no Telegram**. Reabilitar é manual, na aba Actions.
+- **Repositório público.** Nenhum segredo pode entrar no Git. Por isso todo valor sensível está em
+  GitHub Secrets ou marcado `sync: false` no `render.yaml`. O gitleaks no CI já guarda essa regra.
 
 ## Riscos aceitos
 
-- **Produção parada.** Não é regressão desta mudança: a API já retornava 500 por faturamento
-  desativado. Mas segue sem previsão de retorno até a decisão acima.
-- **Sem alerta operacional externo.** As políticas de Cloud Monitoring foram removidas. Nada observa
-  a aplicação de fora hoje — condição que já era conhecida e agora é total.
+- **Produção parada até a execução do runbook.** Não é regressão desta mudança: a API já retornava
+  500 por faturamento desativado. O caminho de volta está em `docs/RUNBOOK_DEPLOY.md`.
+- **Alerta operacional mais fraco que antes.** No lugar das policies de Cloud Monitoring ficam a
+  notificação de falha do GitHub Actions e o digest diário no Telegram. Cobre a falha do ciclo
+  operacional, mas **não** cobre a API cair de pé — segue valendo `mplacas-sem-uptime-check`.
 - **Sem armazenamento de objetos.** Exports voltam a ser persistidos no banco (comportamento padrão
   que já existia) ou em disco local. Para volume maior, implementar uma classe aderente ao Protocol
   `ArtifactStorage` — nada além dela precisa mudar.
