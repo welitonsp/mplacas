@@ -8,11 +8,12 @@ on:
       - "frontend/**"
       - ".github/workflows/deploy-frontend.yml"
 
-# Never run on pull_request — deploy only from main or manual trigger.
+# Cloudflare Pages faz parte da arquitetura gratuita. Este workflow não usa
+# nem reativa qualquer recurso do Google Cloud.
 
 concurrency:
   group: deploy-frontend-production
-  cancel-in-progress: false  # Never cancel a deploy already in progress.
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -34,8 +35,6 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Validate required configuration
-        # Fail early with a clear message if any required variable or secret is absent.
-        # Values are never printed — only presence is checked.
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -47,11 +46,8 @@ jobs:
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing+=(CLOUDFLARE_ACCOUNT_ID)
           if [ "${#missing[@]}" -gt 0 ]; then
             printf 'Required configuration is missing: %s\n' "${missing[*]}" >&2
-            printf 'Set GitHub Variables (VITE_API_URL, CLOUDFLARE_ACCOUNT_ID)\n' >&2
-            printf 'and GitHub Secrets (CLOUDFLARE_API_TOKEN) before running this workflow.\n' >&2
             exit 1
           fi
-          printf 'All required configuration is present.\n'
 
       - name: Install dependencies
         run: npm ci

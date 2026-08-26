@@ -1,8 +1,9 @@
-name: Daily encrypted backup and restore drill
+name: Manual encrypted backup and restore drill
 
+# Workstation production policy (2026-08-25):
+# automatic cloud execution is disabled. Keep this workflow only as a manual
+# recovery tool until backup is moved to the production workstation/server.
 on:
-  schedule:
-    - cron: "0 5 * * *"
   workflow_dispatch:
 
 permissions:
@@ -10,7 +11,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: production-restore-drill
+  group: manual-restore-drill
   cancel-in-progress: false
 
 jobs:
@@ -89,8 +90,8 @@ jobs:
           if [[ -z "$existing" ]]; then
             gh issue create \
               --title "$title" \
-              --body "The scheduled restore drill failed. Inspect the redacted workflow logs: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              --body "The manual restore drill failed. Inspect the redacted workflow logs: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           else
             gh issue comment "$existing" \
-              --body "Restore drill failed again: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              --body "Manual restore drill failed again: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           fi
