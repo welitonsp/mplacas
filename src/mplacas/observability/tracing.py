@@ -24,6 +24,7 @@ from mplacas import __version__
 from mplacas.core.config import Settings
 from mplacas.observability.logging import configure_logging
 from mplacas.observability.metrics import MetricsRuntime, configure_metrics
+from mplacas.observability.otlp import build_otlp_exporter
 from mplacas.observability.sanitize import TELEGRAM_TOKEN_PATTERN
 
 _TRACER_NAME = "mplacas"
@@ -79,14 +80,20 @@ def configure_observability(
         resource=resource,
         sampler=ParentBased(TraceIdRatioBased(settings.trace_sample_rate)),
     )
-    # Exportador OTLP importado sob demanda: o pacote é um extra opcional
-    # (`pip install mplacas[otlp]`), então a ausência de um backend de tracing
-    # configurado nunca impede a aplicação de subir.
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-
-    provider.add_span_processor(
-        BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{settings.otlp_endpoint}/v1/traces"))
+    # O exportador OTLP é um extra opcional (`pip install mplacas[otlp]`) e não
+    # entra na imagem de produção, que instala apenas requirements.lock. Ligar
+    # o tracing sem o extra instalado NÃO pode derrubar a aplicação: num serviço
+    # com escala a zero isso vira loop de reinício, e observabilidade é acessória
+    # à função do produto. Degrada com erro explícito e segue sem exportar.
+    exporter = build_otlp_exporter(
+        module="opentelemetry.exporter.otlp.proto.http.trace_exporter",
+        attribute="OTLPSpanExporter",
+        endpoint=f"{settings.otlp_endpoint}/v1/traces",
+        signal="tracing",
     )
+    if exporter is None:
+        return ObservabilityRuntime(metrics=metrics_runtime)
+    provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     propagate.set_global_textmap(
         CompositePropagator(

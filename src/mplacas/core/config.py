@@ -85,7 +85,6 @@ class Settings(BaseSettings):
     retention_user_invitations_days: int = 365
     retention_daily_energy_days: int = 1825
     retention_climate_observations_days: int = 1825
-    report_export_directory: str | None = None
     jwt_secret: SecretStr | None = None
     jwt_algorithm: Literal["HS256"] = "HS256"
     jwt_audience: str = "mplacas-api"

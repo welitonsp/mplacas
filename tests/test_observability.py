@@ -5,7 +5,6 @@ import logging
 from io import StringIO
 
 import httpx
-from opentelemetry import trace
 from opentelemetry.instrumentation.httpx import RequestInfo
 
 from mplacas.observability.context import (
@@ -281,3 +280,39 @@ def test_bound_context_is_reset() -> None:
     with bind_correlation_context(correlation):
         assert current_correlation_context() == correlation
     assert current_correlation_context() is None
+
+
+def test_enabled_tracing_without_otlp_extra_does_not_break_startup() -> None:
+    """O extra `mplacas[otlp]` nao entra na imagem de producao (ADR-076).
+
+    Ligar o sinal sem o pacote instalado precisa degradar com erro explicito, e
+    nunca derrubar o processo: num servico com escala a zero, uma excecao no
+    boot vira loop de reinicio e leva junto a funcao do produto por causa de um
+    acessorio de observabilidade.
+    """
+    from mplacas.observability.otlp import build_otlp_exporter
+
+    exporter = build_otlp_exporter(
+        module="opentelemetry.exporter.otlp.proto.http.trace_exporter",
+        attribute="OTLPSpanExporter",
+        endpoint="https://otlp.example.com/v1/traces",
+        signal="tracing",
+    )
+
+    assert exporter is None
+
+
+def test_missing_otlp_exporter_is_logged_with_remediation(caplog) -> None:
+    from mplacas.observability.otlp import build_otlp_exporter
+
+    with caplog.at_level("ERROR", logger="mplacas.observability.otlp"):
+        build_otlp_exporter(
+            module="mplacas._inexistente",
+            attribute="Qualquer",
+            endpoint="https://otlp.example.com/v1/metrics",
+            signal="metrics",
+        )
+
+    record = next(r for r in caplog.records if r.message == "otlp_exporter_unavailable")
+    assert record.signal == "metrics"
+    assert "mplacas[otlp]" in record.remediation

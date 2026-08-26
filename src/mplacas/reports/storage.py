@@ -1,8 +1,6 @@
 """ArtifactStorage Protocol and implementations for async report export."""
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 
@@ -33,31 +31,15 @@ class InMemoryArtifactStorage:
         return self._store.get(key)
 
 
-class LocalDirectoryArtifactStorage:
-    """Filesystem-backed artifact storage returning ``file://`` URLs.
-
-    Substitui o antigo GcsArtifactStorage (ver ADR-076). Não depende de SDK de
-    nenhum provedor: escreve sob um diretório base e serve para disco local ou
-    volume montado. Para object storage compatível com S3, implemente uma nova
-    classe aderente ao Protocol ``ArtifactStorage`` — nada mais precisa mudar.
-    """
-
-    def __init__(self, base_directory: str | Path) -> None:
-        self._base = Path(base_directory)
-
-    async def upload(self, key: str, content: bytes, content_type: str) -> str:
-        target = self._base / key
-
-        def _do_write() -> str:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(content)
-            return target.resolve().as_uri()
-
-        return await asyncio.to_thread(_do_write)
-
-
-def make_artifact_storage(*, directory: str | None) -> ArtifactStorage:
-    """Return a LocalDirectoryArtifactStorage when *directory* is set, in-memory otherwise."""
-    if directory:
-        return LocalDirectoryArtifactStorage(directory)
-    return InMemoryArtifactStorage()
+# Não existe implementação de object storage neste momento, e isso é deliberado
+# (ADR-076). O antigo GcsArtifactStorage saiu com o Google Cloud, e uma versão
+# em disco local seria pior do que nada na arquitetura atual: os jobs rodam em
+# runner efêmero do GitHub Actions e a API roda no Render, máquinas distintas —
+# o arquivo escrito pelo job nunca existiria na máquina que serve a resposta, e
+# o `file://` resultante não é navegável a partir de uma página https.
+#
+# Enquanto não houver bucket, os bytes do relatório continuam no banco e o
+# download passa por `/reports/monthly/exports/{id}/download`, que é o caminho
+# padrão e funciona. Para adotar object storage compatível com S3, implemente
+# uma classe aderente ao Protocol acima devolvendo URL https assinada e com
+# prazo de validade — nada além dela precisa mudar.

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -14,8 +13,6 @@ from mplacas.reports.export_service import InvalidExportFormat, ReportExportServ
 from mplacas.reports.storage import (
     ArtifactStorage,
     InMemoryArtifactStorage,
-    LocalDirectoryArtifactStorage,
-    make_artifact_storage,
 )
 
 
@@ -181,40 +178,3 @@ async def test_pending_ids_returns_oldest_first(session: AsyncSession) -> None:
     ids = await service.pending_ids(limit=10)
     assert t1.id in ids
     assert t2.id in ids
-
-
-# ---------------------------------------------------------------------------
-# LocalDirectoryArtifactStorage
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_local_storage_writes_file_and_returns_file_url(tmp_path) -> None:
-    storage = LocalDirectoryArtifactStorage(tmp_path)
-    content = b"PDF bytes"
-
-    url = await storage.upload("reports/1/2026-06/pdf/report.pdf", content, "application/pdf")
-
-    written = tmp_path / "reports" / "1" / "2026-06" / "pdf" / "report.pdf"
-    assert written.read_bytes() == content
-    assert url == written.resolve().as_uri()
-    assert url.startswith("file://")
-
-
-@pytest.mark.asyncio
-async def test_local_storage_creates_nested_directories(tmp_path) -> None:
-    storage = LocalDirectoryArtifactStorage(tmp_path / "nao" / "existe")
-
-    await storage.upload("a/b/c.xlsx", b"x", "application/vnd.ms-excel")
-
-    assert (tmp_path / "nao" / "existe" / "a" / "b" / "c.xlsx").is_file()
-
-
-def test_make_artifact_storage_no_directory_returns_in_memory() -> None:
-    storage = make_artifact_storage(directory=None)
-    assert isinstance(storage, InMemoryArtifactStorage)
-
-
-def test_make_artifact_storage_with_directory_returns_local(tmp_path) -> None:
-    storage = make_artifact_storage(directory=str(tmp_path))
-    assert isinstance(storage, LocalDirectoryArtifactStorage)

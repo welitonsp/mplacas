@@ -101,6 +101,42 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  shell-lint:
+    # Reescopado de `gcp-deployment-contract`, que saiu com o Google Cloud
+    # (ADR-076). O job antigo era a unica cobertura de lint de shell do CI, e
+    # apaga-lo junto deixou `infra/backup/run-restore-drill.sh` — que manipula
+    # PGPASSWORD e executa um restore destrutivo — sem verificacao nenhuma.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Bash syntax
+        run: |
+          while IFS= read -r script; do
+            echo "Validating ${script}"
+            bash -n "$script"
+          done < <(git ls-files '*.sh')
+      - name: ShellCheck
+        run: |
+          mapfile -t scripts < <(git ls-files '*.sh')
+          if [ "${#scripts[@]}" -eq 0 ]; then
+            echo "Nenhum script .sh versionado; nada a verificar." && exit 0
+          fi
+          if ! shellcheck "${scripts[@]}" > shellcheck-report.txt 2>&1; then
+            cat shellcheck-report.txt
+            exit 1
+          fi
+          cat shellcheck-report.txt
+      - name: Upload ShellCheck report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shellcheck-report
+          path: shellcheck-report.txt
+          if-no-files-found: error
+          retention-days: 7
+
   postgres-integration:
     runs-on: ubuntu-latest
     services:

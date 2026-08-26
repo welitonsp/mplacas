@@ -84,7 +84,14 @@ def _read_password() -> str:
     if not sys.stdin.isatty():
         # Execução não interativa: a senha chega por pipe e nunca toca o disco,
         # o histórico do shell ou a lista de processos.
-        return _validate_password(sys.stdin.readline().strip())
+        #
+        # Lê o fluxo inteiro e remove apenas UMA quebra de linha final — a que o
+        # `echo`/cofre acrescenta. Um `.strip()` aqui gravaria um hash diferente
+        # do valor guardado sempre que o segredo tiver espaço nas pontas, e um
+        # `readline()` truncaria uma frase-senha de várias linhas. Como não há
+        # segunda digitação para conferir, a divergência só apareceria no
+        # próximo login, já sem como diagnosticar.
+        return _validate_password(sys.stdin.read().removesuffix("\n").removesuffix("\r"))
     return _read_password_interactively()
 
 

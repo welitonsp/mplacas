@@ -78,6 +78,9 @@ observabilidade, e o import só executa quando `MPLACAS_OTLP_ENDPOINT` está con
 - **Telegram** como canal de alerta — não depende de provedor de nuvem.
 - A validação que exige TLS em host remoto de banco, que vive em `src/mplacas/db/connection.py`
   (commit `aa54d03`) e **não** no validador que foi removido junto de `infra/gcp/`.
+- A proibição de usar o Google Cloud, que vivia em `infra/gcp/ZERO_COST_POLICY.md` e foi promovida
+  a `docs/POLITICA_SEM_GOOGLE_CLOUD.md`. Mudou de lugar porque o diretório `infra/gcp/` deixou de
+  existir; **não** mudou de força. Revogá-la exige ADR novo aceitando a possibilidade de cobrança.
 - ADRs, auditorias e checklists datados — são registro histórico e não foram reescritos; os que
   descreviam decisões revogadas foram marcados como substituídos (`ADR-025`, `ADR-026`) ou
   parcialmente substituídos (`ADR-041`, `ADR-042`).

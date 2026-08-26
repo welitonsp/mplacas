@@ -99,11 +99,20 @@ curinga (`*`) é proibido por design.
 O endereço do webhook muda junto com a API. No PowerShell, leia os dois segredos sem colocá-los no
 histórico do terminal e registre `https://<URL-DO-RENDER>/telegram/webhook`:
 
+> `ConvertFrom-SecureString -AsPlainText` **não existe** no Windows PowerShell 5.1, que é a versão
+> desta estação. O trecho abaixo usa o marshalling clássico, que funciona em 5.1 e também em 7+.
+
 ```powershell
+function ConvertTo-PlainText([Security.SecureString]$Secure) {
+  $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secure)
+  try { [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
+  finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+}
+
 $botTokenSecure = Read-Host "MPLACAS_TELEGRAM_BOT_TOKEN" -AsSecureString
 $webhookSecretSecure = Read-Host "MPLACAS_TELEGRAM_WEBHOOK_SECRET" -AsSecureString
-$botToken = ConvertFrom-SecureString $botTokenSecure -AsPlainText
-$webhookSecret = ConvertFrom-SecureString $webhookSecretSecure -AsPlainText
+$botToken = ConvertTo-PlainText $botTokenSecure
+$webhookSecret = ConvertTo-PlainText $webhookSecretSecure
 
 $telegramApi = "https://api.telegram.org/bot$botToken/setWebhook"
 $body = @{

@@ -215,6 +215,7 @@ Query strings não entram nos spans e o token presente no path do Telegram é ma
 
 Documentação operacional:
 
+- `docs/POLITICA_SEM_GOOGLE_CLOUD.md` — **Google Cloud é proibido neste projeto**;
 - `docs/RUNBOOK_DEPLOY.md` — colocar no ar (Render + GitHub Actions), custo zero;
 - `docs/ADR-076-saida-do-google-cloud.md` — saída do Google Cloud e escolha da plataforma atual;
 - `docs/ADR-025-google-cloud-run-platform.md` e `docs/ADR-026-google-cloud-deployment-automation.md`

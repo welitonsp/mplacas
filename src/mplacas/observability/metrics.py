@@ -10,6 +10,7 @@ from opentelemetry.sdk.resources import Resource
 
 from mplacas import __version__
 from mplacas.core.config import Settings
+from mplacas.observability.otlp import build_otlp_exporter
 
 _METER_NAME = "mplacas"
 
@@ -64,13 +65,18 @@ def configure_metrics(
         }
     )
     if reader is None:
-        # Extra opcional `mplacas[otlp]` — ver nota equivalente em tracing.py.
-        from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
-            OTLPMetricExporter,
+        # Extra opcional `mplacas[otlp]` — ver a nota em observability/otlp.py.
+        # Sem o pacote, segue sem exportar em vez de derrubar o processo.
+        exporter = build_otlp_exporter(
+            module="opentelemetry.exporter.otlp.proto.http.metric_exporter",
+            attribute="OTLPMetricExporter",
+            endpoint=f"{settings.otlp_endpoint}/v1/metrics",
+            signal="metrics",
         )
-
+        if exporter is None:
+            return MetricsRuntime()
         reader = PeriodicExportingMetricReader(
-            OTLPMetricExporter(endpoint=f"{settings.otlp_endpoint}/v1/metrics"),
+            exporter,
             export_interval_millis=settings.metrics_export_interval_seconds * 1000,
         )
     provider = MeterProvider(resource=resource, metric_readers=[reader])
