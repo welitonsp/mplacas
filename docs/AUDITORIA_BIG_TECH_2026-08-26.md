@@ -62,6 +62,10 @@ Isso passou por três revisões (a minha, a do ChatGPT e a revisão de código d
 detectado, porque todas procuraram por "google", "gcloud" e "cloud run" — e a string real é
 `run.app`. Registro isso como falha de método, não só como achado.
 
+O A-10 apareceu durante esta própria auditoria, ao criar a branch do relatório a partir da `main`:
+**a `main` está com o CI vermelho desde 2026-08-25**, por um teste de contrato de backup que ficou
+para trás quando a agenda do drill foi desativada. Mesclar o PR #129 conserta.
+
 Fora disso, a base é sólida: RLS ativo com contexto de tenant explícito, nenhum segredo versionado,
 gitleaks e CodeQL no CI, 821 testes, ações fixadas por SHA e dependências com hash. Os demais achados
 são de resiliência operacional, não de correção.
@@ -69,7 +73,7 @@ são de resiliência operacional, não de correção.
 | Severidade | Quantidade | Achados |
 |---|---|---|
 | **P0** | 1 | A-01 |
-| **P1** | 2 | A-02, A-03 |
+| **P1** | 3 | A-02, A-03, A-10 |
 | **P2** | 4 | A-04, A-05, A-06, A-07 |
 | **P3** | 2 | A-08, A-09 |
 
@@ -189,6 +193,44 @@ documento afirma uma garantia que o sistema não entrega.
 e um serviço Postgres — confirmar que o segredo de restore continua válido antes de agendar, senão a
 agenda passa a falhar todo dia e treina o operador a ignorar notificação de falha, que é hoje o único
 canal de alerta (ver A-04).
+
+---
+
+### A-10 · O gate de qualidade da `main` está quebrado desde 2026-08-25
+
+**Afirmação.** A `main` tem um teste falhando. O gate de qualidade não protege mais nada, e qualquer
+branch criada a partir dela nasce com CI vermelho.
+
+**Evidência.** Descoberto ao criar a branch desta auditoria a partir de `origin/main`: o job
+`quality` do PR #130 falhou com `1 failed, 871 passed`.
+
+- `tests/test_backup_restore_runbook_contract.py:67` (na `main`) — `assert 'cron: "0 5 * * *"' in workflow`
+- Commit `95f6726` (*"ops: stop scheduled cloud backup drill during workstation production"*, 2026-08-25)
+  removeu o `schedule:` de `.github/workflows/restore-drill.yml` e **não atualizou o teste**; o diff
+  desse commit toca um arquivo só
+- Log do job: `FAILED tests/test_backup_restore_runbook_contract.py::test_restore_drill_is_automated_and_fail_closed`
+
+**Impacto.** Dois efeitos, e o segundo é o pior.
+
+O imediato: a `main` está vermelha há um dia, e toda branch nova herda a falha — foi assim que este
+achado apareceu.
+
+O de fundo: o teste se chama `test_restore_drill_is_automated_and_fail_closed`. Ele existia
+justamente para garantir que o backup fosse automatizado. Desativar a agenda sem tocar no teste não
+"quebrou o CI por descuido" — desmontou em silêncio uma garantia que o projeto havia escrito de
+forma explícita. É a mesma lacuna do A-03, vista pelo outro lado: lá a documentação promete o que o
+sistema não faz; aqui o teste afirmava o que o sistema deixou de fazer.
+
+**Severidade: P1.** Não bloqueia produção — que já está fora do ar por outro motivo —, mas remove a
+rede de proteção de todo trabalho futuro enquanto durar.
+
+**Solução proposta.** Já existe e está no PR #129: o teste foi renomeado para
+`test_restore_drill_is_manual_and_fail_closed` e passou a exigir `workflow_dispatch:` com ausência de
+`schedule:`. **Mesclar o PR #129 conserta a `main`.** Se a decisão do A-03 for religar a agenda, o
+teste volta à forma anterior — mas aí por decisão registrada, não por omissão.
+
+**Risco da correção.** Baixo. O risco real é o oposto: deixar como está treina quem revisa a ignorar
+CI vermelho, e o próximo teste que quebrar de verdade passa despercebido.
 
 ---
 
@@ -362,12 +404,13 @@ Ordem pensada para desbloquear produção cedo e evitar retrabalho — **não** 
 |---|---|---|---|
 | 1 | Corrigir CSP + `.env.production` + teste-guarda, os três juntos | A-01, A-02 | Bloqueia produção. Os três arquivos são um único conserto; separá-los deixa o CI vermelho ou a app quebrada |
 | 2 | Atualizar `RUNBOOK_DEPLOY.md` § 2.3 | A-01 | O runbook como está induz ao defeito. Corrigir o código sem corrigir a instrução deixa a armadilha viva |
-| 3 | Decidir e registrar o RPO real | A-03 | Decisão do dono, não técnica. Precisa sair antes do go-live para não prometer o que não entrega |
-| 4 | Executar o deploy (segredos → merge → migrate → jobs → Render → frontend) | — | Só depois de 1–3 |
-| 5 | Verificador externo de disponibilidade | A-04, A-05 | Só faz sentido com algo no ar para observar. Resolve os dois de uma vez |
-| 6 | Triagem do drift de documentação | A-06 | Não bloqueia nada |
-| 7 | `select = ["E", "F"]` no ruff, em commit isolado | A-08 | Ruidoso; não misturar com mudança funcional |
-| 8 | Gate de acessibilidade | A-09 | Dívida registrada, priorização separada |
+| 3 | Mesclar o PR #129, que também conserta a `main` | A-10 | Enquanto a `main` estiver vermelha, nenhum gate protege trabalho novo |
+| 4 | Decidir e registrar o RPO real | A-03 | Decisão do dono, não técnica. Precisa sair antes do go-live para não prometer o que não entrega |
+| 5 | Executar o deploy (segredos → merge → migrate → jobs → Render → frontend) | — | Só depois de 1–4 |
+| 6 | Verificador externo de disponibilidade | A-04, A-05 | Só faz sentido com algo no ar para observar. Resolve os dois de uma vez |
+| 7 | Triagem do drift de documentação | A-06 | Não bloqueia nada |
+| 8 | `select = ["E", "F"]` no ruff, em commit isolado | A-08 | Ruidoso; não misturar com mudança funcional |
+| 9 | Gate de acessibilidade | A-09 | Dívida registrada, priorização separada |
 
 ---
 
