@@ -123,9 +123,9 @@ atrasar. Agora são **passos sequenciais de um único job**: a ordem é garantid
 Cada passo usa `if: always()`, então a falha de um não impede os seguintes, mas derruba o workflow —
 e a notificação de falha do GitHub vira o alerta externo que as policies de Cloud Monitoring faziam.
 
-O horário passou de 06:00 America/Sao_Paulo para **09:07 UTC** (= 06:07 local; o cron do GitHub é
-sempre UTC e não aceita timezone). O minuto 7 é proposital: o GitHub documenta que agendas no topo
-da hora atrasam e podem ser descartadas.
+O horário passou para **06:07 em `America/Sao_Paulo`**, usando o suporte nativo do GitHub Actions a
+timezone IANA. O minuto 7 é proposital: o GitHub documenta que agendas no topo da hora atrasam e
+podem ser descartadas.
 
 ### Limitações conhecidas desta escolha
 

@@ -4,8 +4,8 @@
 > qual o projeto saiu (ver `docs/ADR-076-saida-do-google-cloud.md`). Os scripts `infra/gcp/*` que ele
 > referencia **não existem mais no repositório**. Não execute os passos daqui.
 >
-> Mantido apenas como memória da ordem de operações e das verificações, que devem ser reaproveitadas
-> ao escrever o runbook da próxima plataforma. Nenhuma plataforma substituta foi escolhida ainda.
+> Mantido apenas como memória histórica. Para a plataforma atual (Render + GitHub Actions), use
+> `docs/RUNBOOK_DEPLOY.md`. Não reative o Google Cloud para executar este procedimento antigo.
 
 ## Objetivo
 

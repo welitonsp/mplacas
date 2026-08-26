@@ -12,7 +12,20 @@ Custo total desta arquitetura: **zero**. Nenhum passo abaixo pede cartão de cr�
   seguem lá.
 - As duas URLs do Neon, no painel do projeto:
   - **pooled** — hostname contém `-pooler`. É a do runtime e a dos jobs diários.
-  - **direta** — sem `-pooler`. É só a das migrações; DDL não passa pelo pooler.
+  - **direta** — sem `-pooler`. É a recomendada pelo Neon para migrações de schema, evitando as
+    limitações do PgBouncer em modo transação.
+
+Não reative o Google Cloud para recuperar configuração. Se algum valor existia apenas no Secret
+Manager antigo, rotacione-o na origem: senha/role no Neon, token no BotFather e senha na NEPViewer.
+As chaves internas (`MPLACAS_OPERATIONS_API_KEY`, `MPLACAS_JWT_SECRET` e
+`MPLACAS_TELEGRAM_WEBHOOK_SECRET`) podem ser novas; gere valores aleatórios fortes e mantenha-os
+somente nos cofres do GitHub/Render.
+
+## Parte 0 — publicar a mudança
+
+O agendamento do GitHub só funciona quando o workflow existe na branch padrão (`main`). Antes das
+partes abaixo, aprove e faça merge do PR desta migração. Não tente executar os arquivos apenas de
+uma branch local.
 
 ## Parte 1 — jobs operacionais no GitHub Actions
 
@@ -27,7 +40,6 @@ Em **Settings → Secrets and variables → Actions → Secrets**, aba *Reposito
 | `MPLACAS_DATABASE_URL` | URL **pooled** do Neon |
 | `MPLACAS_MIGRATION_DATABASE_URL` | URL **direta** do Neon |
 | `MPLACAS_OPERATIONS_API_KEY` | chave operacional |
-| `MPLACAS_JWT_SECRET` | segredo JWT (mínimo 32 bytes) |
 | `MPLACAS_TELEGRAM_BOT_TOKEN` | token do bot |
 | `MPLACAS_NEP_ACCOUNT` | conta NEPViewer |
 | `MPLACAS_NEP_PASSWORD` | senha NEPViewer |
@@ -53,10 +65,10 @@ O workflow recusa qualquer outro valor. Ele usa a URL direta.
 
 Actions → **operational-jobs** → *Run workflow* (deixe a data alvo vazia = ontem).
 
-O primeiro passo é `smoke`: valida configuração e conectividade **sem escrever nada**. Se ele falhar,
-pare e corrija os secrets — não adianta seguir.
+O primeiro passo é `smoke`: valida todos os secrets/variables do ciclo e a conectividade com o
+banco **sem escrever nada**. Se ele falhar, pare e corrija a configuração — não adianta seguir.
 
-Depois disso o ciclo roda sozinho todo dia às **09:07 UTC (06:07 em Brasília)**.
+Depois disso o ciclo roda sozinho todo dia às **06:07 no fuso `America/Sao_Paulo`**.
 
 ## Parte 2 — API no Render
 
@@ -65,11 +77,11 @@ Depois disso o ciclo roda sozinho todo dia às **09:07 UTC (06:07 em Brasília)*
 New → **Blueprint** → aponte para `welitonsp/mplacas` → o Render lê o `render.yaml` da raiz.
 
 O Blueprint já fixa: plano free, Docker, health check em `/health`, CORS travado na URL exata do
-Cloudflare Pages, e as 7 variáveis sensíveis como `sync: false`.
+Cloudflare Pages, deploy somente após o CI passar, e as 8 variáveis sensíveis como `sync: false`.
 
 ### 2.2 Preencher os segredos no dashboard
 
-O Render vai pedir os 7 valores marcados `sync: false`. Use a URL **pooled** do Neon em
+O Render vai pedir os 8 valores marcados `sync: false`. Use a URL **pooled** do Neon em
 `MPLACAS_DATABASE_URL` — a direta é exclusiva das migrações.
 
 Nunca coloque esses valores em arquivo do repositório: **ele é público**.
@@ -81,6 +93,31 @@ do Cloudflare Pages e refaça o deploy do frontend.
 
 Se mudar o domínio do frontend, atualize também `MPLACAS_CORS_ALLOWED_ORIGINS` no `render.yaml` —
 curinga (`*`) é proibido por design.
+
+### 2.4 Registrar o webhook do Telegram na API nova
+
+O endereço do webhook muda junto com a API. No PowerShell, leia os dois segredos sem colocá-los no
+histórico do terminal e registre `https://<URL-DO-RENDER>/telegram/webhook`:
+
+```powershell
+$botTokenSecure = Read-Host "MPLACAS_TELEGRAM_BOT_TOKEN" -AsSecureString
+$webhookSecretSecure = Read-Host "MPLACAS_TELEGRAM_WEBHOOK_SECRET" -AsSecureString
+$botToken = ConvertFrom-SecureString $botTokenSecure -AsPlainText
+$webhookSecret = ConvertFrom-SecureString $webhookSecretSecure -AsPlainText
+
+$telegramApi = "https://api.telegram.org/bot$botToken/setWebhook"
+$body = @{
+  url = "https://<URL-DO-RENDER>/telegram/webhook"
+  secret_token = $webhookSecret
+}
+$result = Invoke-RestMethod -Method Post -Uri $telegramApi -Body $body
+if (-not $result.ok) { throw "Telegram recusou o webhook" }
+
+Remove-Variable botToken, webhookSecret, botTokenSecure, webhookSecretSecure
+```
+
+Substitua `<URL-DO-RENDER>` pelo hostname real, sem `https://` duplicado. O comando não imprime os
+segredos; a resposta esperada contém `ok: true`.
 
 ## Comportamento esperado que **não** é defeito
 
@@ -106,4 +143,4 @@ curinga (`*`) é proibido por design.
 | Erro de CORS no navegador | `MPLACAS_CORS_ALLOWED_ORIGINS` diferente da URL real do Pages |
 | Digest parou sem falha visível no Actions | Agendas desabilitadas por 60 dias de inatividade |
 | `smoke` falha com erro de conexão | URL do Neon errada, ou trocada a pooled pela direta |
-| Migração falha com erro de DDL | Usou a URL pooled; DDL exige a direta |
+| Migração falha por limitação de sessão/DDL | Usou a URL pooled; use a direta recomendada pelo Neon |

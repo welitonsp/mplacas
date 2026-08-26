@@ -113,6 +113,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "smoke",
         help="validate production configuration and database connectivity without mutations",
     )
+    smoke.add_argument(
+        "--operational",
+        action="store_true",
+        help="also validate configuration required by the full operational cycle",
+    )
     smoke.set_defaults(handler=_handle_smoke)
 
     daily = subparsers.add_parser("daily-pipeline", help="run the daily operational pipeline")
@@ -175,8 +180,8 @@ def _handle_migrate(_args: argparse.Namespace) -> int:
     return run_migrations()
 
 
-def _handle_smoke(_args: argparse.Namespace) -> int:
-    asyncio.run(run_smoke_check())
+def _handle_smoke(args: argparse.Namespace) -> int:
+    asyncio.run(run_smoke_check(validate_operational_config=args.operational))
     return 0
 
 
@@ -381,13 +386,47 @@ async def run_retention() -> None:
     )
 
 
-async def run_smoke_check() -> None:
+async def run_smoke_check(*, validate_operational_config: bool = False) -> None:
     """Fail fast when a deployed job cannot reach the configured database."""
 
+    if validate_operational_config:
+        _validate_operational_settings()
     async with SessionFactory() as session:
         await set_platform_context(session)
         await session.execute(text("SELECT 1"))
     logger.info("cloud_job_smoke_completed")
+
+
+def _validate_operational_settings() -> None:
+    """Validate every setting required by the scheduled cycle without revealing values."""
+
+    settings = get_settings()
+    missing: list[str] = []
+    if not settings.nep_account or not settings.nep_account.strip():
+        missing.append("MPLACAS_NEP_ACCOUNT")
+    if settings.nep_password is None or not settings.nep_password.get_secret_value().strip():
+        missing.append("MPLACAS_NEP_PASSWORD")
+    if settings.telegram_bot_token is None or not (
+        settings.telegram_bot_token.get_secret_value().strip()
+    ):
+        missing.append("MPLACAS_TELEGRAM_BOT_TOKEN")
+    if not settings.telegram_alert_chat_id or not settings.telegram_alert_chat_id.strip():
+        missing.append("MPLACAS_TELEGRAM_ALERT_CHAT_ID")
+    if not settings.cloud_job_plant_name or not settings.cloud_job_plant_name.strip():
+        missing.append("MPLACAS_CLOUD_JOB_PLANT_NAME")
+    if settings.cloud_job_expected_daily_production_kwh is None:
+        missing.append("MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH")
+    if missing:
+        raise RuntimeError("missing operational configuration: " + ", ".join(missing))
+    _required_decimal(
+        settings.cloud_job_expected_daily_production_kwh,
+        "MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH",
+    )
+    if settings.cloud_job_expected_cycle_production_kwh is not None:
+        _required_decimal(
+            settings.cloud_job_expected_cycle_production_kwh,
+            "MPLACAS_CLOUD_JOB_EXPECTED_CYCLE_PRODUCTION_KWH",
+        )
 
 
 async def run_report_export_drain(*, batch_size: int = 10) -> None:

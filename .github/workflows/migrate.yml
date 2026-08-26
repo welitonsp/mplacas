@@ -4,8 +4,9 @@
 # migração é executada explicitamente, NUNCA no startup do serviço web. Por isso
 # este workflow só roda por acionamento manual — não há gatilho por push.
 #
-# Usa o endpoint DIRETO (não-pooled) do Neon: DDL não funciona pelo pooler.
-# Guarde essa URL no secret MPLACAS_MIGRATION_DATABASE_URL, separado do
+# Usa o endpoint DIRETO (não-pooled), recomendado pelo Neon para migrações de
+# schema e livre das limitações de sessão do PgBouncer. Guarde essa URL no
+# secret MPLACAS_MIGRATION_DATABASE_URL, separado do
 # MPLACAS_DATABASE_URL (pooled) que o runtime e os jobs diários usam.
 name: migrate
 
@@ -28,6 +29,8 @@ jobs:
   alembic-upgrade:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      PYTHONPATH: ${{ github.workspace }}/src
     steps:
       - name: Exigir confirmacao explicita
         if: inputs.confirmacao != 'MIGRAR'
@@ -40,14 +43,11 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install
-        run: |
-          python -m pip install --require-hashes -r requirements.lock
-          python -m pip install --no-deps --no-build-isolation -e .
+        run: python -m pip install --require-hashes -r requirements.lock
       - name: Alembic upgrade head
         env:
           MPLACAS_ENVIRONMENT: production
           # Endpoint direto, não o pooled.
           MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_MIGRATION_DATABASE_URL }}
           MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
-          MPLACAS_JWT_SECRET: ${{ secrets.MPLACAS_JWT_SECRET }}
         run: python -m mplacas.cloud_jobs migrate

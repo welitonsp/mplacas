@@ -25,7 +25,8 @@ services:
     region: oregon
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
-    autoDeployTrigger: commit
+    # Só publica commits que passaram pelos checks do GitHub.
+    autoDeployTrigger: checksPass
     envVars:
       - key: MPLACAS_ENVIRONMENT
         value: production
@@ -49,6 +50,8 @@ services:
       - key: MPLACAS_TELEGRAM_BOT_TOKEN
         sync: false
       - key: MPLACAS_TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: MPLACAS_TELEGRAM_ALERT_CHAT_ID
         sync: false
       - key: MPLACAS_NEP_ACCOUNT
         sync: false
