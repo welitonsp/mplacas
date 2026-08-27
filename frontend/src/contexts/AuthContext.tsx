@@ -74,7 +74,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const status = response.status
       if (status === 401) throw new Error('Credenciais inválidas.')
       if (status === 429) throw new Error('Muitas tentativas. Aguarde e tente novamente.')
-      if (status === 503) throw new Error('Serviço de autenticação não configurado.')
+      // Falha do lado do servidor (incidente de 2026-08-21): o banco recusou
+      // conexão por cota esgotada e /auth/login passou a devolver 500. A
+      // mensagem antiga para 5xx era "Erro ao autenticar. Tente novamente.",
+      // que mandava o usuário repetir uma ação que não podia dar certo por
+      // dias, e sugeria que o problema era a senha dele. Todo 5xx é falha
+      // nossa, e a mensagem tem que dizer isso — sem prometer que a próxima
+      // tentativa resolve.
+      if (status >= 500) {
+        throw new Error(
+          'O sistema está indisponível no momento. Não é a sua senha — a falha é nossa. Tente mais tarde.',
+        )
+      }
       throw new Error('Erro ao autenticar. Tente novamente.')
     }
 
