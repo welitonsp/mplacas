@@ -116,10 +116,18 @@ def test_canonical_contract_and_cloudflare_headers_are_complete() -> None:
         for required in required_headers
     )
     assert "connect-src 'self' https:;" not in headers
-    assert (
-        "connect-src 'self' https://mplacas-api-104231254500.us-central1.run.app;"
-        in headers
-    )
+    # A origem da API no CSP e a origem que o cliente HTTP chama vêm da MESMA
+    # variável (VITE_API_URL), resolvida no build por
+    # `frontend/scripts/render-csp.mjs`. Antes disso a origem ficava escrita à
+    # mão aqui e sobreviveu à migração de plataforma apontando para um projeto
+    # do Google Cloud excluído — a aplicação carregava e o navegador bloqueava
+    # todo `fetch`, sem erro de servidor, log ou CI vermelho para acusar
+    # (auditoria 2026-08-26, achado A-01).
+    #
+    # O contrato aqui é sobre o TEMPLATE versionado, não sobre o arquivo gerado:
+    # o marcador precisa estar presente e nenhuma origem concreta pode aparecer.
+    assert "connect-src 'self' __API_ORIGIN__;" in headers
+    assert not re.search(r"connect-src[^;]*https://[^;]*\.(run\.app|onrender\.com)", headers)
     assert "/assets/*" in headers
     assert "Cache-Control: public, max-age=31536000, immutable" in headers
     for term in ("somente em memória", "POST /auth/logout", "redirecionamento `308`", "Wildcard"):

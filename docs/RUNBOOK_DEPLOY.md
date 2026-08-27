@@ -88,8 +88,23 @@ Nunca coloque esses valores em arquivo do repositório: **ele é público**.
 
 ### 2.3 Apontar o frontend para a nova URL
 
-O Render publica em `https://mplacas-api-<sufixo>.onrender.com`. Atualize `VITE_API_URL` no projeto
-do Cloudflare Pages e refaça o deploy do frontend.
+O Render publica em `https://mplacas-api-<sufixo>.onrender.com`.
+
+1. No GitHub, em **Settings → Secrets and variables → Actions → Variables**, edite `VITE_API_URL`
+   com a URL do Render, **sem barra no final e sem caminho** — só o endereço base.
+2. Rode o workflow **Deploy Frontend** (Actions → Deploy Frontend → Run workflow, branch `main`).
+
+São **duas** coisas que precisam apontar para a mesma origem: o cliente HTTP e o
+`Content-Security-Policy` que o navegador aplica. Desde a auditoria de 2026-08-26 (achado A-01) as
+duas saem da mesma variável: `frontend/scripts/render-csp.mjs` resolve o marcador `__API_ORIGIN__`
+em `dist/_headers` durante o `npm run build`. **Não escreva a origem à mão no `_headers`** — o
+script falha de propósito se o marcador sumir, e o teste de contrato também.
+
+Antes desse conserto, o `_headers` trazia a origem fixa da API no Google Cloud. Trocar apenas
+`VITE_API_URL` deixava o CSP apontando para o endereço antigo, e o navegador bloqueava **todas** as
+chamadas do dashboard: a tela carregava, o login falhava, e não havia erro de servidor, log de API
+nem CI vermelho para explicar. Se algum dia você vir esse sintoma, abra o console do navegador e
+procure por violação de CSP antes de investigar o backend.
 
 Se mudar o domínio do frontend, atualize também `MPLACAS_CORS_ALLOWED_ORIGINS` no `render.yaml` —
 curinga (`*`) é proibido por design.
@@ -154,6 +169,7 @@ segredos; a resposta esperada contém `ok: true`.
 |---|---|
 | Dashboard não carrega, API responde depois de ~1 min | Cold start normal do plano free |
 | Erro de CORS no navegador | `MPLACAS_CORS_ALLOWED_ORIGINS` diferente da URL real do Pages |
+| Tela carrega mas nenhuma chamada completa, console acusa violação de CSP | `connect-src` aponta para outra origem — rodou o build sem `VITE_API_URL` correta (ver § 2.3) |
 | Digest parou sem falha visível no Actions | Agendas desabilitadas por 60 dias de inatividade |
 | `smoke` falha com erro de conexão | URL do Neon errada, ou trocada a pooled pela direta |
 | Migração falha por limitação de sessão/DDL | Usou a URL pooled; use a direta recomendada pelo Neon |
