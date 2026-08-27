@@ -72,8 +72,8 @@ são de resiliência operacional, não de correção.
 
 | Severidade | Quantidade | Achados |
 |---|---|---|
-| **P0** | 1 | A-01 |
-| **P1** | 3 | A-02, A-03, A-10 |
+| **P0** | 1 | ~~A-01~~ ✅ corrigido |
+| **P1** | 3 | ~~A-02~~ ✅ · A-03, A-10 |
 | **P2** | 4 | A-04, A-05, A-06, A-07 |
 | **P3** | 2 | A-08, A-09 |
 
@@ -82,6 +82,15 @@ são de resiliência operacional, não de correção.
 ## P0 — bloqueia produção
 
 ### A-01 · O CSP do frontend bloqueia a API nova
+
+> **✅ CORRIGIDO em 2026-08-27, commit `4311d18`.** A origem do CSP e a origem que o cliente HTTP
+> chama passam a sair da **mesma** variável (`VITE_API_URL`): `frontend/public/_headers` guarda o
+> marcador `__API_ORIGIN__`, resolvido por `frontend/scripts/render-csp.mjs` no `npm run build`. O
+> script encerra o build com saída 1 se a variável estiver ausente, malformada, sem HTTPS fora de
+> localhost, ou se o marcador tiver sumido — este último caso pega a regressão de alguém voltar a
+> escrever a origem à mão. Travado por 10 testes em `frontend/src/test/renderCsp.test.ts` e pelo
+> contrato reescrito em `tests/test_frontend_auth_contract.py`, que agora verifica a invariante em
+> vez de uma URL literal. Build real validado ponta a ponta.
 
 **Afirmação.** Após migrar a API para o Render, o navegador bloqueará **todas** as chamadas do
 dashboard, porque o `Content-Security-Policy` publicado com o frontend só permite conexão com a URL
@@ -128,6 +137,11 @@ teste do item 3 deve rodar sobre o arquivo **gerado**, não sobre o template. N�
 ## P1 — quebra funcional
 
 ### A-02 · `.env.production` versionado aponta para o projeto GCP excluído
+
+> **✅ CORRIGIDO em 2026-08-27, commit `4311d18`.** `frontend/.env.production` removido. A
+> configuração de produção passa a ter uma fonte só — a variável `VITE_API_URL` do GitHub, que
+> `deploy-frontend.yml` valida antes de construir. Era a última referência funcional ao Google Cloud
+> no repositório.
 
 **Afirmação.** O repositório versiona uma configuração de produção que aponta para uma API que não
 existe mais.
@@ -402,8 +416,8 @@ Ordem pensada para desbloquear produção cedo e evitar retrabalho — **não** 
 
 | # | Ação | Achado | Por que nesta posição |
 |---|---|---|---|
-| 1 | Corrigir CSP + `.env.production` + teste-guarda, os três juntos | A-01, A-02 | Bloqueia produção. Os três arquivos são um único conserto; separá-los deixa o CI vermelho ou a app quebrada |
-| 2 | Atualizar `RUNBOOK_DEPLOY.md` § 2.3 | A-01 | O runbook como está induz ao defeito. Corrigir o código sem corrigir a instrução deixa a armadilha viva |
+| 1 | ~~Corrigir CSP + `.env.production` + teste-guarda~~ | A-01, A-02 | ✅ **feito em 2026-08-27** (`4311d18`) |
+| 2 | ~~Atualizar `RUNBOOK_DEPLOY.md` § 2.3~~ | A-01 | ✅ **feito em 2026-08-27** — § 2.3 reescrito e sintoma adicionado à tabela de diagnóstico |
 | 3 | Mesclar o PR #129, que também conserta a `main` | A-10 | Enquanto a `main` estiver vermelha, nenhum gate protege trabalho novo |
 | 4 | Decidir e registrar o RPO real | A-03 | Decisão do dono, não técnica. Precisa sair antes do go-live para não prometer o que não entrega |
 | 5 | Executar o deploy (segredos → merge → migrate → jobs → Render → frontend) | — | Só depois de 1–4 |
