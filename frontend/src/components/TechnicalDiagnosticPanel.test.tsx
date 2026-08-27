@@ -35,8 +35,10 @@ describe('TechnicalDiagnosticPanel', () => {
 
     expect(screen.getByText('Agir hoje')).toBeInTheDocument()
     expect(screen.getByText('Técnico + operação')).toBeInTheDocument()
-    expect(screen.getByText('Evidências usadas')).toBeInTheDocument()
-    expect(screen.getByText(/PR bruto: 82%/)).toBeInTheDocument()
+    // Removido em 2026-08-27 (R-1): era `signals.map(...).join(' · ')`, ou
+    // seja, a mesma lista já renderizada como cards, repetida em prosa.
+    expect(screen.queryByText('Evidências usadas')).not.toBeInTheDocument()
+    expect(screen.queryByText(/PR bruto: 82%/)).not.toBeInTheDocument()
 
     const playbook = screen.getByRole('list', { name: 'Plano técnico de investigação' })
     expect(within(playbook).getByText('Confirmar telemetria')).toBeInTheDocument()
