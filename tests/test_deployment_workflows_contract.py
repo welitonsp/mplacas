@@ -117,3 +117,41 @@ def test_watchdog_observes_both_failure_modes_without_burning_the_free_tier() ->
     assert "grep -q" in texto
     # Somente leitura: um vigia não precisa de permissão de escrita.
     assert workflow["permissions"] == {"contents": "read", "actions": "read"}
+
+
+def test_backfill_e_manual_compartilha_lock_e_nao_entrega_alerta() -> None:
+    """Recuperação de dias não coletados (backfill).
+
+    Três invariantes, cada uma correspondendo a um jeito conhecido de causar
+    dano com este workflow:
+
+    1. Só manual. Backfill agendado seria consumo recorrente contra o provedor
+       e contra o banco, contrariando docs/POLITICA_CUSTO_ZERO.md.
+    2. Mesmo grupo de concorrência do ciclo diário. Os dois escrevendo ao mesmo
+       tempo disputariam os locks por usina/data.
+    3. Não executa `dispatch-outbox` nem `daily-digest`. O pipeline enfileira um
+       alerta por dia processado; entregar em massa durante o backfill inunda o
+       Telegram com eventos históricos.
+    """
+    caminho = ROOT / ".github/workflows/backfill.yml"
+    workflow = yaml.safe_load(caminho.read_text(encoding="utf-8"))
+    texto = caminho.read_text(encoding="utf-8")
+
+    gatilhos = workflow[True]
+    assert "workflow_dispatch" in gatilhos
+    assert "schedule" not in gatilhos
+
+    assert workflow["concurrency"]["group"] == "operational-jobs"
+
+    # Verificar os COMANDOS, não o texto: o cabeçalho do arquivo cita os dois
+    # justamente para explicar por que não os executa.
+    comandos = " ".join(
+        etapa.get("run", "") for etapa in workflow["jobs"]["recuperar"]["steps"]
+    )
+    assert "cloud_jobs dispatch-outbox" not in comandos
+    assert "cloud_jobs daily-digest" not in comandos
+    assert "cloud_jobs collect" in comandos
+    assert "cloud_jobs daily-pipeline" in comandos
+
+    # Teto de dias: um ano digitado errado viraria centenas de execuções.
+    assert "MAXIMO_DIAS" in texto
