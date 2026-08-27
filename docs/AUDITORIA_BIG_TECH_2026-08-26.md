@@ -13,6 +13,13 @@ Escrito para ser retomado por outra sessão de IA sem perder o fio. Se você é 
 4. Ao fechar um achado, marque-o aqui com data e commit. Não apague o achado: o histórico de
    auditoria do projeto é comparável ao longo do tempo.
 
+> **Nota para quem lê a partir da `main`.** Esta auditoria examinou a branch do PR #129
+> (commit `556561a`), que ainda não foi mesclada. Alguns caminhos citados —
+> `docs/POLITICA_SEM_GOOGLE_CLOUD.md`, `docs/RUNBOOK_DEPLOY.md`, `render.yaml`,
+> `.github/workflows/operational-jobs.yml` — **só existem naquela branch** e chegam à `main` com o
+> merge do PR. O relatório vem para a `main` antes disso de propósito: os achados valem
+> independentemente de quando o PR for mesclado, e o P0 precisa ser conhecido antes do deploy.
+
 Formato de cada achado, conforme `.claude/skills/audit-evidence`:
 **Afirmação → Evidência → Impacto → Severidade → Solução proposta → Risco da correção.**
 Escala: **P0** bloqueia produção ou é risco de segurança · **P1** quebra funcional ou dado incorreto ·
@@ -55,6 +62,10 @@ Isso passou por três revisões (a minha, a do ChatGPT e a revisão de código d
 detectado, porque todas procuraram por "google", "gcloud" e "cloud run" — e a string real é
 `run.app`. Registro isso como falha de método, não só como achado.
 
+O A-10 apareceu durante esta própria auditoria, ao criar a branch do relatório a partir da `main`:
+**a `main` está com o CI vermelho desde 2026-08-25**, por um teste de contrato de backup que ficou
+para trás quando a agenda do drill foi desativada. Mesclar o PR #129 conserta.
+
 Fora disso, a base é sólida: RLS ativo com contexto de tenant explícito, nenhum segredo versionado,
 gitleaks e CodeQL no CI, 821 testes, ações fixadas por SHA e dependências com hash. Os demais achados
 são de resiliência operacional, não de correção.
@@ -62,7 +73,7 @@ são de resiliência operacional, não de correção.
 | Severidade | Quantidade | Achados |
 |---|---|---|
 | **P0** | 1 | ~~A-01~~ ✅ corrigido |
-| **P1** | 2 | A-02, A-03 |
+| **P1** | 3 | ~~A-02~~ ✅ · A-03, A-10 |
 | **P2** | 4 | A-04, A-05, A-06, A-07 |
 | **P3** | 2 | A-08, A-09 |
 
@@ -72,15 +83,14 @@ são de resiliência operacional, não de correção.
 
 ### A-01 · O CSP do frontend bloqueia a API nova
 
-> **✅ CORRIGIDO em 2026-08-27.** A origem do CSP e a origem que o cliente HTTP chama passam a sair da
-> **mesma** variável (`VITE_API_URL`): `frontend/public/_headers` guarda o marcador `__API_ORIGIN__`,
-> resolvido por `frontend/scripts/render-csp.mjs` no `npm run build`. O script encerra o build com
-> saída 1 se a variável estiver ausente, malformada, sem HTTPS fora de localhost, ou se o marcador
-> tiver sumido — este último caso pega a regressão de alguém voltar a escrever a origem à mão.
-> Travado por 10 testes em `frontend/src/test/renderCsp.test.ts` e pelo contrato reescrito em
-> `tests/test_frontend_auth_contract.py`, que agora verifica a invariante em vez de uma URL literal.
-> Build real validado ponta a ponta: `dist/_headers` sai com a origem correta, zero marcador
-> remanescente e zero referência ao Google Cloud.
+> **✅ CORRIGIDO em 2026-08-27, commit `4311d18`.** A origem do CSP e a origem que o cliente HTTP
+> chama passam a sair da **mesma** variável (`VITE_API_URL`): `frontend/public/_headers` guarda o
+> marcador `__API_ORIGIN__`, resolvido por `frontend/scripts/render-csp.mjs` no `npm run build`. O
+> script encerra o build com saída 1 se a variável estiver ausente, malformada, sem HTTPS fora de
+> localhost, ou se o marcador tiver sumido — este último caso pega a regressão de alguém voltar a
+> escrever a origem à mão. Travado por 10 testes em `frontend/src/test/renderCsp.test.ts` e pelo
+> contrato reescrito em `tests/test_frontend_auth_contract.py`, que agora verifica a invariante em
+> vez de uma URL literal. Build real validado ponta a ponta.
 
 **Afirmação.** Após migrar a API para o Render, o navegador bloqueará **todas** as chamadas do
 dashboard, porque o `Content-Security-Policy` publicado com o frontend só permite conexão com a URL
@@ -128,9 +138,10 @@ teste do item 3 deve rodar sobre o arquivo **gerado**, não sobre o template. N�
 
 ### A-02 · `.env.production` versionado aponta para o projeto GCP excluído
 
-> **✅ CORRIGIDO em 2026-08-27.** `frontend/.env.production` removido. A configuração de produção
-> passa a ter uma fonte só — a variável `VITE_API_URL` do GitHub, que `deploy-frontend.yml` valida
-> antes de construir. Era a última referência funcional ao Google Cloud no repositório.
+> **✅ CORRIGIDO em 2026-08-27, commit `4311d18`.** `frontend/.env.production` removido. A
+> configuração de produção passa a ter uma fonte só — a variável `VITE_API_URL` do GitHub, que
+> `deploy-frontend.yml` valida antes de construir. Era a última referência funcional ao Google Cloud
+> no repositório.
 
 **Afirmação.** O repositório versiona uma configuração de produção que aponta para uma API que não
 existe mais.
@@ -196,6 +207,44 @@ documento afirma uma garantia que o sistema não entrega.
 e um serviço Postgres — confirmar que o segredo de restore continua válido antes de agendar, senão a
 agenda passa a falhar todo dia e treina o operador a ignorar notificação de falha, que é hoje o único
 canal de alerta (ver A-04).
+
+---
+
+### A-10 · O gate de qualidade da `main` está quebrado desde 2026-08-25
+
+**Afirmação.** A `main` tem um teste falhando. O gate de qualidade não protege mais nada, e qualquer
+branch criada a partir dela nasce com CI vermelho.
+
+**Evidência.** Descoberto ao criar a branch desta auditoria a partir de `origin/main`: o job
+`quality` do PR #130 falhou com `1 failed, 871 passed`.
+
+- `tests/test_backup_restore_runbook_contract.py:67` (na `main`) — `assert 'cron: "0 5 * * *"' in workflow`
+- Commit `95f6726` (*"ops: stop scheduled cloud backup drill during workstation production"*, 2026-08-25)
+  removeu o `schedule:` de `.github/workflows/restore-drill.yml` e **não atualizou o teste**; o diff
+  desse commit toca um arquivo só
+- Log do job: `FAILED tests/test_backup_restore_runbook_contract.py::test_restore_drill_is_automated_and_fail_closed`
+
+**Impacto.** Dois efeitos, e o segundo é o pior.
+
+O imediato: a `main` está vermelha há um dia, e toda branch nova herda a falha — foi assim que este
+achado apareceu.
+
+O de fundo: o teste se chama `test_restore_drill_is_automated_and_fail_closed`. Ele existia
+justamente para garantir que o backup fosse automatizado. Desativar a agenda sem tocar no teste não
+"quebrou o CI por descuido" — desmontou em silêncio uma garantia que o projeto havia escrito de
+forma explícita. É a mesma lacuna do A-03, vista pelo outro lado: lá a documentação promete o que o
+sistema não faz; aqui o teste afirmava o que o sistema deixou de fazer.
+
+**Severidade: P1.** Não bloqueia produção — que já está fora do ar por outro motivo —, mas remove a
+rede de proteção de todo trabalho futuro enquanto durar.
+
+**Solução proposta.** Já existe e está no PR #129: o teste foi renomeado para
+`test_restore_drill_is_manual_and_fail_closed` e passou a exigir `workflow_dispatch:` com ausência de
+`schedule:`. **Mesclar o PR #129 conserta a `main`.** Se a decisão do A-03 for religar a agenda, o
+teste volta à forma anterior — mas aí por decisão registrada, não por omissão.
+
+**Risco da correção.** Baixo. O risco real é o oposto: deixar como está treina quem revisa a ignorar
+CI vermelho, e o próximo teste que quebrar de verdade passa despercebido.
 
 ---
 
@@ -367,14 +416,15 @@ Ordem pensada para desbloquear produção cedo e evitar retrabalho — **não** 
 
 | # | Ação | Achado | Por que nesta posição |
 |---|---|---|---|
-| 1 | ~~Corrigir CSP + `.env.production` + teste-guarda~~ | A-01, A-02 | ✅ **feito em 2026-08-27** |
+| 1 | ~~Corrigir CSP + `.env.production` + teste-guarda~~ | A-01, A-02 | ✅ **feito em 2026-08-27** (`4311d18`) |
 | 2 | ~~Atualizar `RUNBOOK_DEPLOY.md` § 2.3~~ | A-01 | ✅ **feito em 2026-08-27** — § 2.3 reescrito e sintoma adicionado à tabela de diagnóstico |
-| 3 | Decidir e registrar o RPO real | A-03 | Decisão do dono, não técnica. Precisa sair antes do go-live para não prometer o que não entrega |
-| 4 | Executar o deploy (segredos → merge → migrate → jobs → Render → frontend) | — | Só depois de 1–3 |
-| 5 | Verificador externo de disponibilidade | A-04, A-05 | Só faz sentido com algo no ar para observar. Resolve os dois de uma vez |
-| 6 | Triagem do drift de documentação | A-06 | Não bloqueia nada |
-| 7 | `select = ["E", "F"]` no ruff, em commit isolado | A-08 | Ruidoso; não misturar com mudança funcional |
-| 8 | Gate de acessibilidade | A-09 | Dívida registrada, priorização separada |
+| 3 | Mesclar o PR #129, que também conserta a `main` | A-10 | Enquanto a `main` estiver vermelha, nenhum gate protege trabalho novo |
+| 4 | Decidir e registrar o RPO real | A-03 | Decisão do dono, não técnica. Precisa sair antes do go-live para não prometer o que não entrega |
+| 5 | Executar o deploy (segredos → merge → migrate → jobs → Render → frontend) | — | Só depois de 1–4 |
+| 6 | Verificador externo de disponibilidade | A-04, A-05 | Só faz sentido com algo no ar para observar. Resolve os dois de uma vez |
+| 7 | Triagem do drift de documentação | A-06 | Não bloqueia nada |
+| 8 | `select = ["E", "F"]` no ruff, em commit isolado | A-08 | Ruidoso; não misturar com mudança funcional |
+| 9 | Gate de acessibilidade | A-09 | Dívida registrada, priorização separada |
 
 ---
 
