@@ -8,6 +8,12 @@ export default mergeConfig(
   viteConfig,
   defineConfig({
     test: {
+      // O padrão de inclusão do Vitest (`**/*.spec.ts`) casa com
+      // `e2e/screenshots.spec.ts`, que é spec do Playwright e importa
+      // `@playwright/test` — módulo que o Vitest não resolve. Sem esta
+      // exclusão o job `frontend` do CI falha com o arquivo inteiro em erro,
+      // mesmo com os 973 testes de componente passando.
+      exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
       environment: 'jsdom',
       setupFiles: ['./src/test/setup.ts'],
       globals: false,

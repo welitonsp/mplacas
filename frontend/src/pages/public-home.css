@@ -18,12 +18,30 @@
    className="site-shell" id="top">`) e não usa portal. */
 .site-shell { font-family: "Manrope", sans-serif; color: #18262b; background: #f3f4ee; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -webkit-font-smoothing: antialiased; --navy: #102126; --navy-2: #172f35; --teal: #4bb9a9; --teal-dark: #278b83; --amber: #e6ae58; --paper: #f3f4ee; --paper-2: #e8ebe4; --ink: #18262b; --muted: #647579; --line: rgba(24, 38, 43, 0.14); --display: "Space Grotesk", sans-serif; }
 
-* { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--paper); color: var(--ink); }
-button, a { font: inherit; }
-a { color: inherit; text-decoration: none; }
-button { border: 0; }
+/* Regras escopadas ao contêiner da landing (achado do comparativo visual,
+   2026-08-27). Antes eram globais — `*`, `html`, `body`, `a`, `button` — e este
+   arquivo entra por chunk lazy que NÃO é descarregado ao navegar: quem passasse
+   pela página pública levava tudo isto para o painel.
+
+   O caso mais grave era `a { text-decoration: none }`, que removia o sublinhado
+   de todo link do app, e `body { background/color }`, que aplicava a paleta da
+   landing usando variáveis definidas só em `.site-shell` — fora dele, `var()`
+   inválido. `.site-shell` já declara cor e fundo, então as regras de `body`
+   eram redundantes até para a própria landing.
+
+   O guard test `publicHomeAssets.test.ts` existia justamente para isto, mas
+   verificava apenas o seletor `:root`. Foi estendido junto desta correção. */
+
+.site-shell, .site-shell *, .site-shell *::before, .site-shell *::after { box-sizing: border-box; }
+.site-shell { min-width: 320px; min-height: 100vh; }
+.site-shell button, .site-shell a { font: inherit; }
+.site-shell a { color: inherit; text-decoration: none; }
+.site-shell button { border: 0; }
+
+/* `scroll-behavior` precisa viver no elemento que rola de verdade, e não há
+   como escopá-lo a um filho. `:has()` limita o efeito às páginas que realmente
+   montam a landing — o painel não é afetado. */
+html:has(.site-shell) { scroll-behavior: smooth; }
 
 .site-shell { overflow: hidden; }
 .site-container { width: min(1180px, calc(100% - 64px)); margin: 0 auto; }
@@ -313,6 +331,15 @@ h2 { margin: 0; color: var(--navy); font: 600 clamp(2.55rem, 4.6vw, 4.7rem)/.98 
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+  html:has(.site-shell) { scroll-behavior: auto; }
+  /* Escopado à landing junto das demais regras globais. O `!important` em `*`
+     desligava transição no app inteiro, mas SÓ para quem tivesse passado pela
+     página pública — comportamento inconsistente é pior que qualquer um dos
+     dois consistentes. O painel já respeita movimento reduzido pelas classes
+     `motion-reduce:` do Tailwind, aplicadas componente a componente. */
+  .site-shell, .site-shell *, .site-shell *::before, .site-shell *::after {
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

@@ -23,3 +23,9 @@ Thumbs.db
 
 # Wrangler
 .wrangler/
+
+# Saídas da captura visual (Playwright). As imagens são artefato de CI,
+# revisadas no PR — não versionadas, para o repositório não crescer a cada run.
+e2e/capturas/
+e2e/.output/
+playwright-report/
