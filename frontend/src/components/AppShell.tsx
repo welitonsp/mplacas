@@ -43,7 +43,16 @@ export function AppShell({ children, subnav }: { children: ReactNode; subnav?: R
       <AppHeader />
 
       <div className="mx-auto grid max-w-7xl gap-4 px-3 py-4 sm:gap-6 sm:px-6 sm:py-6 md:py-8 lg:grid-cols-[16rem_minmax(0,1fr)] lg:px-8 xl:grid-cols-[17rem_minmax(0,1fr)] xl:gap-8 2xl:max-w-[96rem]">
-        <aside className="lg:sticky lg:top-20 lg:self-start">
+        {/* `min-w-0` é obrigatório aqui, não estilo. Item de grid tem
+            `min-width: auto` por padrão, ou seja, não encolhe abaixo da largura
+            intrínseca do conteúdo. O `subnav` é um scroller horizontal de 4
+            itens com `min-w-[9.25rem]` cada: sem isto ele reivindicava ~720 px e
+            esticava a PÁGINA INTEIRA para 750 px numa viewport de 412 px — o
+            painel inteiro rolava de lado no celular.
+
+            O `<main>` ao lado já tinha a mesma proteção; o `<aside>` ficou sem.
+            Medido com `e2e/overflow.spec.ts` (achado V-7). */}
+        <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
           {subnav}
         </aside>
 

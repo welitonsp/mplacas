@@ -25,16 +25,22 @@ O defeito é outro: **as telas cansam, não feiam.** Densidade e repetição.
 Medido das capturas em `frontend/e2e/capturas/`, dividindo a altura da página pela altura da
 viewport:
 
-| Tela | Desktop (900px) | Mobile (852px) |
-|---|---|---|
-| Visão Geral | 2,7 telas | **12,4 telas** |
-| Produção | 3,4 telas | **15,0 telas** |
-| Técnico | 2,7 telas | 12,4 telas |
-| Financeiro | 2,1 telas | 8,3 telas |
-| Página pública | 6,9 telas | **24,9 telas** |
+> **⚠️ Corrigido em 2026-08-27.** A primeira versão desta tabela dividia a altura da IMAGEM pela
+> altura da viewport em CSS, sem considerar que o Pixel 7 tem `deviceScaleFactor: 2.625`. Os números
+> de mobile estavam inflados **2,6×**. Abaixo, os valores reais em pixels CSS.
 
-Quinze telas de rolagem para ler um módulo no celular. Nenhum dos comparáveis do GitHub chega perto
-disso — e o dono do produto consulta o painel majoritariamente no telefone.
+| Tela | Desktop (900px) | Mobile (839px) |
+|---|---|---|
+| Visão Geral | 2,7 telas | **4,8 telas** |
+| Produção | 3,4 telas | **5,7 telas** |
+| Técnico | 2,7 telas | 4,7 telas |
+| Financeiro | 2,1 telas | 3,2 telas |
+| Página pública | 6,9 telas | 9,6 telas |
+
+Continua muito — quase 6 telas para ler Produção no celular —, mas é metade do que este documento
+afirmou primeiro. É a segunda vez que a medição corrige uma afirmação minha, e vale registrar o
+padrão: **estimar densidade a olho erra, e medir errado erra também.** Conferir a unidade importa
+tanto quanto medir.
 
 ## Evidência 2 — o mesmo fato repetido de 3 a 6 vezes
 
@@ -55,7 +61,25 @@ O parágrafo do **critério de alerta** (*"Gatilho usa esperado/PR quando dispon
 compara 7 dias contra a janela anterior…"*) aparece **duas vezes na tela de Produção** e **mais uma
 vez na Visão Geral** — três ocorrências do mesmo texto explicativo em dois módulos.
 
-## Evidência 3 — a coluna esquerda vazia
+## Evidência 3 — o painel rolava de lado no celular · **corrigido**
+
+Descoberto ao investigar a unidade das medidas acima: as capturas de mobile saíam com **1922 px de
+largura**, quase o dobro dos 1082 px do login. Divididos pelo `deviceScaleFactor`, são **732 px CSS
+numa viewport de 412 px** — o documento inteiro media 750 px e **rolava horizontalmente**.
+
+Causa: o `<aside>` do `AppShell` não tinha `min-w-0`. Item de grid tem `min-width: auto` e não
+encolhe abaixo da largura intrínseca do conteúdo; o menu de módulos é um scroller de 4 itens com
+`min-w-[9.25rem]` cada, então ele reivindicava ~720 px e esticava a página. O `<main>` ao lado já
+tinha a proteção — o `<aside>` ficou sem.
+
+Corrigido: documento voltou a 412 px, exatamente a viewport. Guarda permanente em
+`e2e/overflow.spec.ts`, que nomeia o elemento culpado na mensagem de falha.
+
+**Trade-off declarado:** a altura subiu ~10% (Produção: 4791 → 5252 px CSS), porque o conteúdo que
+vazava de lado agora quebra para baixo. É a troca certa — rolagem lateral no celular esconde
+conteúdo sem sinal visível —, mas reforça a prioridade de R-5.
+
+## Evidência 4 — a coluna esquerda vazia
 
 No desktop, a barra lateral termina por volta de 730 px e o conteúdo segue até 2.391 px na Visão
 Geral. São aproximadamente **1.600 px de coluna vazia** enquanto o conteúdo se empilha numa faixa
@@ -112,16 +136,16 @@ Aplicando `premium-product-ux`, cada item declara se serve à **decisão** ou é
 >
 > **Mas o efeito medido foi de 1,5%,** não "alto impacto":
 >
-> | Tela | Desktop | Mobile |
+> | Tela | Desktop | Mobile (px CSS) |
 > |---|---|---|
-> | Produção | 3099 → 3109 px (+0,3%) | 12776 → 12576 px (**−1,6%**) |
-> | Técnico | 2410 → 2382 px (−1,2%) | 10542 → 10385 px (**−1,5%**) |
+> | Produção | 3099 → 3109 px (+0,3%) | 4867 → 4791 px (**−1,6%**) |
+> | Técnico | 2410 → 2382 px (−1,2%) | 4016 → 3956 px (**−1,5%**) |
 >
-> O bloco tinha ~200 px de 12.776. Eu superestimei olhando a tela, e a medição corrigiu — que é
+> O bloco tinha ~76 px CSS de 4.867. Eu superestimei olhando a tela, e a medição corrigiu — que é
 > exatamente para isso que a captura visual existe. Produção no desktop até cresceu 0,3%, por reflow
 > do contêiner que sobrou.
 
-**Lição para os itens seguintes:** as 15 telas de rolagem no mobile **não** vêm de blocos
+**Lição para os itens seguintes:** as ~6 telas de rolagem no mobile **não** vêm de blocos
 redundantes isolados. Vêm da estrutura: cada grade de 3 colunas do desktop vira 3 cards empilhados no
 celular. Isso desloca a prioridade — **R-4 e R-5 (layout) passam à frente de R-2 (deduplicação)**
 para o objetivo de reduzir rolagem, embora R-2 continue valendo por clareza.
