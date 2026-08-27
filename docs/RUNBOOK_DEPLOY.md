@@ -143,6 +143,39 @@ Remove-Variable botToken, webhookSecret, botTokenSecure, webhookSecretSecure
 Substitua `<URL-DO-RENDER>` pelo hostname real, sem `https://` duplicado. O comando não imprime os
 segredos; a resposta esperada contém `ok: true`.
 
+## Recuperar dias em que o ciclo não rodou
+
+Se o ciclo diário ficar parado — cota do Neon esgotada, agenda desabilitada, provedor fora do ar —
+a telemetria daqueles dias **não se perde**. O NEPViewer serve histórico por intervalo, então dá
+para recuperar depois.
+
+Actions → **backfill** → *Run workflow*:
+
+| Campo | O que informar |
+|---|---|
+| `data_inicial` | primeiro dia parado (YYYY-MM-DD) |
+| `data_final` | último dia parado — precisa ser **anterior a hoje**, porque o dia corrente ainda está incompleto |
+| `incluir_pipeline` | `true` recupera coleta **e** análise; `false` traz só os dados brutos |
+| `confirmacao` | digite `BACKFILL` |
+
+O workflow valida o intervalo antes de instalar qualquer coisa, recusa data inexistente ou invertida,
+e tem teto de 60 dias — um ano digitado errado viraria centenas de execuções contra o provedor.
+
+Ele compartilha o grupo de concorrência com o ciclo diário, então os dois nunca escrevem ao mesmo
+tempo no mesmo banco: um espera o outro.
+
+### Espere um lote de alertas depois
+
+Com `incluir_pipeline: true`, o `daily-pipeline` enfileira **um evento de alerta por dia
+recuperado**. Isso não dá para desligar: desde a ADR-068/069 a expectativa vem de cada usina e a
+função exige Telegram configurado.
+
+O backfill **não entrega** esses eventos de propósito — não roda `dispatch-outbox` nem
+`daily-digest`. Mas eles ficam na fila, e o **próximo ciclo diário vai entregá-los de uma vez**.
+
+Isso é esperado, não defeito. Cada mensagem é datada. Se preferir só os dados sem análise nem
+alerta, rode com `incluir_pipeline: false`.
+
 ## Comportamento esperado que **não** é defeito
 
 - **Primeira visita ao dashboard demora de 30 a 60 s.** O plano free hiberna após 15 min sem

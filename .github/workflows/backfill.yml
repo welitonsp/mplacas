@@ -1,0 +1,191 @@
+# Recuperação de dias não coletados (backfill).
+#
+# Por que existe: quando o ciclo diário fica parado — cota do Neon esgotada,
+# agenda desabilitada, provedor fora do ar — a telemetria daqueles dias não some.
+# O NEPViewer serve histórico por intervalo (`get_daily_energy(start, end)` em
+# `providers/nepviewer/client.py`), então dá para recuperar depois.
+#
+# O que nunca existiu neste repositório: o antigo job `mplacas-backfill` do
+# Google Cloud rodava código que jamais foi versionado aqui. Este workflow fecha
+# essa lacuna.
+#
+# ATENÇÃO AO OUTBOX — leia antes de rodar com `incluir_pipeline: true`:
+#
+#   `daily-pipeline` enfileira eventos de alerta no outbox transacional, um por
+#   dia processado. Ele NÃO aceita desligar isso: desde a ADR-068/069 a
+#   expectativa vem de cada usina, não de variável de ambiente, e a função exige
+#   Telegram configurado.
+#
+#   Este workflow deliberadamente NÃO executa `dispatch-outbox` nem
+#   `daily-digest`. Mas os eventos ficam na fila, e o PRÓXIMO ciclo diário vai
+#   entregá-los — você receberá um alerta por dia recuperado, de uma vez.
+#
+#   Isso é esperado, não defeito. Cada mensagem é datada. Se preferir só os
+#   dados brutos sem análise nem alerta, rode com `incluir_pipeline: false`.
+name: backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      data_inicial:
+        description: "Primeiro dia a recuperar (YYYY-MM-DD)"
+        required: true
+      data_final:
+        description: "Último dia a recuperar (YYYY-MM-DD, inclusive)"
+        required: true
+      incluir_pipeline:
+        description: "Rodar a análise além da coleta (enfileira alertas — ver cabeçalho)"
+        type: boolean
+        default: true
+      confirmacao:
+        description: "Digite BACKFILL para confirmar a execução contra produção"
+        required: true
+        default: ""
+
+concurrency:
+  # MESMO grupo do ciclo diário, de propósito: backfill e ciclo escrevendo ao
+  # mesmo tempo no mesmo banco disputariam os locks por usina/data. Compartilhar
+  # o grupo faz um esperar o outro em vez de competir.
+  group: operational-jobs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  recuperar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MPLACAS_ENVIRONMENT: production
+      MPLACAS_TIMEZONE: America/Sao_Paulo
+      PYTHONPATH: ${{ github.workspace }}/src
+      MPLACAS_TELEGRAM_ALERT_CHAT_ID: ${{ vars.MPLACAS_TELEGRAM_ALERT_CHAT_ID }}
+      MPLACAS_CLOUD_JOB_PLANT_NAME: ${{ vars.MPLACAS_CLOUD_JOB_PLANT_NAME }}
+      MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH: ${{ vars.MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH }}
+      DATA_INICIAL: ${{ inputs.data_inicial }}
+      DATA_FINAL: ${{ inputs.data_final }}
+      # Teto de segurança. Um intervalo digitado errado (ano trocado, por
+      # exemplo) viraria centenas de execuções contra o provedor e contra o
+      # banco — exatamente o tipo de consumo acidental que a
+      # docs/POLITICA_CUSTO_ZERO.md existe para impedir.
+      MAXIMO_DIAS: "60"
+    steps:
+      # Validação primeiro: não depende do repositório nem do venv, e rejeita
+      # entrada inválida em segundos em vez de depois do pip install.
+      - name: Validar intervalo
+        id: intervalo
+        run: |
+          if [ "${{ inputs.confirmacao }}" != "BACKFILL" ]; then
+            echo "Confirmação ausente ou incorreta. Digite exatamente BACKFILL." >&2
+            exit 1
+          fi
+          for d in "$DATA_INICIAL" "$DATA_FINAL"; do
+            if ! [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "Data inválida: '${d}'. Use YYYY-MM-DD." >&2
+              exit 1
+            fi
+            date -u -d "$d" >/dev/null 2>&1 || { echo "Data inexistente: '${d}'." >&2; exit 1; }
+          done
+
+          inicio=$(date -u -d "$DATA_INICIAL" +%s)
+          fim=$(date -u -d "$DATA_FINAL" +%s)
+          hoje=$(date -u -d "$(date -u +%F)" +%s)
+
+          [ "$fim" -ge "$inicio" ] || { echo "Data final anterior à inicial." >&2; exit 1; }
+          # Coletar "hoje" traz dia incompleto e grava número que será corrigido
+          # depois; o ciclo diário sempre trabalha sobre ontem pelo mesmo motivo.
+          [ "$fim" -lt "$hoje" ] || { echo "Data final precisa ser anterior a hoje." >&2; exit 1; }
+
+          dias=$(( (fim - inicio) / 86400 + 1 ))
+          if [ "$dias" -gt "$MAXIMO_DIAS" ]; then
+            echo "Intervalo de ${dias} dias excede o teto de ${MAXIMO_DIAS}." >&2
+            echo "Se for intencional, rode em lotes menores." >&2
+            exit 1
+          fi
+          echo "dias=${dias}" >> "$GITHUB_OUTPUT"
+          echo "Recuperando ${dias} dia(s): ${DATA_INICIAL} .. ${DATA_FINAL}"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Verificar configuracao e conectividade (sem mutacao)
+        id: smoke
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+        run: python -m mplacas.cloud_jobs smoke
+
+      - name: Coletar telemetria dia a dia
+        if: ${{ steps.smoke.outcome == 'success' }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
+          MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
+        run: |
+          falhas=0
+          dia="$DATA_INICIAL"
+          while [ "$(date -u -d "$dia" +%s)" -le "$(date -u -d "$DATA_FINAL" +%s)" ]; do
+            echo "::group::collect ${dia}"
+            # Um dia que falha não interrompe os outros: a coleta é independente
+            # por data, e parar tudo no primeiro erro desperdiçaria o restante.
+            if python -m mplacas.cloud_jobs collect --target-date "$dia"; then
+              python -m mplacas.cloud_jobs drain-collection || true
+            else
+              echo "falha ao coletar ${dia}" >&2
+              falhas=$((falhas + 1))
+            fi
+            echo "::endgroup::"
+            dia=$(date -u -d "$dia + 1 day" +%F)
+          done
+          echo "dias com falha na coleta: ${falhas}"
+          echo "FALHAS_COLETA=${falhas}" >> "$GITHUB_ENV"
+
+      - name: Processar analise dia a dia
+        if: ${{ steps.smoke.outcome == 'success' && inputs.incluir_pipeline }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          MPLACAS_TELEGRAM_BOT_TOKEN: ${{ secrets.MPLACAS_TELEGRAM_BOT_TOKEN }}
+          MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
+          MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
+        run: |
+          falhas=0
+          dia="$DATA_INICIAL"
+          while [ "$(date -u -d "$dia" +%s)" -le "$(date -u -d "$DATA_FINAL" +%s)" ]; do
+            echo "::group::daily-pipeline ${dia}"
+            python -m mplacas.cloud_jobs daily-pipeline --target-date "$dia" || {
+              echo "falha no pipeline de ${dia}" >&2
+              falhas=$((falhas + 1))
+            }
+            echo "::endgroup::"
+            dia=$(date -u -d "$dia + 1 day" +%F)
+          done
+          echo "dias com falha no pipeline: ${falhas}"
+          echo "FALHAS_PIPELINE=${falhas}" >> "$GITHUB_ENV"
+
+      - name: Resumo
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "## Backfill: ${DATA_INICIAL} .. ${DATA_FINAL}"
+            echo ""
+            echo "- dias no intervalo: ${{ steps.intervalo.outputs.dias }}"
+            echo "- falhas na coleta: ${FALHAS_COLETA:-n/a}"
+            echo "- análise executada: ${{ inputs.incluir_pipeline }}"
+            echo "- falhas no pipeline: ${FALHAS_PIPELINE:-não executado}"
+            echo ""
+            if [ "${{ inputs.incluir_pipeline }}" = "true" ]; then
+              echo "> **O outbox agora tem eventos de alerta dos dias recuperados.**"
+              echo "> Este workflow não os entrega de propósito. O próximo ciclo diário vai —"
+              echo "> espere um alerta por dia recuperado, de uma vez. Cada um é datado."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          falhas=$(( ${FALHAS_COLETA:-0} + ${FALHAS_PIPELINE:-0} ))
+          [ "$falhas" -eq 0 ] || { echo "${falhas} dia(s) falharam; ver os grupos acima." >&2; exit 1; }
