@@ -89,3 +89,31 @@ def test_schedule_pins_the_operation_timezone_explicitly() -> None:
     schedule = workflow[True]["schedule"][0]
 
     assert schedule["timezone"] == "America/Sao_Paulo"
+
+
+def test_watchdog_observes_both_failure_modes_without_burning_the_free_tier() -> None:
+    """Vigia externo (auditoria 2026-08-26, A-04/A-05).
+
+    Cobre os dois modos de falha, que são diferentes: a API cai por ERRO, e o
+    ciclo operacional falha por AUSÊNCIA — um ciclo que nunca roda não gera
+    notificação nenhuma.
+
+    A frequência é parte do contrato, não detalhe: cada verificação acorda o
+    serviço no Render, cujo plano free dá 750 h/mês contra ~730 h que o mês tem.
+    Um intervalo curto manteria o serviço acordado o mês inteiro e estouraria a
+    franquia — o mesmo tipo de erro que estourou a cota do Neon em 2026-08-21.
+    """
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/watchdog.yml").read_text(encoding="utf-8")
+    )
+    texto = (ROOT / ".github/workflows/watchdog.yml").read_text(encoding="utf-8")
+
+    assert workflow[True]["schedule"][0]["cron"] == "23 */6 * * *"
+    assert "/health" in texto
+    assert "operational-jobs.yml" in texto
+    # Sem a porta de entrada, o vigia alertaria a cada 6 h enquanto VITE_API_URL
+    # ainda apontar para o Google Cloud, antes do deploy no Render.
+    assert "vigia inativo" in texto
+    assert "grep -q" in texto
+    # Somente leitura: um vigia não precisa de permissão de escrita.
+    assert workflow["permissions"] == {"contents": "read", "actions": "read"}

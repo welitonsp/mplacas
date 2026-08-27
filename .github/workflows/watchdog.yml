@@ -1,0 +1,144 @@
+# Vigia externo do Mplacas (auditoria 2026-08-26, achados A-04 e A-05).
+#
+# O que ele resolve: depois da saída do Google Cloud, as policies de Cloud
+# Monitoring sumiram e nada mais observava a aplicação de fora. A queda da API só
+# era percebida quando alguém abria o dashboard.
+#
+# Duas verificações independentes, porque os modos de falha são diferentes:
+#
+#   1. A API responde? — falha por ERRO. Detecta serviço fora do ar, deploy
+#      quebrado, banco inacessível na inicialização.
+#   2. O ciclo operacional rodou? — falha por AUSÊNCIA. Detecta agenda
+#      desabilitada, job travado ou execução descartada pelo GitHub em carga
+#      alta. Um ciclo que nunca roda não gera nenhuma notificação de falha, e é
+#      por isso que precisa de alguém perguntando "cadê".
+#
+# CUSTO — o motivo de rodar a cada 6 h e não a cada 5 min:
+#
+#   Cada verificação ACORDA o serviço no Render, que hiberna após 15 min sem
+#   tráfego. O plano free dá 750 h de instância por mês e o mês tem ~730 h, ou
+#   seja, quase não há folga. Quatro despertares por dia custam cerca de 1 h/dia
+#   (~30 h/mês); um ping a cada 5 minutos manteria o serviço acordado o mês
+#   inteiro e estouraria a franquia.
+#
+#   `/health` não consulta o banco (`src/mplacas/main.py`), então o ping custa
+#   ZERO de compute do Neon. Manter assim: se `/health` passar a tocar o banco,
+#   este vigia vira o padrão que estourou a cota em 2026-08-21.
+#
+# PONTO CEGO, declarado de propósito (A-05):
+#
+#   Este workflow é agendado, então cai junto com os outros se o GitHub
+#   desabilitar as agendas por 60 dias sem commits no repositório. Ele NÃO se
+#   auto-vigia. A mitigação real é que o GitHub envia e-mail de aviso ao admin
+#   antes de desabilitar — e o digest diário no Telegram para de chegar. Para
+#   cobertura de verdade seria preciso um verificador fora do GitHub; não foi
+#   feito por não valer a infraestrutura nova neste tamanho de projeto.
+name: watchdog
+
+on:
+  schedule:
+    # A cada 6 h, no minuto 23 — o GitHub avisa que agendas no topo da hora
+    # atrasam e podem ser descartadas em períodos de carga alta.
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: watchdog
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      API_URL: ${{ vars.VITE_API_URL }}
+      # Limite de idade do último ciclo bem-sucedido. O ciclo roda 06:07 diário;
+      # 30 h dão 24 h de intervalo mais 6 h de folga para atraso de agenda.
+      MAX_CYCLE_AGE_HOURS: "30"
+    steps:
+      - name: Verificar se a migracao ja aconteceu
+        id: gate
+        run: |
+          if [ -z "$API_URL" ]; then
+            echo "VITE_API_URL não configurada; vigia inativo." >&2
+            echo "ativo=false" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$API_URL" | grep -q 'run\.app'; then
+            # A URL ainda aponta para o Google Cloud, que foi excluído. Alertar
+            # agora seria ruído garantido a cada 6 h até o deploy no Render.
+            echo "API ainda não migrada para o Render; vigia inativo até VITE_API_URL mudar." >&2
+            echo "ativo=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ativo=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: A API responde?
+        id: api
+        if: steps.gate.outputs.ativo == 'true'
+        run: |
+          # Timeout generoso e uma repetição: o plano free do Render leva de 30 a
+          # 60 s para acordar, e isso NÃO é indisponibilidade.
+          for tentativa in 1 2; do
+            codigo=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 90 "${API_URL}/health" || echo "000")
+            [ "$codigo" = "200" ] && break
+            echo "tentativa ${tentativa}: HTTP ${codigo}" >&2
+            [ "$tentativa" = "1" ] && sleep 20
+          done
+          echo "codigo=${codigo}" >> "$GITHUB_OUTPUT"
+          if [ "$codigo" != "200" ]; then
+            echo "problema=API respondeu HTTP ${codigo} em ${API_URL}/health" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: O ciclo operacional rodou?
+        id: ciclo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ultimo=$(gh run list --workflow operational-jobs.yml --status success \
+                     --limit 1 --json createdAt --jq '.[0].createdAt // empty' \
+                     --repo "${{ github.repository }}")
+          if [ -z "$ultimo" ]; then
+            echo "Nenhuma execução bem-sucedida ainda; sem linha de base para comparar." >&2
+            exit 0
+          fi
+          idade_h=$(( ( $(date -u +%s) - $(date -u -d "$ultimo" +%s) ) / 3600 ))
+          echo "última execução bem-sucedida: ${ultimo} (${idade_h} h atrás)"
+          if [ "$idade_h" -gt "$MAX_CYCLE_AGE_HOURS" ]; then
+            echo "problema=Ciclo operacional sem sucesso há ${idade_h} h (limite ${MAX_CYCLE_AGE_HOURS} h)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Alertar no Telegram
+        if: ${{ !cancelled() && (steps.api.outputs.problema != '' || steps.ciclo.outputs.problema != '') }}
+        env:
+          BOT_TOKEN: ${{ secrets.MPLACAS_TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ vars.MPLACAS_TELEGRAM_ALERT_CHAT_ID }}
+          PROBLEMA_API: ${{ steps.api.outputs.problema }}
+          PROBLEMA_CICLO: ${{ steps.ciclo.outputs.problema }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "Telegram não configurado; alerta fica só na falha do workflow." >&2
+            exit 0
+          fi
+          texto="Mplacas — vigia detectou problema:"
+          [ -n "$PROBLEMA_API" ] && texto="${texto}"$'\n'"• ${PROBLEMA_API}"
+          [ -n "$PROBLEMA_CICLO" ] && texto="${texto}"$'\n'"• ${PROBLEMA_CICLO}"
+          texto="${texto}"$'\n'"${RUN_URL}"
+          curl -sS -o /dev/null --max-time 30 \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${texto}" \
+            "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            || echo "Falha ao enviar o alerta no Telegram." >&2
+
+      - name: Falhar quando houver problema
+        # Falha depois do alerta, para o Telegram sair mesmo se algo der errado
+        # aqui. A falha do workflow é o segundo canal: gera notificação do
+        # GitHub e deixa o X vermelho visível na aba Actions.
+        if: ${{ !cancelled() && (steps.api.outputs.problema != '' || steps.ciclo.outputs.problema != '') }}
+        run: |
+          [ -n "${{ steps.api.outputs.problema }}" ] && echo "${{ steps.api.outputs.problema }}" >&2
+          [ -n "${{ steps.ciclo.outputs.problema }}" ] && echo "${{ steps.ciclo.outputs.problema }}" >&2
+          exit 1
