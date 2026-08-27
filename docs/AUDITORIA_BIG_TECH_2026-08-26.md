@@ -74,7 +74,7 @@ são de resiliência operacional, não de correção.
 |---|---|---|
 | **P0** | 1 | ~~A-01~~ ✅ corrigido |
 | **P1** | 3 | ~~A-02~~ ✅ · A-03, A-10 |
-| **P2** | 4 | A-04, A-05, A-06, A-07 |
+| **P2** | 4 | ~~A-04~~ ✅ · A-05 ⚠️ mitigado · A-06, A-07 |
 | **P3** | 2 | A-08, A-09 |
 
 ---
@@ -252,6 +252,13 @@ CI vermelho, e o próximo teste que quebrar de verdade passa despercebido.
 
 ### A-04 · Nada observa a API de fora
 
+> **✅ RESOLVIDO em 2026-08-27.** `.github/workflows/watchdog.yml` verifica a cada 6 h se
+> `GET /health` responde 200 e se o ciclo operacional teve sucesso nas últimas 30 h, alertando no
+> Telegram e derrubando o workflow (segundo canal, via notificação do GitHub). O intervalo de 6 h é
+> parte do contrato e está travado por teste: cada verificação **acorda** o serviço no Render, e o
+> plano free dá 750 h/mês contra as ~730 h que o mês tem — um ping frequente estouraria a franquia.
+> `/health` não consulta o banco, então o custo em compute do Neon é zero.
+
 **Afirmação.** Não existe verificação externa de disponibilidade da API. Se o serviço do Render cair,
 ninguém é avisado.
 
@@ -277,6 +284,17 @@ apenas em janela útil.
 ---
 
 ### A-05 · As agendas se desabilitam sozinhas após 60 dias sem atividade
+
+> **⚠️ PARCIALMENTE MITIGADO em 2026-08-27.** O `watchdog.yml` detecta ausência de execução do ciclo
+> (falha por ausência, que não gera notificação nenhuma sozinha). Mas ele **é agendado**, então cai
+> junto se o GitHub desabilitar as agendas — não se auto-vigia, e isso está declarado no cabeçalho do
+> próprio arquivo em vez de escondido.
+>
+> Mitigação real, verificada na documentação do GitHub: **o GitHub envia e-mail de aviso ao admin
+> antes de desabilitar**. Somado ao digest diário parando de chegar no Telegram, são dois sinais.
+> Cobertura completa exigiria um verificador fora do GitHub; avaliado e descartado — o Cloudflare
+> Workers free limita trigger agendado a **10 ms de CPU**, e nenhuma outra opção gratuita compensava
+> a infraestrutura nova neste tamanho de projeto. **Fica como risco aceito e consciente.**
 
 **Afirmação.** O GitHub desabilita workflows agendados em repositório público após 60 dias sem
 atividade. Nada no projeto detecta isso.
@@ -421,7 +439,7 @@ Ordem pensada para desbloquear produção cedo e evitar retrabalho — **não** 
 | 3 | Mesclar o PR #129, que também conserta a `main` | A-10 | Enquanto a `main` estiver vermelha, nenhum gate protege trabalho novo |
 | 4 | Decidir e registrar o RPO real | A-03 | Decisão do dono, não técnica. Precisa sair antes do go-live para não prometer o que não entrega |
 | 5 | Executar o deploy (segredos → merge → migrate → jobs → Render → frontend) | — | Só depois de 1–4 |
-| 6 | Verificador externo de disponibilidade | A-04, A-05 | Só faz sentido com algo no ar para observar. Resolve os dois de uma vez |
+| 6 | ~~Verificador externo de disponibilidade~~ | A-04, A-05 | ✅ **feito em 2026-08-27** — ativa sozinho quando `VITE_API_URL` deixar de apontar para o Google Cloud |
 | 7 | Triagem do drift de documentação | A-06 | Não bloqueia nada |
 | 8 | `select = ["E", "F"]` no ruff, em commit isolado | A-08 | Ruidoso; não misturar com mudança funcional |
 | 9 | Gate de acessibilidade | A-09 | Dívida registrada, priorização separada |
