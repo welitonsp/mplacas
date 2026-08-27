@@ -1,5 +1,12 @@
 # Runbook — rotação da credencial operacional
 
+> **⚠️ OBSOLETO — 2026-08-26.** Este runbook descreve a operação no Google Cloud, plataforma da
+> qual o projeto saiu (ver `docs/ADR-076-saida-do-google-cloud.md`). Os scripts `infra/gcp/*` que ele
+> referencia **não existem mais no repositório**. Não execute os passos daqui.
+>
+> Mantido apenas como memória histórica. Para a plataforma atual (Render + GitHub Actions), use
+> `docs/RUNBOOK_DEPLOY.md`. Não reative o Google Cloud para executar este procedimento antigo.
+
 ## Objetivo
 
 Rotacionar `MPLACAS_OPERATIONS_API_KEY` sem imprimir o segredo, com validação dos consumidores e

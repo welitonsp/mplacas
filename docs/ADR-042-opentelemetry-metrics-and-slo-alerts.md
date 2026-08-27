@@ -2,7 +2,12 @@
 
 ## Status
 
-Aceito.
+**Parcialmente substituído por ADR-076 em 2026-08-26.** Continua valendo: os instrumentos
+OpenTelemetry e a disciplina de cardinalidade baixa (`operation`, `outcome`).
+
+Deixou de valer: o exportador Cloud Monitoring e as políticas de alerta de SLO, que viviam em
+`infra/gcp/monitoring/` e foram removidas com a saída do Google Cloud. **O projeto está sem
+alerta operacional externo** — ver ADR-076 § *Riscos aceitos*.
 
 ## Contexto
 

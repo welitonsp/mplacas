@@ -1,0 +1,183 @@
+# Agendador operacional do Mplacas (ADR-076).
+#
+# Substitui os 8 Cloud Scheduler + Cloud Run Jobs que saíram com o Google Cloud.
+# O repositório é público, então minutos de Actions em runner padrão são gratuitos
+# e ilimitados — este workflow não consome cota.
+#
+# Diferença deliberada em relação ao desenho anterior: lá os 8 jobs eram agendas
+# independentes, separadas por 4 minutos, e a ordem correta dependia de nenhum
+# deles atrasar. Aqui eles são passos sequenciais de um único job, então a ordem
+# é garantida por construção.
+#
+# `!cancelled()` faz cada passo rodar mesmo depois da falha de um anterior, sem
+# ignorar um cancelamento manual. Uma falha em qualquer passo derruba o workflow,
+# e a notificação de falha do GitHub é o alerta operacional externo que as
+# policies de Cloud Monitoring faziam antes.
+#
+# Os segredos NÃO ficam no `env` do job: ficam nos passos que executam a
+# aplicação. Assim `checkout`, `setup-python` e o `pip install` — que rodam
+# código de terceiros — não enxergam a URL do banco, o token do bot nem a senha
+# da NEPViewer. Esquecer o bloco num passo novo falha alto e na hora.
+name: operational-jobs
+
+on:
+  schedule:
+    # 06:07 no fuso da operação. O timezone explícito preserva o horário local
+    # mesmo se as regras de horário de verão do Brasil mudarem no futuro.
+    # Minuto 7 e não 0 de propósito: o GitHub avisa que agendas no topo da hora
+    # sofrem atraso e podem ser descartadas em períodos de carga alta.
+    - cron: "7 6 * * *"
+      timezone: America/Sao_Paulo
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Data alvo YYYY-MM-DD (vazio = ontem)"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  # Nunca dois ciclos operacionais simultâneos contra o mesmo banco.
+  group: operational-jobs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  daily-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Somente valores não sensíveis. `vars.*` são variáveis de repositório,
+      # públicas por definição — segredo nenhum entra aqui.
+      MPLACAS_ENVIRONMENT: production
+      MPLACAS_TIMEZONE: America/Sao_Paulo
+      PYTHONPATH: ${{ github.workspace }}/src
+      MPLACAS_TELEGRAM_ALERT_CHAT_ID: ${{ vars.MPLACAS_TELEGRAM_ALERT_CHAT_ID }}
+      MPLACAS_CLOUD_JOB_PLANT_NAME: ${{ vars.MPLACAS_CLOUD_JOB_PLANT_NAME }}
+      MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH: ${{ vars.MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH }}
+      MPLACAS_CLOUD_JOB_EXPECTED_CYCLE_PRODUCTION_KWH: ${{ vars.MPLACAS_CLOUD_JOB_EXPECTED_CYCLE_PRODUCTION_KWH }}
+      TARGET_DATE: ${{ inputs.target_date || '' }}
+    steps:
+      # Primeiro passo de propósito: não depende do repositório nem do venv, e
+      # rejeita uma data malformada em segundos em vez de depois do pip install.
+      - name: Validar data alvo
+        run: |
+          if [[ -n "$TARGET_DATE" && ! "$TARGET_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "Data alvo inválida; use YYYY-MM-DD." >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      # Dois níveis de verificação, com raios de bloqueio diferentes.
+      #
+      # `smoke` valida o que TODO o ciclo precisa: configuração de produção e
+      # conectividade com o banco. Sem isso nada roda.
+      #
+      # `smoke --operational` valida também o que só a trilha de alerta usa
+      # (Telegram, nome da usina, produção esperada). Ele falha o workflow, mas
+      # NÃO bloqueia a coleta: uma variável de digest ausente não pode custar a
+      # telemetria NEPViewer do dia, que é irrecuperável depois da janela.
+      - name: Verificar configuracao e conectividade (sem mutacao)
+        id: smoke
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+        run: python -m mplacas.cloud_jobs smoke
+
+      - name: Verificar configuracao da trilha de alerta
+        id: smoke_operational
+        if: ${{ !cancelled() && steps.smoke.outcome == 'success' }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          MPLACAS_TELEGRAM_BOT_TOKEN: ${{ secrets.MPLACAS_TELEGRAM_BOT_TOKEN }}
+          MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
+          MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
+        run: python -m mplacas.cloud_jobs smoke --operational
+
+      - name: collect — telemetria do fornecedor
+        if: ${{ !cancelled() && steps.smoke.outcome == 'success' }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
+          MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
+        run: |
+          args=()
+          [[ -z "$TARGET_DATE" ]] || args+=(--target-date "$TARGET_DATE")
+          python -m mplacas.cloud_jobs collect "${args[@]}"
+
+      - name: drain-collection — fila de coleta diferida
+        if: ${{ !cancelled() && steps.smoke.outcome == 'success' }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
+          MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
+        run: python -m mplacas.cloud_jobs drain-collection
+
+      - name: daily-pipeline — analise do dia
+        if: ${{ !cancelled() && steps.smoke.outcome == 'success' }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
+          MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
+        run: |
+          args=()
+          [[ -z "$TARGET_DATE" ]] || args+=(--target-date "$TARGET_DATE")
+          python -m mplacas.cloud_jobs daily-pipeline "${args[@]}"
+
+      # Trilha de alerta: depende da configuração completa.
+      - name: dispatch-outbox — entrega dos alertas gerados
+        if: ${{ !cancelled() && steps.smoke_operational.outcome == 'success' }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          MPLACAS_TELEGRAM_BOT_TOKEN: ${{ secrets.MPLACAS_TELEGRAM_BOT_TOKEN }}
+        run: python -m mplacas.cloud_jobs dispatch-outbox
+
+      - name: daily-digest — resumo diario
+        if: ${{ !cancelled() && steps.smoke_operational.outcome == 'success' }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          MPLACAS_TELEGRAM_BOT_TOKEN: ${{ secrets.MPLACAS_TELEGRAM_BOT_TOKEN }}
+        run: |
+          args=()
+          [[ -z "$TARGET_DATE" ]] || args+=(--target-date "$TARGET_DATE")
+          python -m mplacas.cloud_jobs daily-digest "${args[@]}"
+
+      - name: drain-report-exports — exportacoes pedidas
+        if: ${{ !cancelled() && steps.smoke.outcome == 'success' }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+        run: python -m mplacas.cloud_jobs drain-report-exports
+
+      - name: retention — purga fora da janela de retencao
+        if: ${{ !cancelled() && steps.smoke.outcome == 'success' }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+        run: python -m mplacas.cloud_jobs retention
+
+      - name: operational-watchdog — confere que o ciclo do dia rodou
+        # Sai diferente de zero quando o ledger do pipeline esta ausente,
+        # atrasado, travado ou falho. E o ultimo passo de proposito, e depende
+        # so do banco — precisa poder acusar o problema mesmo com a trilha de
+        # alerta mal configurada.
+        if: ${{ !cancelled() && steps.smoke.outcome == 'success' }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+        run: python -m mplacas.cloud_jobs operational-watchdog

@@ -6,7 +6,6 @@ import uuid
 from dataclasses import dataclass
 
 from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE
-from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context
 from mplacas.reports.export_service import ReportExportService
@@ -17,7 +16,6 @@ from mplacas.reports.exporters import (
     build_monthly_report_xlsx,
 )
 from mplacas.reports.snapshot import get_or_materialize_latest_monthly_report_snapshot
-from mplacas.reports.storage import make_artifact_storage
 
 logger = logging.getLogger(__name__)
 
@@ -92,17 +90,12 @@ async def _process_task(task_id: uuid.UUID) -> None:
         artifact_bytes = build_monthly_report_xlsx(report)
         content_type = XLSX_MEDIA_TYPE
 
-    settings = get_settings()
+    # Sem object storage configurado (ADR-076), os bytes ficam no banco e o
+    # download é servido pelo endpoint da própria API. `artifact_url` só volta a
+    # ser preenchido quando existir um ArtifactStorage devolvendo URL https —
+    # ver a nota em reports/storage.py.
     artifact_url: str | None = None
     stored_bytes: bytes | None = artifact_bytes
-    if settings.report_export_bucket is not None:
-        storage = make_artifact_storage(
-            bucket=settings.report_export_bucket,
-            url_ttl_seconds=settings.report_export_url_ttl_seconds,
-        )
-        key = f"reports/{plant_id}/{task.reference_month}/{task.format}/report.{task.format}"
-        artifact_url = await storage.upload(key, artifact_bytes, content_type)
-        stored_bytes = None
 
     async with SessionFactory() as session:
         await set_platform_context(session)

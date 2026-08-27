@@ -6,6 +6,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -82,6 +83,41 @@ def test_smoke_job_executes_read_only_database_probe(monkeypatch) -> None:
     assert run_migrations(runner=runner) == 0
     assert calls[0][-2:] == ["upgrade", "head"]
     get_settings.cache_clear()
+
+
+def test_operational_smoke_rejects_missing_configuration(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        nep_account=None,
+        nep_password=None,
+        telegram_bot_token=None,
+        telegram_alert_chat_id=None,
+        cloud_job_plant_name=None,
+        cloud_job_expected_daily_production_kwh=None,
+        cloud_job_expected_cycle_production_kwh=None,
+    )
+    monkeypatch.setattr(cloud_jobs, "get_settings", lambda: settings)
+
+    with pytest.raises(RuntimeError, match="MPLACAS_NEP_ACCOUNT") as exc_info:
+        cloud_jobs._validate_operational_settings()
+
+    message = str(exc_info.value)
+    assert "MPLACAS_TELEGRAM_BOT_TOKEN" in message
+    assert "MPLACAS_CLOUD_JOB_PLANT_NAME" in message
+
+
+def test_operational_smoke_accepts_complete_configuration(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        nep_account="account",
+        nep_password=SecretStr("password"),
+        telegram_bot_token=SecretStr("token"),
+        telegram_alert_chat_id="123456",
+        cloud_job_plant_name="Usina",
+        cloud_job_expected_daily_production_kwh=Decimal("10"),
+        cloud_job_expected_cycle_production_kwh=Decimal("5"),
+    )
+    monkeypatch.setattr(cloud_jobs, "get_settings", lambda: settings)
+
+    cloud_jobs._validate_operational_settings()
 
 
 def test_migrate_cli_returns_nonzero_on_failure(monkeypatch, capsys) -> None:
@@ -656,7 +692,7 @@ def test_list_organization_plants_orders_by_name_then_id(monkeypatch) -> None:
 
 
 def test_daily_pipeline_cli_exits_non_zero_on_partial_failure(monkeypatch) -> None:
-    """The Cloud Scheduler / Cloud Run Job needs a non-zero exit to alert on."""
+    """O agendador precisa de saída diferente de zero para alertar."""
 
     async def failing_run(**_kwargs):
         raise RuntimeError("daily pipeline failed for plant(s): Usina B (...)")

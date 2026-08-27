@@ -2,7 +2,12 @@
 
 ## Status
 
-Aceito.
+**Parcialmente substituído por ADR-076 em 2026-08-26.** Continua valendo: logs JSON em stdout,
+correlação por `trace_id`/`span_id`, propagação de contexto e sanitização de segredos.
+
+Deixou de valer: o exportador Cloud Trace, o propagador do header `X-Cloud-Trace-Context` e os
+campos `logging.googleapis.com/*`. A propagação passou a ser somente W3C `traceparent` e a
+exportação, OTLP genérico (extra opcional `mplacas[otlp]`), hoje sem backend configurado.
 
 ## Contexto
 

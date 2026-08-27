@@ -29,6 +29,6 @@ description = """
 Fixture sintética de JWT usada na suíte de testes do backend. Não é credencial:
 o valor é literal no código, existe só para satisfazer o comprimento mínimo de
 32 bytes exigido por MPLACAS_JWT_SECRET, e nunca corresponde a um segredo de
-produção (esses vivem no Secret Manager, conforme docs/runbook-producao.md).
+produção (esses vivem no cofre de segredos, conforme docs/runbook-producao.md).
 """
 regexes = ['''^test-jwt-secret-at-least-32-bytes-long$''']

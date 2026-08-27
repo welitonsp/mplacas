@@ -104,27 +104,27 @@ def test_outbox_policy_rejects_invalid_limits() -> None:
         Settings(_env_file=None, outbox_max_attempts=0)
 
 
-def test_cloud_trace_configuration_requires_project_and_valid_sample_rate() -> None:
-    with pytest.raises(ValidationError, match="MPLACAS_GCP_PROJECT_ID"):
-        Settings(_env_file=None, cloud_trace_enabled=True)
+def test_tracing_configuration_requires_endpoint_and_valid_sample_rate() -> None:
+    with pytest.raises(ValidationError, match="MPLACAS_OTLP_ENDPOINT"):
+        Settings(_env_file=None, tracing_enabled=True)
 
     with pytest.raises(ValidationError, match="trace sample rate"):
         Settings(_env_file=None, trace_sample_rate=1.1)
 
     settings = Settings(
         _env_file=None,
-        gcp_project_id="synthetic-project",
-        cloud_trace_enabled=True,
+        otlp_endpoint="https://otlp.example.com",
+        tracing_enabled=True,
         trace_sample_rate=0.25,
     )
 
-    assert settings.safe_summary()["cloud_trace_enabled"] is True
+    assert settings.safe_summary()["tracing_enabled"] is True
     assert settings.safe_summary()["trace_sample_rate"] == 0.25
 
 
-def test_cloud_metrics_configuration_requires_project_and_valid_interval() -> None:
-    with pytest.raises(ValidationError, match="Cloud Monitoring requires"):
-        Settings(_env_file=None, cloud_metrics_enabled=True)
+def test_metrics_configuration_requires_endpoint_and_valid_interval() -> None:
+    with pytest.raises(ValidationError, match="MPLACAS_OTLP_ENDPOINT"):
+        Settings(_env_file=None, metrics_enabled=True)
     with pytest.raises(ValidationError, match="metrics export interval"):
         Settings(_env_file=None, metrics_export_interval_seconds=5)
     with pytest.raises(ValidationError, match="metrics export interval"):
@@ -132,10 +132,10 @@ def test_cloud_metrics_configuration_requires_project_and_valid_interval() -> No
 
     settings = Settings(
         _env_file=None,
-        gcp_project_id="mplacas-prod",
-        cloud_metrics_enabled=True,
+        otlp_endpoint="https://otlp.example.com",
+        metrics_enabled=True,
         metrics_export_interval_seconds=120,
     )
-    assert settings.safe_summary()["cloud_metrics_enabled"] is True
+    assert settings.safe_summary()["metrics_enabled"] is True
     assert settings.safe_summary()["metrics_export_interval_seconds"] == 120
     assert "synthetic-project" not in repr(settings.safe_summary())

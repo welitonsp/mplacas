@@ -1,5 +1,12 @@
 # Runbook de Produção — Mplacas
 
+> **⚠️ OBSOLETO — 2026-08-26.** Este runbook descreve a operação no Google Cloud, plataforma da
+> qual o projeto saiu (ver `docs/ADR-076-saida-do-google-cloud.md`). Os scripts `infra/gcp/*` que ele
+> referencia **não existem mais no repositório**. Não execute os passos daqui.
+>
+> Mantido apenas como memória histórica. Para a plataforma atual (Render + GitHub Actions), use
+> `docs/RUNBOOK_DEPLOY.md`.
+
 Fonte oficial para implantação do backend no Google Cloud Run, banco Neon e frontend no Cloudflare Pages.
 
 > Nunca use `set -x` durante operações com segredos. Não cole connection strings, tokens ou senhas em mensagens, arquivos versionados ou argumentos de linha de comando.

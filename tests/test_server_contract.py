@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from mplacas.core.config import get_settings
 from mplacas.main import app
-import mplacas.cloud_run as cloud_run
+import mplacas.server as server
 import mplacas.main as main_module
 
 
@@ -108,7 +108,7 @@ def test_ready_returns_503_on_timeout(monkeypatch) -> None:
     assert response.json()["database_ready"] is False
 
 
-def test_cloud_run_uses_port_and_host(monkeypatch) -> None:
+def test_server_uses_port_and_host(monkeypatch) -> None:
     monkeypatch.setenv("PORT", "9090")
     get_settings.cache_clear()
     captured: dict[str, object] = {}
@@ -125,10 +125,10 @@ def test_cloud_run_uses_port_and_host(monkeypatch) -> None:
         captured["args"] = args
         captured.update(kwargs)
 
-    monkeypatch.setattr(cloud_run.uvicorn, "run", fake_run)
-    monkeypatch.setattr(cloud_run, "configure_observability", fake_observability)
+    monkeypatch.setattr(server.uvicorn, "run", fake_run)
+    monkeypatch.setattr(server, "configure_observability", fake_observability)
 
-    assert cloud_run.main() == 0
+    assert server.main() == 0
     assert captured["host"] == "0.0.0.0"
     assert captured["port"] == 9090
     assert captured["proxy_headers"] is True

@@ -24,4 +24,4 @@ USER mplacas
 
 EXPOSE 8080
 
-CMD ["python", "-m", "mplacas.cloud_run"]
+CMD ["python", "-m", "mplacas.server"]

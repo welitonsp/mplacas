@@ -2,7 +2,9 @@
 
 ## Status
 
-Aceito.
+**Substituído por ADR-076 em 2026-08-26.** O projeto saiu do Google Cloud após cobrança não
+prevista e sem orçamento para sustentá-la. O Cloud Run deixou de ser a plataforma de execução;
+nenhuma plataforma substituta foi escolhida ainda. Mantido como registro histórico.
 
 ## Contexto
 

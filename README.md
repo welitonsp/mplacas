@@ -30,7 +30,7 @@ O projeto possui uma API FastAPI assíncrona com:
 - coleta histórica pelo Open-Meteo;
 - explicações assistidas por IA com grounding e fallback determinístico;
 - alertas Telegram com outbox transacional, retry e deduplicação SQL;
-- métricas OpenTelemetry de duração e resultado por operação, exportadas ao Cloud Monitoring;
+- métricas OpenTelemetry de duração e resultado por operação, exportáveis por OTLP;
 - credenciais operacionais persistidas com papéis, escopo por usina, revogação e auditoria;
 - usuários operacionais nomeados com credenciais associadas, expiração e desativação em cascata;
 - fila de coleta no Postgres com claim atômico, backoff e isolamento de falha por usina;
@@ -41,11 +41,10 @@ O projeto possui uma API FastAPI assíncrona com:
 - read-model do dashboard executivo com cache invalidado por impressão digital dos dados (nunca serve resultado obsoleto);
 - alertas de SLO documentados por runbook para falhas de pipeline, despacho e latência;
 - orquestração diária com lock por usina/data, retomada após timeout e status consultável;
-- logs JSON correlacionados, trace ID ponta a ponta e spans OpenTelemetry no Cloud Trace;
-- imagem de produção e comandos de jobs prontos para implantação no Google Cloud Run;
-- automação segura de implantação pelo Google Cloud Shell, sem Docker ou `gcloud` no Windows;
+- logs JSON correlacionados, trace ID ponta a ponta e spans OpenTelemetry exportáveis por OTLP;
+- imagem de contêiner portátil, sem dependência de provedor de nuvem;
 - runbook de backup e restauração com teste de ensaio obrigatório em banco descartável;
-- CI com Ruff, Mypy, Pytest, validação Bash, ShellCheck e smoke test do contêiner.
+- CI com Ruff, Mypy, Pytest e smoke test do contêiner.
 
 > A API NEPViewer usada é uma interface web não oficial e pode mudar. O adaptador permanece isolado para impedir acoplamento do restante do sistema.
 
@@ -173,12 +172,12 @@ Acesse:
 - `http://127.0.0.1:8000/docs`
 - `http://127.0.0.1:8000/dashboard` (redireciona para `MPLACAS_DASHBOARD_URL`)
 
-## Contêiner e Cloud Run
+## Contêiner e execução
 
 A imagem de produção usa usuário não root e inicia a API com:
 
 ```bash
-python -m mplacas.cloud_run
+python -m mplacas.server
 ```
 
 O processo escuta em `0.0.0.0` e usa `PORT`, com fallback local 8080.
@@ -186,24 +185,15 @@ O processo escuta em `0.0.0.0` e usa `PORT`, com fallback local 8080.
 Build local opcional:
 
 ```bash
-docker build -t mplacas-cloud-run:local .
+docker build -t mplacas-api:local .
 ```
 
-A implantação oficial não exige Docker local. Os scripts em `infra/gcp/` executam o fluxo pelo
-Google Cloud Shell e usam build gerenciado com `gcloud run deploy --source`.
+A imagem não depende de nenhum provedor: qualquer host que execute um contêiner e forneça
+`PORT` e as variáveis de ambiente serve. A implantação atual é **Render (plano free) para a API e
+GitHub Actions para os jobs agendados**, custo zero — ver `docs/RUNBOOK_DEPLOY.md` para o passo a
+passo e `docs/ADR-076-saida-do-google-cloud.md` para o porquê de cada escolha.
 
-Guardrails iniciais obrigatórios:
-
-- região `us-central1`;
-- mínimo de 0 instâncias;
-- máximo de 1 instância;
-- 1 CPU;
-- 512 MiB de memória;
-- service account de runtime dedicada;
-- segredos no Secret Manager com IAM por segredo;
-- nenhuma criação de Compute Engine, Cloud SQL, load balancer dedicado ou Scheduler.
-
-Cloud Run Jobs disponíveis:
+Jobs operacionais disponíveis (agendados em `.github/workflows/operational-jobs.yml`):
 
 ```bash
 python -m mplacas.cloud_jobs migrate
@@ -211,24 +201,26 @@ python -m mplacas.cloud_jobs daily-pipeline
 python -m mplacas.cloud_jobs dispatch-outbox
 ```
 
-A migração é executada explicitamente por Cloud Run Job e nunca no startup do serviço web. O
+A migração é executada explicitamente por um job e nunca no startup do serviço web. O
 `daily-pipeline` persiste eventos de alerta antes da entrega externa. O `dispatch-outbox` recupera
 eventos pendentes com lock, retry e backoff exponencial; ele deve ser executado periodicamente para
-garantir recuperação mesmo quando o processo original termina após o commit. O Scheduler futuro
-deve acionar jobs autenticados por IAM, não endpoints administrativos públicos.
+garantir recuperação mesmo quando o processo original termina após o commit. O agendador que vier
+a ser adotado deve acionar jobs autenticados, não endpoints administrativos públicos.
 
-Em produção, cada resposta inclui `X-Request-ID` e `X-Trace-ID`. Logs JSON carregam os campos
-especiais do Cloud Logging para navegação direta até o trace. FastAPI, SQLAlchemy, HTTPX e as etapas
-do pipeline são instrumentados quando `MPLACAS_CLOUD_TRACE_ENABLED=true`; a amostragem padrão é 10%.
+Em produção, cada resposta inclui `X-Request-ID` e `X-Trace-ID`. Os logs JSON vão para stdout com
+`trace_id`/`span_id` correlacionados, sem campo específico de provedor. FastAPI, SQLAlchemy, HTTPX e
+as etapas do pipeline são instrumentados quando `MPLACAS_TRACING_ENABLED=true` e
+`MPLACAS_OTLP_ENDPOINT` aponta para um coletor OTLP (extra `mplacas[otlp]`); a amostragem padrão é 10%.
 Query strings não entram nos spans e o token presente no path do Telegram é mascarado.
 
 Documentação operacional:
 
-- `docs/RUNBOOK_GOOGLE_CLOUD_DEPLOYMENT.md` — implantação completa pelo Cloud Shell;
-- `docs/ADR-026-google-cloud-deployment-automation.md` — decisão e controles da automação;
-- `docs/RUNBOOK_GOOGLE_CLOUD_RUN.md` — arquitetura e operação da plataforma;
-- `docs/COST_GUARDRAILS_GOOGLE_CLOUD.md` — controles de custo;
-- `docs/ADR-025-google-cloud-run-platform.md` — decisão da plataforma.
+- `docs/AUDITORIA_BIG_TECH_2026-08-26.md` — **auditoria vigente**; começar por ela ao retomar o projeto;
+- `docs/POLITICA_SEM_GOOGLE_CLOUD.md` — **Google Cloud é proibido neste projeto**;
+- `docs/RUNBOOK_DEPLOY.md` — colocar no ar (Render + GitHub Actions), custo zero;
+- `docs/ADR-076-saida-do-google-cloud.md` — saída do Google Cloud e escolha da plataforma atual;
+- `docs/ADR-025-google-cloud-run-platform.md` e `docs/ADR-026-google-cloud-deployment-automation.md`
+  — decisões de plataforma **substituídas**, mantidas como histórico.
 
 ## Banco
 
@@ -264,8 +256,7 @@ Nunca registre no GitHub:
 - faturas de energia;
 - CPF, endereço ou unidade consumidora;
 - dumps de respostas externas;
-- `infra/gcp/config.env`;
-- valores usados no Secret Manager.
+- valores guardados no cofre de segredos da hospedagem.
 
 Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` para os nomes suportados.
 
@@ -284,7 +275,7 @@ Use variáveis de ambiente ou secrets da hospedagem. Consulte `.env.example` par
 - snapshots imutáveis de relatório: `docs/ADR-038-immutable-monthly-report-snapshots.md`;
 - módulos focados de relatório: `docs/ADR-039-focused-monthly-report-modules.md`;
 - outbox transacional de alertas: `docs/ADR-040-transactional-alert-outbox.md`;
-- observabilidade estruturada e Cloud Trace: `docs/ADR-041-structured-observability-and-cloud-trace.md`;
+- observabilidade estruturada: `docs/ADR-041-structured-observability-and-cloud-trace.md` (parcialmente substituído pelo ADR-076);
 - relatório mensal e CSV: `docs/ADR-027-monthly-reports-and-csv-export.md`;
 - auditoria das PRs nº 1 a nº 28: `docs/AUDITORIA_PRS_01_28_2026-07-13.md`;
 - auditoria técnica profunda: `docs/AUDITORIA_TECNICA_PROFUNDA_2026-07-16.md`;

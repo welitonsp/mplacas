@@ -39,7 +39,7 @@ def test_backup_restore_runbook_requires_restore_rehearsal() -> None:
     assert "não usa o banco de produção como destino" in content
 
 
-def test_restore_drill_is_automated_and_fail_closed() -> None:
+def test_restore_drill_is_manual_and_fail_closed() -> None:
     script = AUTOMATION.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
@@ -64,7 +64,8 @@ def test_restore_drill_is_automated_and_fail_closed() -> None:
     assert 'PGPASSWORD="${RESTORE_CONNECTION[3]}"' in script
     assert script.count('PGHOST="${RESTORE_CONNECTION[0]}"') == 2
     assert script.count('PGSSLMODE="${RESTORE_CONNECTION[5]}"') == 2
-    assert 'cron: "0 5 * * *"' in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "schedule:" not in workflow
     assert "retention-days: 35" in workflow
     assert "environment: production-restore-drill" in workflow
     assert "postgres:18@sha256:" in workflow

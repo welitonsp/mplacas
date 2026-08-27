@@ -2,7 +2,8 @@
 
 ## Status
 
-Aceito.
+**Substituído por ADR-076 em 2026-08-26.** Os scripts de `infra/gcp/` que esta decisão descrevia
+foram removidos do repositório junto com a saída do Google Cloud. Mantido como registro histórico.
 
 ## Contexto
 

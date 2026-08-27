@@ -26,10 +26,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MPLACAS_ENV", "MPLACAS_ENVIRONMENT"),
     )
     log_level: str = "INFO"
-    gcp_project_id: str | None = None
-    cloud_trace_enabled: bool = False
+    otlp_endpoint: str | None = None
+    tracing_enabled: bool = False
     trace_sample_rate: float = 0.1
-    cloud_metrics_enabled: bool = False
+    metrics_enabled: bool = False
     metrics_export_interval_seconds: int = 60
     timezone: str = "America/Sao_Paulo"
     database_url: str = Field(default="sqlite+aiosqlite:///./mplacas.db", repr=False)
@@ -85,8 +85,6 @@ class Settings(BaseSettings):
     retention_user_invitations_days: int = 365
     retention_daily_energy_days: int = 1825
     retention_climate_observations_days: int = 1825
-    report_export_bucket: str | None = None
-    report_export_url_ttl_seconds: int = 900
     jwt_secret: SecretStr | None = None
     jwt_algorithm: Literal["HS256"] = "HS256"
     jwt_audience: str = "mplacas-api"
@@ -218,12 +216,12 @@ class Settings(BaseSettings):
             raise ValueError("metrics export interval must be between 10 and 3600 seconds")
         return value
 
-    @field_validator("gcp_project_id")
+    @field_validator("otlp_endpoint")
     @classmethod
-    def _normalize_gcp_project_id(cls, value: str | None) -> str | None:
+    def _normalize_otlp_endpoint(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        cleaned = value.strip()
+        cleaned = value.strip().rstrip("/")
         return cleaned or None
 
     @field_validator("cloud_job_anomaly_days")
@@ -294,10 +292,10 @@ class Settings(BaseSettings):
             raise ValueError("previous JWT secret and key id must be configured together")
         if self.jwt_previous_key_id == self.jwt_key_id:
             raise ValueError("current and previous JWT key ids must differ")
-        if self.cloud_trace_enabled and self.gcp_project_id is None:
-            raise ValueError("Cloud Trace requires MPLACAS_GCP_PROJECT_ID")
-        if self.cloud_metrics_enabled and self.gcp_project_id is None:
-            raise ValueError("Cloud Monitoring requires MPLACAS_GCP_PROJECT_ID")
+        if self.tracing_enabled and self.otlp_endpoint is None:
+            raise ValueError("tracing requires MPLACAS_OTLP_ENDPOINT")
+        if self.metrics_enabled and self.otlp_endpoint is None:
+            raise ValueError("metrics require MPLACAS_OTLP_ENDPOINT")
         if self.env != "production":
             return self
         database_url = self.database_url.strip().lower()
@@ -343,9 +341,9 @@ class Settings(BaseSettings):
             "port": self.port,
             "timezone": self.timezone,
             "structured_logging": self.env == "production",
-            "cloud_trace_enabled": self.cloud_trace_enabled,
+            "tracing_enabled": self.tracing_enabled,
             "trace_sample_rate": self.trace_sample_rate,
-            "cloud_metrics_enabled": self.cloud_metrics_enabled,
+            "metrics_enabled": self.metrics_enabled,
             "metrics_export_interval_seconds": self.metrics_export_interval_seconds,
             "operational_auth_configured": self.operations_api_key is not None,
             "jwt_auth_configured": self.jwt_configured,

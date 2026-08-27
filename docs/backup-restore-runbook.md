@@ -4,7 +4,8 @@ Este runbook define o contrato mínimo para backup e teste de restauração do b
 
 ## Objetivos operacionais e responsabilidade
 
-- **RPO:** no máximo 24 horas, sustentado por snapshot lógico diário e PITR do Neon habilitado.
+- **RPO:** no máximo 24 horas. **Temporariamente não garantido:** o snapshot lógico automático foi
+  suspenso em 2026-08-25 e o workflow está disponível apenas para execução manual.
 - **RTO:** até 4 horas para restaurar, validar e promover um ambiente recuperado.
 - **Retenção:** 35 dias para os snapshots lógicos criptografados e seus manifests; a janela de
   PITR deve ser conferida mensalmente no plano Neon contratado.
@@ -68,9 +69,10 @@ remoto continua obrigado a usar `require`, `verify-ca` ou `verify-full` e senha.
 Tanto `pg_restore` quanto `psql` recebem os campos validados da conexão separadamente, impedindo
 fallback implícito para o socket PostgreSQL do runner.
 
-## Automação diária
+## Execução manual temporária
 
-O workflow `.github/workflows/restore-drill.yml` executa diariamente:
+Enquanto os secrets de backup não forem reconfigurados fora do Google Cloud, o workflow
+`.github/workflows/restore-drill.yml` executa somente por `workflow_dispatch`:
 
 ```bash
 bash infra/backup/run-restore-drill.sh
@@ -86,6 +88,8 @@ O cliente 18 vem do repositório oficial PGDG configurado com `signed-by`; o wor
 impressão digital completa da chave antes de confiar nela e instalar o pacote. O diretório
 `/usr/lib/postgresql/18/bin` é priorizado no `PATH` do job para impedir seleção do wrapper 16
 preexistente no runner.
+A meta de RPO de 24 horas só volta a ser atendida quando houver uma nova agenda diária aprovada e
+um run bem-sucedido por dia. Não reative o Google Cloud para recuperar essa automação.
 A origem é validada e normalizada de `postgres://` ou `postgresql+asyncpg://` para a DSN libpq
 `postgresql://`, sem registrar credenciais, e é fornecida explicitamente a `pg_dump --dbname`.
 Isso impede fallback silencioso para o socket PostgreSQL local quando o backup deve ler a origem.

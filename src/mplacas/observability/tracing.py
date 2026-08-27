@@ -8,7 +8,6 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import FastAPI
 from opentelemetry import propagate, trace
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
-from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor, RequestInfo
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
@@ -25,7 +24,7 @@ from mplacas import __version__
 from mplacas.core.config import Settings
 from mplacas.observability.logging import configure_logging
 from mplacas.observability.metrics import MetricsRuntime, configure_metrics
-from mplacas.observability.propagation import CloudTraceContextPropagator
+from mplacas.observability.otlp import build_otlp_exporter
 from mplacas.observability.sanitize import TELEGRAM_TOKEN_PATTERN
 
 _TRACER_NAME = "mplacas"
@@ -44,9 +43,8 @@ class ObservabilityRuntime:
             # executa uma última exportação de todos os spans pendentes ao
             # sair do loop quando shutdown() é chamado. Um force_flush()
             # explícito antes disso duplica a exportação do mesmo lote de
-            # spans em sequência quase simultânea, o mesmo padrão que causa
-            # `INVALID_ARGUMENT` no exportador de métricas do Cloud
-            # Monitoring.
+            # spans em sequência quase simultânea, o que faz backends de
+            # observabilidade rejeitarem a segunda gravação do lote.
             self.provider.shutdown()
         if self.metrics is not None:
             self.metrics.shutdown()
@@ -63,11 +61,10 @@ def configure_observability(
     configure_logging(
         level=settings.log_level,
         service_name=service_name,
-        project_id=settings.gcp_project_id,
         structured=settings.env == "production",
     )
     metrics_runtime = configure_metrics(settings=settings, service_name=service_name)
-    if not settings.cloud_trace_enabled:
+    if not settings.tracing_enabled:
         return ObservabilityRuntime(metrics=metrics_runtime)
     if _runtime is not None:
         return _runtime
@@ -83,16 +80,26 @@ def configure_observability(
         resource=resource,
         sampler=ParentBased(TraceIdRatioBased(settings.trace_sample_rate)),
     )
-    provider.add_span_processor(
-        BatchSpanProcessor(CloudTraceSpanExporter(project_id=settings.gcp_project_id))
+    # O exportador OTLP é um extra opcional (`pip install mplacas[otlp]`) e não
+    # entra na imagem de produção, que instala apenas requirements.lock. Ligar
+    # o tracing sem o extra instalado NÃO pode derrubar a aplicação: num serviço
+    # com escala a zero isso vira loop de reinício, e observabilidade é acessória
+    # à função do produto. Degrada com erro explícito e segue sem exportar.
+    exporter = build_otlp_exporter(
+        module="opentelemetry.exporter.otlp.proto.http.trace_exporter",
+        attribute="OTLPSpanExporter",
+        endpoint=f"{settings.otlp_endpoint}/v1/traces",
+        signal="tracing",
     )
+    if exporter is None:
+        return ObservabilityRuntime(metrics=metrics_runtime)
+    provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     propagate.set_global_textmap(
         CompositePropagator(
             [
                 TraceContextTextMapPropagator(),
                 W3CBaggagePropagator(),
-                CloudTraceContextPropagator(),
             ]
         )
     )

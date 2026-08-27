@@ -25,20 +25,21 @@ def test_request_id_header_is_replaced_when_unsafe() -> None:
     assert len(response.headers["x-request-id"]) == 32
 
 
-def test_cloud_trace_context_is_propagated_to_response_and_request_log(caplog) -> None:
+def test_traceparent_is_propagated_to_response_and_request_log(caplog) -> None:
     trace_id = "0123456789abcdef0123456789abcdef"
+    span_id = "000000000000004a"
     caplog.set_level("INFO", logger="mplacas.main")
 
     response = TestClient(app).get(
         "/health",
-        headers={"X-Cloud-Trace-Context": f"{trace_id}/74;o=1"},
+        headers={"traceparent": f"00-{trace_id}-{span_id}-01"},
     )
 
     assert response.status_code == 200
     assert response.headers["x-trace-id"] == trace_id
     matching = [record for record in caplog.records if record.message == "http_request_completed"]
     assert matching[-1].trace_id == trace_id
-    assert matching[-1].span_id == "000000000000004a"
+    assert matching[-1].span_id == span_id
     assert matching[-1].trace_sampled is True
 
 
