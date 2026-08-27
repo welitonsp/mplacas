@@ -1,5 +1,15 @@
 # Checklist de remediação — Auditorias técnicas Mplacas
 
+> **📌 Registro histórico — não é lista de tarefas ativa.** Este documento é um instantâneo datado do
+> ciclo em que foi escrito. Referências a `infra/gcp/`, Cloud Run, Cloud Scheduler e Secret Manager
+> descrevem uma arquitetura que **não existe mais**: o projeto saiu do Google Cloud em 2026-08-26
+> (`docs/ADR-076-saida-do-google-cloud.md`) e o uso do provedor está proibido
+> (`docs/POLITICA_SEM_GOOGLE_CLOUD.md`).
+>
+> O conteúdo fica intacto de propósito — reescrevê-lo destruiria o registro de por que cada decisão
+> foi tomada. Para o estado atual, ver `docs/AUDITORIA_BIG_TECH_2026-08-26.md`.
+
+
 Última atualização: 2026-08-03 (RLS fail-closed ativo no Neon; rollout produtivo aprovado)
 
 Base do novo ciclo: `HEAD b73e97e`. Implementação integrada em `main` pelo merge commit

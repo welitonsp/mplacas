@@ -63,7 +63,14 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E"]
+# `E` = pycodestyle (estilo). `F` = Pyflakes, que pega defeito de verdade:
+# import morto, variável atribuída e nunca usada, e principalmente F821 (nome
+# indefinido), que é erro de execução esperando acontecer.
+#
+# `F` ficou desligado até 2026-08-27 (auditoria, achado A-08). Dois imports
+# mortos sobreviveram a várias rodadas de CI verde e só foram encontrados por
+# revisão manual — a rede de proteção estava mais fraca do que aparentava.
+select = ["E", "F"]
 
 [tool.mypy]
 python_version = "3.12"

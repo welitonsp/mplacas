@@ -415,7 +415,6 @@ def test_loss_taxonomy_migration_preserves_category_level_evidence() -> None:
 
 
 def test_organization_default_plant_migration_matches_orm() -> None:
-    import sqlalchemy as sa
 
     from mplacas.organizations.db_models import OrganizationRecord
 

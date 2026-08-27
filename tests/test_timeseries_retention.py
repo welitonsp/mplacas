@@ -4,7 +4,7 @@ import uuid
 from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import event, select, text
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from mplacas.climate.db_models import DailyClimateObservationRecord
