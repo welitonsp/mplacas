@@ -67,8 +67,11 @@ describe('ProductionDiagnosticPanel', () => {
 
     expect(screen.getByText('Monitorar próximos dias')).toBeInTheDocument()
     expect(screen.getByText('Operação')).toBeInTheDocument()
-    expect(screen.getByText('Evidências usadas')).toBeInTheDocument()
-    expect(screen.getByText(/Pior dia: 29\/07\/2026/)).toBeInTheDocument()
+    // O bloco "Evidências usadas" saiu em 2026-08-27 (R-1). Ele repetia em
+    // prosa exatamente os sinais verificados abaixo — e este teste chegava a
+    // afirmar o mesmo dado duas vezes, uma na prosa e outra no grupo de sinais.
+    expect(screen.queryByText('Evidências usadas')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Pior dia: 29\/07\/2026/)).not.toBeInTheDocument()
 
     const signals = screen.getByRole('group', { name: 'Sinais do diagnóstico de produção' })
     expect(within(signals).getByText('Pior dia')).toBeInTheDocument()

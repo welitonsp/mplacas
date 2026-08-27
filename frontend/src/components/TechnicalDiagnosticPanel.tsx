@@ -19,7 +19,6 @@ interface TechnicalDiagnosis {
   cause: string
   impact: string
   action: string
-  evidenceSummary?: string
   playbook?: Array<{ title: string; detail: string }>
   signals: Array<{ label: string; value: string; tone: Severity }>
 }
@@ -259,9 +258,6 @@ export function TechnicalDiagnosticPanel({ summary }: { summary: PhotovoltaicSum
         : diagnosis.tone === 'success'
           ? 'Gestão técnica'
           : 'Operação')
-  const evidenceSummary =
-    diagnosis.evidenceSummary ??
-    diagnosis.signals.map((signal) => `${signal.label}: ${signal.value}`).join(' · ')
   const playbook = diagnosis.playbook ?? defaultPlaybook(diagnosis.tone)
 
   return (
@@ -311,15 +307,15 @@ export function TechnicalDiagnosticPanel({ summary }: { summary: PhotovoltaicSum
       </div>
 
       <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Evidências usadas</p>
-            <p className="mt-1 text-sm leading-6 text-gray-700">{evidenceSummary}</p>
-          </div>
-          <p className="rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
-            Plano de investigação
-          </p>
-        </div>
+        {/* O bloco "Evidências usadas" saiu daqui em 2026-08-27 (R-1 de
+            docs/ANALISE_DENSIDADE_TELAS_2026-08-27.md). Ele era literalmente
+            `signals.map(s => `${s.label}: ${s.value}`).join(' · ')` — a mesma
+            lista já renderizada como cards logo acima, repetida em prosa.
+            Nenhum chamador passava `evidenceSummary`, então sempre caía nesse
+            fallback. Remoção pura: nada de informação se perdeu. */}
+        <p className="rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+          Plano de investigação
+        </p>
 
         <ol aria-label="Plano técnico de investigação" className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
           {playbook.map((step, index) => (

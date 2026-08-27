@@ -101,10 +101,30 @@ cards visualmente idênticos: "última produção" (o número que importa) compe
 
 Aplicando `premium-product-ux`, cada item declara se serve à **decisão** ou é só estética.
 
-### R-1 · Remover o bloco "Evidências usadas" · alto impacto, risco baixo
+### R-1 · Remover o bloco "Evidências usadas" · ~~alto impacto~~ **baixo impacto**, risco baixo
 
-Ele reafirma os quatro cards logo acima. **Decisão:** nenhuma — o usuário já leu os mesmos números
-dois centímetros antes. Corte direto, sem substituto.
+> **✅ FEITO em 2026-08-27 — e a estimativa de impacto estava errada.**
+>
+> A remoção é correta em princípio: o bloco era um `join` do array `signals` — a mesma lista já
+> renderizada como cards logo acima, repetida em prosa. Nenhum chamador jamais passou
+> `evidenceSummary`, então sempre caía nesse fallback. O próprio teste do componente chegava a
+> afirmar o mesmo dado duas vezes, uma na prosa e outra no grupo de sinais.
+>
+> **Mas o efeito medido foi de 1,5%,** não "alto impacto":
+>
+> | Tela | Desktop | Mobile |
+> |---|---|---|
+> | Produção | 3099 → 3109 px (+0,3%) | 12776 → 12576 px (**−1,6%**) |
+> | Técnico | 2410 → 2382 px (−1,2%) | 10542 → 10385 px (**−1,5%**) |
+>
+> O bloco tinha ~200 px de 12.776. Eu superestimei olhando a tela, e a medição corrigiu — que é
+> exatamente para isso que a captura visual existe. Produção no desktop até cresceu 0,3%, por reflow
+> do contêiner que sobrou.
+
+**Lição para os itens seguintes:** as 15 telas de rolagem no mobile **não** vêm de blocos
+redundantes isolados. Vêm da estrutura: cada grade de 3 colunas do desktop vira 3 cards empilhados no
+celular. Isso desloca a prioridade — **R-4 e R-5 (layout) passam à frente de R-2 (deduplicação)**
+para o objetivo de reduzir rolagem, embora R-2 continue valendo por clareza.
 
 ### R-2 · Um fato, um lugar · alto impacto, risco médio
 
@@ -146,12 +166,12 @@ e o alerta *"2 dias seguidos abaixo do esperado"* não pode ir para trás de um 
 
 | # | Ação | Por quê nesta posição |
 |---|---|---|
-| 1 | R-1 (cortar "Evidências usadas") | Maior redução por menor risco; é remoção pura |
-| 2 | R-3 (critério em um lugar) | Independente do resto, corta 3 ocorrências |
-| 3 | R-2 (um fato, um lugar) | O trabalho principal; fazer **por módulo**, um PR cada |
-| 4 | R-6 (hierarquia do resumo) | Barato, e melhora a leitura do que sobrou |
-| 5 | R-4 (segunda coluna) | Layout, depois que o conteúdo estiver enxuto |
-| 6 | R-5 (colapsar camada técnica) | Por último, com o cuidado do diagnóstico crítico |
+| ~~1~~ | ~~R-1~~ | ✅ feito — mas rendeu 1,5%, não o "alto impacto" previsto |
+| **2** | **R-5 (colapsar camada técnica no mobile)** | **Reordenado para cá pela medição:** no celular cada grade de 3 colunas vira 3 cards empilhados, e é daí que vêm as 15 telas. Maior alavanca disponível |
+| 3 | R-4 (segunda coluna no desktop) | Mesma causa, do outro lado: o desktop tem ~1.600 px de coluna vazia |
+| 4 | R-3 (critério em um lugar) | Independente do resto, corta 3 ocorrências |
+| 5 | R-2 (um fato, um lugar) | Continua valendo **por clareza**, não por rolagem. Por módulo, um PR cada |
+| 6 | R-6 (hierarquia do resumo) | Barato, melhora a leitura do que sobrou |
 
 **Medir antes e depois em cada passo.** A captura visual existe agora e a altura da página é o
 indicador objetivo: se a Produção no mobile não cair de 15 telas, a mudança não funcionou.
