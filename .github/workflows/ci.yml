@@ -244,6 +244,42 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  captura-visual:
+    # Achado V-5 do comparativo visual: nada no fluxo mostrava a tela para
+    # alguém. Os testes de componente verificam comportamento — `role`, `aria`,
+    # texto — e nunca aparência, e foi por isso que a tipografia do produto
+    # ficou em `system-ui` sem ninguém notar.
+    #
+    # Isto NÃO é regressão visual: não há baseline nem falha por diferença de
+    # pixel. É captura, para o PR carregar a imagem e um humano poder olhar.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+      - name: Install browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Capturar telas
+        working-directory: frontend
+        env:
+          VITE_API_URL: https://api.captura.test
+        run: npm run capturar
+      - name: Upload das capturas
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: capturas-de-tela
+          path: frontend/e2e/capturas
+          if-no-files-found: error
+          retention-days: 14
+
   container:
     runs-on: ubuntu-latest
     permissions:

@@ -102,12 +102,29 @@ describe('CSS da landing não vaza para o resto do app', () => {
     expect(landingCss.length).toBeGreaterThan(500)
   })
 
-  it('nenhuma regra usa o seletor global `:root`', () => {
-    // Comentários citam `:root` em prosa ao explicar o porquê; só interessa
-    // seletor no início de regra.
-    const rules = landingCss
-      .split('\n')
-      .filter((line: string) => /^\s*:root[\s{]/.test(line))
+  // Ampliado em 2026-08-27 (comparativo visual). A versão anterior verificava
+  // SÓ `:root` — e passavam batido `html`, `body`, `*`, `a` e `button`, que têm
+  // exatamente o mesmo alcance global. Seis regras assim vazavam para o painel,
+  // incluindo `a { text-decoration: none }`, que removia o sublinhado de todo
+  // link do app, e `body { background/color }` com variáveis definidas só em
+  // `.site-shell`. Foi a captura visual do painel que expôs isso: o
+  // `scroll-behavior: smooth` da landing deixava o menu instável no mobile.
+  // Nome do seletor como aparece no CSS, e o mesmo já escapado para regex — o
+  // `*` precisa virar `\*`, senão a expressão fica inválida.
+  const SELETORES_GLOBAIS: ReadonlyArray<readonly [string, string]> = [
+    [':root', ':root'],
+    ['html', 'html'],
+    ['body', 'body'],
+    ['*', '\\*'],
+    ['a', 'a'],
+    ['button', 'button'],
+  ]
+
+  it.each(SELETORES_GLOBAIS)('nenhuma regra usa o seletor global `%s`', (_nome, escapado) => {
+    // Só interessa seletor no INÍCIO de regra: comentários citam esses nomes em
+    // prosa, e `.site-shell a` é justamente a forma correta e escopada.
+    const padrao = new RegExp('^\\s*' + escapado + '\\s*[,{]')
+    const rules = landingCss.split('\n').filter((line: string) => padrao.test(line))
 
     expect(rules).toEqual([])
   })
