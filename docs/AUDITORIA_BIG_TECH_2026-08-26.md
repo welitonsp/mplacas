@@ -73,7 +73,7 @@ são de resiliência operacional, não de correção.
 | Severidade | Quantidade | Achados |
 |---|---|---|
 | **P0** | 1 | ~~A-01~~ ✅ corrigido |
-| **P1** | 3 | ~~A-02~~ ✅ · A-03, A-10 |
+| **P1** | 3 | ~~A-02~~ ✅ · ~~A-03~~ ✅ · ~~A-10~~ ✅ |
 | **P2** | 4 | A-04, A-05, A-06, A-07 |
 | **P3** | 2 | A-08, A-09 |
 
@@ -172,6 +172,19 @@ dependia dele; `frontend/.env.example` continua servindo de referência.
 ---
 
 ### A-03 · Backup sem agendamento, com RPO documentado que não é mais cumprido
+
+> **✅ RESOLVIDO em 2026-08-27.** Decisão do dono: religar a agenda diária. O cron voltou ao
+> `restore-drill.yml`, agora às **07:00 `America/Sao_Paulo`** em vez das antigas 05:00 UTC — de
+> propósito **depois** do ciclo operacional das 06:07, para o snapshot conter o processamento da
+> manhã e aproveitar o Neon já acordado. A janela PITR do Neon Free foi reconfirmada na fonte
+> (**6 horas**), fechando a hipótese que este achado deixou em aberto. Custo medido antes de
+> religar: o dump tem 60 KB e consome cerca de 0,75 CU-hora/mês de 100. O teste de contrato voltou
+> a exigir a agenda (`test_restore_drill_is_scheduled_and_fail_closed`), agora também verificando o
+> fuso — a lacuna que gerou o A-10.
+>
+> **Descoberto na investigação:** as 4 falhas de 22 a 25/08 não foram defeito do workflow. O log traz
+> `pg_dump: ... exceeded the compute time quota` — o backup foi vítima do mesmo incidente que existia
+> para proteger. O último snapshot bom (2026-08-21, 60 KB) sobrevive como artifact até 2026-09-25.
 
 **Afirmação.** Nenhum backup lógico é gerado automaticamente. A documentação promete RPO de 24 h por
 snapshot diário; hoje só existe o PITR nativo do Neon.
@@ -418,8 +431,8 @@ Ordem pensada para desbloquear produção cedo e evitar retrabalho — **não** 
 |---|---|---|---|
 | 1 | ~~Corrigir CSP + `.env.production` + teste-guarda~~ | A-01, A-02 | ✅ **feito em 2026-08-27** (`4311d18`) |
 | 2 | ~~Atualizar `RUNBOOK_DEPLOY.md` § 2.3~~ | A-01 | ✅ **feito em 2026-08-27** — § 2.3 reescrito e sintoma adicionado à tabela de diagnóstico |
-| 3 | Mesclar o PR #129, que também conserta a `main` | A-10 | Enquanto a `main` estiver vermelha, nenhum gate protege trabalho novo |
-| 4 | Decidir e registrar o RPO real | A-03 | Decisão do dono, não técnica. Precisa sair antes do go-live para não prometer o que não entrega |
+| 3 | ~~Mesclar o PR #129~~ | A-10 | ✅ **feito em 2026-08-27** (`f2578c0`) — `main` verde |
+| 4 | ~~Decidir e registrar o RPO real~~ | A-03 | ✅ **feito em 2026-08-27** — agenda diária religada às 07:00 local |
 | 5 | Executar o deploy (segredos → merge → migrate → jobs → Render → frontend) | — | Só depois de 1–4 |
 | 6 | Verificador externo de disponibilidade | A-04, A-05 | Só faz sentido com algo no ar para observar. Resolve os dois de uma vez |
 | 7 | Triagem do drift de documentação | A-06 | Não bloqueia nada |

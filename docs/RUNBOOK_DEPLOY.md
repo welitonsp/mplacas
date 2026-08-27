@@ -159,9 +159,10 @@ segredos; a resposta esperada contém `ok: true`.
 | A cada 60 dias | Qualquer atividade no repositório mantém as agendas vivas. Sem atividade, o GitHub **desabilita workflows agendados** de repositório público e o digest para |
 | Mensal | Conferir consumo de compute no painel do Neon |
 
-> **Risco temporário:** o restore drill foi mantido apenas manual pela política presente na
-> `main`. Até os secrets de backup serem reconfigurados e uma agenda gratuita ser aprovada, a meta
-> de RPO de 24 horas não está garantida. Isso não autoriza reativar o Google Cloud.
+> **Backup:** o snapshot lógico diário roda às 07:00 (`America/Sao_Paulo`), logo após o ciclo
+> operacional, com retenção de 35 dias. A agenda foi restaurada em 2026-08-27 (auditoria, A-03).
+> Se falhar vários dias seguidos, confira a cota de compute no painel do Neon antes de suspeitar
+> do workflow — ver `docs/backup-restore-runbook.md`.
 
 ## Diagnóstico rápido
 

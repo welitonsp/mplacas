@@ -1,9 +1,25 @@
-name: Manual encrypted backup and restore drill
+name: Encrypted backup and restore drill
 
-# Workstation production policy (2026-08-25):
-# automatic cloud execution is disabled. Keep this workflow only as a manual
-# recovery tool until backup is moved to the production workstation/server.
+# Agenda restaurada em 2026-08-27 (auditoria, achado A-03). Ela havia sido
+# desativada em 2026-08-25 durante o incidente de cota do Neon, junto com a
+# política de "workstation production" — que caiu com a adoção do Render.
+#
+# As 4 falhas de 22 a 25/08 NÃO foram defeito deste workflow: o log mostra
+# `pg_dump: ... exceeded the compute time quota`, ou seja, o backup foi vítima
+# do mesmo incidente que ele existia para proteger.
+#
+# Custo medido antes de religar: o dump de 2026-08-21 tem 60 KB. Uma execução
+# diária acorda o Neon por ~6 min (dump + autosuspend de 5 min), ~3 h/mês, cerca
+# de 0,75 CU-hora de 100. O que estourou a cota em 21/08 foi outra coisa: jobs a
+# cada 5 minutos mantendo o banco acordado 24 h por dia.
 on:
+  schedule:
+    # 07:00 no fuso da operação, DEPOIS do ciclo operacional das 06:07 (que tem
+    # timeout de 30 min). Antes a agenda era 05:00 UTC = 02:00 local, e o
+    # snapshot saía sem o processamento daquela manhã. Rodar na sequência também
+    # aproveita o Neon já acordado, em vez de despertá-lo duas vezes.
+    - cron: "0 7 * * *"
+      timezone: America/Sao_Paulo
   workflow_dispatch:
 
 permissions:
@@ -11,7 +27,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: manual-restore-drill
+  group: restore-drill
   cancel-in-progress: false
 
 jobs:

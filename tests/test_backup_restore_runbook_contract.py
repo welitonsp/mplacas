@@ -39,7 +39,7 @@ def test_backup_restore_runbook_requires_restore_rehearsal() -> None:
     assert "não usa o banco de produção como destino" in content
 
 
-def test_restore_drill_is_manual_and_fail_closed() -> None:
+def test_restore_drill_is_scheduled_and_fail_closed() -> None:
     script = AUTOMATION.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
@@ -64,8 +64,22 @@ def test_restore_drill_is_manual_and_fail_closed() -> None:
     assert 'PGPASSWORD="${RESTORE_CONNECTION[3]}"' in script
     assert script.count('PGHOST="${RESTORE_CONNECTION[0]}"') == 2
     assert script.count('PGSSLMODE="${RESTORE_CONNECTION[5]}"') == 2
+    # A agenda diária É o contrato de RPO (24 h), não um detalhe de conveniência:
+    # sem ela o único recurso é o PITR do Neon Free, que cobre 6 h e não protege
+    # contra perda da conta nem contra corrupção descoberta mais tarde.
+    #
+    # Este teste já existiu como `..._is_automated_...`, foi quebrado em silêncio
+    # quando a agenda saiu (2026-08-25) e passou 2 dias deixando a `main` vermelha
+    # — ver achado A-10 de docs/AUDITORIA_BIG_TECH_2026-08-26.md. Se a agenda
+    # precisar sair de novo, que seja por decisão registrada que atualize este
+    # teste junto, não por omissão.
     assert "workflow_dispatch:" in workflow
-    assert "schedule:" not in workflow
+    assert "schedule:" in workflow
+    assert 'cron: "0 7 * * *"' in workflow
+    # Fuso explícito: o cron do GitHub é UTC por padrão, e sem isto o drill
+    # rodaria às 04:00 local, ANTES do ciclo operacional das 06:07 — o snapshot
+    # sairia sem o processamento daquela manhã.
+    assert "timezone: America/Sao_Paulo" in workflow
     assert "retention-days: 35" in workflow
     assert "environment: production-restore-drill" in workflow
     assert "postgres:18@sha256:" in workflow
