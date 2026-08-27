@@ -1,4 +1,8 @@
-#!/usr/bin/env node
+// Sem shebang de propósito: `src/test/renderCsp.test.ts` importa este módulo, e
+// o transform de builtins do Node feito pelo Vite hasteia os imports para o
+// topo do arquivo — acima do shebang, produzindo sintaxe inválida. O script é
+// invocado por `node scripts/render-csp.mjs` no build, então o shebang nunca
+// foi usado.
 // Resolve o marcador `__API_ORIGIN__` do CSP em `dist/_headers` usando a origem
 // de `VITE_API_URL` (auditoria 2026-08-26, achado A-01).
 //
