@@ -217,6 +217,7 @@ Documentação operacional:
 
 - `docs/AUDITORIA_BIG_TECH_2026-08-26.md` — **auditoria vigente**; começar por ela ao retomar o projeto;
 - `docs/ESTUDO_CUSTO_NEON_2026-08-27.md` — por que continuar no plano gratuito do Neon;
+- `docs/COMPARATIVO_VISUAL_2026-08-27.md` — comparação de UI com projetos equivalentes do GitHub;
 - `docs/POLITICA_CUSTO_ZERO.md` — **uso pessoal, sem orçamento**; invariantes travadas por teste;
 - `docs/POLITICA_SEM_GOOGLE_CLOUD.md` — **Google Cloud é proibido neste projeto**;
 - `docs/RUNBOOK_DEPLOY.md` — colocar no ar (Render + GitHub Actions), custo zero;
