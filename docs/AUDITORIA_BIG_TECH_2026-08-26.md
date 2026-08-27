@@ -74,8 +74,8 @@ são de resiliência operacional, não de correção.
 |---|---|---|
 | **P0** | 1 | ~~A-01~~ ✅ corrigido |
 | **P1** | 3 | ~~A-02~~ ✅ · A-03, A-10 |
-| **P2** | 4 | ~~A-04~~ ✅ · A-05 ⚠️ mitigado · A-06, A-07 |
-| **P3** | 2 | A-08, A-09 |
+| **P2** | 4 | ~~A-04~~ ✅ · A-05 ⚠️ mitigado · ~~A-06~~ ✅ · A-07 (risco aceito) |
+| **P3** | 2 | ~~A-08~~ ✅ · A-09 (dívida registrada) |
 
 ---
 
@@ -320,6 +320,13 @@ externo do A-04 pode checar a data da última execução via API do GitHub.
 
 ### A-06 · 14 documentos citam `infra/gcp/`, caminho que não existe mais
 
+> **✅ RESOLVIDO em 2026-08-27.** Triagem feita documento a documento, sem varredura cega: dos 15 que
+> citam o caminho, 4 já traziam marcação de substituído/obsoleto, 3 são os próprios documentos da
+> saída (citam corretamente), 5 são ADRs e auditorias datados que **não devem ser reescritos** — a
+> citação neles é evidência histórica —, e os 3 restantes eram checklists, o formato mais fácil de
+> confundir com lista de tarefas ativa. Estes receberam cabeçalho de registro histórico, com o corpo
+> intacto: `CHECKLIST_REMEDIACAO_AUDITORIA`, `CHECKLIST_BUILD_HARDENING` e `PR32_VALIDATION_CHECKLIST`.
+
 **Afirmação.** A remoção do Google Cloud deixou referências a caminhos inexistentes espalhadas pela
 documentação.
 
@@ -370,6 +377,12 @@ a ter mais de um usuário.
 
 ### A-08 · O ruff roda com regras `F` desligadas
 
+> **✅ RESOLVIDO em 2026-08-27.** `select = ["E", "F"]`. A ativação encontrou **11 imports mortos** em
+> 11 arquivos — nenhum reexport de `__init__.py`, todos código morto de verdade, e todos sobreviveram
+> a várias rodadas de CI verde. Removidos; mypy e a suíte completa seguem passando, o que confirma
+> que eram inertes. Com `F` ligado, `F821` (nome indefinido) passa a ser pego também — erro de
+> execução, não de estilo.
+
 **Afirmação.** A configuração do linter seleciona apenas as regras `E` (pycodestyle), deixando de fora
 `F` (Pyflakes) — que detecta import morto, variável não usada e nome indefinido.
 
@@ -403,10 +416,25 @@ passo dedicado de a11y. O projeto declara WCAG 2.2 AA como linha de base
 
 **Severidade: P3.**
 
-**Solução proposta.** Fora do escopo desta migração. Registrar como dívida; a skill `wcag-aa` e o
-agente `accessibility-specialist` já existem para conduzir isso quando for priorizado.
+**Solução proposta.** Permanece **dívida registrada**, reconfirmada em 2026-08-27 com evidência, e
+não por falta de tempo. O que já existe: **31 arquivos de teste** afirmam sobre `role`/`aria-*`, mais
+um `colorContrast.test.tsx` dedicado. A cobertura manual é real; falta o gate automatizado.
 
-**Risco da correção.** N/A no momento.
+Caminho concreto para quem executar, em vez de "adicionar a11y ao CI":
+
+1. Adicionar `vitest-axe` (ou `axe-core` + `jest-axe`) como devDependency e atualizar
+   `package-lock.json` — o job `frontend` roda `npm ci` e falha com lock fora de sincronia.
+2. Escrever a asserção por **tela renderizada**, não por componente isolado: violação de contraste e
+   de ordem de headings só aparece na composição.
+3. **Rodar antes de decidir o formato do gate.** Se surgirem violações, elas são o trabalho —
+   corrigi-las, não silenciá-las.
+
+**Risco da correção — e o motivo de não fazer agora.** Adicionar o gate e suprimir o que ele encontrar
+produz exatamente o que este relatório critica em outros pontos: um gate que não pode falhar não
+protege nada. E `axe` sob `jsdom` cobre um subconjunto — pega rótulo ausente e ARIA inválido, mas não
+calcula contraste de forma confiável sem navegador real, e o projeto não tem captura visual (skill
+`visual-regression`). Fazer direito é uma frente própria, conduzida pelo agente
+`accessibility-specialist` com a skill `wcag-aa` — não um item de limpeza no fim de uma migração.
 
 ---
 
@@ -440,8 +468,8 @@ Ordem pensada para desbloquear produção cedo e evitar retrabalho — **não** 
 | 4 | Decidir e registrar o RPO real | A-03 | Decisão do dono, não técnica. Precisa sair antes do go-live para não prometer o que não entrega |
 | 5 | Executar o deploy (segredos → merge → migrate → jobs → Render → frontend) | — | Só depois de 1–4 |
 | 6 | ~~Verificador externo de disponibilidade~~ | A-04, A-05 | ✅ **feito em 2026-08-27** — ativa sozinho quando `VITE_API_URL` deixar de apontar para o Google Cloud |
-| 7 | Triagem do drift de documentação | A-06 | Não bloqueia nada |
-| 8 | `select = ["E", "F"]` no ruff, em commit isolado | A-08 | Ruidoso; não misturar com mudança funcional |
+| 7 | ~~Triagem do drift de documentação~~ | A-06 | ✅ **feito em 2026-08-27** |
+| 8 | ~~`select = ["E", "F"]` no ruff~~ | A-08 | ✅ **feito em 2026-08-27** — 11 imports mortos removidos |
 | 9 | Gate de acessibilidade | A-09 | Dívida registrada, priorização separada |
 
 ---

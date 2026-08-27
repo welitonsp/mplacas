@@ -21,7 +21,6 @@ from mplacas.providers.base import (
     SolarDevice,
     SolarProvider,
 )
-from mplacas.services.collection import SolarCollectionService
 
 PLANT_ID = uuid.UUID("00000000-0000-0000-0000-0000000000cc")
 PLANT_NAME = "Usina Caldas"

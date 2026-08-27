@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from mplacas.alerts.db_models import AlertDeliveryRecord
 from mplacas.alerts.job import run_alert_dispatch_job
 from mplacas.alerts.models import AlertCandidate, AlertDeliveryStatus, AlertSeverity
 from mplacas.alerts.sql_ledger import SqlAlertDeliveryLedger

@@ -15,7 +15,6 @@ pipeline runtime to raise if it is ever invoked — the same pattern used by
 from __future__ import annotations
 
 import uuid
-from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient

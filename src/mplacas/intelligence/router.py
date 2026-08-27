@@ -14,7 +14,6 @@ from mplacas.intelligence.anomaly_service import (
 )
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError, analyze_persisted_cycle
 from mplacas.intelligence.dashboard_readmodel import ExecutiveDashboardReadModel
-from mplacas.intelligence.executive_service import build_executive_dashboard
 from mplacas.intelligence.financial_return_service import (
     FinancialReturnPlantNotFoundError,
     FinancialReturnResult,

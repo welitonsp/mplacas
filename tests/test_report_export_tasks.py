@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from mplacas.db.base import Base
 from mplacas.db.models import Plant
-from mplacas.reports.db_models import ReportExportTask
 from mplacas.reports.export_service import InvalidExportFormat, ReportExportService
 from mplacas.reports.storage import (
     ArtifactStorage,
