@@ -155,3 +155,39 @@ def test_backfill_e_manual_compartilha_lock_e_nao_entrega_alerta() -> None:
 
     # Teto de dias: um ano digitado errado viraria centenas de execuções.
     assert "MAXIMO_DIAS" in texto
+
+
+def test_telegram_token_reaches_every_step_that_needs_it() -> None:
+    """Fecha a classe de bug do run 35872372368 (ciclo diário falhando desde 13/09).
+
+    `daily-pipeline` levanta ``RuntimeError("Telegram alert delivery must be
+    configured for daily pipeline")`` em `cloud_jobs.py` quando o token está
+    ausente — mesmo com `MPLACAS_TELEGRAM_ALERT_CHAT_ID` presente no `env` do
+    job, o `env` do passo em si não tinha `MPLACAS_TELEGRAM_BOT_TOKEN`. O
+    `operational-watchdog` então acusava "latest daily pipeline execution is
+    delayed beyond 26 hours", todo dia.
+
+    Qualquer passo, em qualquer um dos dois workflows, que rode
+    `daily-pipeline`, `dispatch-outbox` ou `daily-digest` — os três comandos
+    cujo caminho de código exige Telegram configurado — precisa do token no
+    `env` do PRÓPRIO passo. `env` do job não basta: um passo sem o segredo no
+    seu bloco simplesmente não o enxerga.
+    """
+    comandos_que_exigem_telegram = ("daily-pipeline", "dispatch-outbox", "daily-digest")
+
+    for caminho in (
+        ROOT / ".github/workflows/operational-jobs.yml",
+        ROOT / ".github/workflows/backfill.yml",
+    ):
+        workflow = yaml.safe_load(caminho.read_text(encoding="utf-8"))
+        for job_name, job in workflow["jobs"].items():
+            for step in job.get("steps", []):
+                run = str(step.get("run", ""))
+                if not any(f"cloud_jobs {cmd}" in run for cmd in comandos_que_exigem_telegram):
+                    continue
+                step_env = step.get("env") or {}
+                assert "MPLACAS_TELEGRAM_BOT_TOKEN" in step_env, (
+                    f"{caminho.name}: job '{job_name}', passo "
+                    f"'{step.get('name', '?')}' roda cloud_jobs sem "
+                    "MPLACAS_TELEGRAM_BOT_TOKEN no env do passo"
+                )
