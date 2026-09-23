@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+import random
+from collections.abc import Awaitable, Callable
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -7,6 +11,14 @@ from typing import Any
 import httpx
 
 from mplacas.climate.models import DailyClimateObservation
+
+logger = logging.getLogger(__name__)
+
+# Teto para o tempo de espera respeitado a partir do cabeçalho ``Retry-After``
+# de um 429 — evita que um provedor mal-comportado prenda a chamada por muito
+# tempo. Custo zero: a espera é sempre dentro da mesma chamada HTTP, nunca vira
+# um novo agendamento.
+_MAX_RETRY_AFTER_SECONDS = 30.0
 
 
 class OpenMeteoProviderError(RuntimeError):
@@ -22,12 +34,20 @@ class OpenMeteoHistoricalProvider:
         base_url: str = "https://archive-api.open-meteo.com/v1/archive",
         timeout_seconds: float = 20.0,
         client: httpx.AsyncClient | None = None,
+        max_attempts: int = 3,
+        backoff_seconds: tuple[float, ...] = (2.0, 5.0),
+        sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout must be positive")
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be at least 1")
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._client = client
+        self._max_attempts = max_attempts
+        self._backoff_seconds = backoff_seconds
+        self._sleep = sleep
 
     async def daily_observations(
         self,
@@ -48,22 +68,91 @@ class OpenMeteoHistoricalProvider:
             ),
             "timezone": "auto",
         }
-        try:
-            if self._client is not None:
-                response = await self._client.get(
-                    self._base_url,
-                    params=params,
-                    timeout=self._timeout_seconds,
-                )
-            else:
-                async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-                    response = await client.get(self._base_url, params=params)
-            response.raise_for_status()
-            payload = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise OpenMeteoProviderError("weather provider request failed") from exc
-
+        payload = await self._fetch_with_retry(params)
         return self._parse_payload(payload)
+
+    async def _fetch_with_retry(self, params: dict[str, str | float]) -> Any:
+        """Busca o payload retentando apenas falhas transitórias.
+
+        Retentável: timeout, erro de rede/transporte, HTTP 429 e 5xx — nesses
+        casos o pedido provavelmente não chegou a ser processado de fato.
+        Não retentável: demais 4xx (erro do cliente, repetir não ajuda) e
+        payload inválido/JSON malformado (erro de contrato, não de rede).
+        """
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                response = await self._request(params)
+                response.raise_for_status()
+                payload = response.json()
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                if not self._is_retryable_status(status_code) or attempt >= self._max_attempts:
+                    raise OpenMeteoProviderError("weather provider request failed") from exc
+                delay = self._delay_for(
+                    attempt, retry_after=self._retry_after_seconds(exc.response)
+                )
+                self._log_retry(attempt=attempt, delay=delay, reason=f"http_{status_code}")
+                await self._sleep(delay)
+                continue
+            except httpx.TransportError as exc:
+                if attempt >= self._max_attempts:
+                    raise OpenMeteoProviderError("weather provider request failed") from exc
+                delay = self._delay_for(attempt)
+                self._log_retry(attempt=attempt, delay=delay, reason=type(exc).__name__)
+                await self._sleep(delay)
+                continue
+            except (httpx.HTTPError, ValueError) as exc:
+                raise OpenMeteoProviderError("weather provider request failed") from exc
+            else:
+                return payload
+        # Inalcançável: o laço acima sempre retorna ou levanta antes de esgotar
+        # as tentativas. Mantido para o mypy garantir que a função sempre
+        # produz um resultado ou uma exceção.
+        raise OpenMeteoProviderError("weather provider request failed")
+
+    async def _request(self, params: dict[str, str | float]) -> httpx.Response:
+        if self._client is not None:
+            return await self._client.get(
+                self._base_url,
+                params=params,
+                timeout=self._timeout_seconds,
+            )
+        async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
+            return await client.get(self._base_url, params=params)
+
+    @staticmethod
+    def _is_retryable_status(status_code: int) -> bool:
+        return status_code == 429 or 500 <= status_code < 600
+
+    @staticmethod
+    def _retry_after_seconds(response: httpx.Response) -> float | None:
+        raw = response.headers.get("Retry-After")
+        if raw is None:
+            return None
+        try:
+            seconds = float(raw)
+        except ValueError:
+            # Formato HTTP-date não é suportado; cai para o backoff padrão.
+            return None
+        return seconds if seconds >= 0 else None
+
+    def _delay_for(self, attempt: int, *, retry_after: float | None = None) -> float:
+        if retry_after is not None:
+            return min(retry_after, _MAX_RETRY_AFTER_SECONDS)
+        base = self._backoff_seconds[min(attempt - 1, len(self._backoff_seconds) - 1)]
+        jitter = random.uniform(0, base * 0.1)
+        return base + jitter
+
+    @staticmethod
+    def _log_retry(*, attempt: int, delay: float, reason: str) -> None:
+        logger.warning(
+            "open_meteo_retry",
+            extra={
+                "attempt": attempt,
+                "delay_seconds": delay,
+                "reason": reason,
+            },
+        )
 
     def _parse_payload(self, payload: Any) -> tuple[DailyClimateObservation, ...]:
         if not isinstance(payload, dict):
