@@ -7,7 +7,10 @@ ENV PYTHONPATH=/app/src
 
 WORKDIR /app
 
+# O digest fixa a imagem base, mas o Debian publica correções de segurança
+# antes de a imagem upstream ser reconstruída; o upgrade as aplica no build.
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
