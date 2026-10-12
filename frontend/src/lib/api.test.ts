@@ -10,6 +10,10 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+// Corpos de `Response` simulados são strings, não `new Blob(...)`: a partir do
+// jsdom 30 o `Blob` global é o do jsdom (sem `.stream()`), e o `Response` nativo
+// do Node rejeita esse objeto. O código testado chama `response.blob()`, que
+// funciona igual com corpo em texto — é o que um servidor real envia.
 // jsdom não implementa `URL.createObjectURL`/`revokeObjectURL` (ver
 // `frontend/src/lib/api.ts::downloadMonthlyReportExport`) — este stub some no
 // `afterEach` de cada describe abaixo, para não vazar entre testes de outros
@@ -80,7 +84,7 @@ describe('fetchMonthlyReportExport', () => {
     TokenStore.set('token-abc')
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(new Blob(['a,b\n1,2']), { status: 200 }))
+      .mockResolvedValue(new Response('a,b\n1,2', { status: 200 }))
 
     await fetchMonthlyReportExport('plant-1', 'csv')
 
@@ -104,11 +108,13 @@ describe('downloadMonthlyReportExport', () => {
     const { createObjectURL, revokeObjectURL } = stubObjectUrl()
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const appendSpy = vi.spyOn(document.body, 'appendChild')
-    const blob = new Blob(['pdf-bytes'], { type: 'application/pdf' })
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(blob, {
+      new Response('pdf-bytes', {
         status: 200,
-        headers: { 'Content-Disposition': 'attachment; filename="mplacas-monthly-2026-07-plant-1.pdf"' },
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'attachment; filename="mplacas-monthly-2026-07-plant-1.pdf"',
+        },
       })
     )
 
@@ -128,7 +134,7 @@ describe('downloadMonthlyReportExport', () => {
     stubObjectUrl()
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const appendSpy = vi.spyOn(document.body, 'appendChild')
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob(['x']), { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('x', { status: 200 }))
 
     await downloadMonthlyReportExport('plant-1', 'xlsx')
 
@@ -141,7 +147,7 @@ describe('downloadMonthlyReportExport', () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {
       throw new Error('boom')
     })
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob(['x']), { status: 200 }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('x', { status: 200 }))
 
     await expect(downloadMonthlyReportExport('plant-1', 'csv')).rejects.toThrow('boom')
 
@@ -170,7 +176,7 @@ describe('downloadMonthlyReportExport', () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const appendSpy = vi.spyOn(document.body, 'appendChild')
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(new Blob(['x']), {
+      new Response('x', {
         status: 200,
         headers: { 'Content-Disposition': 'attachment; filename="../../etc/passwd"' },
       })
@@ -190,7 +196,7 @@ describe('downloadMonthlyReportExport', () => {
     const appendSpy = vi.spyOn(document.body, 'appendChild')
     const dirtyFilename = `relatorio${String.fromCharCode(7)}.csv`
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(new Blob(['x']), {
+      new Response('x', {
         status: 200,
         headers: { 'Content-Disposition': `attachment; filename="${dirtyFilename}"` },
       })
@@ -238,7 +244,7 @@ describe('downloadMonthlyReportExport', () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const appendSpy = vi.spyOn(document.body, 'appendChild')
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(new Blob(['x']), {
+      new Response('x', {
         status: 200,
         headers: { 'Content-Disposition': 'attachment; filename="fatura.csv.exe"' },
       })
@@ -257,7 +263,7 @@ describe('downloadMonthlyReportExport', () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const appendSpy = vi.spyOn(document.body, 'appendChild')
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(new Blob(['x']), {
+      new Response('x', {
         status: 200,
         headers: { 'Content-Disposition': 'attachment; filename="fatura-2026-07.pdf"' },
       })
@@ -274,7 +280,7 @@ describe('downloadMonthlyReportExport', () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const appendSpy = vi.spyOn(document.body, 'appendChild')
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(new Blob(['x']), {
+      new Response('x', {
         status: 200,
         headers: { 'Content-Disposition': 'attachment; filename="."' },
       })
