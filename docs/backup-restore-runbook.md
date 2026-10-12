@@ -4,11 +4,15 @@ Este runbook define o contrato mínimo para backup e teste de restauração do b
 
 ## Objetivos operacionais e responsabilidade
 
-- **RPO:** no máximo 24 horas. **Temporariamente não garantido:** o snapshot lógico automático foi
-  suspenso em 2026-08-25 e o workflow está disponível apenas para execução manual.
+- **RPO:** no máximo 24 horas, por snapshot lógico diário às 07:00 (`America/Sao_Paulo`), logo após
+  o ciclo operacional das 06:07 — de propósito, para o snapshot conter o processamento da manhã.
+  A agenda foi suspensa em 2026-08-25 durante o incidente de cota do Neon e **restaurada em
+  2026-08-27** (auditoria, achado A-03).
 - **RTO:** até 4 horas para restaurar, validar e promover um ambiente recuperado.
-- **Retenção:** 35 dias para os snapshots lógicos criptografados e seus manifests; a janela de
-  PITR deve ser conferida mensalmente no plano Neon contratado.
+- **Retenção:** 35 dias para os snapshots lógicos criptografados e seus manifests.
+- **PITR do provedor:** o plano Neon Free retém **6 horas** de histórico (confirmado na documentação
+  do provedor em 2026-08-27). Reconfirmar mensalmente: os termos do free tier deste projeto já
+  mudaram uma vez, com consequência grave.
 - **Owner:** responsável definido na variável protegida `MPLACAS_RESTORE_DRILL_OWNER`.
 - **Alerta:** falha do workflow abre ou atualiza a issue `[P1-06] Restore drill failure`.
 
@@ -88,8 +92,28 @@ O cliente 18 vem do repositório oficial PGDG configurado com `signed-by`; o wor
 impressão digital completa da chave antes de confiar nela e instalar o pacote. O diretório
 `/usr/lib/postgresql/18/bin` é priorizado no `PATH` do job para impedir seleção do wrapper 16
 preexistente no runner.
-A meta de RPO de 24 horas só volta a ser atendida quando houver uma nova agenda diária aprovada e
-um run bem-sucedido por dia. Não reative o Google Cloud para recuperar essa automação.
+### Por que as duas proteções, e não só o PITR
+
+O PITR do Neon cobre 6 horas e vive **dentro** do provedor. O snapshot lógico cobre o que ele não
+alcança: perda de acesso à própria conta Neon, e corrupção lógica descoberta depois da janela.
+
+As duas coisas são complementares, e o custo da segunda foi medido antes de religar a agenda: o dump
+de 2026-08-21 tem 60 KB e acorda o Neon por cerca de 6 minutos por dia (dump mais os 5 minutos de
+autosuspend), algo como 0,75 CU-hora por mês de 100 disponíveis — abaixo de 1%.
+
+Isso **não** é o padrão que estourou a cota em 2026-08-21. Aquilo eram jobs a cada 5 minutos
+mantendo o banco acordado 24 horas por dia. Não confunda os dois ao avaliar custo no futuro.
+
+### Se o drill começar a falhar todo dia
+
+Verifique primeiro a cota de compute no painel do Neon. As 4 falhas consecutivas de 22 a 25/08 não
+foram defeito do workflow: o log traz `pg_dump: ... exceeded the compute time quota`, ou seja, o
+backup foi vítima do mesmo incidente que ele existe para proteger.
+
+Falha diária recorrente é pior do que parece: a notificação de falha do GitHub é hoje o principal
+canal de alerta do projeto, e treinar-se a ignorá-la custa o próximo alerta que for verdadeiro.
+
+Não reative o Google Cloud para recuperar automação alguma (`docs/POLITICA_SEM_GOOGLE_CLOUD.md`).
 A origem é validada e normalizada de `postgres://` ou `postgresql+asyncpg://` para a DSN libpq
 `postgresql://`, sem registrar credenciais, e é fornecida explicitamente a `pg_dump --dbname`.
 Isso impede fallback silencioso para o socket PostgreSQL local quando o backup deve ler a origem.
