@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Mesma imagem base pinada por digest usada em Dockerfile:1 — não reescrever
 # à mão; se o digest do Dockerfile mudar, atualize esta linha para bater.
-BASE_IMAGE="python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b"
+BASE_IMAGE="python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258"
 
 # Mesma versão de pip-tools pinada em pyproject.toml (extra dev).
 PIP_TOOLS_VERSION="7.6.1"
