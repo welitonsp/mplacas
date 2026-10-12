@@ -63,12 +63,13 @@ html:has(.site-shell) { scroll-behavior: smooth; }
 .header-cta:hover { border-color: var(--teal); background: rgba(75,185,169,.12); transform: translateY(-2px); }
 .menu-toggle { display: none; color: #f7faf5; background: transparent; padding: 7px; }
 
-.hero-section { position: relative; min-height: 730px; height: min(86vh, 850px); color: #eef4ea; background: var(--navy); }
+/* Altura mínima em vez de fixa: se o texto não couber (viewport baixa ou estreita), o hero cresce em vez de deixar o título subir por baixo do menu ou vazar para a seção seguinte. */
+.hero-section { position: relative; display: flex; flex-direction: column; min-height: max(730px, min(86vh, 850px)); color: #eef4ea; background: var(--navy); }
 .hero-section__image, .hero-section__shade { position: absolute; inset: 0; }
 .hero-section__image { background-image: url("/images/solar-hero.webp"); background-position: center; background-size: cover; opacity: .92; }
 .hero-section__shade { background: linear-gradient(90deg, rgba(10,25,30,.96) 0%, rgba(10,25,30,.83) 37%, rgba(10,25,30,.24) 76%, rgba(10,25,30,.3) 100%), linear-gradient(180deg, rgba(8,21,26,.55) 0%, transparent 24%, rgba(8,21,26,.62) 100%); }
 .hero-section::after { position: absolute; inset: 0; pointer-events: none; opacity: .18; content: ""; background-image: radial-gradient(rgba(238,244,234,.3) .6px, transparent .6px); background-size: 5px 5px; mix-blend-mode: soft-light; }
-.hero-section__content { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; height: 100%; padding-top: 90px; }
+.hero-section__content { position: relative; z-index: 1; display: flex; flex: 1 0 auto; align-items: center; justify-content: space-between; padding-top: 90px; padding-bottom: 64px; }
 .hero-copy { width: min(650px, 66%); padding-top: 3vh; }
 .section-label { display: inline-flex; align-items: center; gap: 10px; color: var(--teal-dark); font: 600 11px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; }
 .section-label--dark { color: var(--teal); }
@@ -262,7 +263,7 @@ h2 { margin: 0; color: var(--navy); font: 600 clamp(2.55rem, 4.6vw, 4.7rem)/.98 
   .site-container, .site-header__inner { width: min(100% - 40px, 680px); }
   .site-nav { gap: 19px; margin-right: 20px; }
   .header-cta { padding-inline: 12px; }
-  .hero-section { min-height: 680px; height: 80vh; }
+  .hero-section { min-height: max(680px, 80vh); }
   .hero-copy { width: 79%; }
   .hero-meta { display: none; }
   .evidence-strip__inner { grid-template-columns: 1.3fr repeat(3, 1fr); }
@@ -294,7 +295,7 @@ h2 { margin: 0; color: var(--navy); font: 600 clamp(2.55rem, 4.6vw, 4.7rem)/.98 
   .site-nav--open { display: flex; }
   .site-nav a { padding: 15px 13px; border-bottom: 1px solid rgba(240,245,236,.1); }
   .site-nav__mobile-cta { display: flex; align-items: center; justify-content: space-between; color: var(--teal); }
-  .hero-section { min-height: 660px; height: 87vh; }
+  .hero-section { min-height: max(660px, 87vh); }
   .hero-section__image { background-position: 63% center; }
   .hero-section__shade { background: linear-gradient(90deg, rgba(8,22,27,.94), rgba(8,22,27,.63)), linear-gradient(180deg, rgba(8,22,27,.5), rgba(8,22,27,.75)); }
   .hero-section__content { align-items: end; padding-bottom: 69px; }
