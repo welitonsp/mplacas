@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, UTC
 from decimal import Decimal
 
 from mplacas.photovoltaic.db_models import (
@@ -54,7 +54,7 @@ def _performance_record(**overrides: object) -> DailyPvPerformanceRecord:
             "availability": "ratio",
         },
         "assumptions_json": {"reference_irradiance_kw_m2": "1.000"},
-        "calculated_at": datetime(2026, 7, 2, 3, 0, tzinfo=timezone.utc),
+        "calculated_at": datetime(2026, 7, 2, 3, 0, tzinfo=UTC),
     }
     values.update(overrides)
     return DailyPvPerformanceRecord(**values)
@@ -88,7 +88,7 @@ def _baseline_record(**overrides: object) -> SeasonalPvBaselineRecord:
         "degradation_status": "DEGRADED",
         "quality_flags": ["BASELINE_REFERENCE_WINDOW_FROZEN", "SEASONAL_MONTH_BUCKET"],
         "assumptions_json": {"reference_window_days": "366"},
-        "calculated_at": datetime(2027, 7, 2, 3, 0, tzinfo=timezone.utc),
+        "calculated_at": datetime(2027, 7, 2, 3, 0, tzinfo=UTC),
     }
     values.update(overrides)
     return SeasonalPvBaselineRecord(**values)
@@ -108,7 +108,7 @@ def _loss_record(**overrides: object) -> DailyPvLossAssessmentRecord:
         "evidence_codes": ["INTERVAL_POWER_AND_SOLAR_GEOMETRY_PROFILE_UNAVAILABLE"],
         "limitation": "daily aggregates cannot distinguish recurring geometric shading",
         "assumptions_json": {"input_granularity": "DAILY"},
-        "calculated_at": datetime(2026, 7, 2, 3, 0, tzinfo=timezone.utc),
+        "calculated_at": datetime(2026, 7, 2, 3, 0, tzinfo=UTC),
     }
     values.update(overrides)
     return DailyPvLossAssessmentRecord(**values)

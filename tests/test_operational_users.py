@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 import pytest
 from fastapi.testclient import TestClient
@@ -53,18 +53,18 @@ async def test_expired_credential_does_not_authenticate(user_factory) -> None:
         _, valid_secret = await service.create(
             name="valida",
             role=OperationsRole.READ,
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
         with pytest.raises(CredentialError, match="must be in the future"):
             await service.create(
                 name="ja-expirada",
                 role=OperationsRole.READ,
-                expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+                expires_at=datetime.now(UTC) - timedelta(seconds=1),
             )
         record, short_secret = await service.create(
             name="curta",
             role=OperationsRole.READ,
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
         await session.commit()
 
@@ -76,7 +76,7 @@ async def test_expired_credential_does_not_authenticate(user_factory) -> None:
     async with factory() as session:
         stored = await session.get(type(record), record.id)
         assert stored is not None
-        stored.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        stored.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         await session.commit()
 
     async with factory() as session:
@@ -240,7 +240,7 @@ def test_user_endpoints_manage_lifecycle(monkeypatch, tmp_path) -> None:
             "role": "READ",
             "user_id": user_id,
             "expires_at": (
-                datetime.now(timezone.utc) + timedelta(days=30)
+                datetime.now(UTC) + timedelta(days=30)
             ).isoformat(),
         },
         headers=admin,

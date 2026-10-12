@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from decimal import Decimal
 
 
@@ -38,7 +38,7 @@ def evaluate_job_slo(
     minimum_completed_runs: int = 1,
 ) -> SloResult:
     """Calcula SLO operacional sem depender de banco ou IA."""
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     successful = sum(sample.status == "SUCCEEDED" for sample in samples)
     failed = sum(sample.status == "FAILED" for sample in samples)
     running = sum(sample.status == "RUNNING" for sample in samples)
@@ -96,5 +96,5 @@ def evaluate_job_slo(
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

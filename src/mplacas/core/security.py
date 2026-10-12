@@ -151,12 +151,12 @@ async def _authenticate_bearer(
         return None
     try:
         claims = decode_token(token, expected_type="access")
-    except JwtError:
+    except JwtError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid or expired bearer token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc
     if require_admin and claims.role != OperationsRole.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

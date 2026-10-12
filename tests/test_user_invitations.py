@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 import pytest
 from sqlalchemy import select
@@ -86,7 +86,7 @@ async def test_expired_invitation_is_not_consumed() -> None:
             created_by_user_id=None,
             ttl_seconds=_TTL_SECONDS,
         )
-        record.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        record.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         await session.commit()
 
     async with factory() as session:
@@ -108,7 +108,7 @@ async def test_already_accepted_invitation_is_not_consumed_again() -> None:
             created_by_user_id=None,
             ttl_seconds=_TTL_SECONDS,
         )
-        record.accepted_at = datetime.now(timezone.utc)
+        record.accepted_at = datetime.now(UTC)
         record.accepted_user_id = uuid.uuid4()
         await session.commit()
 

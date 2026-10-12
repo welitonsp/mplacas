@@ -17,7 +17,8 @@ body-carried ``plant_id``, and the telegram webhook.
 
 from __future__ import annotations
 
-from typing import Annotated, Iterator, get_args, get_origin, get_type_hints
+from typing import Annotated, get_args, get_origin, get_type_hints
+from collections.abc import Iterator
 
 import fastapi.routing as fastapi_routing
 from fastapi.routing import APIRoute

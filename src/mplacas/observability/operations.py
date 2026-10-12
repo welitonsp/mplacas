@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from time import monotonic
-from typing import Iterator
+from collections.abc import Iterator
 
 from opentelemetry.trace import Span
 

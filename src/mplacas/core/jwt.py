@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import jwt
 
@@ -66,7 +66,7 @@ def encode_access_token(
     role: str,
 ) -> str:
     settings = _settings()
-    now = int(datetime.now(timezone.utc).timestamp())
+    now = int(datetime.now(UTC).timestamp())
     payload = {
         "sub": str(user_id),
         "org_id": str(org_id),
@@ -92,7 +92,7 @@ def encode_refresh_token(
     jti: uuid.UUID | None = None,
 ) -> str:
     settings = _settings()
-    now = int(datetime.now(timezone.utc).timestamp())
+    now = int(datetime.now(UTC).timestamp())
     payload = {
         "sub": str(user_id),
         "org_id": str(org_id),

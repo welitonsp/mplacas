@@ -8,7 +8,7 @@ in ``organizations.invitation_service``.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -57,8 +57,8 @@ def _organization_view(record: OrganizationRecord) -> dict[str, object]:
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _invitation_status(record: UserInvitationRecord) -> str:
@@ -74,7 +74,7 @@ def _invitation_status(record: UserInvitationRecord) -> str:
         return "ACCEPTED"
     if record.revoked_at is not None:
         return "REVOKED"
-    if _as_utc(record.expires_at) <= datetime.now(timezone.utc):
+    if _as_utc(record.expires_at) <= datetime.now(UTC):
         return "EXPIRED"
     return "PENDING"
 
@@ -367,7 +367,7 @@ async def deactivate_organization(
         await set_principal_context(session, principal)
         try:
             record, revoked_count = await OrganizationService(session).deactivate(
-                organization_id, now=datetime.now(timezone.utc)
+                organization_id, now=datetime.now(UTC)
             )
         except OrganizationNotFoundError:
             raise _organization_not_found() from None

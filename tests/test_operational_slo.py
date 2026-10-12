@@ -1,11 +1,11 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from decimal import Decimal
 
 from mplacas.operations.slo import JobSample, evaluate_job_slo
 
 
 def test_slo_is_met_when_completed_runs_succeed() -> None:
-    now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 12, 20, 0, tzinfo=UTC)
     result = evaluate_job_slo(
         [
             JobSample("SUCCEEDED", now - timedelta(minutes=10), now - timedelta(minutes=9)),
@@ -18,7 +18,7 @@ def test_slo_is_met_when_completed_runs_succeed() -> None:
 
 
 def test_slo_detects_failure_and_stuck_run() -> None:
-    now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 12, 20, 0, tzinfo=UTC)
     result = evaluate_job_slo(
         [
             JobSample("SUCCEEDED", now - timedelta(hours=2), now - timedelta(hours=2)),
@@ -34,7 +34,7 @@ def test_slo_detects_failure_and_stuck_run() -> None:
 
 
 def test_no_runs_are_never_reported_as_healthy() -> None:
-    now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 12, 20, 0, tzinfo=UTC)
     result = evaluate_job_slo([], now=now)
     assert result.success_rate_percent == Decimal("0.0")
     assert result.state == "no_history"
@@ -42,7 +42,7 @@ def test_no_runs_are_never_reported_as_healthy() -> None:
 
 
 def test_stale_last_run_is_delayed_even_when_it_succeeded() -> None:
-    now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 12, 20, 0, tzinfo=UTC)
     result = evaluate_job_slo(
         [JobSample("SUCCEEDED", now - timedelta(hours=27), now - timedelta(hours=26))],
         now=now,
@@ -52,7 +52,7 @@ def test_stale_last_run_is_delayed_even_when_it_succeeded() -> None:
 
 
 def test_fresh_running_job_without_completed_minimum_is_insufficient() -> None:
-    now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 12, 20, 0, tzinfo=UTC)
     result = evaluate_job_slo(
         [JobSample("RUNNING", now - timedelta(minutes=5), None)],
         now=now,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 
 EventHandler = Callable[["DomainEvent"], Awaitable[None]]
@@ -13,7 +13,7 @@ EventHandler = Callable[["DomainEvent"], Awaitable[None]]
 class DomainEvent:
     name: str
     payload: dict[str, Any]
-    occurred_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    occurred_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class EventBus:

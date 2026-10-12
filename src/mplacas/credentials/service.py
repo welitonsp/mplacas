@@ -4,7 +4,7 @@ import hashlib
 import hmac as _hmac
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
@@ -46,8 +46,8 @@ def generate_secret() -> str:
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 async def _resolve_default_organization_id(session: AsyncSession) -> uuid.UUID:
@@ -133,7 +133,7 @@ class UserService:
             raise CredentialError("operational user not found")
         if record.active:
             record.active = False
-            record.deactivated_at = datetime.now(timezone.utc)
+            record.deactivated_at = datetime.now(UTC)
             await self._session.flush()
         return record
 
@@ -210,7 +210,7 @@ class CredentialService:
             raise CredentialError("admin credentials cannot be plant-restricted")
         if expires_at is not None:
             expires_at = _as_utc(expires_at)
-            if expires_at <= datetime.now(timezone.utc):
+            if expires_at <= datetime.now(UTC):
                 raise CredentialError("credential expiration must be in the future")
         if user_id is not None:
             user = await self._session.get(OperationalUserRecord, user_id)
@@ -263,7 +263,7 @@ class CredentialService:
             raise CredentialError("credential not found")
         if record.active:
             record.active = False
-            record.revoked_at = datetime.now(timezone.utc)
+            record.revoked_at = datetime.now(UTC)
             await self._session.flush()
         return record
 
@@ -316,7 +316,7 @@ class CredentialService:
         if record is None:
             return None
         if record.expires_at is not None and _as_utc(record.expires_at) <= datetime.now(
-            timezone.utc
+            UTC
         ):
             return None
         if record.user is not None and not record.user.active:
