@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { configure, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
+import { cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import {
   DASHBOARD_DEFAULT_PATH,
   DASHBOARD_FINANCIAL_PATH,
@@ -27,6 +27,15 @@ import {
 // um teste genuinamente travado ainda falha, agora em até 15s (o mesmo teto
 // que `testTimeout` já impunha ao teste inteiro), não mais em 1s.
 configure({ asyncUtilTimeout: 15000 })
+
+// Cleanup também aqui, além do global em `src/test/setup.ts`. A partir do
+// Vitest 5, o app montado por um teste deste arquivo (que reimporta `./App`
+// depois de `vi.resetModules()`) não era desmontado pelo cleanup global: o
+// teste seguinte encontrava duas cópias do app no DOM e o de troca de usina
+// estourava o timeout procurando o seletor. Verificado que o cleanup global
+// continua funcionando em arquivos comuns, inclusive com `vi.resetModules()` —
+// a falha só aparece com a reimportação dinâmica da árvore inteira.
+afterEach(cleanup)
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
 // módulo — não há `.env.local` no ambiente de teste (ver `LoginPage.test.tsx`).
