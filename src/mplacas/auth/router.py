@@ -1,36 +1,45 @@
+"""HTTP layer for ``/auth``.
+
+Credential checks live in ``auth.service``; sessions and rate limiting in
+``auth.session_service``. The router keeps the transaction boundary on
+purpose: a failed attempt is committed *before* the 401/400 is raised, so the
+rate-limit counter survives the error response.
+"""
+
 from __future__ import annotations
 
-import hashlib
-import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.audit.repository import AuditEventRepository
-from mplacas.auth.password import hash_password, verify_password
+from mplacas.auth.password import hash_password
+from mplacas.auth.service import (
+    invitation_rate_key,
+    load_active_user,
+    verify_candidate_password,
+)
 from mplacas.auth.session_service import AuthSessionService, LoginRateLimitService
-from mplacas.core.config import get_settings
+from mplacas.core.config import Settings, get_settings
 from mplacas.core.jwt import (
     JwtError,
     decode_token,
     encode_access_token,
 )
 from mplacas.core.security import OperationsRole
-from mplacas.credentials.db_models import OperationalUserRecord
 from mplacas.credentials.service import CredentialError, UserService
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context
 from mplacas.organizations.db_models import OrganizationRecord
+from mplacas.organizations.invitation_db_models import UserInvitationRecord
 from mplacas.organizations.invitation_service import (
     InvitationConsumeError,
     InvitationService,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-_DUMMY_PASSWORD_HASH = hash_password("mplacas-invalid-user-dummy-password")
 _MIN_INVITATION_PASSWORD_LENGTH = 12
 
 
@@ -109,51 +118,55 @@ def _invalid_invitation() -> HTTPException:
     )
 
 
-def _invitation_rate_key(*, token: str, client_host: str | None) -> str:
-    # The token itself must never be logged or used verbatim as a rate-limit
-    # key (it would defeat hashing at rest in ``LoginRateLimitRecord``); a
-    # truncated SHA-256 digest plays the same role ``username`` plays for
-    # ``/auth/login``, reusing ``LoginRateLimitService.key_for`` as-is rather
-    # than inventing a parallel rate-limit mechanism.
-    token_digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
-    return LoginRateLimitService.key_for(username=token_digest, client_host=client_host)
-
-
-async def _load_active_user(
-    session: AsyncSession,
-    *,
-    user_id: uuid.UUID | None = None,
-    username: str | None = None,
-    organization_id: uuid.UUID | None = None,
-) -> OperationalUserRecord | None:
-    statement = select(OperationalUserRecord).outerjoin(
-        OrganizationRecord,
-        OperationalUserRecord.organization_id == OrganizationRecord.id,
-    )
-    if user_id is not None:
-        statement = statement.where(OperationalUserRecord.id == user_id)
-    if username is not None:
-        statement = statement.where(OperationalUserRecord.name == username)
-    if organization_id is not None:
-        statement = statement.where(
-            OperationalUserRecord.organization_id == organization_id
+def _require_jwt_configured(settings: Settings) -> None:
+    if not settings.jwt_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT authentication is not configured",
         )
-    statement = statement.where(
-        OperationalUserRecord.active.is_(True),
-        or_(OrganizationRecord.id.is_(None), OrganizationRecord.active.is_(True)),
+
+
+def _invalid_refresh_token() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="invalid or expired refresh token",
+        headers={"WWW-Authenticate": "Bearer"},
     )
-    return await session.scalar(statement)
 
 
-def _verify_candidate_password(
+async def _consume_invitation_rate_limited(
+    session: AsyncSession,
+    request: Request,
     *,
-    supplied_password: str,
-    user: OperationalUserRecord | None,
-) -> bool:
-    if user is None or user.password_hash is None:
-        verify_password(supplied_password, _DUMMY_PASSWORD_HASH)
-        return False
-    return verify_password(supplied_password, user.password_hash)
+    token: str,
+    settings: Settings,
+) -> UserInvitationRecord:
+    """Consume an invitation token under the same lockout as ``/auth/login``.
+
+    On failure the attempt is recorded and **committed** before raising, so
+    the counter survives the 400; on success the counter is cleared (not yet
+    committed — the caller commits with the rest of its work).
+    """
+    rate_limit = LoginRateLimitService(session)
+    client_host = request.client.host if request.client else None
+    rate_key = invitation_rate_key(token=token, client_host=client_host)
+    if await rate_limit.is_locked(rate_key):
+        raise _rate_limited()
+
+    try:
+        invitation = await InvitationService(session).consume(token=token)
+    except InvitationConsumeError as exc:
+        await rate_limit.record_failure(
+            rate_key,
+            max_attempts=settings.auth_login_max_attempts,
+            window_seconds=settings.auth_login_window_seconds,
+            lockout_seconds=settings.auth_login_lockout_seconds,
+        )
+        await session.commit()
+        raise _invalid_invitation() from exc
+
+    await rate_limit.clear(rate_key)
+    return invitation
 
 
 @router.post("/login", response_model=TokenResponse, status_code=status.HTTP_200_OK)
@@ -163,11 +176,7 @@ async def login(
     session: AsyncSession = Depends(_get_session),
 ) -> TokenResponse:
     settings = get_settings()
-    if not settings.jwt_configured:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="JWT authentication is not configured",
-        )
+    _require_jwt_configured(settings)
 
     rate_limit = LoginRateLimitService(session)
     client_host = request.client.host if request.client else None
@@ -178,8 +187,8 @@ async def login(
     if await rate_limit.is_locked(rate_key):
         raise _rate_limited()
 
-    user = await _load_active_user(session, username=body.username)
-    if not _verify_candidate_password(supplied_password=body.password, user=user):
+    user = await load_active_user(session, username=body.username)
+    if not verify_candidate_password(supplied_password=body.password, user=user):
         await rate_limit.record_failure(
             rate_key,
             max_attempts=settings.auth_login_max_attempts,
@@ -210,32 +219,20 @@ async def refresh(
     session: AsyncSession = Depends(_get_session),
 ) -> AccessTokenResponse:
     settings = get_settings()
-    if not settings.jwt_configured:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="JWT authentication is not configured",
-        )
+    _require_jwt_configured(settings)
 
     try:
         claims = decode_token(body.refresh_token, expected_type="refresh")
     except JwtError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid or expired refresh token",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        raise _invalid_refresh_token() from exc
 
-    user = await _load_active_user(
+    user = await load_active_user(
         session,
         user_id=claims.sub,
         organization_id=claims.org_id,
     )
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid or expired refresh token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _invalid_refresh_token()
 
     new_refresh_token = await AuthSessionService(session).rotate(
         token=body.refresh_token,
@@ -243,11 +240,7 @@ async def refresh(
         ttl_seconds=settings.jwt_refresh_ttl_seconds,
     )
     if new_refresh_token is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid or expired refresh token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _invalid_refresh_token()
     await session.commit()
 
     return AccessTokenResponse(
@@ -288,26 +281,9 @@ async def inspect_invitation(
     # land in access logs, browser history and the ``Referer`` header. Same
     # reasoning that already puts the refresh token in ``RefreshRequest``'s
     # body instead of a path/query parameter.
-    settings = get_settings()
-    rate_limit = LoginRateLimitService(session)
-    client_host = request.client.host if request.client else None
-    rate_key = _invitation_rate_key(token=body.token, client_host=client_host)
-    if await rate_limit.is_locked(rate_key):
-        raise _rate_limited()
-
-    try:
-        invitation = await InvitationService(session).consume(token=body.token)
-    except InvitationConsumeError as exc:
-        await rate_limit.record_failure(
-            rate_key,
-            max_attempts=settings.auth_login_max_attempts,
-            window_seconds=settings.auth_login_window_seconds,
-            lockout_seconds=settings.auth_login_lockout_seconds,
-        )
-        await session.commit()
-        raise _invalid_invitation() from exc
-
-    await rate_limit.clear(rate_key)
+    invitation = await _consume_invitation_rate_limited(
+        session, request, token=body.token, settings=get_settings()
+    )
     organization = await session.get(OrganizationRecord, invitation.organization_id)
     assert organization is not None
     await session.commit()
@@ -331,31 +307,11 @@ async def accept_invitation(
     session: AsyncSession = Depends(_get_session),
 ) -> TokenResponse:
     settings = get_settings()
-    if not settings.jwt_configured:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="JWT authentication is not configured",
-        )
+    _require_jwt_configured(settings)
 
-    rate_limit = LoginRateLimitService(session)
-    client_host = request.client.host if request.client else None
-    rate_key = _invitation_rate_key(token=body.token, client_host=client_host)
-    if await rate_limit.is_locked(rate_key):
-        raise _rate_limited()
-
-    try:
-        invitation = await InvitationService(session).consume(token=body.token)
-    except InvitationConsumeError as exc:
-        await rate_limit.record_failure(
-            rate_key,
-            max_attempts=settings.auth_login_max_attempts,
-            window_seconds=settings.auth_login_window_seconds,
-            lockout_seconds=settings.auth_login_lockout_seconds,
-        )
-        await session.commit()
-        raise _invalid_invitation() from exc
-
-    await rate_limit.clear(rate_key)
+    invitation = await _consume_invitation_rate_limited(
+        session, request, token=body.token, settings=settings
+    )
 
     try:
         user = await UserService(session).create(
