@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator
+from collections.abc import Iterator
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import FastAPI

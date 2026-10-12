@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from types import SimpleNamespace
 
 import pytest
@@ -16,7 +16,7 @@ class FakeRepository:
 
 @pytest.mark.asyncio
 async def test_operational_status_is_healthy() -> None:
-    now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 12, 20, 0, tzinfo=UTC)
     runs = [
         SimpleNamespace(
             status=SimpleNamespace(value="SUCCEEDED"),
@@ -33,7 +33,7 @@ async def test_operational_status_is_healthy() -> None:
 
 @pytest.mark.asyncio
 async def test_operational_status_reports_stuck_job() -> None:
-    now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 12, 20, 0, tzinfo=UTC)
     runs = [
         SimpleNamespace(
             status=SimpleNamespace(value="RUNNING"),
@@ -51,7 +51,7 @@ async def test_operational_status_reports_stuck_job() -> None:
 
 @pytest.mark.asyncio
 async def test_operational_status_degrades_without_scheduler_history() -> None:
-    now = datetime(2026, 7, 12, 20, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 12, 20, 0, tzinfo=UTC)
     result = await build_operational_status(FakeRepository([]), now=now)  # type: ignore[arg-type]
 
     assert result["status"] == "degraded"

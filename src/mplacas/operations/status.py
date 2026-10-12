@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from decimal import Decimal
 
 from mplacas.operations.repository import JobRunRepository
@@ -29,7 +29,7 @@ async def build_operational_status(
             )
             for run in runs
         ],
-        now=now or datetime.now(timezone.utc),
+        now=now or datetime.now(UTC),
         target_percent=target_percent,
         stuck_after=stuck_after,
         expected_run_interval=expected_run_interval,

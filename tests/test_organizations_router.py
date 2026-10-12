@@ -16,6 +16,7 @@ from mplacas.core.jwt import encode_access_token
 from mplacas.core.security import OperationsRole
 from mplacas.db.base import Base
 from mplacas.organizations.db_models import OrganizationRecord
+from datetime import UTC
 
 _TEST_ENGINES = []
 _TEST_CLIENTS = []
@@ -443,7 +444,7 @@ def test_get_invitations_derives_status_for_all_four_cases(
     monkeypatch, tmp_path
 ) -> None:
     import asyncio
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from mplacas.organizations.invitation_db_models import UserInvitationRecord
     from mplacas.organizations.invitation_service import hash_invitation_token
@@ -451,7 +452,7 @@ def test_get_invitations_derives_status_for_all_four_cases(
     client, factory = _make_client(monkeypatch, tmp_path)
     org_id = _seed_org(factory)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     async def _seed_invitations() -> None:
         async with factory() as session:

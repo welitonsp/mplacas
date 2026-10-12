@@ -46,7 +46,7 @@ class DailyEnergyRepository:
                     self._session.add(current)
                     await self._session.flush()
                 return current, True
-            except IntegrityError:
+            except IntegrityError as exc:
                 # Another transaction won the INSERT race; re-read with lock.
                 current = await self._session.scalar(
                     select(DailyEnergy)
@@ -57,7 +57,9 @@ class DailyEnergyRepository:
                     .with_for_update()
                 )
                 if current is None:
-                    raise RuntimeError("upsert conflict did not resolve to an existing row")
+                    raise RuntimeError(
+                        "upsert conflict did not resolve to an existing row"
+                    ) from exc
 
         changed = current.energy_kwh != energy_kwh or current.status != status
         if not changed:

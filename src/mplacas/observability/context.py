@@ -5,7 +5,7 @@ import secrets
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import Iterator
+from collections.abc import Iterator
 
 from opentelemetry.trace import get_current_span
 

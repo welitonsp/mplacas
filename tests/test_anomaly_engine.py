@@ -1,11 +1,11 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from decimal import Decimal
 
 from mplacas.anomalies.engine import AnomalyEngine, AnomalyType, Severity
 
 
 def test_detects_communication_loss() -> None:
-    now = datetime(2026, 7, 12, 15, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 12, 15, 0, tzinfo=UTC)
     anomaly = AnomalyEngine().detect_communication_loss(
         last_update=now - timedelta(hours=1),
         now=now,

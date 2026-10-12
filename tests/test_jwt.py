@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 import jwt
 import pytest
@@ -32,7 +32,7 @@ def _raw_access_token(
     algorithm: str = "HS256",
     key_id: str = "current-v2",
 ) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return jwt.encode(
         {
             "sub": str(_USER_ID),
@@ -75,7 +75,7 @@ def test_previous_key_is_accepted_during_rotation(monkeypatch) -> None:
     monkeypatch.setenv("MPLACAS_JWT_PREVIOUS_SECRET", previous_secret)
     monkeypatch.setenv("MPLACAS_JWT_PREVIOUS_KEY_ID", "previous-v1")
     get_settings.cache_clear()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     token = jwt.encode(
         {
             "sub": str(_USER_ID),

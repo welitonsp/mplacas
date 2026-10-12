@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 import pytest
 from fastapi.testclient import TestClient
@@ -185,7 +185,7 @@ def test_accept_invitation_expired_token_returns_same_uniform_message(
         async with factory() as session:
             record = await session.get(UserInvitationRecord, invitation_id)
             assert record is not None
-            record.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+            record.expires_at = datetime.now(UTC) - timedelta(seconds=1)
             await session.commit()
 
     asyncio.run(_expire())

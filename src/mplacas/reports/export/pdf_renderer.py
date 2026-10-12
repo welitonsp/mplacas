@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import io
 from html import escape
-from typing import Any, Callable, Final
+from typing import Any, Final
+from collections.abc import Callable
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT

@@ -8,7 +8,8 @@ independently from the solar-domain rules.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
+from collections.abc import Mapping
 
 from mplacas.alerts.ledger import AlertDeliveryLedger
 

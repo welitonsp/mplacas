@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -35,7 +35,7 @@ ORG_A = uuid.UUID("00000000-0000-0000-0000-00000000aa01")
 ORG_B = uuid.UUID("00000000-0000-0000-0000-00000000bb01")
 PLANT_A = uuid.UUID("00000000-0000-0000-0000-00000000aa0a")
 PLANT_B = uuid.UUID("00000000-0000-0000-0000-00000000bb0b")
-NOW = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 12, 12, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -205,11 +205,11 @@ async def test_deactivate_sets_flag_and_timestamp_once(session):
     assert record.deactivated_at is not None
     assert revoked == 0
 
-    later = datetime(2026, 10, 13, tzinfo=timezone.utc)
+    later = datetime(2026, 10, 13, tzinfo=UTC)
     record, _ = await service.deactivate(ORG_A, now=later)
     first = record.deactivated_at
     assert first is not None
-    assert first.replace(tzinfo=timezone.utc) == NOW
+    assert first.replace(tzinfo=UTC) == NOW
 
 
 async def test_deactivate_raises_not_found_for_missing_id(session):
