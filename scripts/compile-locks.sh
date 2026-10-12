@@ -21,7 +21,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BASE_IMAGE="python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b"
 
 # Mesma versão de pip-tools pinada em pyproject.toml (extra dev).
-PIP_TOOLS_VERSION="7.6.0"
+PIP_TOOLS_VERSION="7.6.1"
 
 docker run --rm \
   --volume "${REPO_ROOT}:/work" \
