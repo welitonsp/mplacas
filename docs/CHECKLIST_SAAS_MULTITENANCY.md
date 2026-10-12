@@ -73,7 +73,8 @@ ADR-053 ou do ADR-054 para não se perderem.
   contrato de resposta. Testado em `tests/test_config_telegram_configured.py`.
 - [x] **P3 — falta endpoint admin para configurar `telegram_chat_id`/`telegram_allowed_user_id`.**
   Fechado com `PATCH /organizations/{organization_id}` (`src/mplacas/organizations/router.py`), sob
-  `AdminPrincipal` + `_get_own_or_404` (a mesma dependency/checagem já usada por
+  `AdminPrincipal` + `OrganizationService.get_visible` em `src/mplacas/organizations/service.py`
+  (antes `_get_own_or_404` no router; a mesma dependency/checagem já usada por
   `GET /organizations/{id}`): plataforma edita qualquer organização, organização edita só a própria,
   404 (não 403) para outra. PATCH parcial de verdade via `model_fields_set` — campo omitido não é
   tocado, campo enviado como `null` desvincula. Testado em `tests/test_organizations_router.py`.
