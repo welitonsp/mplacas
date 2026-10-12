@@ -43,9 +43,16 @@ const BUDGETS = [
     // de qualquer rota carregar (ver `App.tsx`, rotas em `lazy()`).
     name: 'vendor (index-*.js)',
     match: /^index-.*\.js$/,
-    limitKb: 65,
+    limitKb: 70,
     // medido em 2026-08-13: 61,61 kB (relatório de `npm run build`) / ~59,5
     // kB (medição própria deste script, ver nota de metodologia abaixo).
+    //
+    // Teto revisado de 65 para 70 kB em 2026-10-12, por decisão do dono, ao
+    // atualizar o React (PR #172). Medição deste script: 59,65 kB com React
+    // 19.2.8 → 68,05 kB com 19.3.0, com react-router e lucide-react
+    // atualizados separadamente sem efeito (68,04 kB no fim). Os +8,4 kB são
+    // inteiramente do próprio react-dom, não de código do projeto; a
+    // alternativa era manter o React em 19.2.x. Folga restante: ~1,9 kB.
   },
   {
     name: 'CSS (index-*.css)',
