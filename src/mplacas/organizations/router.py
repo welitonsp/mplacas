@@ -1,44 +1,43 @@
+"""HTTP layer for ``/organizations``.
+
+Owns the session, tenant context, audit events, commit/rollback and status
+codes. Organization rules live in ``organizations.service``; invitation rules
+in ``organizations.invitation_service``.
+"""
+
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, status
-from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.audit.repository import AuditEventRepository
-from mplacas.auth.session_service import AuthSessionService
 from mplacas.core.config import get_settings
-from mplacas.core.principal import OperationsRole
 from mplacas.core.tenancy import AdminPrincipal, OrgAdminPrincipal, PlatformPrincipal
-from mplacas.db.models import Plant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_principal_context
 from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.organizations.invitation_db_models import UserInvitationRecord
 from mplacas.organizations.invitation_service import InvitationError, InvitationService
+from mplacas.organizations.schemas import (
+    InvitationCreateRequest,
+    OrganizationCreateRequest,
+    OrganizationUpdateRequest,
+)
+from mplacas.organizations.service import (
+    DefaultPlantNotFoundError,
+    OrganizationNotFoundError,
+    OrganizationService,
+    SlugInUseError,
+    TelegramChatAlreadyLinkedError,
+)
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
 
-_SLUG_PATTERN = r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
 
-
-class OrganizationCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    slug: str = Field(min_length=1, max_length=80, pattern=_SLUG_PATTERN)
-    admin_username: str = Field(min_length=1, max_length=80)
-
-
-class InvitationCreateRequest(BaseModel):
-    # Deliberately no ``organization_id`` field: it is always derived from
-    # ``principal.organization_id`` (see ``create_invitation``), never
-    # accepted from the request body, following the same convention as
-    # ``credentials.router._resolve_organization_id``.
-    username: str = Field(min_length=1, max_length=80)
-    role: OperationsRole
+def _organization_not_found() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="organization not found")
 
 
 def _organization_view(record: OrganizationRecord) -> dict[str, object]:
@@ -54,24 +53,6 @@ def _organization_view(record: OrganizationRecord) -> dict[str, object]:
         if record.default_plant_id is not None
         else None,
     }
-
-
-class OrganizationUpdateRequest(BaseModel):
-    """Partial update for an organization's Telegram linkage and default plant.
-
-    Only ``telegram_chat_id``, ``telegram_allowed_user_id`` and
-    ``default_plant_id`` are editable here (name/slug/active are out of scope
-    for this endpoint). A field omitted from the request body is left
-    untouched; a field sent explicitly as ``null`` clears (unlinks) the
-    corresponding column. All fields default to ``None``, and
-    ``model_fields_set`` (Pydantic's own tracking of which fields were present
-    in the parsed payload) is what distinguishes "omitted" from "sent as
-    null" in ``update_organization`` below — not the field's value itself.
-    """
-
-    telegram_chat_id: int | None = None
-    telegram_allowed_user_id: int | None = None
-    default_plant_id: uuid.UUID | None = None
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -117,29 +98,6 @@ def _invitation_view(record: UserInvitationRecord) -> dict[str, object]:
     }
 
 
-async def _get_own_or_404(
-    session: AsyncSession,
-    organization_id: uuid.UUID,
-    principal_organization_id: uuid.UUID | None,
-) -> OrganizationRecord:
-    """Fetch ``organization_id``, hiding its existence from non-owning callers.
-
-    A platform principal (``principal_organization_id is None``) may fetch any
-    organization. A tenant principal may only fetch its own organization; any
-    other id (whether it exists or not) is reported as 404, not 403, so the
-    response never reveals whether an organization with that id exists.
-    """
-    if (
-        principal_organization_id is not None
-        and organization_id != principal_organization_id
-    ):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="organization not found")
-    record = await session.get(OrganizationRecord, organization_id)
-    if record is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="organization not found")
-    return record
-
-
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_organization(
     request: Request,
@@ -149,31 +107,20 @@ async def create_organization(
     settings = get_settings()
     async with SessionFactory() as session:
         await set_principal_context(session, principal)
-        existing = await session.scalar(
-            select(OrganizationRecord).where(OrganizationRecord.slug == payload.slug)
-        )
-        if existing is not None:
+        try:
+            (
+                organization,
+                invitation,
+                token,
+            ) = await OrganizationService(session).create_with_bootstrap_admin(
+                payload,
+                invitation_ttl_seconds=settings.auth_invitation_ttl_seconds,
+            )
+        except SlugInUseError:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="slug is already in use",
-            )
-
-        organization = OrganizationRecord(
-            name=payload.name,
-            slug=payload.slug,
-            active=True,
-        )
-        session.add(organization)
-        await session.flush()
-
-        try:
-            invitation, token = await InvitationService(session).create(
-                organization_id=organization.id,
-                username=payload.admin_username,
-                role=OperationsRole.ADMIN,
-                created_by_user_id=None,
-                ttl_seconds=settings.auth_invitation_ttl_seconds,
-            )
+            ) from None
         except InvitationError as exc:
             # Neither the organization nor the invitation is committed: the
             # session is discarded without a commit() call, so both inserts
@@ -210,12 +157,9 @@ async def create_organization(
 async def list_organizations(principal: AdminPrincipal) -> dict[str, object]:
     async with SessionFactory() as session:
         await set_principal_context(session, principal)
-        statement = select(OrganizationRecord).order_by(OrganizationRecord.created_at)
-        if principal.organization_id is not None:
-            statement = statement.where(
-                OrganizationRecord.id == principal.organization_id
-            )
-        records = list(await session.scalars(statement))
+        records = await OrganizationService(session).list_visible(
+            principal_organization_id=principal.organization_id
+        )
     return {
         "count": len(records),
         "items": [_organization_view(record) for record in records],
@@ -301,7 +245,7 @@ async def revoke_invitation(
             # Either the invitation does not exist, or it belongs to another
             # organization: 404 either way, so the response never reveals
             # whether an invitation with that id exists for another tenant
-            # (same convention as ``_get_own_or_404`` above).
+            # (same convention as ``OrganizationService.get_visible``).
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="invitation not found",
@@ -342,9 +286,12 @@ async def get_organization(
 ) -> dict[str, object]:
     async with SessionFactory() as session:
         await set_principal_context(session, principal)
-        record = await _get_own_or_404(
-            session, organization_id, principal.organization_id
-        )
+        try:
+            record = await OrganizationService(session).get_visible(
+                organization_id, principal_organization_id=principal.organization_id
+            )
+        except OrganizationNotFoundError:
+            raise _organization_not_found() from None
     return _organization_view(record)
 
 
@@ -357,46 +304,37 @@ async def update_organization(
 ) -> dict[str, object]:
     """Partially update an organization's Telegram linkage.
 
-    ``AdminPrincipal`` (not ``OrgAdminPrincipal``) plus ``_get_own_or_404``,
+    ``AdminPrincipal`` (not ``OrgAdminPrincipal``) plus ``get_visible``,
     same as ``get_organization`` above: this lets an organization's own admin
     self-configure its Telegram linkage while also letting the platform
     (static operational key, ``organization_id is None``) edit any
     organization for support/operations — the same "platform sees/edits any,
-    tenant only its own" split already implemented by ``_get_own_or_404``, so
+    tenant only its own" split already implemented by ``get_visible``, so
     no new dependency is needed.
     """
     fields_set = payload.model_fields_set
     async with SessionFactory() as session:
         await set_principal_context(session, principal)
-        record = await _get_own_or_404(
-            session, organization_id, principal.organization_id
-        )
-
-        if "telegram_chat_id" in fields_set:
-            record.telegram_chat_id = payload.telegram_chat_id
-        if "telegram_allowed_user_id" in fields_set:
-            record.telegram_allowed_user_id = payload.telegram_allowed_user_id
-        if "default_plant_id" in fields_set:
-            if payload.default_plant_id is not None:
-                plant = await session.scalar(
-                    select(Plant.id).where(
-                        Plant.id == payload.default_plant_id,
-                        Plant.organization_id == record.id,
-                    )
-                )
-                if plant is None:
-                    # Plant does not exist, or belongs to another
-                    # organization: 404 either way, same convention as
-                    # ``_get_own_or_404`` above, so the response never
-                    # reveals whether a plant with that id exists elsewhere.
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="plant not found",
-                    )
-            record.default_plant_id = payload.default_plant_id
+        service = OrganizationService(session)
         try:
-            await session.flush()
-        except IntegrityError as exc:
+            record = await service.get_visible(
+                organization_id, principal_organization_id=principal.organization_id
+            )
+        except OrganizationNotFoundError:
+            raise _organization_not_found() from None
+
+        try:
+            await service.update(record, payload)
+        except DefaultPlantNotFoundError:
+            # Plant does not exist, or belongs to another organization: 404
+            # either way, so the response never reveals whether a plant with
+            # that id exists elsewhere. Discard the fields already mutated.
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="plant not found",
+            ) from None
+        except TelegramChatAlreadyLinkedError as exc:
             # telegram_chat_id is unique across organizations: surface a
             # conflict rather than a 500 when it is already linked elsewhere.
             await session.rollback()
@@ -427,20 +365,12 @@ async def deactivate_organization(
 ) -> dict[str, object]:
     async with SessionFactory() as session:
         await set_principal_context(session, principal)
-        record = await session.get(OrganizationRecord, organization_id)
-        if record is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="organization not found",
+        try:
+            record, revoked_count = await OrganizationService(session).deactivate(
+                organization_id, now=datetime.now(timezone.utc)
             )
-        if record.active:
-            record.active = False
-            record.deactivated_at = datetime.now(timezone.utc)
-            await session.flush()
-
-        revoked_count = await AuthSessionService(session).revoke_all_for_organization(
-            organization_id=organization_id
-        )
+        except OrganizationNotFoundError:
+            raise _organization_not_found() from None
 
         await AuditEventRepository(session).record(
             request,
