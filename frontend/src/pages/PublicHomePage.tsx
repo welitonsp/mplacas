@@ -21,19 +21,23 @@ import {
   X,
 } from "lucide-react";
 
-// Imagens auto-hospedadas (auditoria v6, A-16/A-15). Vinham do Unsplash e
-// eram bloqueadas pela CSP do projeto (`img-src 'self' data:`), entao o
-// heroi renderizava vazio em producao. Servidas de `public/images/` em
-// WebP, dimensionadas para o uso real de cada secao.
-const heroImage = "/images/solar-hero.webp";
-const energyImage = "/images/solar-story.webp";
-const climateImage = "/images/climate-story.webp";
+// Fotografias auto-hospedadas em `public/images/` e dimensionadas em WebP.
+// Os fundos ficam no stylesheet local para respeitar `style-src 'self'` da CSP.
 const logoImage = "/mplacas-mark.svg";
+const contactBody = [
+  "Olá, equipe MPlacas! Quero entender se a plataforma faz sentido para minha usina.",
+  "",
+  "Portal ou inversor: ",
+  "Cidade/UF: ",
+  "O que quero entender: ",
+].join("\n");
+const contactHref = `mailto:oi@mplacas.com.br?subject=${encodeURIComponent("Quero avaliar minha usina solar")}&body=${encodeURIComponent(contactBody)}`;
 
 const navItems = [
   { label: "Como funciona", href: "#como-funciona" },
-  { label: "Leituras", href: "#leituras" },
+  { label: "O que você acompanha", href: "#leituras" },
   { label: "Confiabilidade", href: "#confiabilidade" },
+  { label: "Dúvidas", href: "#duvidas" },
 ];
 
 const capabilities = [
@@ -66,7 +70,7 @@ const capabilities = [
 const evidence = [
   { value: "D+1", label: "consolidação diária", icon: Clock3 },
   { value: "4", label: "formatos de relatório", icon: FileCheck2 },
-  { value: "100%", label: "rastreabilidade de métricas", icon: ShieldCheck },
+  { value: "Rastreável", label: "fonte, unidade e período por métrica", icon: ShieldCheck },
 ];
 
 function Brand({ compact = false }: { compact?: boolean }) {
@@ -100,8 +104,8 @@ function DashboardMockup() {
     <div className="dashboard-mockup" role="img" aria-label="Prévia ilustrativa do painel MPlacas">
       <div className="dashboard-mockup__topbar">
         <div className="dashboard-mockup__window-dots"><span /><span /><span /></div>
-        <span className="dashboard-mockup__path">visão executiva / usina lagoa</span>
-        <span className="dashboard-mockup__status"><i /> dados atualizados</span>
+        <span className="dashboard-mockup__path">visão executiva / usina exemplo</span>
+        <span className="dashboard-mockup__status"><i /> dados ilustrativos</span>
       </div>
       <div className="dashboard-mockup__body">
         <aside className="dashboard-mockup__side">
@@ -114,7 +118,7 @@ function DashboardMockup() {
         </aside>
         <div className="dashboard-mockup__content">
           <div className="dashboard-mockup__heading">
-            <div><span className="dashboard-mockup__kicker">LEITURA DE EXEMPLO · JUL 2026</span><strong>Saúde da usina</strong></div>
+            <div><span className="dashboard-mockup__kicker">DEMONSTRAÇÃO · JUL 2026</span><strong>Saúde da usina</strong></div>
             <span className="dashboard-mockup__pill"><CircleCheck size={12} /> estável</span>
           </div>
           <div className="dashboard-mockup__metrics">
@@ -150,12 +154,12 @@ export default function Home() {
       <header className="site-header">
         <div className="site-header__inner">
           <Brand />
-          <nav className={`site-nav ${menuOpen ? "site-nav--open" : ""}`} aria-label="Navegação principal">
+          <nav id="site-navigation" className={`site-nav ${menuOpen ? "site-nav--open" : ""}`} aria-label="Navegação principal">
             {navItems.map((item) => <a key={item.href} href={item.href} onClick={closeMenu}>{item.label}</a>)}
-            <a className="site-nav__mobile-cta" href="mailto:oi@mplacas.com.br?subject=Quero conhecer a MPlacas" onClick={closeMenu}>Falar com a equipe <ArrowUpRight size={15} /></a>
+            <a className="site-nav__mobile-cta" href={contactHref} onClick={closeMenu}>Avaliar minha usina <ArrowUpRight size={15} /></a>
           </nav>
-          <a className="header-cta" href="mailto:oi@mplacas.com.br?subject=Quero conhecer a MPlacas">Falar com a equipe <ArrowUpRight size={15} /></a>
-          <button className="menu-toggle" type="button" aria-label={menuOpen ? "Fechar menu" : "Abrir menu"} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+          <a className="header-cta" href={contactHref}>Avaliar minha usina <ArrowUpRight size={15} /></a>
+          <button className="menu-toggle" type="button" aria-label={menuOpen ? "Fechar menu" : "Abrir menu"} aria-expanded={menuOpen} aria-controls="site-navigation" onClick={() => setMenuOpen((open) => !open)}>
             {menuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
         </div>
@@ -163,18 +167,18 @@ export default function Home() {
 
       <main>
         <section className="hero-section">
-          <div className="hero-section__image" style={{ backgroundImage: `url(${heroImage})` }} />
+          <div className="hero-section__image" />
           <div className="hero-section__shade" />
           <div className="hero-section__content site-container">
             <div className="hero-copy">
-              <SectionLabel dark>Inteligência para energia residencial</SectionLabel>
-              <h1>Energia medida.<br /><em>Decisão explicada.</em></h1>
-              <p className="hero-copy__lead">MPlacas transforma telemetria, clima e faturas em uma leitura única da sua usina — para você saber o que mudou, por que importa e qual é o próximo passo.</p>
+              <SectionLabel dark>Mais clareza para quem gera energia solar</SectionLabel>
+              <h1>O que sua usina gera<br /><em>aparece na conta?</em></h1>
+              <p className="hero-copy__lead">A MPlacas reúne dados do NEPViewer, clima e fatura Equatorial para mostrar produção, consumo e créditos no contexto do ciclo — com a origem e a qualidade de cada leitura à vista.</p>
               <div className="hero-actions">
-                <a className="button button--primary" href="mailto:oi@mplacas.com.br?subject=Quero conhecer a MPlacas">Conhecer a plataforma <ArrowRight size={17} /></a>
-                <a className="text-link text-link--light" href="#como-funciona">Ver como funciona <ChevronDown size={16} /></a>
+                <a className="button button--primary" href={contactHref}>Quero avaliar minha usina <ArrowRight size={17} /></a>
+                <a className="text-link text-link--light" href="#como-funciona">Entender em 1 minuto <ChevronDown size={16} /></a>
               </div>
-              <div className="hero-note"><span className="hero-note__line" /><span>Leitura auditável, não achismo</span></div>
+              <div className="hero-note"><span className="hero-note__line" /><span>Indicadores calculados por regras explícitas</span></div>
             </div>
             <div className="hero-meta">
               <span>01 / 04</span>
@@ -194,11 +198,11 @@ export default function Home() {
         </section>
 
         <section className="intro-section site-container" id="como-funciona">
-          <div className="intro-section__aside"><SectionLabel>O problema certo</SectionLabel><span className="vertical-note">01 — ORIENTAR</span></div>
+          <div className="intro-section__aside"><SectionLabel>A pergunta por trás da conta</SectionLabel><span className="vertical-note">01 — ORIENTAR</span></div>
           <div className="intro-section__copy">
-            <h2>Não basta saber quanto a usina produziu. <em>É preciso entender o sistema.</em></h2>
-            <p>Uma boa decisão energética nasce do encontro entre o dado técnico e o contexto da casa. A MPlacas cria essa ponte com histórico próprio, conciliação por ciclo de leitura e diagnósticos que deixam a próxima ação visível.</p>
-            <a className="text-link" href="#leituras">Acompanhar a leitura <ArrowUpRight size={16} /></a>
+            <h2>Produção, consumo e fatura contam partes da mesma história. <em>A MPlacas ajuda a juntá-las.</em></h2>
+            <p>Em vez de olhar cada número isoladamente, veja os dados organizados por ciclo: o que foi produzido, consumido, importado ou injetado — e o que merece uma investigação mais cuidadosa.</p>
+            <a className="text-link" href="#leituras">Ver o que você acompanha <ArrowUpRight size={16} /></a>
           </div>
           <div className="intro-section__stamp"><Sparkles size={18} /><span>clareza<br />é um recurso</span></div>
         </section>
@@ -219,18 +223,52 @@ export default function Home() {
         </section>
 
         <section className="product-section site-container">
-          <div className="product-section__copy"><SectionLabel>Uma visão antes da planilha</SectionLabel><h2>O painel que transforma sinal em <em>conversa.</em></h2><p>Uma superfície executiva para a reunião de hoje e um registro auditável para a decisão de amanhã. Cada métrica chega com unidade, fonte, período e qualidade do dado.</p><div className="product-checks"><span><Check size={15} /> produção e consumo no mesmo ciclo</span><span><Check size={15} /> saúde da usina com severidade explícita</span><span><Check size={15} /> tendência sem recalcular o passado</span></div><a className="text-link" href="mailto:oi@mplacas.com.br?subject=Quero ver uma leitura MPlacas">Quero ver uma leitura <ArrowRight size={16} /></a></div>
+          <div className="product-section__copy"><SectionLabel>Da pergunta à evidência</SectionLabel><h2>Veja sua usina além do <em>portal do inversor.</em></h2><p>Uma leitura executiva reúne produção, consumo, saúde da usina e fatura. Em cada métrica, ficam visíveis a unidade, a fonte, o período e a qualidade do dado.</p><div className="product-checks"><span><Check size={15} /> produção e consumo no mesmo ciclo</span><span><Check size={15} /> alertas com severidade e próxima ação</span><span><Check size={15} /> histórico e relatórios exportáveis</span></div><a className="text-link" href={contactHref}>Quero entender minha usina <ArrowRight size={16} /></a></div>
           <div className="product-section__visual"><div className="visual-annotation visual-annotation--top"><span>leitura executiva</span><span className="visual-annotation__rule" /></div><DashboardMockup /><div className="visual-annotation visual-annotation--bottom"><span className="visual-annotation__rule" /><span>exemplo ilustrativo</span></div></div>
         </section>
 
         <section className="split-story split-story--energy">
-          <div className="split-story__image" style={{ backgroundImage: `url(${energyImage})` }}><span className="image-caption">02 — MOSTRAR / luz depois da chuva</span></div>
+          <div className="split-story__image split-story__image--energy"><span className="image-caption">02 — MOSTRAR / luz depois da chuva</span></div>
           <div className="split-story__content"><SectionLabel>Produção com contexto</SectionLabel><h2>O número que você vê é só o começo da história.</h2><p>Quando a série histórica se encontra com o clima e a fatura, o desvio deixa de ser um susto e vira uma pergunta boa: o que mudou no ambiente, no equipamento ou no ciclo?</p><div className="story-stat"><strong>+8,4%</strong><span>variação de exemplo<br />contra a mediana de 30 dias</span></div><a className="text-link" href="#confiabilidade">Entender a evidência <ArrowUpRight size={16} /></a></div>
         </section>
 
         <section className="split-story split-story--climate">
           <div className="split-story__content"><SectionLabel>Explicação assistida</SectionLabel><h2>Clima, telemetria e fatura na mesma conversa.</h2><p>A MPlacas combina motores determinísticos com explicações assistidas por IA ancoradas em evidências normalizadas. A IA ajuda a explicar; os indicadores continuam sendo calculados por regras explícitas.</p><div className="quote-card"><CloudSun size={21} /><p>“A produção ficou abaixo do esperado no início do ciclo, mas recuperou após a janela de nebulosidade.”</p><span>exemplo de explicação com grounding</span></div></div>
-          <div className="split-story__image" style={{ backgroundImage: `url(${climateImage})` }}><span className="image-caption">03 — INTERPRETAR / clima em perspectiva</span></div>
+          <div className="split-story__image split-story__image--climate"><span className="image-caption">03 — INTERPRETAR / clima em perspectiva</span></div>
+        </section>
+
+        <section className="faq-section" id="duvidas">
+          <div className="site-container faq-section__inner">
+            <div className="faq-section__intro">
+              <SectionLabel>Perguntas importantes</SectionLabel>
+              <h2>Clareza também é saber <em>o que esperar.</em></h2>
+              <p>Sem prometer leitura perfeita quando os dados não permitem. Veja como a MPlacas lida com integração, indicadores e lacunas.</p>
+            </div>
+            <div className="faq-list">
+              <details className="faq-item">
+                <summary>Quais dados a MPlacas considera?</summary>
+                <p>A plataforma reúne telemetria do NEPViewer, dados climáticos e informações das faturas Equatorial para montar leituras por ciclo. A disponibilidade depende dos dados e da configuração de cada usina.</p>
+              </details>
+              <details className="faq-item">
+                <summary>Os indicadores de energia são calculados por IA?</summary>
+                <p>Não. Os indicadores são calculados por regras determinísticas. A IA pode ajudar a explicar resultados a partir de evidências organizadas, mas não inventa medições nem decide a severidade dos diagnósticos.</p>
+              </details>
+              <details className="faq-item">
+                <summary>O que acontece quando faltam dados?</summary>
+                <p>A lacuna permanece visível como dado parcial, provisório ou indisponível. A MPlacas não preenche o que falta com suposições para fazer o painel parecer completo.</p>
+              </details>
+            </div>
+            <div className="faq-cta">
+              <div>
+                <span>O próximo passo</span>
+                <strong>Conte o que você quer entender sobre a sua usina.</strong>
+                <small>O e-mail abre com algumas informações úteis para começar a conversa.</small>
+              </div>
+              <a className="button button--primary" href={contactHref}>
+                Avaliar minha usina <ArrowRight size={17} />
+              </a>
+            </div>
+          </div>
         </section>
 
         <section className="trust-section" id="confiabilidade">
@@ -241,7 +279,7 @@ export default function Home() {
               <div className="trust-grid__item"><span className="trust-grid__number">02</span><BarChart3 size={22} /><h3>Fonte em cada métrica</h3><p>Valor, unidade, natureza, período e versão permanecem rastreáveis.</p></div>
               <div className="trust-grid__item"><span className="trust-grid__number">03</span><SunMedium size={22} /><h3>Dados ausentes visíveis</h3><p>Sem preencher lacunas com suposições ou esconder a qualidade da leitura.</p></div>
             </div>
-            <div className="trust-section__footer"><span className="trust-section__footer-line" /><span>04 — AGIR</span><strong>Da próxima pergunta à próxima ação.</strong><a className="button button--outline-light" href="mailto:oi@mplacas.com.br?subject=Quero conversar sobre a MPlacas">Conversar com a MPlacas <ArrowUpRight size={16} /></a></div>
+            <div className="trust-section__footer"><span className="trust-section__footer-line" /><span>04 — AGIR</span><strong>Da próxima pergunta à próxima ação.</strong><a className="button button--outline-light" href={contactHref}>Avaliar minha usina <ArrowUpRight size={16} /></a></div>
           </div>
         </section>
       </main>

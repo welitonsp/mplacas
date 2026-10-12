@@ -65,7 +65,7 @@ html:has(.site-shell) { scroll-behavior: smooth; }
 
 .hero-section { position: relative; min-height: 730px; height: min(86vh, 850px); color: #eef4ea; background: var(--navy); }
 .hero-section__image, .hero-section__shade { position: absolute; inset: 0; }
-.hero-section__image { background-position: center; background-size: cover; opacity: .92; }
+.hero-section__image { background-image: url("/images/solar-hero.webp"); background-position: center; background-size: cover; opacity: .92; }
 .hero-section__shade { background: linear-gradient(90deg, rgba(10,25,30,.96) 0%, rgba(10,25,30,.83) 37%, rgba(10,25,30,.24) 76%, rgba(10,25,30,.3) 100%), linear-gradient(180deg, rgba(8,21,26,.55) 0%, transparent 24%, rgba(8,21,26,.62) 100%); }
 .hero-section::after { position: absolute; inset: 0; pointer-events: none; opacity: .18; content: ""; background-image: radial-gradient(rgba(238,244,234,.3) .6px, transparent .6px); background-size: 5px 5px; mix-blend-mode: soft-light; }
 .hero-section__content { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; height: 100%; padding-top: 90px; }
@@ -191,6 +191,8 @@ h2 { margin: 0; color: var(--navy); font: 600 clamp(2.55rem, 4.6vw, 4.7rem)/.98 
 
 .split-story { display: grid; grid-template-columns: 1fr 1fr; min-height: 620px; }
 .split-story__image { position: relative; min-height: 560px; background-position: center; background-size: cover; }
+.split-story__image--energy { background-image: url("/images/solar-story.webp"); }
+.split-story__image--climate { background-image: url("/images/climate-story.webp"); }
 .split-story__image::after { position: absolute; inset: 0; content: ""; background: linear-gradient(180deg, rgba(8,24,28,.05), rgba(8,24,28,.48)); }
 .image-caption { position: absolute; z-index: 1; bottom: 29px; left: 36px; color: rgba(242,246,239,.72); font: 600 9px/1 var(--display); letter-spacing: .13em; text-transform: uppercase; }
 .split-story__content { display: flex; flex-direction: column; justify-content: center; padding: 80px clamp(48px, 8vw, 142px) 80px clamp(48px, 8vw, 112px); background: #e7ebe3; }
@@ -207,6 +209,27 @@ h2 { margin: 0; color: var(--navy); font: 600 clamp(2.55rem, 4.6vw, 4.7rem)/.98 
 .quote-card p { margin: 14px 0 12px; color: #eef4eb; font: 500 16px/1.45 var(--display); letter-spacing: -.025em; }
 .quote-card span { color: rgba(235,243,235,.42); font: 600 9px/1 var(--display); letter-spacing: .11em; text-transform: uppercase; }
 .split-story--climate .text-link { margin-top: 31px; border-bottom-color: rgba(75,185,169,.38); color: var(--teal); }
+
+.site-shell a:focus-visible, .site-shell button:focus-visible, .site-shell summary:focus-visible { outline: 3px solid var(--navy); outline-offset: 3px; box-shadow: 0 0 0 6px var(--paper); }
+.evidence-item:nth-of-type(4) strong { font-size: 20px; letter-spacing: -.04em; }
+
+.faq-section { background: var(--paper); }
+.faq-section__inner { display: grid; grid-template-columns: .78fr 1.22fr; gap: 52px 88px; padding-block: 126px 118px; }
+.faq-section__intro h2 { margin-top: 25px; font-size: clamp(2.5rem, 4.2vw, 4.15rem); }
+.faq-section__intro > p { max-width: 390px; margin: 26px 0 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+.faq-list { border-top: 1px solid var(--line); }
+.faq-item { border-bottom: 1px solid var(--line); }
+.faq-item summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 23px 2px; color: var(--navy); cursor: pointer; font: 600 16px/1.35 var(--display); list-style: none; }
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after { flex: 0 0 auto; color: var(--teal-dark); content: "+"; font: 400 24px/1 var(--display); }
+.faq-item[open] summary::after { content: "−"; }
+.faq-item p { max-width: 620px; margin: -4px 34px 22px 2px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+.faq-cta { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 34px; padding: 29px 32px; color: #eef4eb; background: var(--navy); }
+.faq-cta > div { display: flex; flex-direction: column; gap: 8px; }
+.faq-cta > div > span { color: var(--teal); font: 600 10px/1 var(--display); letter-spacing: .13em; text-transform: uppercase; }
+.faq-cta strong { color: #eef4eb; font: 500 20px/1.25 var(--display); letter-spacing: -.025em; }
+.faq-cta small { color: rgba(238,244,235,.58); font-size: 12px; line-height: 1.5; }
+.faq-cta .button { flex: 0 0 auto; }
 
 .trust-section { position: relative; color: #eef4eb; background: var(--navy); }
 .trust-section::before { position: absolute; top: 0; right: 0; width: 45%; height: 100%; opacity: .26; content: ""; background: radial-gradient(circle at 85% 22%, rgba(75,185,169,.3), transparent 35%), linear-gradient(120deg, transparent 50%, rgba(75,185,169,.07) 50%, transparent 50.3%); }
@@ -253,6 +276,9 @@ h2 { margin: 0; color: var(--navy); font: 600 clamp(2.55rem, 4.6vw, 4.7rem)/.98 
   .trust-section__header { grid-template-columns: .7fr 1.4fr; gap: 28px; }
   .trust-section__header p { grid-column: 2; margin-top: -10px; }
   .trust-grid { margin-top: 75px; }
+  .faq-section__inner { grid-template-columns: 1fr; gap: 36px; padding-block: 88px; }
+  .faq-section__intro h2 { font-size: 3rem; }
+  .faq-cta { align-items: flex-start; flex-direction: column; padding: 24px; }
   .trust-section__footer { flex-wrap: wrap; }
   .trust-section__footer strong { margin-left: 0; }
 }
@@ -322,6 +348,12 @@ h2 { margin: 0; color: var(--navy); font: 600 clamp(2.55rem, 4.6vw, 4.7rem)/.98 
   .trust-grid { display: block; margin-top: 58px; }
   .trust-grid__item { min-height: 0; padding-block: 23px 28px; }
   .trust-grid__item p { max-width: none; }
+  .faq-section__inner { padding-block: 80px; }
+  .faq-section__intro h2 { font-size: 2.7rem; }
+  .faq-item summary { padding-block: 19px; font-size: 15px; }
+  .faq-item p { margin-right: 8px; font-size: 13px; }
+  .faq-cta strong { font-size: 19px; }
+  .faq-cta .button { width: 100%; }
   .trust-section__footer { gap: 12px; margin-top: 57px; padding-top: 21px; }
   .trust-section__footer strong { width: 100%; margin: 8px 0 8px; font-size: 15px; }
   .site-footer__inner { display: block; padding-top: 48px; }

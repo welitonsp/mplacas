@@ -61,6 +61,27 @@ describe('página pública não carrega origem externa bloqueada pela CSP', () =
   })
 })
 
+describe('imagens da landing respeitam a CSP restritiva (style-src self)', () => {
+  const publicHome = Object.values(sourceFiles).find((content) =>
+    content.includes('hero-section__image')
+  )
+  const landingCss = readFileSync(
+    resolve(process.cwd(), 'src/pages/public-home.css'),
+    'utf-8'
+  )
+
+  it('não usa atributos style para fundos inline bloqueados em produção', () => {
+    expect(publicHome).toBeDefined()
+    expect(publicHome).not.toMatch(/style=\{\{[^}]*backgroundImage/)
+  })
+
+  it('declara as imagens de hero e seções no CSS local', () => {
+    expect(landingCss).toContain('url("/images/solar-hero.webp")')
+    expect(landingCss).toContain('url("/images/solar-story.webp")')
+    expect(landingCss).toContain('url("/images/climate-story.webp")')
+  })
+})
+
 // A-11 da auditoria v6: `aria-label` num `div` genérico. A role implícita de
 // `div` não aceita nome acessível, então parte dos leitores de tela ignora o
 // rótulo — o elemento fica sem nome, não com o nome pretendido.
