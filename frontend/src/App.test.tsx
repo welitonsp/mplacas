@@ -28,13 +28,10 @@ import {
 // que `testTimeout` já impunha ao teste inteiro), não mais em 1s.
 configure({ asyncUtilTimeout: 15000 })
 
-// Cleanup também aqui, além do global em `src/test/setup.ts`. A partir do
-// Vitest 5, o app montado por um teste deste arquivo (que reimporta `./App`
-// depois de `vi.resetModules()`) não era desmontado pelo cleanup global: o
-// teste seguinte encontrava duas cópias do app no DOM e o de troca de usina
-// estourava o timeout procurando o seletor. Verificado que o cleanup global
-// continua funcionando em arquivos comuns, inclusive com `vi.resetModules()` —
-// a falha só aparece com a reimportação dinâmica da árvore inteira.
+// Cleanup também aqui, além do global em `src/test/setup.ts`: este arquivo
+// remonta a árvore inteira do app a cada teste (`vi.resetModules()` +
+// reimportação de `./App`), então desmontar explicitamente no próprio arquivo
+// garante que nenhum app de um teste sobreviva no DOM do seguinte.
 afterEach(cleanup)
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
@@ -54,30 +51,40 @@ const P2 = { id: '22222222-2222-2222-2222-222222222222', name: 'Usina 2', instal
 // `usePlantResource` captura rejeição/erro internamente (nunca deixa a Promise
 // sem `catch`, nunca lança), então isso só produz banners de erro na página —
 // não derruba o teste.
-function installApiMock(fetchPlantsImpl: () => Promise<unknown[]>) {
-  vi.doMock('./lib/api', () => ({
-    fetchExecutiveDashboard: vi.fn(async () => {
-      throw new Error('mock: sem rede em App.test.tsx')
-    }),
-    fetchAnomalyHistory: vi.fn(async () => {
-      throw new Error('mock: sem rede em App.test.tsx')
-    }),
-    fetchPhotovoltaicSummary: vi.fn(async () => {
-      throw new Error('mock: sem rede em App.test.tsx')
-    }),
-    fetchDeviceDailyStatus: vi.fn(async () => {
-      throw new Error('mock: sem rede em App.test.tsx')
-    }),
-    fetchFinancialReturn: vi.fn(async () => {
-      throw new Error('mock: sem rede em App.test.tsx')
-    }),
-    fetchMonthlyProductionHistory: vi.fn(async () => {
-      throw new Error('mock: sem rede em App.test.tsx')
-    }),
-    fetchPlants: fetchPlantsImpl,
-    configureApi: vi.fn(),
-  }))
-}
+//
+// Mock fixo de `./lib/api`, registrado uma vez (hoisted). Cada teste troca só a
+// implementação de `fetchPlants` em `apiMock`. Antes, cada teste chamava
+// `vi.doMock('./lib/api', ...)` com uma fábrica nova; a partir do Vitest 5 a
+// fábrica de um teste continuava valendo nos seguintes deste arquivo, mesmo com
+// `vi.resetModules()` — o teste de troca de usina recebia a lista `[P1]` do teste
+// anterior, nunca chamava o próprio `fetchPlants` e estourava o timeout à
+// espera do seletor. Delegar para `apiMock` não depende desse comportamento.
+const apiMock = vi.hoisted(() => ({
+  fetchPlants: (async () => []) as () => Promise<unknown[]>,
+}))
+
+vi.mock('./lib/api', () => ({
+  fetchExecutiveDashboard: vi.fn(async () => {
+    throw new Error('mock: sem rede em App.test.tsx')
+  }),
+  fetchAnomalyHistory: vi.fn(async () => {
+    throw new Error('mock: sem rede em App.test.tsx')
+  }),
+  fetchPhotovoltaicSummary: vi.fn(async () => {
+    throw new Error('mock: sem rede em App.test.tsx')
+  }),
+  fetchDeviceDailyStatus: vi.fn(async () => {
+    throw new Error('mock: sem rede em App.test.tsx')
+  }),
+  fetchFinancialReturn: vi.fn(async () => {
+    throw new Error('mock: sem rede em App.test.tsx')
+  }),
+  fetchMonthlyProductionHistory: vi.fn(async () => {
+    throw new Error('mock: sem rede em App.test.tsx')
+  }),
+  fetchPlants: () => apiMock.fetchPlants(),
+  configureApi: vi.fn(),
+}))
 
 async function renderApp(
   initialPath: string,
@@ -85,7 +92,7 @@ async function renderApp(
 ) {
   vi.resetModules()
   const fetchPlants = vi.fn(async () => plants)
-  installApiMock(fetchPlants)
+  apiMock.fetchPlants = fetchPlants
 
   if (authenticated) {
     const { TokenStore } = await import('./lib/auth')
