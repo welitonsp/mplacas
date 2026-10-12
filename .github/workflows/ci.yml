@@ -346,6 +346,24 @@ jobs:
           path: trivy-results.sarif
           if-no-files-found: error
           retention-days: 30
+      # Sem isto, a falha do scan só diz "exit code 1": o motivo fica dentro do
+      # SARIF, num artifact que precisa ser baixado. Cada achado vira uma
+      # anotação visível no próprio PR (o GitHub mostra até 10 por passo).
+      - name: Show container vulnerabilities as annotations
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          path = "trivy-results.sarif"
+          if not os.path.exists(path):
+              print("::warning::trivy-results.sarif não foi gerado")
+              raise SystemExit(0)
+          results = [r for run in json.load(open(path)).get("runs", []) for r in run.get("results", [])]
+          print(f"::notice title=Trivy::{len(results)} achado(s) HIGH/CRITICAL com correção disponível")
+          for r in results:
+              text = " | ".join(line.strip() for line in r["message"]["text"].splitlines() if line.strip())
+              print(f"::error title={r['ruleId']}::{text[:900]}")
+          PY
       - name: Verify image contents and user
         run: |
           docker run --rm -i --entrypoint python "$IMAGE_NAME" - <<'PY'
