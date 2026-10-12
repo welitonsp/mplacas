@@ -86,6 +86,18 @@ async def test_get_visible_hides_existing_foreign_organization_as_not_found(sess
         await OrganizationService(session).get_visible(ORG_B, principal_organization_id=ORG_A)
 
 
+async def test_get_visible_never_queries_foreign_organization(session, monkeypatch):
+    # Without RLS in SQLite, only this guard keeps a tenant from loading
+    # another organization's row; it must reject before touching the database.
+    async def forbidden_get(*_args, **_kwargs):
+        raise AssertionError("foreign organization must not be queried")
+
+    monkeypatch.setattr(session, "get", forbidden_get)
+
+    with pytest.raises(OrganizationNotFoundError):
+        await OrganizationService(session).get_visible(ORG_B, principal_organization_id=ORG_A)
+
+
 async def test_get_visible_lets_platform_read_any_organization(session):
     record = await OrganizationService(session).get_visible(
         ORG_B, principal_organization_id=None
