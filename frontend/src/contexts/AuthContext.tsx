@@ -65,7 +65,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signal: deadline.signal,
       })
     } catch {
-      throw new Error('O servidor demorou para responder. Verifique sua conexão e tente novamente.')
+      // Prazo esgotado e falha de conexão pedem ações diferentes: no primeiro
+      // caso o servidor provavelmente está acordando (plano grátis); no
+      // segundo, a rede do usuário ou o servidor estão fora. Respostas 5xx não
+      // caem mais aqui — a API passou a devolvê-las com CORS (2026-10-13).
+      if (deadline.timedOut()) {
+        throw new Error(
+          'O servidor não respondeu a tempo. Ele pode estar iniciando — aguarde um minuto e tente novamente.',
+        )
+      }
+      throw new Error(
+        'Não foi possível conectar ao servidor. Verifique sua internet e tente novamente em instantes.',
+      )
     } finally {
       deadline.clear()
     }

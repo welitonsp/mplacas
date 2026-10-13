@@ -11,8 +11,20 @@ import { parsePlantsResponse, type Plant } from './dashboard/plant-contracts'
 // interativa e o usuário está olhando; leitura de dados pode legitimamente
 // demorar mais (relatório, janela de 90 dias). Ambos generosos o bastante para
 // não cortar requisição sadia em rede ruim.
-export const AUTH_TIMEOUT_MS = 15_000
-export const DATA_TIMEOUT_MS = 30_000
+//
+// Desde a ida para o Render no plano grátis (ADR-076), a API hiberna após
+// 15 minutos sem tráfego e a primeira requisição depois disso leva de 30 a
+// 60 s para acordar. Prazos menores que isso transformavam o primeiro acesso
+// do dia em falha garantida ("o servidor demorou"), mesmo com tudo sadio.
+export const AUTH_TIMEOUT_MS = 60_000
+export const DATA_TIMEOUT_MS = 60_000
+
+// Acorda a API sem bloquear nada: a tela de login chama isto ao abrir, para o
+// servidor já estar de pé quando o usuário terminar de digitar a senha. Falha
+// é ignorada de propósito — é só um aquecimento; o login trata os erros reais.
+export function warmUpApi(): void {
+  fetch(`${API_URL}/health`, { method: 'GET', cache: 'no-store' }).catch(() => undefined)
+}
 
 // Combina o prazo interno com um `AbortController` externo, quando o chamador
 // tiver um (desmontagem de componente, troca de usina). Cancelar por qualquer

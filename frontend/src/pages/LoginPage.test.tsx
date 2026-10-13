@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
@@ -186,5 +186,54 @@ describe('LoginPage — aviso de sessão encerrada', () => {
     expect(
       screen.queryByText('Sua sessão foi encerrada. Entre novamente.')
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('LoginPage — servidor hibernando (plano grátis, ADR-076)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('acorda a API (/health) assim que a tela abre', () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderLoginPage()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.test/health',
+      expect.objectContaining({ method: 'GET' }),
+    )
+  })
+
+  it('explica a espera quando a entrada demora, e some ao terminar', async () => {
+    vi.useFakeTimers()
+    let resolveLogin: (response: Response) => void = () => undefined
+    vi.stubGlobal('fetch', vi.fn((url: string) =>
+      url.endsWith('/health')
+        ? Promise.resolve(new Response('{}', { status: 200 }))
+        : new Promise<Response>((resolve) => {
+            resolveLogin = resolve
+          }),
+    ))
+
+    renderLoginPage()
+    fireEvent.change(screen.getByLabelText('Usuário'), { target: { value: 'alguem' } })
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'senha' } })
+    fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
+
+    expect(screen.queryByText(/está iniciando/)).not.toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000)
+    })
+    expect(screen.getByText(/está iniciando/)).toBeInTheDocument()
+
+    await act(async () => {
+      resolveLogin(new Response(null, { status: 401 }))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.queryByText(/está iniciando/)).not.toBeInTheDocument()
   })
 })

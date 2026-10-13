@@ -64,6 +64,8 @@ const apiMock = vi.hoisted(() => ({
 }))
 
 vi.mock('./lib/api', () => ({
+  // A tela de login acorda a API ao abrir (plano grátis hiberna); sem rede aqui.
+  warmUpApi: vi.fn(),
   fetchExecutiveDashboard: vi.fn(async () => {
     throw new Error('mock: sem rede em App.test.tsx')
   }),
