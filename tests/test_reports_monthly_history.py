@@ -426,3 +426,126 @@ def test_load_recent_monthly_reports_feeds_pdf_history_within_scope(
     )
     assert "Março/2026" in text and "Fevereiro/2026" in text
     assert "Janeiro/2026" not in text  # fora do limite pedido
+
+
+def _pdf_text(content: bytes) -> str:
+    import io
+
+    from pypdf import PdfReader
+
+    return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(content)).pages)
+
+
+def test_latest_pdf_route_includes_history_within_tenant(cross_tenant_setup) -> None:
+    factory, _, _, token_a, token_b = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_cycles(factory, plant_id=PLANT_A, months=["2026-01", "2026-02", "2026-03"])
+    )
+    client = TestClient(app)
+
+    response = client.get(
+        "/reports/monthly/latest.pdf",
+        headers=_headers(token_a),
+        params={"plant_id": str(PLANT_A)},
+    )
+    assert response.status_code == 200
+    text = _pdf_text(response.content)
+    assert "HISTÓRICO DOS ÚLTIMOS CICLOS" in text
+    for month in ("Janeiro/2026", "Fevereiro/2026", "Março/2026"):
+        assert month in text
+
+    # Outra organização não baixa o PDF (nem o histórico) desta usina.
+    foreign = client.get(
+        "/reports/monthly/latest.pdf",
+        headers=_headers(token_b),
+        params={"plant_id": str(PLANT_A)},
+    )
+    assert foreign.status_code in (403, 404)
+
+
+def test_corrupted_old_snapshot_drops_history_but_not_the_current_pdf(
+    cross_tenant_setup,
+) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_cycles(factory, plant_id=PLANT_A, months=["2026-01", "2026-02", "2026-03"])
+    )
+
+    async def _corrupt_january() -> None:
+        async with factory() as session:
+            record = await session.scalar(
+                select(MonthlyReportSnapshotRecord).where(
+                    MonthlyReportSnapshotRecord.reference_month == "2026-01"
+                )
+            )
+            assert record is not None
+            record.payload_sha256 = "0" * 64
+            await session.commit()
+
+    asyncio.run(_corrupt_january())
+
+    response = TestClient(app).get(
+        "/reports/monthly/latest.pdf",
+        headers=_headers(token_a),
+        params={"plant_id": str(PLANT_A)},
+    )
+
+    assert response.status_code == 200
+    text = _pdf_text(response.content)
+    assert "Março/2026" in text  # ciclo atual continua saindo
+    assert "HISTÓRICO DOS ÚLTIMOS CICLOS" not in text
+
+
+def test_single_cycle_pdf_has_no_history_section(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(_seed_cycles(factory, plant_id=PLANT_A, months=["2026-03"]))
+
+    response = TestClient(app).get(
+        "/reports/monthly/latest.pdf",
+        headers=_headers(token_a),
+        params={"plant_id": str(PLANT_A)},
+    )
+
+    assert response.status_code == 200
+    assert "HISTÓRICO" not in _pdf_text(response.content)
+
+
+def test_export_drain_pdf_includes_history(cross_tenant_setup, monkeypatch) -> None:
+    import asyncio
+
+    import mplacas.reports.drain as drain
+    from mplacas.reports.db_models import ReportExportTask
+
+    factory, _, _, _, _ = cross_tenant_setup
+    monkeypatch.setattr(drain, "SessionFactory", factory)
+    asyncio.run(_seed_cycles(factory, plant_id=PLANT_A, months=["2026-02", "2026-03"]))
+
+    async def _enqueue() -> uuid.UUID:
+        async with factory() as session:
+            task = ReportExportTask(
+                plant_id=PLANT_A, reference_month="2026-03", format="pdf", status="pending"
+            )
+            session.add(task)
+            await session.commit()
+            return task.id
+
+    task_id = asyncio.run(_enqueue())
+    result = asyncio.run(drain.drain_report_exports())
+    assert (result.completed, result.failed) == (1, 0)
+
+    async def _artifact() -> bytes:
+        async with factory() as session:
+            task = await session.get(ReportExportTask, task_id)
+            assert task is not None and task.status == "completed"
+            assert task.artifact_bytes is not None
+            return task.artifact_bytes
+
+    text = _pdf_text(asyncio.run(_artifact()))
+    assert "HISTÓRICO DOS ÚLTIMOS CICLOS" in text
+    assert "Fevereiro/2026" in text

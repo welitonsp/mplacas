@@ -1147,18 +1147,32 @@ class _HistoryBar(Flowable):
         canvas.roundRect(0, 0, width, self._HEIGHT, radius, stroke=0, fill=1)
 
 
+_HISTORY_LIMIT: Final = 12  # mesmo valor de history_service.DEFAULT_HISTORY_CYCLES
+
+
+def _month_sort_key(reference_month: str) -> tuple[int, str]:
+    """``AAAA-MM`` válido ordena cronologicamente; qualquer outro vai para o fim."""
+    year, _, month = reference_month.partition("-")
+    valid = year.isdecimal() and month.isdecimal() and len(month) == 2
+    return (1 if valid else 0, reference_month)
+
+
 def _unique_cycles(
     current: MonthlyEnergyReport, history: Sequence[MonthlyEnergyReport]
 ) -> list[MonthlyEnergyReport]:
-    """Um relatório por mês (o último informado vence), mais novo primeiro."""
+    """Um relatório por mês, mais novo primeiro, sempre incluindo o atual."""
     by_month: dict[str, MonthlyEnergyReport] = {}
     for item in history:
         by_month[item.reference_month] = item
-    by_month[current.reference_month] = current
-    return [by_month[month] for month in sorted(by_month, reverse=True)][:_HISTORY_LIMIT]
-
-
-_HISTORY_LIMIT: Final = 12
+    by_month.pop(current.reference_month, None)
+    others = sorted(
+        by_month.values(), key=lambda r: _month_sort_key(r.reference_month), reverse=True
+    )
+    return sorted(
+        [current, *others[: _HISTORY_LIMIT - 1]],
+        key=lambda r: _month_sort_key(r.reference_month),
+        reverse=True,
+    )
 
 
 def _history_block(
@@ -1192,13 +1206,15 @@ def _history_block(
             ]
         )
 
+    caption = Paragraph(
+        "Produção de cada ciclo com relatório gravado, do mais recente para o mais "
+        "antigo. A barra compara os ciclos entre si (a maior produção da lista "
+        "ocupa a barra inteira); o ciclo deste relatório aparece em verde.",
+        styles["caption"],
+    )
+    caption.keepWithNext = True
     return [
-        Paragraph(
-            "Produção de cada ciclo com relatório gravado, do mais recente para o mais "
-            "antigo. A barra compara os ciclos entre si (a maior produção da lista "
-            "ocupa a barra inteira); o ciclo deste relatório aparece em verde.",
-            styles["caption"],
-        ),
+        caption,
         Spacer(1, 2.5 * mm),
         _data_table(
             ("Ciclo", "Comparativo visual", "Produção", "Qualidade da leitura"),
@@ -1347,7 +1363,8 @@ def build_monthly_report_pdf(
             ]
         )
 
-    if history:
+    # Com um só ciclo não há o que comparar: a seção só aparece a partir de dois.
+    if len(_unique_cycles(report, history)) >= 2:
         story.extend(
             [
                 block_gap,
