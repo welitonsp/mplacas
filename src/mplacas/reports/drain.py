@@ -15,6 +15,7 @@ from mplacas.reports.exporters import (
     build_monthly_report_pdf,
     build_monthly_report_xlsx,
 )
+from mplacas.reports.history_service import load_recent_monthly_reports
 from mplacas.reports.snapshot import get_or_materialize_latest_monthly_report_snapshot
 
 logger = logging.getLogger(__name__)
@@ -80,11 +81,18 @@ async def _process_task(task_id: uuid.UUID) -> None:
             plant_id=plant_id,
             plant_scope=UNRESTRICTED_PLANT_SCOPE,
         )
+        history = (
+            await load_recent_monthly_reports(
+                session, plant_id=plant_id, plant_scope=UNRESTRICTED_PLANT_SCOPE
+            )
+            if task.format == "pdf"
+            else ()
+        )
         await session.commit()
 
     report = snapshot.report
     if task.format == "pdf":
-        artifact_bytes = build_monthly_report_pdf(report)
+        artifact_bytes = build_monthly_report_pdf(report, history=history)
         content_type = PDF_MEDIA_TYPE
     else:
         artifact_bytes = build_monthly_report_xlsx(report)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import io
 import uuid
 import zipfile
@@ -195,7 +197,16 @@ def test_pdf_and_xlsx_endpoints_are_protected_downloads(monkeypatch) -> None:
         assert kwargs["expected_production_kwh"] == Decimal("120")
         return snapshot
 
+    previous = replace(report, reference_month="2026-05")
+
+    async def fake_report_with_history(**kwargs):
+        assert kwargs["plant_id"] == report.plant_id
+        return snapshot, (previous, report)
+
     monkeypatch.setattr(reports_router, "_build_report", fake_report)
+    monkeypatch.setattr(
+        reports_router, "_build_report_with_history", fake_report_with_history
+    )
     client = TestClient(app)
     params = {
         "plant_id": str(report.plant_id),
@@ -225,5 +236,12 @@ def test_pdf_and_xlsx_endpoints_are_protected_downloads(monkeypatch) -> None:
             "content-disposition"
         ]
         assert response.content.startswith(signature)
+        if suffix == "pdf":
+            text = "\n".join(
+                page.extract_text() or "" for page in PdfReader(io.BytesIO(response.content)).pages
+            )
+            # O PDF da API inclui o histórico dos ciclos já gravados.
+            assert "HISTÓRICO DOS ÚLTIMOS CICLOS" in text
+            assert "Maio/2026" in text
 
     get_settings.cache_clear()

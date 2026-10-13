@@ -26,9 +26,7 @@ ENGINE = "MPLACAS_DETERMINISTIC_ENGINE"
 
 
 def _metric(key: str, value: str, unit: str | None, nature: str = "CALCULATED") -> ReportMetric:
-    return ReportMetric(
-        key=key, label=key, value=value, unit=unit, nature=nature, source=ENGINE
-    )
+    return ReportMetric(key=key, label=key, value=value, unit=unit, nature=nature, source=ENGINE)
 
 
 def _report(*, savings: str, reason: str, quality_provisional: str = "0") -> MonthlyEnergyReport:
@@ -75,9 +73,7 @@ def test_cards_use_brazilian_format_and_annex_keeps_exact_value() -> None:
 
 
 def test_unavailable_savings_shows_reason_and_never_a_number() -> None:
-    text = _text(
-        build_monthly_report_pdf(_report(savings="", reason="TARIFF_NOT_AVAILABLE"))
-    )
+    text = _text(build_monthly_report_pdf(_report(savings="", reason="TARIFF_NOT_AVAILABLE")))
 
     assert "Indisponível" in text
     assert "não registra a tarifa com impostos" in text
@@ -181,3 +177,67 @@ def test_month_label_falls_back_to_raw_value() -> None:
     assert _month_label("2026-06") == "Junho/2026"
     assert _month_label("2026-13") == "2026-13"
     assert _month_label("ciclo-x") == "ciclo-x"
+
+
+def _cycle(month: str, production: str, provisional: str | None = "0") -> MonthlyEnergyReport:
+    base = _report(savings="412.37", reason="")
+    quality = (
+        ()
+        if provisional is None
+        else (
+            _metric("missing_days", "0", "days", "QUALITY_COUNT"),
+            _metric("provisional_days", provisional, "days", "QUALITY_COUNT"),
+            _metric("incomplete_days", "0", "days", "QUALITY_COUNT"),
+            _metric("unavailable_days", "0", "days", "QUALITY_COUNT"),
+        )
+    )
+    return _with(
+        base,
+        reference_month=month,
+        metrics=(_metric("cycle_production_kwh", production, "kWh", "MEASURED_AGGREGATE"),),
+        quality=quality,
+    )
+
+
+def test_history_section_is_absent_without_history() -> None:
+    text = _text(build_monthly_report_pdf(_report(savings="412.37", reason="")))
+
+    assert "HISTÓRICO" not in text
+
+
+def test_history_lists_cycles_newest_first_with_quality_labels() -> None:
+    current = _cycle("2026-09", "610.16")
+    history = (
+        _cycle("2026-07", "576.64", provisional="2"),
+        _cycle("2026-08", "", provisional=None),
+        _cycle("2026-06", "516.84"),
+    )
+
+    text = _text(build_monthly_report_pdf(current, history=history))
+    section = text[text.index("HISTÓRICO DOS ÚLTIMOS CICLOS") :]
+
+    order = [
+        section.index(month)
+        for month in ("Setembro/2026", "Agosto/2026", "Julho/2026", "Junho/2026")
+    ]
+    assert order == sorted(order)
+    assert "Com ressalvas" in section  # julho: 2 dias provisórios
+    assert "Sem registro" in section  # agosto: sem contagens de qualidade
+    assert "Completa" in section
+    assert "576,64 kWh" in section
+    assert "—" in section  # agosto sem produção gravada: nunca vira zero
+
+
+def test_history_keeps_one_row_per_month_and_at_most_twelve() -> None:
+    current = _cycle("2026-12", "100")
+    history = tuple(_cycle(f"2025-{month:02d}", "50") for month in range(1, 13)) + (
+        _cycle("2026-12", "999"),  # mesmo mês do relatório atual: o atual vence
+    )
+
+    text = _text(build_monthly_report_pdf(current, history=history))
+    section = text[text.index("HISTÓRICO DOS ÚLTIMOS CICLOS") :]
+
+    assert section.count("Dezembro/2026") == 1
+    assert "999" not in section
+    assert "Janeiro/2025" not in section  # 13º ciclo mais antigo fica de fora
+    assert "Fevereiro/2025" in section

@@ -381,3 +381,48 @@ def test_history_route_never_creates_a_snapshot(cross_tenant_setup) -> None:
 
     after = asyncio.run(_count())
     assert before == after == 1
+
+
+def test_load_recent_monthly_reports_feeds_pdf_history_within_scope(
+    cross_tenant_setup,
+) -> None:
+    """Histórico do PDF: só snapshots já gravados, limitados e dentro do escopo."""
+    from mplacas.core.authorization import PlantScope
+    from mplacas.reports.export.pdf_renderer import build_monthly_report_pdf
+    from mplacas.reports.history_service import load_recent_monthly_reports
+
+    factory, _, _, _, _ = cross_tenant_setup
+    import asyncio
+    import io
+
+    from pypdf import PdfReader
+
+    months = [f"2026-{month:02d}" for month in range(1, 4)]
+    asyncio.run(_seed_cycles(factory, plant_id=PLANT_A, months=months))
+
+    async def _run():
+        async with factory() as session:
+            before = await session.scalar(select(func.count(MonthlyReportSnapshotRecord.id)))
+            reports = await load_recent_monthly_reports(session, plant_id=PLANT_A, limit=2)
+            outside = await load_recent_monthly_reports(
+                session,
+                plant_id=PLANT_A,
+                plant_scope=PlantScope.restricted({uuid.uuid4()}),
+            )
+            after = await session.scalar(select(func.count(MonthlyReportSnapshotRecord.id)))
+            return reports, outside, before, after
+
+    reports, outside, before, after = asyncio.run(_run())
+
+    assert [report.reference_month for report in reports] == ["2026-02", "2026-03"]
+    assert outside == ()
+    assert before == after == 3  # leitura estrita: nada materializado
+
+    text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(
+            io.BytesIO(build_monthly_report_pdf(reports[-1], history=reports))
+        ).pages
+    )
+    assert "Março/2026" in text and "Fevereiro/2026" in text
+    assert "Janeiro/2026" not in text  # fora do limite pedido

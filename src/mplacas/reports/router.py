@@ -11,6 +11,7 @@ from mplacas.core.tenancy import ReadPlant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_principal_context
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError
+from mplacas.reports.contract import MonthlyEnergyReport
 from mplacas.reports.export_service import InvalidExportFormat, ReportExportService
 from mplacas.reports.exporters import (
     PDF_MEDIA_TYPE,
@@ -22,6 +23,7 @@ from mplacas.reports.history_service import (
     DEFAULT_HISTORY_CYCLES,
     MAX_HISTORY_CYCLES,
     load_monthly_production_history,
+    load_recent_monthly_reports,
 )
 from mplacas.reports.serialization import (
     monthly_report_to_csv,
@@ -59,6 +61,31 @@ async def _build_report(
             return snapshot
         except EnergyCycleNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+async def _build_report_with_history(
+    *,
+    plant_id: uuid.UUID,
+    principal: OperationsPrincipal,
+) -> tuple[MonthlyReportSnapshot, tuple[MonthlyEnergyReport, ...]]:
+    """Snapshot do ciclo mais recente e os relatórios gravados anteriores (PDF)."""
+    async with SessionFactory() as session:
+        await set_principal_context(session, principal)
+        try:
+            snapshot = await get_or_materialize_latest_monthly_report_snapshot(
+                session,
+                plant_id=plant_id,
+                plant_scope=principal.plant_scope,
+            )
+        except EnergyCycleNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        history = await load_recent_monthly_reports(
+            session,
+            plant_id=plant_id,
+            plant_scope=principal.plant_scope,
+        )
+        await session.commit()
+    return snapshot, history
 
 
 def _snapshot_headers(snapshot: MonthlyReportSnapshot) -> dict[str, str]:
@@ -134,16 +161,16 @@ async def latest_monthly_report_pdf(
         default=Decimal("2.0"), ge=0, le=100, deprecated=True
     ),
 ) -> Response:
-    snapshot = await _build_report(
+    # Parâmetros legados ignorados, como em _build_report.
+    del expected_production_kwh, stable_tolerance_percent
+    snapshot, history = await _build_report_with_history(
         plant_id=scoped.plant_id,
-        expected_production_kwh=expected_production_kwh,
-        stable_tolerance_percent=stable_tolerance_percent,
         principal=scoped.principal,
     )
     report = snapshot.report
     filename = f"mplacas-monthly-{report.reference_month}-{report.plant_id}.pdf"
     return Response(
-        content=build_monthly_report_pdf(report),
+        content=build_monthly_report_pdf(report, history=history),
         media_type=PDF_MEDIA_TYPE,
         headers=_download_headers(filename, snapshot=snapshot),
     )
