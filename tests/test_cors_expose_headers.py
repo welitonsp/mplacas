@@ -71,3 +71,35 @@ def test_cors_middleware_is_not_registered_without_configured_origins() -> None:
     assert response.status_code == 200
     assert "access-control-expose-headers" not in response.headers
     assert "access-control-allow-origin" not in response.headers
+
+
+def test_unhandled_error_returns_500_that_the_browser_can_read(monkeypatch) -> None:
+    """Um 500 precisa sair com CORS, senão o navegador o disfarça de erro de rede.
+
+    Incidente de 2026-10-13: com a senha do banco errada, /auth/login dava 500
+    sem Access-Control-Allow-Origin; o fetch do frontend falhava como "rede" e a
+    tela de login mandava o usuário verificar a conexão dele.
+    """
+    monkeypatch.setenv("MPLACAS_CORS_ALLOWED_ORIGINS", _ALLOWED_ORIGIN)
+    get_settings.cache_clear()
+    importlib.reload(main_module)
+    try:
+
+        async def _boom() -> None:
+            raise RuntimeError("segredo-que-nao-pode-vazar")
+
+        main_module.app.add_api_route("/__test_boom", _boom, methods=["POST"])
+        client = TestClient(main_module.app, raise_server_exceptions=False)
+
+        response = client.post("/__test_boom", headers={"Origin": _ALLOWED_ORIGIN})
+
+        assert response.status_code == 500
+        assert response.json() == {"detail": "internal server error"}
+        assert response.headers.get("access-control-allow-origin") == _ALLOWED_ORIGIN
+        assert response.headers.get("x-request-id")
+        assert response.headers.get("x-content-type-options") == "nosniff"
+        assert "segredo-que-nao-pode-vazar" not in response.text
+    finally:
+        monkeypatch.delenv("MPLACAS_CORS_ALLOWED_ORIGINS", raising=False)
+        get_settings.cache_clear()
+        importlib.reload(main_module)

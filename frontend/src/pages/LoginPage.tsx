@@ -1,8 +1,11 @@
-import { FormEvent, useId, useState } from 'react'
+import { FormEvent, useEffect, useId, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import { useAuth } from '../contexts/AuthContext'
 import { BrandMark } from '../components/BrandMark'
 import { LoadingAnnouncement } from '../components/LoadingAnnouncement'
+import { warmUpApi } from '../lib/api'
+
+const SLOW_START_HINT_MS = 6_000
 
 const BENEFITS = [
   {
@@ -39,7 +42,24 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [slowStart, setSlowStart] = useState(false)
   const errorId = useId()
+
+  // Acorda a API assim que a tela abre (plano grátis hiberna; ver api.ts).
+  useEffect(() => {
+    warmUpApi()
+  }, [])
+
+  // Se a entrada passar de alguns segundos, explica o porquê em vez de deixar
+  // o usuário achar que travou: quase sempre é o servidor acordando.
+  useEffect(() => {
+    if (!loading) {
+      setSlowStart(false)
+      return
+    }
+    const timer = setTimeout(() => setSlowStart(true), SLOW_START_HINT_MS)
+    return () => clearTimeout(timer)
+  }, [loading])
 
   const sessionEnded =
     (location.state as { reason?: string } | null)?.reason === 'SESSION_ENDED'
@@ -262,6 +282,14 @@ export function LoginPage() {
               {loading ? 'Entrando...' : 'Entrar no painel'}
             </button>
             <LoadingAnnouncement active={loading} message="Entrando, aguarde." />
+            {loading && slowStart && (
+              <p
+                role="status"
+                className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3 text-center text-sm leading-6 text-[var(--color-text-secondary)]"
+              >
+                O sistema estava em repouso e está iniciando. Na primeira entrada do dia isso pode levar até 1 minuto.
+              </p>
+            )}
 
             <p className="text-center text-xs leading-5 text-[var(--color-text-secondary)]">
               Sessão protegida por credenciais operacionais. O backend valida permissões a cada requisição.

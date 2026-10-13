@@ -86,3 +86,64 @@ describe('AuthContext — mensagem de login por status HTTP', () => {
     },
   )
 })
+
+describe('AuthContext — falha antes de qualquer resposta HTTP', () => {
+  const renderAuth = () =>
+    renderHook(() => useAuth(), {
+      wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
+    })
+
+  const captureLoginError = async (run: (login: () => Promise<void>) => Promise<void>) => {
+    const { result } = renderAuth()
+    let message = ''
+    await run(async () => {
+      try {
+        await result.current.login('alguem', 'senha')
+      } catch (err) {
+        message = err instanceof Error ? err.message : String(err)
+      }
+    })
+    return message
+  }
+
+  it('sem conexão, aponta a conexão — e não diz que o servidor "demorou"', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    }))
+
+    const message = await captureLoginError(async (login) => {
+      await act(login)
+    })
+
+    expect(message).toContain('Não foi possível conectar ao servidor')
+    expect(message).not.toContain('demorou')
+    expect(message).not.toContain('iniciando')
+  })
+
+  // Plano grátis do Render (ADR-076): a API hiberna e leva até ~60 s para
+  // acordar. Prazo esgotado deve explicar isso, não culpar a rede do usuário.
+  it('prazo esgotado explica que o servidor pode estar iniciando', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          )
+        }),
+      ))
+
+      const message = await captureLoginError(async (login) => {
+        await act(async () => {
+          const pending = login()
+          await vi.advanceTimersByTimeAsync(60_000)
+          await pending
+        })
+      })
+
+      expect(message).toContain('pode estar iniciando')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from mplacas import __version__
@@ -67,15 +68,17 @@ app = FastAPI(
 
 _settings_for_startup = get_settings()
 _cors_origins = _settings_for_startup.cors_allowed_origin_list
-if _cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=["Content-Disposition"],
-    )
+
+
+def _apply_response_headers(response: Response, request_id: str, trace_id: str) -> None:
+    response.headers[_REQUEST_ID_HEADER] = request_id
+    response.headers[_TRACE_ID_HEADER] = trace_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+    if _settings_for_startup.env == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
 
 @app.middleware("http")
@@ -105,18 +108,22 @@ async def request_id_middleware(request: Request, call_next):
                     "duration_ms": duration_ms,
                 },
             )
-            raise
+            # Resposta 500 montada aqui, e não re-lançada: exceção re-lançada
+            # vira a página do ServerErrorMiddleware do Starlette, que fica
+            # FORA do CORSMiddleware e sai sem Access-Control-Allow-Origin. O
+            # navegador então esconde o 500 do frontend como "erro de rede",
+            # e a tela de login mostrava "o servidor demorou / verifique sua
+            # conexão" para uma falha que era do servidor (2026-10-13: senha
+            # do banco errada no Render). O corpo é genérico de propósito —
+            # o traceback fica só no log acima, nunca na resposta.
+            response = JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"detail": "internal server error"},
+            )
+            _apply_response_headers(response, request_id, correlation.trace_id)
+            return response
         duration_ms = max(0, round((monotonic() - started) * 1000))
-        response.headers[_REQUEST_ID_HEADER] = request_id
-        response.headers[_TRACE_ID_HEADER] = correlation.trace_id
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Permissions-Policy"] = (
-            "camera=(), microphone=(), geolocation=(), payment=()"
-        )
-        if _settings_for_startup.env == "production":
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        _apply_response_headers(response, request_id, correlation.trace_id)
         principal = getattr(request.state, "operations_principal", None)
         audit_fields: dict[str, object] = {}
         if principal is not None:
@@ -144,6 +151,20 @@ async def request_id_middleware(request: Request, call_next):
         )
         return response
 
+
+# CORS registrado DEPOIS do request_id_middleware para ficar por fora dele
+# (no Starlette, o último middleware adicionado é o mais externo). Assim até
+# o 500 montado pelo request_id_middleware leva Access-Control-Allow-Origin e
+# o frontend consegue ler o status real em vez de um "erro de rede" opaco.
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["Content-Disposition"],
+    )
 
 app.include_router(auth_router)
 app.include_router(operations_router)
