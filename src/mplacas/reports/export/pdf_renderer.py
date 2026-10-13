@@ -1101,6 +1101,137 @@ def _audit_block(report: MonthlyEnergyReport, styles: dict[str, ParagraphStyle])
 
 
 # ---------------------------------------------------------------------------
+# Histórico de ciclos (snapshots já gravados — nada é recalculado)
+# ---------------------------------------------------------------------------
+
+_QUALITY_KEYS: Final = ("missing_days", "provisional_days", "incomplete_days", "unavailable_days")
+
+
+def _quality_status(report: MonthlyEnergyReport) -> tuple[str, Any]:
+    """Selo de qualidade do ciclo a partir das contagens gravadas, sem somá-las."""
+    values = [_decimal(_metric_value(report.quality, key)) for key in _QUALITY_KEYS]
+    known = [value for value in values if value is not None]
+    if not known:
+        return "Sem registro", _MUTED
+    if any(value > 0 for value in known):
+        return "Com ressalvas", _ORANGE
+    if len(known) < len(_QUALITY_KEYS):
+        return "Parcial", _NAVY_SOFT
+    return "Completa", _GREEN
+
+
+class _HistoryBar(Flowable):
+    """Barra horizontal proporcional à maior produção da janela exibida."""
+
+    _HEIGHT = 3.6 * mm
+
+    def __init__(self, fraction: float | None, *, highlight: bool) -> None:
+        super().__init__()
+        self._fraction = fraction
+        self._highlight = highlight
+        self._width = 60 * mm
+
+    def wrap(self, availWidth: float, availHeight: float) -> tuple[float, float]:
+        self._width = availWidth
+        return availWidth, self._HEIGHT
+
+    def draw(self) -> None:
+        canvas = self.canv
+        radius = self._HEIGHT / 2
+        canvas.setFillColor(_TRACK)
+        canvas.roundRect(0, 0, self._width, self._HEIGHT, radius, stroke=0, fill=1)
+        if self._fraction is None or self._fraction <= 0:
+            return
+        width = max(self._HEIGHT, self._width * min(self._fraction, 1.0))
+        canvas.setFillColor(_GREEN if self._highlight else _NAVY_SOFT)
+        canvas.roundRect(0, 0, width, self._HEIGHT, radius, stroke=0, fill=1)
+
+
+_HISTORY_LIMIT: Final = 12  # mesmo valor de history_service.DEFAULT_HISTORY_CYCLES
+
+
+def _month_sort_key(reference_month: str) -> tuple[int, str]:
+    """``AAAA-MM`` válido ordena cronologicamente; qualquer outro vai para o fim."""
+    year, _, month = reference_month.partition("-")
+    valid = year.isdecimal() and month.isdecimal() and len(month) == 2
+    return (1 if valid else 0, reference_month)
+
+
+def _unique_cycles(
+    current: MonthlyEnergyReport, history: Sequence[MonthlyEnergyReport]
+) -> list[MonthlyEnergyReport]:
+    """Um relatório por mês, mais novo primeiro, sempre incluindo o atual."""
+    by_month: dict[str, MonthlyEnergyReport] = {}
+    for item in history:
+        by_month[item.reference_month] = item
+    by_month.pop(current.reference_month, None)
+    others = sorted(
+        by_month.values(), key=lambda r: _month_sort_key(r.reference_month), reverse=True
+    )
+    return sorted(
+        [current, *others[: _HISTORY_LIMIT - 1]],
+        key=lambda r: _month_sort_key(r.reference_month),
+        reverse=True,
+    )
+
+
+def _history_block(
+    current: MonthlyEnergyReport,
+    history: Sequence[MonthlyEnergyReport],
+    styles: dict[str, ParagraphStyle],
+) -> list[Flowable]:
+    cycles = _unique_cycles(current, history)
+    productions = [
+        _decimal(_metric_value(cycle.metrics, "cycle_production_kwh")) for cycle in cycles
+    ]
+    positive = [value for value in productions if value is not None and value > 0]
+    peak = max(positive) if positive else None
+
+    rows: list[list[Flowable]] = []
+    for cycle, production in zip(cycles, productions, strict=True):
+        is_current = cycle.reference_month == current.reference_month
+        fraction = (
+            float(production / peak)
+            if production is not None and peak is not None and production >= 0
+            else None
+        )
+        label, color = _quality_status(cycle)
+        metric = _find(cycle.metrics, "cycle_production_kwh")
+        rows.append(
+            [
+                _cell(_month_label(cycle.reference_month), styles, strong=is_current),
+                _HistoryBar(fraction, highlight=is_current),
+                _cell(_format_metric(metric) or "—", styles, strong=is_current),
+                _Pill(label, color),
+            ]
+        )
+
+    caption = Paragraph(
+        "Produção de cada ciclo com relatório gravado, do mais recente para o mais "
+        "antigo. A barra compara os ciclos entre si (a maior produção da lista "
+        "ocupa a barra inteira); o ciclo deste relatório aparece em verde.",
+        styles["caption"],
+    )
+    caption.keepWithNext = True
+    return [
+        caption,
+        Spacer(1, 2.5 * mm),
+        _data_table(
+            ("Ciclo", "Comparativo visual", "Produção", "Qualidade da leitura"),
+            rows,
+            widths=(
+                _CONTENT_WIDTH * 0.20,
+                _CONTENT_WIDTH * 0.40,
+                _CONTENT_WIDTH * 0.18,
+                _CONTENT_WIDTH * 0.22,
+            ),
+            styles=styles,
+            center_columns=(3,),
+        ),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Página
 # ---------------------------------------------------------------------------
 
@@ -1143,8 +1274,16 @@ def _page_decorator(report: MonthlyEnergyReport) -> Callable[[Any, Any], None]:
     return draw_page
 
 
-def build_monthly_report_pdf(report: MonthlyEnergyReport) -> bytes:
-    """Render the audited monthly report without recalculating indicators."""
+def build_monthly_report_pdf(
+    report: MonthlyEnergyReport,
+    *,
+    history: Sequence[MonthlyEnergyReport] = (),
+) -> bytes:
+    """Render the audited monthly report without recalculating indicators.
+
+    ``history`` são relatórios de ciclos anteriores já gravados (snapshots);
+    quando informado, o PDF ganha a tabela dos últimos 12 ciclos.
+    """
 
     output = io.BytesIO()
     styles = _styles()
@@ -1221,6 +1360,17 @@ def build_monthly_report_pdf(report: MonthlyEnergyReport) -> bytes:
                 ),
                 gap,
                 *_trend_block(report, styles),
+            ]
+        )
+
+    # Com um só ciclo não há o que comparar: a seção só aparece a partir de dois.
+    if len(_unique_cycles(report, history)) >= 2:
+        story.extend(
+            [
+                block_gap,
+                section("Histórico dos últimos ciclos", "Até 12 ciclos com relatório gravado"),
+                gap,
+                *_history_block(report, history, styles),
             ]
         )
 
