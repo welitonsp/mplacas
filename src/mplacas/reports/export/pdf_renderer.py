@@ -118,8 +118,8 @@ _SOURCE_LABELS: Final = {
 }
 
 _UNAVAILABILITY_LABELS: Final = {
-    "TARIFF_NOT_AVAILABLE": "a tarifa da concessionária não está cadastrada",
-    "NO_CONSUMPTION_DATA": "não há dados de consumo neste ciclo",
+    "TARIFF_NOT_AVAILABLE": "a fatura confirmada não registra a tarifa com impostos por kWh",
+    "NO_CONSUMPTION_DATA": "o consumo total estimado do ciclo é zero",
 }
 
 _DIRECTION_LABELS: Final = {
@@ -145,11 +145,27 @@ _AUDIT_UNIT_LABELS: Final = {
 # ---------------------------------------------------------------------------
 
 
+# Texto vindo do snapshot (diagnóstico, ação) é cortado neste limite: um bloco
+# único maior que uma página faria o reportlab abortar a exportação inteira.
+_MAX_BLOCK_CHARS: Final = 1200
+
+
+def _winansi(text: str) -> str:
+    """A Helvetica embutida só cobre WinAnsi; o resto viraria caixa preta."""
+    return text.encode("cp1252", "replace").decode("cp1252")
+
+
 def _safe_text(value: object) -> str:
-    return escape(str(value), quote=False).replace("\n", "<br/>")
+    return escape(_winansi(str(value)), quote=False).replace("\n", "<br/>")
 
 
-def _decimal(value: str) -> Decimal | None:
+def _clip(text: str, limit: int = _MAX_BLOCK_CHARS) -> str:
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _decimal(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
     try:
         parsed = Decimal(value)
     except (InvalidOperation, ValueError):
@@ -157,16 +173,37 @@ def _decimal(value: str) -> Decimal | None:
     return parsed if parsed.is_finite() else None
 
 
-def _number_br(value: Decimal, places: int = 2) -> str:
-    quantum = Decimal(1).scaleb(-places)
-    rounded = value.quantize(quantum, rounding=ROUND_HALF_UP)
+def _places(number: Decimal, cap: int = 2) -> int:
+    """Casas decimais do próprio valor gravado, até ``cap`` — não inventa precisão."""
+    exponent = number.as_tuple().exponent
+    if not isinstance(exponent, int):
+        return 0
+    return min(cap, max(0, -exponent))
+
+
+def _number_br(value: Decimal, places: int = 2) -> str | None:
+    """Número em formato brasileiro, ou ``None`` se não couber no contexto decimal."""
+    try:
+        rounded = value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
+    except InvalidOperation:
+        return None
+    if rounded == 0:
+        rounded = abs(rounded)  # nunca "-0,00"
     text = f"{rounded:,.{places}f}"
     return text.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
 
 
+def _signed_br(value: Decimal, places: int) -> str | None:
+    text = _number_br(value, places)
+    if text is None:
+        return None
+    shows_nonzero = any(char in "123456789" for char in text)
+    return f"+{text}" if value > 0 and shows_nonzero else text
+
+
 def _month_label(reference_month: str) -> str:
     year, _, month = reference_month.partition("-")
-    if year.isdigit() and month.isdigit() and 1 <= int(month) <= 12:
+    if year.isdecimal() and month.isdecimal() and 1 <= int(month) <= 12:
         return f"{_MONTHS_PT[int(month) - 1]}/{year}"
     return reference_month
 
@@ -179,25 +216,35 @@ def _find(metrics: Sequence[ReportMetric], key: str) -> ReportMetric | None:
 
 
 def _format_value(value: str, unit: str | None) -> str | None:
-    """Valor legível com unidade, ou ``None`` quando indisponível."""
+    """Valor legível com unidade, ou ``None`` quando indisponível.
+
+    Qualquer valor que não dê para formatar com segurança volta como foi
+    gravado — a exportação nunca falha por causa da apresentação.
+    """
     if value == "":
         return None
     number = _decimal(value)
     if number is None:
         return value
     if unit == "BRL":
-        return f"R$ {_number_br(number)}"
-    if unit == "%":
-        return f"{_number_br(number)}%"
+        text = _number_br(abs(number), 2)
+        if text is None:
+            return value
+        return f"-R$ {text}" if number < 0 and text.strip("0,.") else f"R$ {text}"
     if unit == "days":
         days = _number_br(number, 0)
+        if days is None:
+            return value
         return f"{days} dia" if days == "1" else f"{days} dias"
     if unit == "score_0_100":
-        places = 0 if number == number.to_integral_value() else 1
-        return f"{_number_br(number, places)}/100"
-    if unit:
-        return f"{_number_br(number)} {unit}"
-    return _number_br(number)
+        score = _number_br(number, 0 if number == number.to_integral_value() else 1)
+        return f"{score}/100" if score is not None else value
+    text = _number_br(number, _places(number))
+    if text is None:
+        return value
+    if unit == "%":
+        return f"{text}%"
+    return f"{text} {unit}" if unit else text
 
 
 def _format_metric(metric: ReportMetric | None) -> str | None:
@@ -612,8 +659,9 @@ def _section(number: int, title: str, styles: dict[str, ParagraphStyle], note: s
     return table
 
 
-def _callout(content: list[Flowable], *, border: Any, background: Any) -> Table:
-    table = Table([[content]], colWidths=[_CONTENT_WIDTH])
+def _callout(content: list[Flowable], *, border: Any, background: Any) -> LongTable:
+    """Caixa arredondada; um item por linha para poder quebrar entre páginas."""
+    table = LongTable([[item] for item in content], colWidths=[_CONTENT_WIDTH], splitByRow=1)
     table.setStyle(
         TableStyle(
             [
@@ -622,8 +670,10 @@ def _callout(content: list[Flowable], *, border: Any, background: Any) -> Table:
                 ("ROUNDEDCORNERS", [5, 5, 5, 5]),
                 ("LEFTPADDING", (0, 0), (-1, -1), 10),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 0), (-1, -1), 7),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+                ("TOPPADDING", (0, 0), (-1, 0), 7),
+                ("BOTTOMPADDING", (0, -1), (-1, -1), 8),
             ]
         )
     )
@@ -639,12 +689,13 @@ def _diagnostic_card(diagnostic: ReportDiagnostic, styles: dict[str, ParagraphSt
                 [
                     Paragraph(
                         f'<font color="{accent_hex}">{_safe_text(label.upper())}</font>'
-                        f"  ·  {_safe_text(diagnostic.code)}",
+                        f"  ·  {_safe_text(_clip(diagnostic.code, 120))}",
                         styles["card_kicker"],
                     ),
-                    Paragraph(_safe_text(diagnostic.message), styles["card_title"]),
+                    Paragraph(_safe_text(_clip(diagnostic.message)), styles["card_title"]),
                     Paragraph(
-                        f"<b>Ação recomendada:</b> {_safe_text(diagnostic.recommended_action)}",
+                        "<b>Ação recomendada:</b> "
+                        f"{_safe_text(_clip(diagnostic.recommended_action))}",
                         styles["body"],
                     ),
                 ]
@@ -753,11 +804,20 @@ def _energy_section(
             ]
         )
 
+    production = _decimal(_metric_value(metrics, "cycle_production_kwh"))
+    injected = _decimal(_metric_value(metrics, "injected_kwh"))
+    # Produção vem do inversor e injeção da fatura: quando a injeção supera a
+    # produção (descasamento entre medidores), o motor zera o autoconsumo e a
+    # barra mostraria mais energia "destinada" do que a produzida. Em vez de
+    # desenhar uma partição falsa, omitimos a barra e dizemos por quê.
+    production_split_consistent = not (
+        production is not None and injected is not None and injected > production
+    )
     splits = [
         split
         for split in (
             _split(
-                "Para onde foi a produção",
+                "Destino da produção",
                 metrics,
                 (
                     (
@@ -767,7 +827,9 @@ def _energy_section(
                     ),
                     ("injected_kwh", "Injetada na rede", _NAVY),
                 ),
-            ),
+            )
+            if production_split_consistent
+            else None,
             _split(
                 "De onde veio o consumo",
                 metrics,
@@ -781,7 +843,26 @@ def _energy_section(
     ]
     if splits:
         flowables.extend([Spacer(1, 5 * mm), _SplitBars(splits)])
+    if not production_split_consistent:
+        flowables.extend(
+            [
+                Spacer(1, 2 * mm),
+                Paragraph(
+                    "Destino da produção não desenhado: a energia injetada registrada na "
+                    f"fatura ({_safe_text(_format_metric(_find(metrics, 'injected_kwh')))}) "
+                    "supera a produção lida do inversor "
+                    f"({_safe_text(_format_metric(_find(metrics, 'cycle_production_kwh')))}), "
+                    "o que indica diferença de medição entre as duas fontes.",
+                    styles["caption"],
+                ),
+            ]
+        )
     return flowables
+
+
+def _metric_value(metrics: Sequence[ReportMetric], key: str) -> str | None:
+    metric = _find(metrics, key)
+    return metric.value if metric is not None else None
 
 
 def _split(
@@ -867,7 +948,7 @@ class _QualityRow(Flowable):
                 accent, fill, text = (
                     _ORANGE,
                     colors.HexColor(theme.WARNING_HEX),
-                    _number_br(number, 0),
+                    _number_br(number, 0) or (metric.value if metric else "?"),
                 )
             canvas.setFillColor(fill)
             canvas.setStrokeColor(_BORDER)
@@ -894,7 +975,7 @@ def _actions_block(
     if report.priority_actions:
         items: list[Flowable] = [Paragraph("<b>Ações prioritárias</b>", styles["card_title"])]
         items.extend(
-            Paragraph(f"{index}. {_safe_text(action)}", styles["body"])
+            Paragraph(f"{index}. {_safe_text(_clip(action))}", styles["body"])
             for index, action in enumerate(report.priority_actions, start=1)
         )
         flowables.append(_callout(items, border=_NAVY, background=_SURFACE_SOFT))
@@ -908,21 +989,12 @@ def _trend_block(report: MonthlyEnergyReport, styles: dict[str, ParagraphStyle])
     for metric in trend.metrics:
         unit = _TREND_UNIT_LABELS.get(metric.unit, metric.unit)
         delta = _decimal(metric.absolute_delta)
-        places = (
-            0
-            if delta is not None
-            and delta == delta.to_integral_value()
-            and metric.unit == "score_points"
-            else 2
-        )
-        delta_text = (
-            f"{'+' if delta > 0 else ''}{_number_br(delta, places)} {unit}"
-            if delta is not None
-            else f"{metric.absolute_delta} {unit}"
-        )
-        percent = _decimal(metric.percent_delta) if metric.percent_delta else None
+        signed_delta = _signed_br(delta, _places(delta)) if delta is not None else None
+        delta_text = f"{signed_delta or metric.absolute_delta} {unit}"
+        percent = _decimal(metric.percent_delta)
+        signed_percent = _signed_br(percent, _places(percent)) if percent is not None else None
         percent_text = (
-            f"{'+' if percent > 0 else ''}{_number_br(percent)}%" if percent is not None else "—"
+            f"{signed_percent}%" if signed_percent is not None else (metric.percent_delta or "—")
         )
         rows.append(
             [
@@ -955,9 +1027,11 @@ def _trend_block(report: MonthlyEnergyReport, styles: dict[str, ParagraphStyle])
     return flowables
 
 
-def _audit_unit(unit: str | None) -> str:
+def _audit_unit(unit: str | None, value: str) -> str:
     if unit is None:
         return ""
+    if unit == "days" and value == "1":
+        return "dia"
     return _AUDIT_UNIT_LABELS.get(unit, unit)
 
 
@@ -969,7 +1043,7 @@ def _audit_rows(
             _cell(metric.label, styles, strong=True),
             _cell(
                 (
-                    f"{metric.value} {_audit_unit(metric.unit)}".strip()
+                    f"{metric.value} {_audit_unit(metric.unit, metric.value)}".strip()
                     if metric.value != ""
                     else "(indisponível)"
                 ),
@@ -1000,7 +1074,7 @@ def _audit_block(report: MonthlyEnergyReport, styles: dict[str, ParagraphStyle])
     )
     return [
         Paragraph(
-            "Valores exatos gravados no relatório deste ciclo, sem arredondamento, "
+            "Valores exatamente como gravados no relatório deste ciclo, "
             "com a natureza e a origem de cada um.",
             styles["caption"],
         ),
@@ -1109,7 +1183,7 @@ def build_monthly_report_pdf(report: MonthlyEnergyReport) -> bytes:
         section("Síntese do ciclo"),
         gap,
         _callout(
-            [Paragraph(_safe_text(report.headline), styles["headline"])],
+            [Paragraph(_safe_text(_clip(report.headline)), styles["headline"])],
             border=_BORDER,
             background=_SURFACE_SOFT,
         ),

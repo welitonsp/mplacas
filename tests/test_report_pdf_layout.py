@@ -12,7 +12,13 @@ import uuid
 
 from pypdf import PdfReader
 
-from mplacas.reports.contract import MonthlyEnergyReport, ReportMetric
+from mplacas.reports.contract import (
+    MonthlyEnergyReport,
+    MonthlyReportTrend,
+    ReportDiagnostic,
+    ReportMetric,
+    ReportTrendMetric,
+)
 from mplacas.reports.export.pdf_renderer import _format_value, _month_label
 from mplacas.reports.exporters import build_monthly_report_pdf
 
@@ -61,7 +67,7 @@ def _text(pdf_bytes: bytes) -> str:
 def test_cards_use_brazilian_format_and_annex_keeps_exact_value() -> None:
     text = _text(build_monthly_report_pdf(_report(savings="412.37", reason="")))
 
-    assert "14.625,40 kWh" in text  # cartão: leitura em pt-BR
+    assert "14.625,4 kWh" in text  # cartão: pt-BR, sem inventar casa decimal
     assert "14625.4 kWh" in text  # anexo: valor exato gravado, sem arredondar
     assert "R$ 412,37" in text
     assert "Setembro/2026" in text
@@ -74,7 +80,7 @@ def test_unavailable_savings_shows_reason_and_never_a_number() -> None:
     )
 
     assert "Indisponível" in text
-    assert "tarifa da concessionária não está cadastrada" in text
+    assert "não registra a tarifa com impostos" in text
     assert "R$" not in text
 
 
@@ -84,23 +90,84 @@ def test_unknown_unavailability_code_is_shown_verbatim() -> None:
     assert "NEW_REASON_CODE" in text
 
 
-def test_snapshot_without_new_metrics_still_renders() -> None:
-    report = _report(savings="412.37", reason="")
-    legacy = MonthlyEnergyReport(
-        **{
-            **{field: getattr(report, field) for field in report.__dataclass_fields__},
-            "metrics": (_metric("production_kwh", "610.00", "kWh"),),
-            "quality": (),
-        }
+def _with(report: MonthlyEnergyReport, **changes: object) -> MonthlyEnergyReport:
+    fields = {field: getattr(report, field) for field in report.__dataclass_fields__}
+    fields.update(changes)
+    return MonthlyEnergyReport(**fields)  # type: ignore[arg-type]
+
+
+def test_snapshot_without_metrics_renders_placeholders_instead_of_failing() -> None:
+    empty = _with(_report(savings="412.37", reason=""), metrics=(), quality=())
+
+    text = _text(build_monthly_report_pdf(empty))
+
+    assert "—" in text  # cartões sem valor mostram travessão, não zero
+    assert "kWh" not in text
+
+
+def test_split_bars_never_print_derived_percentages() -> None:
+    # Nenhuma métrica em % no snapshot: qualquer "%" no PDF seria um derivado.
+    text = _text(build_monthly_report_pdf(_report(savings="412.37", reason="")))
+
+    assert "Destino da produção" in text
+    assert "Injetada na rede" in text
+    assert "Importada da rede" in text
+    assert "%" not in text
+
+
+def test_production_split_is_omitted_when_injection_exceeds_production() -> None:
+    base = _report(savings="412.37", reason="")
+    mismatched = _with(
+        base,
+        metrics=tuple(
+            _metric("injected_kwh", "20000", "kWh", "MEASURED") if m.key == "injected_kwh" else m
+            for m in base.metrics
+        ),
     )
 
-    pdf_bytes = build_monthly_report_pdf(legacy)
+    text = _text(build_monthly_report_pdf(mismatched))
 
-    assert pdf_bytes.startswith(b"%PDF-")
-    assert "não recalcula indicadores" in _text(pdf_bytes)
+    assert "não desenhado" in text
+    assert "Consumida na própria casa" not in text
+    assert "De onde veio o consumo" in text  # a outra barra continua coerente
+
+
+def test_snapshot_text_is_escaped_and_hostile_values_do_not_break_export() -> None:
+    report = _with(
+        _report(savings="1e400", reason=""),
+        headline="<b>sem negrito</b> & " + "x" * 5000,
+        diagnostics=(
+            ReportDiagnostic(
+                code="WEIRD",
+                severity="SOMETHING_NEW",
+                message="m" * 6000,
+                recommended_action="<font color='red'>a</font>",
+            ),
+        ),
+        trend=MonthlyReportTrend(
+            current_reference_month="2026-09",
+            previous_reference_month="2026-08",
+            metrics=(
+                ReportTrendMetric("production", "Produção", "NaN", "kWh", None, "SIDEWAYS"),
+                ReportTrendMetric("x", "Outro", "1E+999999", "kWh", "0.004", "UP"),
+            ),
+            diagnostics=(),
+        ),
+    )
+
+    text = _text(build_monthly_report_pdf(report))
+
+    assert "<b>sem negrito</b> &" in text
+    assert "<font color='red'>a</font>" in text
+    assert "1e400" in text  # grande demais para formatar: volta como gravado
+    assert "1E+999999 kWh" in text
 
 
 def test_format_value_is_presentation_only() -> None:
+    assert _format_value("33.9", "%") == "33,9%"  # não inventa a segunda casa
+    assert _format_value("-12.3", "BRL") == "-R$ 12,30"
+    assert _format_value("-0.001", "kWh") == "0,00 kWh"  # nunca "-0,00"
+    assert _format_value("1e400", "kWh") == "1e400"
     assert _format_value("", "kWh") is None
     assert _format_value("1452.8", "BRL") == "R$ 1.452,80"
     assert _format_value("33.97", "%") == "33,97%"
