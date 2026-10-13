@@ -78,6 +78,48 @@ _SCEE_READING_DATES_RE = re.compile(
     r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+(\d{1,3})\s+\d{2}/\d{2}/\d{4}"
 )
 
+# --- Layout "segunda via" (Equatorial Goiás, a partir de set/2026) -----------
+# No PDF baixado como segunda via, o pypdf devolve as colunas em outra ordem e
+# sem separador entre algumas delas. Exemplos reais (texto normalizado):
+#   "17/08/2026 15/09/2026 set/2026"            -> leitura anterior, atual, ref.
+#   "16/10/202629 fornecimento"                 -> próxima leitura + nº de dias
+#   "consumo scee kwh 0,787589221,00 5,51 174,06 19% 33,07 0,613030174,06"
+#      preço c/ tributos (6 casas) GRUDADO na quantidade (2 casas), PIS/COFINS,
+#      base ICMS, alíquota, ICMS, tarifa s/ tributos (6 casas) grudada no valor.
+# Como os números vêm colados, a separação depende das casas decimais fixas.
+# Por isso o resultado é conferido (preço × quantidade = base do ICMS; datas ×
+# dias) e, se não fechar, a fatura é RECUSADA — nunca cai nos padrões
+# genéricos, que leriam "0,787589221" como consumo.
+_GLUED_LAYOUT_MARKER_RE = re.compile(r"consumo scee kwh -?\d+,\d{6}\d")
+_GLUED_DATES_RE = re.compile(
+    r"(\d{2}/\d{2}/\d{4}) (\d{2}/\d{2}/\d{4}) ([a-z]{3}/\d{4})"
+)
+_GLUED_DAYS_RE = re.compile(r"\d{2}/\d{2}/\d{4}(\d{1,3}) fornecimento")
+_GLUED_CONSUMPTION_RE = re.compile(
+    r"consumo scee kwh (\d+,\d{6})([\d\.]+,\d{2}) -?[\d\.]+,\d{2} ([\d\.]+,\d{2}) "
+    r"\d+% -?[\d\.]+,\d{2} (\d+,\d{6})[\d\.]+,\d{2}"
+)
+_GLUED_INJECTION_RE = re.compile(
+    r"inje[cç][aã]o scee[^k]*kwh (\d+,\d{6})([\d\.]+,\d{2}) "
+)
+_GLUED_WIRE_B_RE = re.compile(r"parc injet s/desc[^k]*kwh (\d+,\d{6})[\d\.]+,\d{2} ")
+# Tolerância do produto preço × quantidade contra a base impressa: arredondamento
+# de centavos da própria fatura.
+_GLUED_PRODUCT_TOLERANCE_BRL = Decimal("0.02")
+_GLUED_LAYOUT_FIELDS = frozenset(
+    {
+        "reference_month",
+        "cycle_start",
+        "cycle_end",
+        "billed_days",
+        "imported_kwh",
+        "injected_kwh",
+        "tariff_with_taxes_brl_kwh",
+        "tariff_without_taxes_brl_kwh",
+        "wire_b_tariff_brl_kwh",
+    }
+)
+
 _SCEE_GENERATION_CYCLE_RE = re.compile(
     r"gera[cç][aã]o\s+ciclo\s*\(\d+/\d+\)\s+kwh:\s*uc[^:]+:\s*([\d\.]+,\d+)",
     re.IGNORECASE,
@@ -96,6 +138,13 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
 
     values: dict[str, str] = {}
 
+    # Campos que, no layout "segunda via", só podem vir do extrator dedicado:
+    # os padrões genéricos leriam colunas coladas como um número só.
+    layout_only: frozenset[str] = frozenset()
+    if _GLUED_LAYOUT_MARKER_RE.search(normalized):
+        values.update(_extract_glued_layout(normalized))
+        layout_only = _GLUED_LAYOUT_FIELDS
+
     # SCEE reading-dates line (anterior atual dias próxima) gives start/end/days
     # from a single pattern. The "current" date is the meter-read date (exclusive),
     # so cycle_end = current_read - 1 day to keep inclusive domain semantics.
@@ -107,7 +156,7 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
         values["billed_days"] = str(billed_days)
 
     for field, patterns in _FIELD_PATTERNS.items():
-        if field in values:
+        if field in values or field in layout_only:
             continue
         match = next(
             (
@@ -167,6 +216,46 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
     )
     bill.validate()
     return bill
+
+
+def _extract_glued_layout(normalized: str) -> dict[str, str]:
+    """Campos do layout "segunda via"; recusa (BillParseError) se algo não fechar."""
+    dates = _GLUED_DATES_RE.search(normalized)
+    days = _GLUED_DAYS_RE.search(normalized)
+    consumption = _GLUED_CONSUMPTION_RE.search(normalized)
+    injection = _GLUED_INJECTION_RE.search(normalized)
+    if not (dates and days and consumption and injection):
+        raise BillParseError("second-copy layout detected but mandatory columns not found")
+
+    try:
+        start = datetime.strptime(dates.group(1), "%d/%m/%Y").date()
+        reading_date = datetime.strptime(dates.group(2), "%d/%m/%Y").date()
+    except ValueError as exc:
+        raise BillParseError("second-copy layout has invalid reading dates") from exc
+    billed_days = int(days.group(1))
+    if (reading_date - start).days != billed_days:
+        raise BillParseError("second-copy layout reading dates do not match billed days")
+
+    price = _parse_decimal(consumption.group(1))
+    quantity = _parse_decimal(consumption.group(2))
+    icms_base = _parse_decimal(consumption.group(3))
+    if abs(price * quantity - icms_base) > _GLUED_PRODUCT_TOLERANCE_BRL:
+        raise BillParseError("second-copy layout consumption columns are inconsistent")
+
+    values = {
+        "reference_month": dates.group(3),
+        "cycle_start": start.isoformat(),
+        "cycle_end": (reading_date - timedelta(days=1)).isoformat(),
+        "billed_days": str(billed_days),
+        "imported_kwh": consumption.group(2),
+        "injected_kwh": injection.group(2),
+        "tariff_with_taxes_brl_kwh": consumption.group(1),
+        "tariff_without_taxes_brl_kwh": consumption.group(4),
+    }
+    wire_b = _GLUED_WIRE_B_RE.search(normalized)
+    if wire_b:
+        values["wire_b_tariff_brl_kwh"] = wire_b.group(1)
+    return values
 
 
 def _extract_scee_reading_dates(normalized: str) -> tuple[date, date, int] | None:

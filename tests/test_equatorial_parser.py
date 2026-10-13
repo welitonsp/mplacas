@@ -233,3 +233,96 @@ def test_shifted_wire_b_column_is_rejected_at_intake_not_persisted() -> None:
 
     with pytest.raises(ValueError, match="wire_b_tariff_brl_kwh"):
         parse_equatorial_bill_text(shifted)
+
+
+# ---------------------------------------------------------------------------
+# Layout "segunda via" (set/2026): colunas coladas pelo pypdf
+# ---------------------------------------------------------------------------
+
+# Reprodução anonimizada do texto extraído (pypdf) da segunda via real de
+# set/2026: nome, endereço, CPF, nº da UC e códigos trocados por marcadores,
+# ordem e "cola" entre colunas preservadas exatamente como no PDF.
+SECOND_COPY_BILL_TEXT = """
+16/10/202629
+FORNECIMENTO
+CONSUMO SCEE kWh 0,787589221,00 5,51 174,06 19% 33,07 0,613030174,06
+BENEFÍCIO TARIFÁRIO BRUTO SCEE 96,78
+INJEÇÃO SCEE - GD II 2 kWh 0,787589221,00 -5,51 -174,06 19% -33,07 0,613030-174,06
+PARC INJET S/DESC - 28,57% - GD II 2 kWh 0,175126221,00 0,17512638,70
+PARC INJET S/ DESC RET 21/22 1,31
+CONTRIB. ILUM. PÚBLICA - MUNICIPAL 30,21
+ITENS FINANCEIROS
+BENEFÍCIO TARIFÁRIO LÍQUIDO SCEE -96,78
+Tipo de fornecimento: MONOFÁSICO
+NOME DO TITULAR
+CNPJ/CPF: XXX.XXX.XXX-XX
+R$**********70,22 10/10/2026
+17/08/2026 15/09/2026
+SET/2026
+INFORMAÇÕES DO SCEE: GERAÇÃO CICLO (9/2026) KWH: UC XXXXXXXXXXX : 235,00,
+EXCEDENTE RECEBIDO KWH: UC XXXXXXXXXXX : 14,00, CRÉDITO RECEBIDO KWH 221,00,
+SALDO KWH: 17,98, SALDO A EXPIRAR EM 30 DIAS KWH: 0,00,
+ENERGIA ATIVA - KWH 05649 221XXXXXXXX 05428 1,000000ÚNICO
+TOTAL 0,00 0,00 0,0070,22
+Equatorial Goiás Distribuidora de Energia S.A.
+"""
+
+
+def test_second_copy_layout_extracts_every_field() -> None:
+    bill = parse_equatorial_bill_text(SECOND_COPY_BILL_TEXT)
+
+    assert bill.reference_month == "2026-09"
+    assert bill.cycle_start.isoformat() == "2026-08-17"
+    assert bill.cycle_end.isoformat() == "2026-09-14"  # leitura 15/09 é exclusiva
+    assert bill.billed_days == 29
+    assert bill.imported_kwh == Decimal("221.00")  # e não 0,787589221
+    assert bill.injected_kwh == Decimal("221.00")
+    assert bill.compensated_kwh == Decimal("221.00")
+    assert bill.credit_balance_kwh == Decimal("17.98")
+    assert bill.total_amount_brl == Decimal("70.22")
+    assert bill.public_lighting_brl == Decimal("30.21")
+    assert bill.generation_cycle_kwh == Decimal("235.00")
+    assert bill.tariff_with_taxes_brl_kwh == Decimal("0.787589")
+    assert bill.tariff_without_taxes_brl_kwh == Decimal("0.613030")
+    assert bill.wire_b_tariff_brl_kwh == Decimal("0.175126")
+
+
+def test_second_copy_layout_rejects_inconsistent_price_times_quantity() -> None:
+    # Preço adulterado: 0,887589 × 221 ≠ 174,06 → a separação das colunas não é
+    # confiável, então a fatura é recusada em vez de gravada.
+    tampered = SECOND_COPY_BILL_TEXT.replace(
+        "CONSUMO SCEE kWh 0,787589221,00", "CONSUMO SCEE kWh 0,887589221,00"
+    )
+
+    with pytest.raises(BillParseError, match="inconsistent"):
+        parse_equatorial_bill_text(tampered)
+
+
+def test_second_copy_layout_rejects_dates_that_do_not_match_days() -> None:
+    tampered = SECOND_COPY_BILL_TEXT.replace("16/10/202629", "16/10/202630")
+
+    with pytest.raises(BillParseError, match="billed days"):
+        parse_equatorial_bill_text(tampered)
+
+
+def test_second_copy_layout_missing_column_fails_closed_instead_of_falling_back() -> None:
+    # Sem a linha de injeção, os padrões genéricos poderiam "achar" algo errado;
+    # o layout detectado exige o extrator dedicado e recusa.
+    without_injection = "\n".join(
+        line for line in SECOND_COPY_BILL_TEXT.splitlines() if not line.startswith("INJEÇÃO")
+    )
+
+    with pytest.raises(BillParseError, match="second-copy"):
+        parse_equatorial_bill_text(without_injection)
+
+
+def test_second_copy_layout_without_wire_b_line_leaves_it_empty() -> None:
+    without_wire_b = "\n".join(
+        line
+        for line in SECOND_COPY_BILL_TEXT.splitlines()
+        if not line.startswith("PARC INJET S/DESC")
+    )
+
+    bill = parse_equatorial_bill_text(without_wire_b)
+
+    assert bill.wire_b_tariff_brl_kwh is None  # nunca um valor colado lido pela metade
