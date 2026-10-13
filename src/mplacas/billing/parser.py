@@ -97,12 +97,21 @@ _GLUED_DATES_RE = re.compile(
 _GLUED_DAYS_RE = re.compile(r"\d{2}/\d{2}/\d{4}(\d{1,3}) fornecimento")
 _GLUED_CONSUMPTION_RE = re.compile(
     r"consumo scee kwh (\d+,\d{6})([\d\.]+,\d{2}) -?[\d\.]+,\d{2} ([\d\.]+,\d{2}) "
-    r"\d+% -?[\d\.]+,\d{2} (\d+,\d{6})[\d\.]+,\d{2}"
+    r"\d+% -?[\d\.]+,\d{2} (\d+,\d{6})([\d\.]+,\d{2})(?![\d,])"
 )
+# Injeção: preço, quantidade e base (negativa) — a base é conferida como no consumo.
 _GLUED_INJECTION_RE = re.compile(
-    r"inje[cç][aã]o scee[^k]*kwh (\d+,\d{6})([\d\.]+,\d{2}) "
+    r"inje[cç][aã]o scee[^k]*kwh (\d+,\d{6})([\d\.]+,\d{2}) -?[\d\.]+,\d{2} "
+    r"-([\d\.]+,\d{2}) "
 )
-_GLUED_WIRE_B_RE = re.compile(r"parc injet s/desc[^k]*kwh (\d+,\d{6})[\d\.]+,\d{2} ")
+_GLUED_INJECTION_LINE_RE = re.compile(r"inje[cç][aã]o scee[^k]{0,40}kwh")
+_GLUED_CONSUMPTION_LINE_RE = re.compile(r"consumo scee kwh")
+# Fio B: tarifa, quantidade, tarifa repetida e valor da linha (= tarifa × qtd).
+_GLUED_WIRE_B_RE = re.compile(
+    r"parc injet s/ ?desc[^k]{0,40}kwh (\d+,\d{6})([\d\.]+,\d{2}) "
+    r"(\d+,\d{6})([\d\.]+,\d{2})(?![\d,])"
+)
+_GLUED_WIRE_B_LINE_RE = re.compile(r"parc injet s/ ?desc[^k]{0,40}kwh")
 # Tolerância do produto preço × quantidade contra a base impressa: arredondamento
 # de centavos da própria fatura.
 _GLUED_PRODUCT_TOLERANCE_BRL = Decimal("0.02")
@@ -148,7 +157,7 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
     # SCEE reading-dates line (anterior atual dias próxima) gives start/end/days
     # from a single pattern. The "current" date is the meter-read date (exclusive),
     # so cycle_end = current_read - 1 day to keep inclusive domain semantics.
-    scee_dates = _extract_scee_reading_dates(normalized)
+    scee_dates = None if layout_only else _extract_scee_reading_dates(normalized)
     if scee_dates:
         cycle_start, cycle_end, billed_days = scee_dates
         values["cycle_start"] = cycle_start.isoformat()
@@ -219,7 +228,19 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
 
 
 def _extract_glued_layout(normalized: str) -> dict[str, str]:
-    """Campos do layout "segunda via"; recusa (BillParseError) se algo não fechar."""
+    """Campos do layout "segunda via"; recusa (BillParseError) se algo não fechar.
+
+    Cada número separado pelas casas decimais é conferido contra outro número
+    impresso na mesma fatura. Em billing, recusar é sempre preferível a gravar
+    um valor plausível porém errado.
+    """
+    # Uma única linha de consumo e uma de injeção: com mais de uma (postos
+    # tarifários, GD I + GD II), ler só a primeira subestimaria o total.
+    if len(_GLUED_CONSUMPTION_LINE_RE.findall(normalized)) != 1:
+        raise BillParseError("second-copy layout must have exactly one consumption line")
+    if len(_GLUED_INJECTION_LINE_RE.findall(normalized)) != 1:
+        raise BillParseError("second-copy layout must have exactly one injection line")
+
     dates = _GLUED_DATES_RE.search(normalized)
     days = _GLUED_DAYS_RE.search(normalized)
     consumption = _GLUED_CONSUMPTION_RE.search(normalized)
@@ -235,25 +256,50 @@ def _extract_glued_layout(normalized: str) -> dict[str, str]:
     billed_days = int(days.group(1))
     if (reading_date - start).days != billed_days:
         raise BillParseError("second-copy layout reading dates do not match billed days")
+    cycle_end = reading_date - timedelta(days=1)
+
+    # O mês de referência impresso precisa ser o do fim do ciclo ou o da
+    # leitura atual; outro mês/ano gravaria a fatura no ciclo errado.
+    reference_month = _parse_reference_month_scee(dates.group(3))
+    allowed_months = {cycle_end.strftime("%Y-%m"), reading_date.strftime("%Y-%m")}
+    if reference_month not in allowed_months:
+        raise BillParseError("second-copy layout reference month does not match reading dates")
 
     price = _parse_decimal(consumption.group(1))
     quantity = _parse_decimal(consumption.group(2))
     icms_base = _parse_decimal(consumption.group(3))
-    if abs(price * quantity - icms_base) > _GLUED_PRODUCT_TOLERANCE_BRL:
+    line_value = _parse_decimal(consumption.group(5))
+    if abs(price * quantity - icms_base) > _GLUED_PRODUCT_TOLERANCE_BRL or line_value != icms_base:
         raise BillParseError("second-copy layout consumption columns are inconsistent")
+
+    injection_price = _parse_decimal(injection.group(1))
+    injection_quantity = _parse_decimal(injection.group(2))
+    injection_base = _parse_decimal(injection.group(3))
+    if abs(injection_price * injection_quantity - injection_base) > _GLUED_PRODUCT_TOLERANCE_BRL:
+        raise BillParseError("second-copy layout injection columns are inconsistent")
 
     values = {
         "reference_month": dates.group(3),
         "cycle_start": start.isoformat(),
-        "cycle_end": (reading_date - timedelta(days=1)).isoformat(),
+        "cycle_end": cycle_end.isoformat(),
         "billed_days": str(billed_days),
         "imported_kwh": consumption.group(2),
         "injected_kwh": injection.group(2),
         "tariff_with_taxes_brl_kwh": consumption.group(1),
         "tariff_without_taxes_brl_kwh": consumption.group(4),
     }
-    wire_b = _GLUED_WIRE_B_RE.search(normalized)
-    if wire_b:
+
+    # Fio B é opcional, mas se a linha existe ela tem de ser lida e conferida —
+    # nunca deixada para os padrões genéricos nem ignorada em silêncio.
+    if _GLUED_WIRE_B_LINE_RE.search(normalized):
+        wire_b = _GLUED_WIRE_B_RE.search(normalized)
+        if not wire_b or wire_b.group(1) != wire_b.group(3):
+            raise BillParseError("second-copy layout wire B line could not be read safely")
+        wire_rate = _parse_decimal(wire_b.group(1))
+        wire_quantity = _parse_decimal(wire_b.group(2))
+        wire_value = _parse_decimal(wire_b.group(4))
+        if abs(wire_rate * wire_quantity - wire_value) > _GLUED_PRODUCT_TOLERANCE_BRL:
+            raise BillParseError("second-copy layout wire B columns are inconsistent")
         values["wire_b_tariff_brl_kwh"] = wire_b.group(1)
     return values
 
