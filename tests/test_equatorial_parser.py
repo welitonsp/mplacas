@@ -233,3 +233,203 @@ def test_shifted_wire_b_column_is_rejected_at_intake_not_persisted() -> None:
 
     with pytest.raises(ValueError, match="wire_b_tariff_brl_kwh"):
         parse_equatorial_bill_text(shifted)
+
+
+# ---------------------------------------------------------------------------
+# Layout "segunda via" (set/2026): colunas coladas pelo pypdf
+# ---------------------------------------------------------------------------
+
+# Reprodução anonimizada do texto extraído (pypdf) da segunda via real de
+# set/2026: nome, endereço, CPF, nº da UC e códigos trocados por marcadores,
+# ordem e "cola" entre colunas preservadas exatamente como no PDF.
+SECOND_COPY_BILL_TEXT = """
+16/10/202629
+FORNECIMENTO
+CONSUMO SCEE kWh 0,787589221,00 5,51 174,06 19% 33,07 0,613030174,06
+BENEFÍCIO TARIFÁRIO BRUTO SCEE 96,78
+INJEÇÃO SCEE - GD II 2 kWh 0,787589221,00 -5,51 -174,06 19% -33,07 0,613030-174,06
+PARC INJET S/DESC - 28,57% - GD II 2 kWh 0,175126221,00 0,17512638,70
+PARC INJET S/ DESC RET 21/22 1,31
+CONTRIB. ILUM. PÚBLICA - MUNICIPAL 30,21
+ITENS FINANCEIROS
+BENEFÍCIO TARIFÁRIO LÍQUIDO SCEE -96,78
+Tipo de fornecimento: MONOFÁSICO
+NOME DO TITULAR
+CNPJ/CPF: XXX.XXX.XXX-XX
+R$**********70,22 10/10/2026
+17/08/2026 15/09/2026
+SET/2026
+INFORMAÇÕES DO SCEE: GERAÇÃO CICLO (9/2026) KWH: UC XXXXXXXXXXX : 235,00,
+EXCEDENTE RECEBIDO KWH: UC XXXXXXXXXXX : 14,00, CRÉDITO RECEBIDO KWH 221,00,
+SALDO KWH: 17,98, SALDO A EXPIRAR EM 30 DIAS KWH: 0,00,
+ENERGIA ATIVA - KWH 01234 221XXXXXXXX 01013 1,000000ÚNICO
+TOTAL 0,00 0,00 0,0070,22
+Equatorial Goiás Distribuidora de Energia S.A.
+"""
+
+
+def test_second_copy_layout_extracts_every_field() -> None:
+    bill = parse_equatorial_bill_text(SECOND_COPY_BILL_TEXT)
+
+    assert bill.reference_month == "2026-09"
+    assert bill.cycle_start.isoformat() == "2026-08-17"
+    assert bill.cycle_end.isoformat() == "2026-09-14"  # leitura 15/09 é exclusiva
+    assert bill.billed_days == 29
+    assert bill.imported_kwh == Decimal("221.00")  # e não 0,787589221
+    assert bill.injected_kwh == Decimal("221.00")
+    assert bill.compensated_kwh == Decimal("221.00")
+    assert bill.credit_balance_kwh == Decimal("17.98")
+    assert bill.total_amount_brl == Decimal("70.22")
+    assert bill.public_lighting_brl == Decimal("30.21")
+    assert bill.generation_cycle_kwh == Decimal("235.00")
+    assert bill.tariff_with_taxes_brl_kwh == Decimal("0.787589")
+    assert bill.tariff_without_taxes_brl_kwh == Decimal("0.613030")
+    assert bill.wire_b_tariff_brl_kwh == Decimal("0.175126")
+
+
+def test_second_copy_layout_rejects_inconsistent_price_times_quantity() -> None:
+    # Preço adulterado: 0,887589 × 221 ≠ 174,06 → a separação das colunas não é
+    # confiável, então a fatura é recusada em vez de gravada.
+    tampered = SECOND_COPY_BILL_TEXT.replace(
+        "CONSUMO SCEE kWh 0,787589221,00", "CONSUMO SCEE kWh 0,887589221,00"
+    )
+
+    with pytest.raises(BillParseError, match="inconsistent"):
+        parse_equatorial_bill_text(tampered)
+
+
+def test_second_copy_layout_rejects_dates_that_do_not_match_days() -> None:
+    tampered = SECOND_COPY_BILL_TEXT.replace("16/10/202629", "16/10/202630")
+
+    with pytest.raises(BillParseError, match="billed days"):
+        parse_equatorial_bill_text(tampered)
+
+
+def test_second_copy_layout_missing_column_fails_closed_instead_of_falling_back() -> None:
+    # Sem a linha de injeção, os padrões genéricos poderiam "achar" algo errado;
+    # o layout detectado exige o extrator dedicado e recusa.
+    without_injection = "\n".join(
+        line for line in SECOND_COPY_BILL_TEXT.splitlines() if not line.startswith("INJEÇÃO")
+    )
+
+    with pytest.raises(BillParseError, match="second-copy"):
+        parse_equatorial_bill_text(without_injection)
+
+
+def test_second_copy_layout_without_wire_b_line_leaves_it_empty() -> None:
+    without_wire_b = "\n".join(
+        line
+        for line in SECOND_COPY_BILL_TEXT.splitlines()
+        if not line.startswith("PARC INJET S/DESC")
+    )
+
+    bill = parse_equatorial_bill_text(without_wire_b)
+
+    assert bill.wire_b_tariff_brl_kwh is None  # nunca um valor colado lido pela metade
+
+
+def _replace_line(text: str, prefix: str, new_line: str) -> str:
+    return "\n".join(
+        new_line if line.startswith(prefix) else line for line in text.splitlines()
+    )
+
+
+def test_second_copy_layout_rejects_injection_quantity_that_does_not_match_its_value() -> None:
+    # Revisão de billing: antes, "100,00" passava e gravava injeção errada.
+    tampered = _replace_line(
+        SECOND_COPY_BILL_TEXT,
+        "INJEÇÃO SCEE",
+        "INJEÇÃO SCEE - GD II 2 kWh 0,787589100,00 -5,51 -174,06 19% -33,07 0,613030-174,06",
+    )
+
+    with pytest.raises(BillParseError, match="injection columns are inconsistent"):
+        parse_equatorial_bill_text(tampered)
+
+
+@pytest.mark.parametrize(
+    "duplicated_prefix",
+    ["CONSUMO SCEE", "INJEÇÃO SCEE"],
+)
+def test_second_copy_layout_refuses_more_than_one_consumption_or_injection_line(
+    duplicated_prefix: str,
+) -> None:
+    lines = SECOND_COPY_BILL_TEXT.splitlines()
+    original = next(line for line in lines if line.startswith(duplicated_prefix))
+    duplicated = SECOND_COPY_BILL_TEXT.replace(original, original + "\n" + original)
+
+    with pytest.raises(BillParseError, match="exactly one"):
+        parse_equatorial_bill_text(duplicated)
+
+
+@pytest.mark.parametrize("wrong_reference", ["OUT/2026", "SET/2020", "JUL/2026"])
+def test_second_copy_layout_rejects_reference_month_outside_the_reading_dates(
+    wrong_reference: str,
+) -> None:
+    tampered = SECOND_COPY_BILL_TEXT.replace("\nSET/2026\n", f"\n{wrong_reference}\n")
+
+    with pytest.raises(BillParseError, match="reference month"):
+        parse_equatorial_bill_text(tampered)
+
+
+def test_second_copy_layout_rejects_wire_b_line_that_cannot_be_read_safely() -> None:
+    # Linha de Fio B presente, mas valor da linha não bate com tarifa × qtd:
+    # recusa, em vez de cair no padrão genérico ou virar None em silêncio.
+    tampered = _replace_line(
+        SECOND_COPY_BILL_TEXT,
+        "PARC INJET S/DESC",
+        "PARC INJET S/DESC - 28,57% - GD II 2 kWh 0,175126221,00 0,17512699,99",
+    )
+
+    with pytest.raises(BillParseError, match="wire B"):
+        parse_equatorial_bill_text(tampered)
+
+
+def test_second_copy_layout_reads_wire_b_with_spaced_label() -> None:
+    spaced = _replace_line(
+        SECOND_COPY_BILL_TEXT,
+        "PARC INJET S/DESC",
+        "PARC INJET S/ DESC - 28,57% - GD II 2 kWh 0,175126221,00 0,17512638,70",
+    )
+
+    assert parse_equatorial_bill_text(spaced).wire_b_tariff_brl_kwh == Decimal("0.175126")
+
+
+def test_second_copy_layout_handles_thousands_separator_in_quantity() -> None:
+    # 0,787589 × 1.221 = 961,65 ; 0,175126 × 1.221 = 213,83
+    big = _replace_line(
+        SECOND_COPY_BILL_TEXT,
+        "CONSUMO SCEE",
+        "CONSUMO SCEE kWh 0,7875891.221,00 15,51 961,65 19% 182,71 0,613030961,65",
+    )
+    big = _replace_line(
+        big,
+        "INJEÇÃO SCEE",
+        "INJEÇÃO SCEE - GD II 2 kWh 0,7875891.221,00 -15,51 -961,65 19% -182,71 0,613030-961,65",
+    )
+    big = _replace_line(
+        big,
+        "PARC INJET S/DESC",
+        "PARC INJET S/DESC - 28,57% - GD II 2 kWh 0,1751261.221,00 0,175126213,83",
+    )
+
+    bill = parse_equatorial_bill_text(big)
+
+    assert bill.imported_kwh == Decimal("1221.00")
+    assert bill.injected_kwh == Decimal("1221.00")
+
+
+def test_old_layout_does_not_trigger_second_copy_extractor() -> None:
+    text = _real_scee_bill_with_tariff_text(
+        month="jul",
+        cycle_start="17/06/2026",
+        reading_date="17/07/2026",
+        billed_days="30",
+        next_month="08",
+        with_taxes="0,814841",
+    )
+
+    bill = parse_equatorial_bill_text(text)
+
+    assert bill.reference_month == "2026-07"
+    assert bill.imported_kwh == Decimal("278.00")
+    assert bill.tariff_with_taxes_brl_kwh == Decimal("0.814841")
