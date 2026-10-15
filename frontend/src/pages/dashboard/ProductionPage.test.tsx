@@ -92,9 +92,13 @@ describe('ProductionPage — resumo operacional', () => {
     const section = title.closest('section') as HTMLElement
 
     expect(within(section).getByText('Última produção')).toBeInTheDocument()
+    // "40 kWh" aparece duas vezes no resumo: no tile "Última produção" e na
+    // régua do card "Produção de … vs. esperada", que fica ao lado dele.
     await waitFor(() => {
-      expect(within(section).getByText('40 kWh')).toBeInTheDocument()
+      expect(within(section).getAllByText('40 kWh')).toHaveLength(2)
     })
+    expect(within(section).getByText('Produção de 30/07/2026 vs. esperada')).toBeInTheDocument()
+    expect(within(section).getByText(/esperado 44 kWh/)).toBeInTheDocument()
     expect(within(section).getByText('Dado de 30/07/2026')).toBeInTheDocument()
     // Rótulo alinhado com o do gráfico (ProductionHistoryChart, T5): não
     // afirma expectativa daquele dia específico, e a unidade "kWh/dia" deixa
@@ -257,7 +261,7 @@ describe('ProductionPage — seção "Produção por ciclo de faturamento"', () 
   })
 })
 
-describe('ProductionPage — "Histórico de produção" e "Produção do último dia vs. esperada"', () => {
+describe('ProductionPage — "Histórico de produção" e o card do último dia no resumo operacional', () => {
   it('mostra o esqueleto de carregamento enquanto /energy/anomalies/latest está em voo, depois o conteúdo real (sucesso)', async () => {
     vi.resetModules()
     let resolveFetch: (value: Response) => void = () => {}
@@ -272,7 +276,9 @@ describe('ProductionPage — "Histórico de produção" e "Produção do último
     const historySection = historyTitle.closest('section') as HTMLElement
     expect(historySection.querySelector('.animate-pulse')).toBeInTheDocument()
 
-    const latestTitle = await screen.findByText('Produção do último dia vs. esperada')
+    // O card do último dia mora no resumo operacional, ao lado de "Última
+    // produção" — o esqueleto dele aparece ali enquanto o histórico carrega.
+    const latestTitle = await screen.findByRole('heading', { level: 2, name: 'Resumo operacional' })
     const latestSection = latestTitle.closest('section') as HTMLElement
     expect(latestSection.querySelector('.animate-pulse')).toBeInTheDocument()
 
@@ -282,8 +288,9 @@ describe('ProductionPage — "Histórico de produção" e "Produção do último
     // actual_production_kwh=40 e expected_production_kwh=44 — mesma escala
     // diária.
     await waitFor(() => {
-      expect(within(latestSection).getByText('40 kWh')).toBeInTheDocument()
+      expect(within(latestSection).getByText('Produção de 30/07/2026 vs. esperada')).toBeInTheDocument()
     })
+    expect(latestSection.querySelector('.animate-pulse')).not.toBeInTheDocument()
     expect(within(latestSection).getByText(/esperado 44 kWh/)).toBeInTheDocument()
     await waitFor(() => {
       expect(within(historySection).getByRole('slider')).toBeInTheDocument()
@@ -311,10 +318,8 @@ describe('ProductionPage — "Histórico de produção" e "Produção do último
 
     // A produção do último dia também reflete a ausência de dado (mesmo
     // recurso `anomalies`), sem card de erro próprio — estado indisponível
-    // explícito, não um alerta duplicado. `getByRole('heading', ...)` evita
-    // ambiguidade: o texto se repete (título da seção + fallback interno do
-    // `LatestDailyProductionCard`, que reusa o mesmo rótulo).
-    const latestTitle = screen.getByRole('heading', { level: 2, name: 'Produção do último dia vs. esperada' })
+    // explícito, não um alerta duplicado. O card fica no resumo operacional.
+    const latestTitle = screen.getByRole('heading', { level: 2, name: 'Resumo operacional' })
     const latestSection = latestTitle.closest('section') as HTMLElement
     expect(
       within(latestSection).getByText(
@@ -508,5 +513,39 @@ describe('ProductionPage — gráfico diário logo abaixo do resumo operacional'
     const leitura = screen.getByRole('heading', { level: 2, name: 'Leitura do período' }).closest('section') as HTMLElement
     expect(within(leitura).getByText(/^Últimos \d+ dias em foco$/)).toBeInTheDocument()
     expect(within(leitura).getByText('Precisa de janela anterior de 30 dias para comparar tendência.')).toBeInTheDocument()
+  })
+})
+
+describe('ProductionPage — leitura do período em orientação paisagem', () => {
+  it('com rendimento disponível, "Produção diária" e o rendimento médio ficam lado a lado num grid de duas colunas', async () => {
+    vi.resetModules()
+    installApiMock({
+      fetchAnomalyHistory: vi.fn(async () =>
+        jsonResponse({ ...anomalyPayload, period_yield_kwh_per_kwh_m2: '4.1', period_yield_sample_days: 87 })
+      ),
+    })
+
+    await renderProductionPage()
+
+    const leitura = (await screen.findByRole('heading', { level: 2, name: 'Leitura do período' })).closest('section') as HTMLElement
+    const diaria = within(leitura).getByText('Produção diária')
+    const rendimento = within(leitura).getByText(/Rendimento médio da janela analisada \(87 dias\)/)
+    const grid = diaria.closest('[class*="lg:grid-cols-[minmax"]') as HTMLElement
+    expect(grid).not.toBeNull()
+    expect(grid).toContainElement(rendimento)
+    // Os dois cards são filhos diretos do mesmo grid (colunas irmãs).
+    expect(grid.children).toHaveLength(2)
+  })
+
+  it('sem rendimento (sem irradiância), "Produção diária" ocupa a largura toda — sem coluna vazia', async () => {
+    vi.resetModules()
+    installApiMock()
+
+    await renderProductionPage()
+
+    const leitura = (await screen.findByRole('heading', { level: 2, name: 'Leitura do período' })).closest('section') as HTMLElement
+    const diaria = within(leitura).getByText('Produção diária')
+    expect(diaria.closest('[class*="lg:grid-cols-[minmax"]')).toBeNull()
+    expect(within(leitura).queryByText(/Rendimento médio da janela analisada/)).not.toBeInTheDocument()
   })
 })
