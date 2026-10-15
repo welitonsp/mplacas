@@ -141,6 +141,9 @@
   --color-chart-reference: #3e5c76;
   --color-chart-track: #e8edf2;
   --color-chart-grid: #edf1f5;
+  /* Barra de dia SEM esperado para comparar, quando divide o gráfico com dias
+     avaliados: azul vivo, distinto do verde de "Normal". Antes era cinza. */
+  --color-chart-unassessed: #2f7fd1;
   /* Dado quantitativo que NÃO é severidade (irradiância, rendimento). */
   --color-data-secondary: #6941c6;
   --color-data-secondary-light: #f2eefc;
@@ -212,6 +215,7 @@
   --color-chart-reference: #8fa6bc;
   --color-chart-track: #1f2b37;
   --color-chart-grid: #1b2632;
+  --color-chart-unassessed: #6fa8ec;
   --color-data-secondary: #b9a4f5;
   --color-data-secondary-light: #221b3a;
   --color-energy-solar: #2bc79b;

@@ -204,6 +204,42 @@ describe('ProductionHistoryChart — dia sem expectativa (level: null)', () => {
 
     expect(screen.getByText(/Desempenho: 40%/)).toBeInTheDocument()
   })
+
+  // Caso real da usina sem baseline sazonal: TODOS os dias sem expectativa.
+  // Antes as barras saíam cinza (`bg-gray-400`) e o gráfico inteiro ficava
+  // "sem cor". Agora são produção medida, na cor de produção da marca.
+  it('com todos os dias sem expectativa, as barras usam a cor de produção (não cinza) e a legenda diz "Produção medida"', () => {
+    const allUnassessed: AnomalyDailyPoint[] = [
+      buildDaily('2026-07-01', 10, { expected_production_kwh: null, level: null, deviation_percent: null }),
+      buildDaily('2026-07-02', 20, { expected_production_kwh: null, level: null, deviation_percent: null }),
+    ]
+
+    render(<ProductionHistoryChart daily={allUnassessed} currentStreakDays={0} />)
+
+    const bars = screen.getAllByTestId('production-history-bar')
+    expect(bars).toHaveLength(2)
+    for (const bar of bars) {
+      expect(bar.className).toMatch(/bg-\[var\(--color-energy-solar\)\]/)
+      expect(bar.className).not.toMatch(/bg-gray-/)
+    }
+    expect(screen.getByText('Produção medida (sem esperado para comparar)')).toBeInTheDocument()
+    // Sem dia avaliado, não há normal/atenção/anomalia para legendar.
+    expect(screen.queryByText('Anomalia/crítico')).not.toBeInTheDocument()
+  })
+
+  it('misturando dias avaliados e não avaliados, o dia sem expectativa usa azul próprio — nunca cinza nem o verde de "Normal"', () => {
+    const mixed: AnomalyDailyPoint[] = [
+      buildDaily('2026-07-01', 10, { expected_production_kwh: null, level: null, deviation_percent: null }),
+      buildDaily('2026-07-02', 20),
+    ]
+
+    render(<ProductionHistoryChart daily={mixed} currentStreakDays={0} />)
+
+    const [semEsperado, normal] = screen.getAllByTestId('production-history-bar')
+    expect(semEsperado.className).toMatch(/bg-\[var\(--color-chart-unassessed\)\]/)
+    expect(semEsperado.className).not.toMatch(/bg-gray-/)
+    expect(normal.className).toMatch(/--color-success/)
+  })
 })
 
 describe('ProductionHistoryChart — eixo Y e linha de referência esperada (baseline sazonal)', () => {
