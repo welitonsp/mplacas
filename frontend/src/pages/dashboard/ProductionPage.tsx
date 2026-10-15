@@ -14,7 +14,7 @@ import { LatestDailyProductionCard } from '../../components/LatestDailyProductio
 import { EmptyState } from '../../components/EmptyState'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { MonthlyProductionSection } from '../../components/MonthlyProductionSection'
-import { ProductionHistorySection } from '../../components/ProductionHistorySection'
+import { ProductionHistorySection, useProductionPeriodPreference } from '../../components/ProductionHistorySection'
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 import { PageHeader } from '../../components/PageHeader'
@@ -79,6 +79,9 @@ export function ProductionPage() {
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
   // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
   const headingRef = useModuleTitle('Produção')
+  // Um período (7/30/90 dias) para o gráfico do topo e para a leitura do
+  // período mais abaixo — os dois mostram sempre o mesmo recorte.
+  const [periodDays, setPeriodDays] = useProductionPeriodPreference()
 
   // `null` (`.data`) = ainda carregando `/energy/anomalies/latest`. Contrato
   // 200 sempre (campos por dia `null` sem expectativa) — este recurso NÃO
@@ -246,6 +249,22 @@ export function ProductionPage() {
         </div>
       </section>
 
+      {/* Gráfico diário logo abaixo do resumo (pedido do dono do produto):
+          é a primeira coisa que o operador quer ver depois dos números — a
+          produção dia a dia contra o esperado. Só o gráfico sobe; a leitura
+          do período e o rendimento continuam mais abaixo. */}
+      <section className="mb-6">
+        <SectionTitle as="h2">Histórico de produção</SectionTitle>
+        <ProductionHistorySection
+          layout="chart"
+          anomalyState={anomalyState}
+          expectedProduction={expectedProduction}
+          onRetry={anomalies.refetch}
+          periodDays={periodDays}
+          onPeriodChange={setPeriodDays}
+        />
+      </section>
+
       <section className="mb-6" aria-label="Diagnóstico de produção do período">
         <ProductionDiagnosticPanel anomalyState={anomalyState} expectedProduction={expectedProduction} />
       </section>
@@ -283,14 +302,17 @@ export function ProductionPage() {
           )}
         </section>
 
-        {/* Histórico de produção diária — bloco maior (gráfico), ao lado da
-            produção real vs. esperada. */}
+        {/* Leitura do período (média, desempenho, tendência, gatilho) e
+            rendimento — o gráfico em si subiu para logo abaixo do resumo. */}
         <section className="md:col-span-4 lg:col-span-8 2xl:col-span-9">
-          <SectionTitle as="h2">Histórico de produção</SectionTitle>
           <ProductionHistorySection
+            layout="details"
+            detailsHeading="Leitura do período"
             anomalyState={anomalyState}
             expectedProduction={expectedProduction}
             onRetry={anomalies.refetch}
+            periodDays={periodDays}
+            onPeriodChange={setPeriodDays}
           />
         </section>
 

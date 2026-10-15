@@ -468,3 +468,45 @@ describe('ProductionPage — re-busca dados quando a usina ativa muda (ADR-069, 
     })
   })
 })
+
+describe('ProductionPage — gráfico diário logo abaixo do resumo operacional', () => {
+  it('a seção seguinte ao resumo é o gráfico de produção diária, sozinho, com o seletor de período', async () => {
+    vi.resetModules()
+    installApiMock()
+
+    await renderProductionPage()
+
+    const resumo = (await screen.findByRole('heading', { level: 2, name: 'Resumo operacional' })).closest('section') as HTMLElement
+    const historico = screen.getByRole('heading', { level: 2, name: 'Histórico de produção' }).closest('section') as HTMLElement
+
+    // Ordem no DOM: resumo → gráfico diário → diagnóstico.
+    expect(resumo.nextElementSibling).toBe(historico)
+    await waitFor(() => {
+      expect(within(historico).getByRole('slider')).toBeInTheDocument()
+    })
+    expect(within(historico).getByRole('group', { name: 'Filtrar histórico diário' })).toBeInTheDocument()
+    // Só o gráfico: a leitura do período (média, tendência, gatilho) fica abaixo.
+    expect(within(historico).queryByText('Tendência do recorte')).not.toBeInTheDocument()
+    const leitura = screen.getByRole('heading', { level: 2, name: 'Leitura do período' }).closest('section') as HTMLElement
+    expect(within(leitura).getByText('Tendência do recorte')).toBeInTheDocument()
+    expect(within(leitura).queryByRole('slider')).not.toBeInTheDocument()
+  })
+
+  it('o seletor do gráfico muda também a leitura do período (um recorte só)', async () => {
+    vi.resetModules()
+    installApiMock()
+
+    await renderProductionPage()
+
+    const historico = (await screen.findByRole('heading', { level: 2, name: 'Histórico de produção' })).closest('section') as HTMLElement
+    await waitFor(() => {
+      expect(within(historico).getByRole('button', { name: '30 dias' })).toBeInTheDocument()
+    })
+    fireEvent.click(within(historico).getByRole('button', { name: '30 dias' }))
+
+    expect(within(historico).getByRole('button', { name: '30 dias' })).toHaveAttribute('aria-pressed', 'true')
+    const leitura = screen.getByRole('heading', { level: 2, name: 'Leitura do período' }).closest('section') as HTMLElement
+    expect(within(leitura).getByText(/^Últimos \d+ dias em foco$/)).toBeInTheDocument()
+    expect(within(leitura).getByText('Precisa de janela anterior de 30 dias para comparar tendência.')).toBeInTheDocument()
+  })
+})

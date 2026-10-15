@@ -126,11 +126,11 @@
      no CSS — o texto herdava a cor do pai por acaso. Agora resolvem. */
   --color-text: var(--color-text-primary);
   --color-text-muted: var(--color-text-secondary);
-  --color-danger: #d64545;
+  --color-danger: #e5484d;
   --color-danger-light: #fdecec;
   --color-success: #009c77;
   --color-success-light: #dff3ec;
-  --color-warning: #c9720a;
+  --color-warning: #e06c1f;
   --color-warning-light: #fdf0dd;
   /* Variantes de TEXTO da severidade: os preenchimentos acima não passam 4,5:1
      como texto no tema claro. Use `-text` em `color`, o resto em fundo/barra. */
