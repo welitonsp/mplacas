@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { ChevronDown, LogOut, Moon, Sun } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { BrandMark } from './BrandMark'
 import { PlantSelector } from './PlantSelector'
@@ -46,40 +47,6 @@ function describeThemeControl(preference: ThemePreference, effectiveTheme: Theme
       ? `Sistema (aplicando ${EFFECTIVE_THEME_LABELS[effectiveTheme]})`
       : themePreferenceLabel(preference)
   return `Tema: ${current}. Clique para mudar para ${themePreferenceLabel(next).toLowerCase()}.`
-}
-
-// Sol/lua em ~20x20, `currentColor`, sem biblioteca de ícones — mesmo padrão
-// de SVG inline de `BrandMark`. `aria-hidden`: o texto acessível do controle
-// vive inteiro no `aria-label`/`title` do botão, o ícone é só reforço visual.
-function SunIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="10" cy="10" r="4" fill="currentColor" />
-      <g stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-        <line x1="10" y1="1.5" x2="10" y2="4" />
-        <line x1="10" y1="16" x2="10" y2="18.5" />
-        <line x1="1.5" y1="10" x2="4" y2="10" />
-        <line x1="16" y1="10" x2="18.5" y2="10" />
-        <line x1="5.76" y1="5.76" x2="3.99" y2="3.99" />
-        <line x1="14.24" y1="5.76" x2="16.01" y2="3.99" />
-        <line x1="5.76" y1="14.24" x2="3.99" y2="16.01" />
-        <line x1="14.24" y1="14.24" x2="16.01" y2="16.01" />
-      </g>
-    </svg>
-  )
-}
-
-function MoonIcon({ className }: { className?: string }) {
-  const maskId = useId()
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
-      <mask id={maskId}>
-        <rect width="20" height="20" fill="white" />
-        <circle cx="13.5" cy="7" r="5" fill="black" />
-      </mask>
-      <circle cx="10" cy="10" r="7.5" fill="currentColor" mask={`url(#${maskId})`} />
-    </svg>
-  )
 }
 
 // Casca do app (Frente S) — substitui `DashboardHeader`. O nome/seletor de
@@ -157,31 +124,31 @@ export function AppHeader() {
 
   const themeControlLabel = describeThemeControl(themePreference, effectiveTheme)
 
-  return (
-    <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[var(--color-surface)]/90 shadow-sm backdrop-blur-md">
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-3 sm:h-16 sm:px-6 lg:px-8 2xl:max-w-[96rem]">
-        <div className="flex items-center gap-3 min-w-0">
-          <BrandMark className="h-7 w-auto text-[var(--color-brand-primary)] flex-shrink-0" />
-          <span className="hidden text-lg font-semibold tracking-tight text-gray-950 sm:inline">Mplacas</span>
-          <PlantSelector />
-        </div>
+  // Cabeçalho (ADR-077, etapa 2): superfície lisa, marca uma vez só, usina ao
+  // lado, controles "fantasma" à direita — sem pílulas com sombra e sem o
+  // efeito de levantar no hover, que fazia cada botão parecer um cartão.
+  const ghostButton =
+    'flex min-h-[44px] items-center justify-center rounded-[var(--radius-control)] text-[var(--color-text-secondary)] transition-colors duration-150 hover:bg-[var(--color-gray-100)] hover:text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none'
 
-        <div className="flex items-center gap-2">
-          {/* Ícone único, sempre visível: sol/lua conforme o tema efetivo
-              atual. Substitui a lista "Aparência" que ficava escondida
-              dentro do menu do avatar — o usuário não precisa mais abrir
-              nenhum menu para ver ou mudar o tema. */}
+  return (
+    <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:gap-4 sm:px-6 lg:px-8 2xl:max-w-[96rem]">
+        <BrandMark className="shrink-0 text-[var(--color-text-primary)] [&>span:last-child]:hidden sm:[&>span:last-child]:inline" />
+        <span aria-hidden="true" className="hidden h-6 w-px bg-[var(--color-border)] sm:block" />
+        <PlantSelector />
+
+        <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
             onClick={handleThemeToggle}
             aria-label={themeControlLabel}
             title={themeControlLabel}
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-surface)] hover:text-gray-900 hover:shadow-md active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none"
+            className={`${ghostButton} min-w-[44px]`}
           >
             {effectiveTheme === 'light' ? (
-              <SunIcon className="h-5 w-5" />
+              <Sun aria-hidden="true" className="h-5 w-5" strokeWidth={1.9} />
             ) : (
-              <MoonIcon className="h-5 w-5" />
+              <Moon aria-hidden="true" className="h-5 w-5" strokeWidth={1.9} />
             )}
           </button>
 
@@ -194,48 +161,40 @@ export function AppHeader() {
               aria-controls={menuId}
               aria-label={username ? `Menu de ${username}` : 'Menu do usuário'}
               onClick={() => setMenuOpen((prev) => !prev)}
-              className="flex min-h-[44px] items-center gap-2 rounded-full border border-gray-200 bg-gray-50 pl-1.5 pr-2 text-sm text-gray-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-surface)] hover:text-gray-900 hover:shadow-md active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none"
+              className={`${ghostButton} gap-2 pl-1.5 pr-2`}
             >
               <span
                 aria-hidden="true"
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-brand-primary-light)] text-[var(--color-brand-primary)] text-sm font-semibold"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-brand-primary-light)] text-sm font-bold text-[var(--color-brand-primary)]"
               >
                 {operatorInitial}
               </span>
-              <span className="hidden min-w-0 text-left md:block">
-                <span className="block text-[12px] font-semibold leading-4 text-[var(--color-text-muted)]">
-                  Operador
-                </span>
-                <span className="block max-w-[10rem] truncate text-sm font-semibold leading-5 text-gray-900">
-                  {operatorDisplayName}
-                </span>
+              <span className="hidden max-w-[12rem] truncate text-sm font-semibold text-[var(--color-text-primary)] md:block">
+                {operatorDisplayName}
               </span>
-              <span aria-hidden="true" className={`text-xs transition-transform duration-150 ${menuOpen ? 'rotate-180' : ''}`}>
-                ▾
-              </span>
+              <ChevronDown
+                aria-hidden="true"
+                className={`h-4 w-4 transition-transform duration-150 motion-reduce:transition-none ${menuOpen ? 'rotate-180' : ''}`}
+              />
             </button>
 
             {menuOpen && (
               <div
                 id={menuId}
                 role="menu"
-                className="absolute right-0 mt-2 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-[var(--color-surface)] shadow-xl"
+                className="absolute right-0 mt-2 w-72 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_16px_40px_-12px_rgb(0_0_0_/_0.28)]"
               >
-                <div className="border-b border-gray-100 bg-[var(--color-surface-subtle)] px-4 py-3">
-                  <p className="text-[12px] font-semibold text-[var(--color-text-muted)]">
-                    Sessão operacional
-                  </p>
-                  <div className="mt-2 flex items-center gap-3">
-                    <span
-                      aria-hidden="true"
-                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-brand-primary-light)] text-sm font-bold text-[var(--color-brand-primary)]"
-                    >
-                      {operatorInitial}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-gray-950">{operatorDisplayName}</p>
-                      <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">Acesso seguro ao painel</p>
-                    </div>
+                <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3.5">
+                  <span
+                    aria-hidden="true"
+                    className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-brand-primary-light)] text-sm font-bold text-[var(--color-brand-primary)]"
+                  >
+                    {operatorInitial}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs text-[var(--color-text-secondary)]">Sessão operacional</p>
+                    <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{operatorDisplayName}</p>
+                    <p className="text-xs text-[var(--color-text-secondary)]">Acesso seguro ao painel</p>
                   </div>
                 </div>
 
@@ -247,29 +206,9 @@ export function AppHeader() {
                       setMenuOpen(false)
                       logout()
                     }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-gray-700 transition-colors duration-150 hover:bg-gray-50 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand-primary)]"
+                    className="flex min-h-[44px] w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-semibold text-[var(--color-text-primary)] transition-colors duration-150 hover:bg-[var(--color-gray-100)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand-primary)]"
                   >
-                    <svg
-                      viewBox="0 0 20 20"
-                      aria-hidden="true"
-                      className="h-4 w-4 flex-shrink-0"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M8 5.5V4a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5a2 2 0 0 1-2-2v-1.5"
-                        stroke="currentColor"
-                        strokeWidth="1.7"
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d="M3 10h8m0 0L8.25 7.25M11 10l-2.75 2.75"
-                        stroke="currentColor"
-                        strokeWidth="1.7"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    <LogOut aria-hidden="true" className="h-4 w-4 flex-shrink-0" />
                     Sair do painel
                   </button>
                 </div>

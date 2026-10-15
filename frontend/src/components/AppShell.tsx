@@ -42,17 +42,14 @@ export function AppShell({ children, subnav }: { children: ReactNode; subnav?: R
 
       <AppHeader />
 
-      <div className="mx-auto grid max-w-7xl gap-4 px-3 py-4 sm:gap-6 sm:px-6 sm:py-6 md:py-8 lg:grid-cols-[16rem_minmax(0,1fr)] lg:px-8 xl:grid-cols-[17rem_minmax(0,1fr)] xl:gap-8 2xl:max-w-[96rem]">
-        {/* `min-w-0` é obrigatório aqui, não estilo. Item de grid tem
-            `min-width: auto` por padrão, ou seja, não encolhe abaixo da largura
-            intrínseca do conteúdo. O `subnav` é um scroller horizontal de 4
-            itens com `min-w-[9.25rem]` cada: sem isto ele reivindicava ~720 px e
-            esticava a PÁGINA INTEIRA para 750 px numa viewport de 412 px — o
-            painel inteiro rolava de lado no celular.
+      <div className="mx-auto grid max-w-7xl gap-6 px-4 pb-28 pt-6 sm:px-6 sm:pt-8 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-10 lg:px-8 lg:pb-12 xl:grid-cols-[15rem_minmax(0,1fr)] 2xl:max-w-[96rem]">
+        {/* `min-w-0` é obrigatório: item de grid não encolhe abaixo da largura
+            intrínseca do conteúdo (achado V-7, `e2e/overflow.spec.ts`).
 
-            O `<main>` ao lado já tinha a mesma proteção; o `<aside>` ficou sem.
-            Medido com `e2e/overflow.spec.ts` (achado V-7). */}
-        <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
+            No celular o `DashboardNav` é uma barra FIXA no rodapé; o `pb-28`
+            do container reserva o espaço para ela não cobrir o fim da página.
+            A partir de `lg` vira lista lateral, presa no topo ao rolar. */}
+        <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
           {subnav}
         </aside>
 

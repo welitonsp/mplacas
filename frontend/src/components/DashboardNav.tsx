@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router'
+import { NavLink } from 'react-router'
 import {
   DASHBOARD_FINANCIAL_PATH,
   DASHBOARD_OVERVIEW_PATH,
@@ -6,193 +6,64 @@ import {
   DASHBOARD_TECHNICAL_PATH,
 } from '../routes'
 
-type NavIcon = 'overview' | 'production' | 'financial' | 'technical'
-type NavKey = NavIcon
+import { Activity, LayoutGrid, Wallet, Zap, type LucideIcon } from 'lucide-react'
 
-const NAV_ITEMS: ReadonlyArray<{ key: NavKey; to: string; label: string; description: string; icon: NavIcon }> = [
-  {
-    key: 'overview',
-    to: DASHBOARD_OVERVIEW_PATH,
-    label: 'Visão Geral',
-    description: 'Cockpit executivo',
-    icon: 'overview',
-  },
-  {
-    key: 'production',
-    to: DASHBOARD_PRODUCTION_PATH,
-    label: 'Produção',
-    description: 'Geração e desvios',
-    icon: 'production',
-  },
-  {
-    key: 'financial',
-    to: DASHBOARD_FINANCIAL_PATH,
-    label: 'Financeiro',
-    description: 'Economia e retorno',
-    icon: 'financial',
-  },
-  {
-    key: 'technical',
-    to: DASHBOARD_TECHNICAL_PATH,
-    label: 'Técnico',
-    description: 'Causas e performance',
-    icon: 'technical',
-  },
+type NavKey = 'overview' | 'production' | 'financial' | 'technical'
+
+const NAV_ITEMS: ReadonlyArray<{ key: NavKey; to: string; label: string; icon: LucideIcon }> = [
+  { key: 'overview', to: DASHBOARD_OVERVIEW_PATH, label: 'Visão Geral', icon: LayoutGrid },
+  { key: 'production', to: DASHBOARD_PRODUCTION_PATH, label: 'Produção', icon: Zap },
+  { key: 'financial', to: DASHBOARD_FINANCIAL_PATH, label: 'Financeiro', icon: Wallet },
+  { key: 'technical', to: DASHBOARD_TECHNICAL_PATH, label: 'Técnico', icon: Activity },
 ]
 
-const MODULE_CONTEXT: Record<NavKey, { question: string; focus: string; deliverable: string }> = {
-  overview: {
-    question: 'A usina exige decisão agora?',
-    focus: 'Comece pelo estado geral da usina.',
-    deliverable: 'Decisão executiva, confiança dos dados e plano de ação.',
-  },
-  production: {
-    question: 'A geração caiu ou está dentro do esperado?',
-    focus: 'Valide geração, pior dia e recorrência.',
-    deliverable: 'Plano operacional para queda, normalidade ou dados incompletos.',
-  },
-  financial: {
-    question: 'A usina está protegendo caixa e retorno?',
-    focus: 'Conecte energia com economia e retorno.',
-    deliverable: 'Próxima decisão financeira para ROI, payback, CAPEX e créditos.',
-  },
-  technical: {
-    question: 'Qual causa técnica atacar primeiro?',
-    focus: 'Investigue PR, perdas, degradação e disponibilidade.',
-    deliverable: 'Plano de investigação por causa provável, evidência e impacto.',
-  },
-}
-
-function NavItemIcon({ name }: { name: NavIcon }) {
-  const paths: Record<NavIcon, string> = {
-    overview: 'M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-13h6V4h-6v3Z',
-    production: 'M13 2 5.5 13h6L11 22l7.5-12h-6L13 2Z',
-    financial: 'M4 7.5h14.5A1.5 1.5 0 0 1 20 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5v-11A1.5 1.5 0 0 1 5.5 5H17 M16 12h4v3h-4a1.5 1.5 0 0 1 0-3Z',
-    technical: 'M12 3v3M12 18v3M3 12h3M18 12h3M5.64 5.64l2.12 2.12M16.24 16.24l2.12 2.12M18.36 5.64l-2.12 2.12M7.76 16.24l-2.12 2.12 M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
-  }
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d={paths[name]} />
-    </svg>
-  )
-}
-
-// Sub-navegação dos módulos do painel (ADR-072, Decisão 1/4). Além dos links,
-// a sidebar funciona como roteiro executivo: mostra pergunta-chave,
-// foco de leitura, entregável do módulo ativo e rotina recomendada.
+// Navegação dos módulos (ADR-072; visual ADR-077, etapa 2).
+//
+// UM único <nav>, dois arranjos por CSS: no celular/tablet é uma barra fixa no
+// rodapé com ícone sobre o rótulo (padrão Material/iOS — o polegar alcança, e
+// os 4 módulos ficam sempre visíveis); a partir de `lg` vira a lista lateral.
+// Um só conjunto de links evita leitor de tela ouvir a navegação duas vezes.
+//
+// Saiu o "roteiro executivo" (pergunta-chave, foco, entregável, rotina de
+// leitura): texto fixo repetido em toda tela, que empurrava o conteúdo e
+// competia com o título do módulo.
 export function DashboardNav() {
-  const { pathname } = useLocation()
-  const activeItem =
-    NAV_ITEMS.find((item) => pathname === item.to || pathname.startsWith(`${item.to}/`)) ?? NAV_ITEMS[0]
-  const activeContext = MODULE_CONTEXT[activeItem.key]
-
   return (
     <nav
       aria-label="Seções do painel"
-      className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)] pb-[env(safe-area-inset-bottom)] lg:static lg:border-0 lg:bg-transparent lg:pb-0"
     >
-      <div className="hidden border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-4 lg:block">
-        <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
-          Operação solar
-        </p>
-        <p className="mt-2 text-sm font-semibold text-gray-950">
-          Roteiro executivo do painel
-        </p>
-        <p className="mt-1 text-xs leading-5 text-gray-600">
-          Leia primeiro a decisão, depois valide produção, retorno e causa.
-        </p>
-      </div>
-
-      <div className="p-2">
-        <div className="flex gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
-          {NAV_ITEMS.map((item) => (
+      <ul className="mx-auto grid max-w-xl grid-cols-4 gap-1 px-2 py-1.5 lg:max-w-none lg:grid-cols-1 lg:gap-1 lg:p-0">
+        {NAV_ITEMS.map(({ key, to, label, icon: Icon }) => (
+          <li key={key}>
             <NavLink
-              key={item.to}
-              to={item.to}
-              aria-label={item.label}
+              to={to}
+              aria-label={label}
               className={({ isActive }) =>
-                `group flex min-h-[52px] min-w-[9.25rem] items-center gap-2.5 whitespace-nowrap rounded-xl border px-2.5 text-sm font-semibold transition-all duration-200 active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none sm:min-h-[56px] sm:min-w-[10.5rem] sm:gap-3 sm:px-3 lg:min-w-0 ${
+                `group flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl text-[12px] font-semibold transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none lg:min-h-[44px] lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:text-[15px] ${
                   isActive
-                    ? 'border-[var(--color-brand-primary)] bg-[var(--color-brand-primary-light)] text-[var(--color-brand-primary)] shadow-sm'
-                    : 'border-transparent text-gray-600 hover:-translate-y-0.5 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-900 hover:shadow-sm'
+                    ? 'text-[var(--color-brand-primary)] lg:bg-[var(--color-brand-primary-light)]'
+                    : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] lg:font-medium lg:hover:bg-[var(--color-gray-100)]'
                 }`
               }
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-surface)] text-current ring-1 ring-inset ring-[var(--color-border)] transition-transform duration-200 group-hover:scale-105 motion-reduce:transition-none sm:h-9 sm:w-9">
-                <NavItemIcon name={item.icon} />
-              </span>
-              <span className="min-w-0 text-left">
-                <span className="block truncate">{item.label}</span>
-                <span className="block truncate text-xs font-medium text-gray-500 group-aria-[current=page]:text-[var(--color-brand-primary)]/80">
-                  {item.description}
-                </span>
-              </span>
+              {({ isActive }) => (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-150 motion-reduce:transition-none lg:h-auto lg:w-auto lg:bg-transparent ${
+                      isActive ? 'bg-[var(--color-brand-primary-light)]' : ''
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" strokeWidth={isActive ? 2.2 : 1.9} />
+                  </span>
+                  <span>{label}</span>
+                </>
+              )}
             </NavLink>
-          ))}
-        </div>
-      </div>
-
-      <div
-        role="group"
-        aria-label="Contexto do módulo ativo"
-        className="hidden border-t border-[var(--color-border)] px-4 py-4 lg:block"
-      >
-        <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
-          Agora: {activeItem.label}
-        </p>
-        <div className="mt-3 space-y-3">
-          <div>
-            <p className="text-xs font-semibold text-gray-500">
-              Pergunta-chave
-            </p>
-            <p className="mt-1 text-sm font-semibold leading-5 text-gray-950">
-              {activeContext.question}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-500">
-              Foco de leitura
-            </p>
-            <p className="mt-1 text-xs leading-5 text-gray-600">
-              {activeContext.focus}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-500">
-              Entregável
-            </p>
-            <p className="mt-1 text-xs leading-5 text-gray-600">
-              {activeContext.deliverable}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="hidden border-t border-[var(--color-border)] px-4 py-4 lg:block">
-        <p className="text-xs font-semibold text-gray-500">
-          Rotina de leitura
-        </p>
-        <ol aria-label="Rotina executiva de leitura" className="mt-3 space-y-2">
-          {NAV_ITEMS.map((item, index) => {
-            const isActive = item.key === activeItem.key
-            return (
-              <li key={item.key} className="flex items-center gap-2 text-xs text-gray-600">
-                <span
-                  aria-hidden="true"
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                    isActive
-                      ? 'bg-[var(--color-brand-primary)] text-[var(--color-on-brand)]'
-                      : 'bg-gray-100 text-gray-500'
-                  }`}
-                >
-                  {index + 1}
-                </span>
-                <span className={isActive ? 'font-semibold text-gray-950' : ''}>{item.label}</span>
-              </li>
-            )
-          })}
-        </ol>
-      </div>
+          </li>
+        ))}
+      </ul>
     </nav>
   )
 }

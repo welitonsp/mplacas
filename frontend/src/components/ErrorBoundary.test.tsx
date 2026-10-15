@@ -28,7 +28,7 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     )
 
-    expect(screen.getByText('Não foi possível carregar o Mplacas')).toBeInTheDocument()
+    expect(screen.getByText('Não foi possível carregar o MPlacas')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Recarregar' })).toBeInTheDocument()
 
     // Nunca vazar a mensagem de erro técnica ("boom") na tela.
