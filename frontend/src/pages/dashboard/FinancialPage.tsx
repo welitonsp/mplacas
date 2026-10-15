@@ -10,6 +10,7 @@ import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 import { PageHeader } from '../../components/PageHeader'
+import { BillsSection } from '../../components/BillsSection'
 
 // Módulo Financeiro (ADR-072, Etapa 3) — dois recursos (ver ADR seção 2):
 // `executive` (`/energy/executive/latest`) e `financialReturn`
@@ -106,6 +107,11 @@ export function FinancialPage() {
         headingRef={headingRef}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
       />
+      {/* Faturas primeiro: sem fatura confirmada não existe custo do ciclo,
+          economia nem retorno — é a porta de entrada dos dados financeiros.
+          Fica fora do bloco do recurso executivo para continuar disponível
+          mesmo quando ele falha ou ainda não tem ciclo nenhum. */}
+      <BillsSection plantId={plantId} onConfirmed={refreshAll} />
       {executive.error && (
         <RetryableError
           message={executive.error}

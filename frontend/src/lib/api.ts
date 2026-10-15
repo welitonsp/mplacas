@@ -172,7 +172,9 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   const token = TokenStore.get()
   const headers = new Headers(init.headers)
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  headers.set('Content-Type', 'application/json')
+  // JSON é o padrão; quem envia outro corpo (o PDF da fatura, por exemplo)
+  // declara o próprio `Content-Type` e ele é respeitado.
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
 
   // O prazo interno convive com o `signal` que o chamador tenha passado: quem
   // cancela por desmontagem de componente continua funcionando, e quem não
@@ -202,7 +204,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   // Repete a chamada original com o token renovado.
   const retryHeaders = new Headers(init.headers)
   retryHeaders.set('Authorization', `Bearer ${accessToken}`)
-  retryHeaders.set('Content-Type', 'application/json')
+  if (!retryHeaders.has('Content-Type')) retryHeaders.set('Content-Type', 'application/json')
   const retryDeadline = withTimeout(DATA_TIMEOUT_MS, init.signal)
   try {
     return await fetch(`${API_URL}${path}`, {
@@ -333,6 +335,34 @@ export async function updateFinancialConfiguration(
     method: 'PATCH',
     body: JSON.stringify(payload),
   })
+}
+
+// Faturas de energia (`/billing/*`). Importar, confirmar e rejeitar exigem
+// perfil ADMIN no backend (`AdminPlant`/`AdminPrincipal`) — uma credencial READ
+// recebe 403, tratado na tela (mesma limitação conhecida do
+// `CapexRegistrationForm`: o frontend ainda não distingue papel).
+//
+// O PDF vai cru no corpo (`application/pdf`), sem multipart: o backend o lê
+// com limite de tamanho, extrai o texto em processo isolado e descarta o
+// arquivo — só o texto lido vira a fatura pendente de conferência.
+export async function uploadBillPdf(plantId: string, file: Blob): Promise<Response> {
+  return apiFetch(`/billing/intake-pdf?plant_id=${encodeURIComponent(plantId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/pdf' },
+    body: file,
+  })
+}
+
+export async function fetchPendingBills(plantId: string): Promise<Response> {
+  return apiFetch(`/billing/pending?plant_id=${encodeURIComponent(plantId)}`)
+}
+
+export async function confirmBill(billId: string): Promise<Response> {
+  return apiFetch(`/billing/${encodeURIComponent(billId)}/confirm`, { method: 'POST' })
+}
+
+export async function rejectBill(billId: string): Promise<Response> {
+  return apiFetch(`/billing/${encodeURIComponent(billId)}/reject`, { method: 'POST' })
 }
 
 // Formatos servidos pelo caminho síncrono de exportação (T2, plano de

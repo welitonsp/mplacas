@@ -31,6 +31,7 @@ interface ApiMockOverrides {
   fetchFinancialReturn?: (plantId: string) => Promise<Response>
   fetchPlants?: () => Promise<unknown[]>
   updateFinancialConfiguration?: (...args: unknown[]) => Promise<Response>
+  fetchPendingBills?: (plantId: string) => Promise<Response>
 }
 
 function installApiMock(overrides: ApiMockOverrides = {}) {
@@ -42,6 +43,11 @@ function installApiMock(overrides: ApiMockOverrides = {}) {
     fetchPlants: overrides.fetchPlants ?? vi.fn(async () => [singlePlant]),
     updateFinancialConfiguration:
       overrides.updateFinancialConfiguration ?? vi.fn(async () => jsonResponse({})),
+    // Faturas de energia (`BillsSection`) — terceira leitura do módulo.
+    fetchPendingBills: overrides.fetchPendingBills ?? vi.fn(async () => jsonResponse({ count: 0, items: [] })),
+    uploadBillPdf: vi.fn(async () => jsonResponse({})),
+    confirmBill: vi.fn(async () => jsonResponse({})),
+    rejectBill: vi.fn(async () => jsonResponse({})),
     configureApi: vi.fn(),
   }))
 }
@@ -54,13 +60,15 @@ async function renderFinancialPage() {
 }
 
 describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
-  it('dispara exatamente 2 requisições de dados — /energy/executive/latest e /energy/financial-return/latest, nenhuma outra', async () => {
+  it('dispara exatamente 3 requisições de dados — /energy/executive/latest, /energy/financial-return/latest e /billing/pending, nenhuma outra', async () => {
     vi.resetModules()
     const fetchExecutiveMock = vi.fn(async () => jsonResponse(executivePayload))
     const fetchFinancialReturnMock = vi.fn(async () => jsonResponse(financialReturnUnavailablePayload))
+    const fetchPendingBillsMock = vi.fn(async () => jsonResponse({ count: 0, items: [] }))
     installApiMock({
       fetchExecutiveDashboard: fetchExecutiveMock,
       fetchFinancialReturn: fetchFinancialReturnMock,
+      fetchPendingBills: fetchPendingBillsMock,
     })
 
     await renderFinancialPage()
@@ -77,9 +85,11 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     await waitFor(() => {
       expect(fetchExecutiveMock).toHaveBeenCalledTimes(1)
       expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(1)
+      expect(fetchPendingBillsMock).toHaveBeenCalledTimes(1)
     })
     expect(fetchExecutiveMock).toHaveBeenCalledWith(singlePlant.id)
     expect(fetchFinancialReturnMock).toHaveBeenCalledWith(singlePlant.id)
+    expect(fetchPendingBillsMock).toHaveBeenCalledWith(singlePlant.id)
   })
 
   it('mostra o esqueleto de carregamento enquanto /energy/executive/latest está em voo, depois o conteúdo real (sucesso)', async () => {

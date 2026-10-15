@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { API_URL } from '../env'
-import { DATA_TIMEOUT_MS, RequestTimeoutError, apiFetch, configureApi, downloadMonthlyReportExport, fetchMonthlyReportExport, fetchPlants, withTimeout } from './api'
+import { DATA_TIMEOUT_MS, RequestTimeoutError, apiFetch, configureApi, downloadMonthlyReportExport, fetchMonthlyReportExport, fetchPlants, uploadBillPdf, withTimeout } from './api'
 import { TokenStore } from './auth'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -71,6 +71,37 @@ describe('fetchPlants', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ count: 1, items: [{ id: 'x' }] }))
 
     await expect(fetchPlants()).rejects.toThrow(/Resposta inválida da API/)
+  })
+})
+
+describe('uploadBillPdf', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    TokenStore.clear()
+  })
+
+  it('envia o PDF cru com Content-Type application/pdf (não sobrescrito por JSON)', async () => {
+    TokenStore.set('token-abc')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}, 202))
+    const file = new File(['%PDF-1.7'], 'fatura.pdf', { type: 'application/pdf' })
+
+    await uploadBillPdf('plant 1', file)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${API_URL}/billing/intake-pdf?plant_id=plant%201`)
+    expect(init.method).toBe('POST')
+    expect(init.body).toBe(file)
+    expect((init.headers as Headers).get('Content-Type')).toBe('application/pdf')
+    expect((init.headers as Headers).get('Authorization')).toBe('Bearer token-abc')
+  })
+
+  it('as demais chamadas continuam saindo como JSON por padrão', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ count: 0, items: [] }))
+
+    await apiFetch('/plants')
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect((init.headers as Headers).get('Content-Type')).toBe('application/json')
   })
 })
 
