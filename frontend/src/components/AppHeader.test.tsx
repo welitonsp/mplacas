@@ -89,15 +89,16 @@ describe('AppHeader — menu de usuário', () => {
 
     const trigger = screen.getByRole('button', { name: /maria/i })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
 
     fireEvent.click(trigger)
 
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('Sessão operacional')).toBeInTheDocument()
     expect(screen.getByText('Acesso seguro ao painel')).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: 'Sair do painel' })).toBeInTheDocument()
-    expect(trigger).toHaveAttribute('aria-controls', screen.getByRole('menu').id)
+    expect(screen.getByRole('button', { name: 'Sair do painel' })).toBeInTheDocument()
+    const controlledPanelId = trigger.getAttribute('aria-controls')
+    expect(controlledPanelId).toBeTruthy()
+    expect(document.getElementById(controlledPanelId ?? '')).toBeInTheDocument()
   })
 
   it('mostra identidade operacional no botão do usuário em telas maiores', () => {
@@ -122,7 +123,8 @@ describe('AppHeader — menu de usuário', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sair do painel' })).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
   })
 
   it('fecha o menu ao clicar fora', () => {
@@ -140,7 +142,7 @@ describe('AppHeader — menu de usuário', () => {
 
     fireEvent.mouseDown(screen.getByRole('button', { name: 'fora' }))
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sair do painel' })).not.toBeInTheDocument()
   })
 
   it('o botão "Sair do painel" chama logout() do AuthContext', () => {
@@ -149,7 +151,7 @@ describe('AppHeader — menu de usuário', () => {
     render(<AppHeader />)
 
     fireEvent.click(screen.getByRole('button', { name: /maria/i }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Sair do painel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sair do painel' }))
 
     expect(logout).toHaveBeenCalledTimes(1)
   })
@@ -160,7 +162,7 @@ describe('AppHeader — menu de usuário', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /maria/i }))
 
-    expect(screen.getByRole('menuitem', { name: 'Sair do painel' }).className).toMatch(/focus-visible:ring/)
+    expect(screen.getByRole('button', { name: 'Sair do painel' }).className).toMatch(/focus-visible:ring/)
   })
 })
 
@@ -200,7 +202,7 @@ describe('AppHeader — seletor de usina (ADR-069, Etapa D)', () => {
     render(<AppHeader />)
 
     fireEvent.click(screen.getByRole('button', { name: /maria/i }))
-    expect(screen.getByRole('menuitem', { name: 'Sair do painel' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sair do painel' })).toBeInTheDocument()
   })
 })
 
@@ -232,7 +234,7 @@ describe('AppHeader — controle de tema (ícone único no header, ADR-071 Fase 
 
     expect(getThemeButton()).toBeInTheDocument()
     // O menu do avatar segue fechado — o controle de tema não depende dele.
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sair do painel' })).not.toBeInTheDocument()
   })
 
   it('a lista de texto "Aparência" não existe mais dentro do menu do avatar', () => {
@@ -243,7 +245,7 @@ describe('AppHeader — controle de tema (ícone único no header, ADR-071 Fase 
 
     expect(screen.queryByText('Aparência')).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitemradio')).not.toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: 'Sair do painel' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sair do painel' })).toBeInTheDocument()
   })
 
   it('preferência padrão "Sistema" com SO claro: aria-label/title anunciam "Sistema (aplicando claro)" e o próximo clique vai para claro', () => {

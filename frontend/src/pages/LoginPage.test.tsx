@@ -32,6 +32,12 @@ describe('LoginPage — acessibilidade e tokens de design', () => {
     expect(screen.getByText('Sessão protegida por credenciais operacionais. O backend valida permissões a cada requisição.')).toBeInTheDocument()
   })
 
+  it('define título de aba específico para autenticação', () => {
+    renderLoginPage()
+
+    expect(document.title).toBe('Entrar no MPlacas — Painel operacional')
+  })
+
   it('o botão "Entrar" usa os tokens de cor do projeto, não classes bg-blue-*/focus:ring-blue-*', () => {
     renderLoginPage()
 
@@ -50,6 +56,18 @@ describe('LoginPage — acessibilidade e tokens de design', () => {
     expect(username.className).not.toMatch(/focus:border-blue-|focus:ring-blue-/)
     expect(password.className).not.toMatch(/focus:border-blue-|focus:ring-blue-/)
     expect(username.className).toMatch(/var\(--color-brand-primary\)/)
+  })
+
+  it('prioriza o formulário no fluxo móvel e mantém contorno perceptível nos campos', () => {
+    renderLoginPage()
+
+    const form = screen.getByRole('button', { name: /entrar no painel/i }).closest('form')
+    const formSection = form?.closest('section')
+    expect(formSection?.className).toMatch(/order-1/)
+    expect(formSection?.className).toMatch(/lg:order-2/)
+    expect(screen.getByLabelText('Usuário').className).toMatch(/border-slate-500/)
+    expect(screen.getByLabelText('Senha').className).toMatch(/border-slate-500/)
+    expect(screen.getByLabelText('Senha')).not.toHaveAttribute('placeholder')
   })
 })
 

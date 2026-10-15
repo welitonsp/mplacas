@@ -230,7 +230,7 @@ export function SankeyFlow({
       {/* Alternativa tabular equivalente para leitor de tela que não navega
           bem um SVG complexo com múltiplos traços sobrepostos (ver skill
           `accessible-charts`). */}
-      <table className="sr-only">
+      <table className="sr-only table-fixed -left-[10000px]">
         <caption>Fluxo de energia: valores por nó e por fluxo</caption>
         <thead>
           <tr>

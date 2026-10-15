@@ -50,6 +50,14 @@ export function LoginPage() {
     warmUpApi()
   }, [])
 
+  useEffect(() => {
+    const previousTitle = document.title
+    document.title = 'Entrar no MPlacas — Painel operacional'
+    return () => {
+      document.title = previousTitle
+    }
+  }, [])
+
   // Se a entrada passar de alguns segundos, explica o porquê em vez de deixar
   // o usuário achar que travou: quase sempre é o servidor acordando.
   useEffect(() => {
@@ -104,14 +112,7 @@ export function LoginPage() {
       />
 
       <main className="relative mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_27rem] lg:px-8 2xl:max-w-[96rem]">
-        <section className="space-y-8">
-          <div className="inline-flex items-center gap-3 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/80 px-3 py-2 shadow-sm backdrop-blur">
-            <BrandMark className="h-8 w-auto text-[var(--color-brand-primary)]" />
-            <span className="text-sm font-semibold text-[var(--color-text-primary)]">Mplacas</span>
-            <span className="h-1 w-1 rounded-full bg-[var(--color-border)]" aria-hidden="true" />
-            <span className="text-xs font-medium text-[var(--color-text-secondary)]">Cockpit solar</span>
-          </div>
-
+        <section className="order-2 space-y-8 lg:order-1">
           <div className="max-w-3xl space-y-4">
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
               Painel operacional
@@ -176,7 +177,12 @@ export function LoginPage() {
           </aside>
         </section>
 
-        <section className="w-full rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-6 shadow-[var(--shadow-cockpit)] backdrop-blur sm:p-8">
+        <section className="order-1 w-full rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 p-6 shadow-[var(--shadow-cockpit)] backdrop-blur sm:p-8 lg:order-2">
+          <div className="mb-5 inline-flex items-center gap-3 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2">
+            <BrandMark className="h-7 w-auto text-[var(--color-brand-primary)]" />
+            <span className="h-1 w-1 rounded-full bg-[var(--color-border)]" aria-hidden="true" />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">Cockpit solar</span>
+          </div>
           <div className="mb-6">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[var(--color-brand-primary-light)] px-3 py-1 text-xs font-semibold text-[var(--color-brand-primary)]">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
@@ -222,7 +228,7 @@ export function LoginPage() {
                 // segue anunciada pela região `role="alert"`, e o
                 // `aria-describedby` liga o campo a ela — isso é verdadeiro.
                 aria-describedby={error ? errorId : undefined}
-                className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-[var(--color-text-primary)] shadow-sm outline-none transition-all duration-200 placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-brand-primary)] focus:ring-4 focus:ring-[var(--color-brand-primary)]/15 disabled:opacity-50"
+                className="w-full rounded-2xl border border-slate-500 bg-[var(--color-surface)] px-4 py-3 text-[var(--color-text-primary)] shadow-sm outline-none transition-all duration-200 placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-brand-primary)] focus:ring-4 focus:ring-[var(--color-brand-primary)]/15 disabled:opacity-50"
                 placeholder="Seu usuário"
               />
             </div>
@@ -242,8 +248,7 @@ export function LoginPage() {
                   disabled={loading}
                   // Mesma razão do campo de usuário acima (A-12).
                   aria-describedby={error ? errorId : undefined}
-                  className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 pr-24 text-[var(--color-text-primary)] shadow-sm outline-none transition-all duration-200 placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-brand-primary)] focus:ring-4 focus:ring-[var(--color-brand-primary)]/15 disabled:opacity-50"
-                  placeholder="********"
+                  className="w-full rounded-2xl border border-slate-500 bg-[var(--color-surface)] px-4 py-3 pr-24 text-[var(--color-text-primary)] shadow-sm outline-none transition-all duration-200 placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-brand-primary)] focus:ring-4 focus:ring-[var(--color-brand-primary)]/15 disabled:opacity-50"
                 />
                 <button
                   type="button"

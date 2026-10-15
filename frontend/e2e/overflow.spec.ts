@@ -67,6 +67,7 @@ test.describe('layout não rola de lado', () => {
       await link.scrollIntoViewIfNeeded()
       await link.click({ force: true })
       await expect(page.getByRole('main')).toBeVisible()
+      await expect(page.getByRole('heading', { name: rotulo, exact: true })).toBeVisible()
 
       const medida = await page.evaluate(() => ({
         viewport: document.documentElement.clientWidth,

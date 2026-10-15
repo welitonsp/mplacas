@@ -63,6 +63,8 @@ const DARK_BG = {
 const TEXT_PAIRS: Array<[string, DesignTokenName]> = [
   ['text-primary', '--color-text-primary'],
   ['text-secondary', '--color-text-secondary'],
+  ['text', '--color-text'],
+  ['text-muted', '--color-text-muted'],
   ['success-text', '--color-success-text'],
   ['warning-text', '--color-warning-text'],
   ['danger-text', '--color-danger-text'],
@@ -74,6 +76,7 @@ const TEXT_PAIRS: Array<[string, DesignTokenName]> = [
   ['gray-700', '--color-gray-700'],
   ['gray-800', '--color-gray-800'],
   ['gray-900', '--color-gray-900'],
+  ['gray-950', '--color-gray-950'],
 ]
 
 // Tokens de PREENCHIMENTO (badge/barra/ponto — nunca `color` de texto, ver

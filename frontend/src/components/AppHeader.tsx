@@ -162,7 +162,6 @@ export function AppHeader() {
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-3 sm:h-16 sm:px-6 lg:px-8 2xl:max-w-[96rem]">
         <div className="flex items-center gap-3 min-w-0">
           <BrandMark className="h-7 w-auto text-[var(--color-brand-primary)] flex-shrink-0" />
-          <span className="hidden text-lg font-semibold tracking-tight text-gray-950 sm:inline">Mplacas</span>
           <PlantSelector />
         </div>
 
@@ -189,7 +188,6 @@ export function AppHeader() {
             <button
               ref={buttonRef}
               type="button"
-              aria-haspopup="menu"
               aria-expanded={menuOpen}
               aria-controls={menuId}
               aria-label={username ? `Menu de ${username}` : 'Menu do usuário'}
@@ -218,7 +216,6 @@ export function AppHeader() {
             {menuOpen && (
               <div
                 id={menuId}
-                role="menu"
                 className="absolute right-0 mt-2 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-[var(--color-surface)] shadow-xl"
               >
                 <div className="border-b border-gray-100 bg-[var(--color-surface-subtle)] px-4 py-3">
@@ -242,7 +239,6 @@ export function AppHeader() {
                 <div className="p-1.5">
                   <button
                     type="button"
-                    role="menuitem"
                     onClick={() => {
                       setMenuOpen(false)
                       logout()

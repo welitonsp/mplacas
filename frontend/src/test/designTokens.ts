@@ -22,6 +22,8 @@ export const LIGHT_TOKENS = {
   '--color-border': '#e2e8f0',
   '--color-text-primary': '#0f172a',
   '--color-text-secondary': '#475569',
+  '--color-text': '#0f172a',
+  '--color-text-muted': '#64748b',
   '--color-danger': '#dc2626',
   '--color-danger-light': '#fef2f2',
   '--color-success': '#16a34a',
@@ -56,6 +58,7 @@ export const LIGHT_TOKENS = {
   '--color-gray-700': '#364153',
   '--color-gray-800': '#1e2939',
   '--color-gray-900': '#101828',
+  '--color-gray-950': '#030712',
 } as const
 
 export const DARK_TOKENS = {
@@ -67,6 +70,8 @@ export const DARK_TOKENS = {
   '--color-border': '#2a3648',
   '--color-text-primary': '#eef1f7',
   '--color-text-secondary': '#9aa7bc',
+  '--color-text': '#eef1f7',
+  '--color-text-muted': '#9aa7bc',
   '--color-danger': '#ef4444',
   '--color-danger-light': '#2a1414',
   '--color-success': '#22c55e',
@@ -95,6 +100,7 @@ export const DARK_TOKENS = {
   '--color-gray-700': '#d3dae5',
   '--color-gray-800': '#e6eaf1',
   '--color-gray-900': '#f3f5f9',
+  '--color-gray-950': '#f8fafc',
 } as const
 
 export type DesignTokenName = keyof typeof LIGHT_TOKENS

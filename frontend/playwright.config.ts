@@ -45,6 +45,13 @@ export default defineConfig({
       name: 'mobile',
       use: { ...devices['Pixel 7'] },
     },
+    {
+      // WCAG 2.2 SC 1.4.10 usa 320 CSS px como largura de reflow para conteúdo
+      // com rolagem vertical. Manter um projeto dedicado impede que a cobertura
+      // de mobile passe apenas na largura confortável de um telefone moderno.
+      name: 'mobile-320',
+      use: { ...devices['Pixel 7'], viewport: { width: 320, height: 780 } },
+    },
   ],
 
   webServer: {

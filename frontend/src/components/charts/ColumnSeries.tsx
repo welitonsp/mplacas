@@ -280,7 +280,7 @@ export function ColumnSeries({
           navegar os dados como tabela em vez de prosa no `aria-label` (mesmo
           padrão de `SankeyFlow`) — inclui a contagem exata de dias sem dado
           de `description`, que nunca aparece só em tooltip. */}
-      <table className="sr-only">
+      <table className="sr-only table-fixed -left-[10000px]">
         <caption>Valor e qualidade dos dados por item da série</caption>
         <thead>
           <tr>
