@@ -10,8 +10,10 @@
 //   classe já usada em ~39 outros lugares do projeto para rótulo secundário
 //   (ver `CurrencyCard`, `MetricCard`, `Gauge`, etc.), não uma classe nova.
 const HEADING_CLASS: Record<'h2' | 'h3', string> = {
-  h2: 'relative mb-4 flex items-center gap-2 text-lg font-semibold text-gray-900 tracking-tight before:h-5 before:w-1 before:rounded-full before:bg-[var(--color-brand-primary)]',
-  h3: 'text-xs font-medium text-gray-500',
+  // Sem o traço colorido à esquerda (ADR-077): o título se sustenta pelo
+  // tamanho e peso; o traço era mais um enfeite azul repetido em toda seção.
+  h2: 'mb-3 text-lg font-semibold leading-tight text-[var(--color-text-primary)] sm:mb-4',
+  h3: 'text-[13px] font-medium text-[var(--color-text-secondary)]',
 }
 
 export function SectionTitle({

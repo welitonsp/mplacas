@@ -25,7 +25,7 @@ const SUMMARY_TILE_TONE: Record<SummaryTileTone, { bar: string; bg: string; text
     text: SEVERITY_TEXT.danger,
   },
   neutral: {
-    bar: 'bg-gray-300',
+    bar: 'bg-[var(--color-gray-300)]',
     bg: SEVERITY_BG.neutral,
     text: SEVERITY_TEXT.neutral,
   },
@@ -44,13 +44,19 @@ export function SummaryTile({
 }) {
   const meta = SUMMARY_TILE_TONE[tone]
 
+  // Mesmo desenho dos indicadores da Visão Geral (ADR-077): rótulo, número em
+  // destaque, contexto num selo. Sai o traço colorido no topo — a cor de
+  // estado já está no selo, junto do texto que a explica.
   return (
-    <article className="min-h-[7.5rem] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 shadow-sm sm:min-h-[8.5rem] sm:p-4">
-      <div className={`mb-3 h-1 w-10 rounded-full sm:mb-4 ${meta.bar}`} aria-hidden="true" />
-      <div className="text-sm font-semibold text-gray-600">{label}</div>
-      <div className="mt-2 text-xl font-bold tabular-nums tracking-tight text-gray-950 sm:text-2xl">{value}</div>
-      <div className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${meta.bg} ${meta.text}`}>
-        {supportingText}
+    <article className="flex min-w-0 flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)] sm:p-5">
+      <div className="text-[13px] font-medium leading-5 text-[var(--color-text-secondary)]">{label}</div>
+      <div className="mt-1.5 font-display text-[24px] font-semibold leading-tight tracking-[-0.02em] tabular-nums text-[var(--color-text-primary)] sm:text-[28px]">
+        {value}
+      </div>
+      <div className="mt-auto pt-3">
+        <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-semibold ${meta.bg} ${meta.text}`}>
+          {supportingText}
+        </span>
       </div>
     </article>
   )

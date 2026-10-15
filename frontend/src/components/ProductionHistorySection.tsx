@@ -20,11 +20,13 @@ import { RetryableError } from './RetryableError'
 import { YieldCard } from './YieldCard'
 import { safeStorage } from '../lib/storage'
 
-const SIGNAL_STYLES: Record<Severity, string> = {
-  success: 'border-[var(--color-success)]/20 bg-[var(--color-success-light)] text-[var(--color-success-text)]',
-  warning: 'border-[var(--color-warning)]/25 bg-[var(--color-warning-light)] text-[var(--color-warning-text)]',
-  danger: 'border-[var(--color-danger)]/25 bg-[var(--color-danger-light)] text-[var(--color-danger-text)]',
-  neutral: 'border-gray-200 bg-gray-50 text-gray-700',
+// Só a cor do TEXTO do sinal (ADR-077): o rótulo de estado carrega a cor,
+// o bloco em volta fica neutro — antes cada sinal era uma caixa colorida.
+const SIGNAL_TEXT: Record<Severity, string> = {
+  success: 'text-[var(--color-success-text)]',
+  warning: 'text-[var(--color-warning-text)]',
+  danger: 'text-[var(--color-danger-text)]',
+  neutral: 'text-[var(--color-text-primary)]',
 }
 
 const PERIOD_STORAGE_KEY = 'mplacas:production-history-period'
@@ -181,21 +183,25 @@ export function ProductionHistorySection({
 
   return (
     <div className="space-y-4">
-      <Card className="">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-          <div>
-            <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
-              Produção diária
-            </p>
-            <h3 className="mt-1 text-lg font-semibold text-gray-950">
+      <Card className="sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">Produção diária</p>
+            <h3 className="mt-1 text-lg font-semibold text-[var(--color-text-primary)]">
               Últimos {Math.min(selectedPeriodDays, anomalyState.data.daily.length)} dias em foco
             </h3>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600">
-              O padrão inicial é 7 dias para detectar queda recente; 30 e 90 dias ajudam a confirmar se o problema é recorrente ou sazonal.
+            <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[var(--color-text-secondary)]">
+              7 dias mostram queda recente; 30 e 90 dias confirmam se é recorrente ou sazonal.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2" aria-label="Filtrar histórico diário">
+          {/* Controle segmentado (ADR-077): um trilho com a opção ativa em
+              relevo, em vez de três pílulas soltas com sombra. */}
+          <div
+            role="group"
+            aria-label="Filtrar histórico diário"
+            className="inline-flex rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-1"
+          >
             {PRODUCTION_PERIOD_OPTIONS.map((days) => {
               const active = selectedPeriodDays === days
               return (
@@ -204,10 +210,10 @@ export function ProductionHistorySection({
                   type="button"
                   aria-pressed={active}
                   onClick={() => handlePeriodSelect(days)}
-                  className={`min-h-[44px] rounded-full border px-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none ${
+                  className={`min-h-[44px] rounded-lg px-3.5 text-sm transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none ${
                     active
-                      ? 'border-[var(--color-brand-primary)] bg-[var(--color-brand-primary)] text-[var(--color-on-brand)] shadow-sm'
-                      : 'border-gray-200 bg-[var(--color-surface)] text-gray-700 hover:-translate-y-0.5 hover:bg-[var(--color-surface)] hover:text-gray-950 hover:shadow-sm'
+                      ? 'bg-[var(--color-surface)] font-semibold text-[var(--color-text-primary)] shadow-[0_1px_2px_rgb(0_0_0_/_0.12)]'
+                      : 'font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
                   }`}
                 >
                   {days} dias
@@ -217,57 +223,44 @@ export function ProductionHistorySection({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-gray-200 bg-[var(--color-surface)]/85 px-3 py-3">
-            <p className="text-[12px] font-semibold text-[var(--color-text-muted)]">
-              Média no período
-            </p>
-            <p className="mt-1 text-xl font-semibold text-gray-950 tabular-nums">
-              {averageProduction.average == null ? '—' : `${formatNumber(averageProduction.average, 1)} kWh/dia`}
-            </p>
-            <p className="mt-1 text-xs text-gray-600">
+        <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-5 border-t border-[var(--color-border)] pt-5 xl:grid-cols-4">
+          <div className="min-w-0">
+            <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Média no período</dt>
+            <dd className="mt-1 font-display text-[22px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+              {averageProduction.average == null ? '—' : formatNumber(averageProduction.average, 1)}
+              {averageProduction.average != null && (
+                <span className="ml-1 font-sans text-sm font-medium text-[var(--color-text-secondary)]">kWh/dia</span>
+              )}
+            </dd>
+            <dd className="text-xs text-[var(--color-text-secondary)]">
               {averageProduction.days} {averageProduction.days === 1 ? 'dia com dado' : 'dias com dado'}
-            </p>
+            </dd>
           </div>
 
-          <div className="rounded-2xl border border-gray-200 bg-[var(--color-surface)]/85 px-3 py-3">
-            <p className="text-[12px] font-semibold text-[var(--color-text-muted)]">
-              Desempenho médio
-            </p>
-            <p className="mt-1 text-xl font-semibold text-gray-950 tabular-nums">
+          <div className="min-w-0">
+            <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Desempenho médio</dt>
+            <dd className="mt-1 font-display text-[22px] font-semibold tabular-nums text-[var(--color-text-primary)]">
               {selectedPerformance.percent == null ? '—' : `${formatNumber(selectedPerformance.percent, 1)}%`}
-            </p>
-            <p className="mt-1 text-xs text-gray-600">
+            </dd>
+            <dd className="text-xs text-[var(--color-text-secondary)]">
               {selectedPerformance.assessedDays > 0
                 ? `${selectedPerformance.assessedDays} dias contra esperado`
                 : 'sem baseline no recorte'}
-            </p>
+            </dd>
           </div>
 
-          <div className={`rounded-2xl border px-3 py-3 ${SIGNAL_STYLES[averageTrend.tone]}`}>
-            <p className="text-[12px] font-semibold opacity-80">
-              Tendência do recorte
-            </p>
-            <p className="mt-1 text-xl font-semibold">
-              {averageTrend.label}
-            </p>
-            <p className="mt-1 text-xs leading-5 opacity-85">
-              {averageTrend.detail}
-            </p>
+          <div className="min-w-0">
+            <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Tendência do recorte</dt>
+            <dd className={`mt-1 text-[17px] font-semibold ${SIGNAL_TEXT[averageTrend.tone]}`}>{averageTrend.label}</dd>
+            <dd className="text-xs leading-5 text-[var(--color-text-secondary)]">{averageTrend.detail}</dd>
           </div>
 
-          <div className={`rounded-2xl border px-3 py-3 ${SIGNAL_STYLES[alertSignal.tone]}`}>
-            <p className="text-[12px] font-semibold opacity-80">
-              Gatilho de alerta
-            </p>
-            <p className="mt-1 text-xl font-semibold">
-              {alertSignal.label}
-            </p>
-            <p className="mt-1 text-xs leading-5 opacity-85">
-              {alertSignal.detail}
-            </p>
+          <div className="min-w-0">
+            <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Gatilho de alerta</dt>
+            <dd className={`mt-1 text-[17px] font-semibold ${SIGNAL_TEXT[alertSignal.tone]}`}>{alertSignal.label}</dd>
+            <dd className="text-xs leading-5 text-[var(--color-text-secondary)]">{alertSignal.detail}</dd>
           </div>
-        </div>
+        </dl>
       </Card>
 
       <div className={hasIrradiation ? 'grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]' : ''}>
