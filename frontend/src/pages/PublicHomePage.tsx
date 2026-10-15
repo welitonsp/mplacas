@@ -1,5 +1,5 @@
 // MPlacas · Observatório Solar: editorialismo tecnológico, evidência antes de promessa e assimetria intencional.
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import "./public-home.css";
 import {
   Activity,
@@ -48,6 +48,7 @@ const capabilities = [
     body: "Produção, consumo, importação e injeção convivem na mesma leitura — com histórico próprio, ciclos e origem de cada indicador.",
     icon: Activity,
     tone: "teal",
+    href: "#como-funciona",
   },
   {
     number: "02",
@@ -56,6 +57,7 @@ const capabilities = [
     body: "Anomalias, desvios e saúde da usina são interpretados por regras explícitas, com severidade e próxima ação visíveis.",
     icon: Gauge,
     tone: "amber",
+    href: "#confiabilidade",
   },
   {
     number: "03",
@@ -64,6 +66,7 @@ const capabilities = [
     body: "Snapshots imutáveis e exportações em JSON, CSV, PDF e XLSX guardam valor, unidade, fonte, período e versão do cálculo.",
     icon: FileCheck2,
     tone: "navy",
+    href: "#duvidas",
   },
 ];
 
@@ -146,26 +149,44 @@ function DashboardMockup() {
 
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuToggleRef = useRef<HTMLButtonElement>(null);
+  const siteNavigationRef = useRef<HTMLElement>(null);
 
   const closeMenu = () => setMenuOpen(false);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    siteNavigationRef.current?.querySelector<HTMLAnchorElement>("a")?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuToggleRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [menuOpen]);
+
   return (
     <div className="site-shell" id="top">
+      <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
       <header className="site-header">
         <div className="site-header__inner">
           <Brand />
-          <nav id="site-navigation" className={`site-nav ${menuOpen ? "site-nav--open" : ""}`} aria-label="Navegação principal">
+          <button ref={menuToggleRef} className="menu-toggle" type="button" aria-label={menuOpen ? "Fechar menu" : "Abrir menu"} aria-expanded={menuOpen} aria-controls="site-navigation" onClick={() => setMenuOpen((open) => !open)}>
+            {menuOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
+          <nav ref={siteNavigationRef} id="site-navigation" className={`site-nav ${menuOpen ? "site-nav--open" : ""}`} aria-label="Navegação principal">
             {navItems.map((item) => <a key={item.href} href={item.href} onClick={closeMenu}>{item.label}</a>)}
             <a className="site-nav__mobile-cta" href={contactHref} onClick={closeMenu}>Avaliar minha usina <ArrowUpRight size={15} /></a>
           </nav>
           <a className="header-cta" href={contactHref}>Avaliar minha usina <ArrowUpRight size={15} /></a>
-          <button className="menu-toggle" type="button" aria-label={menuOpen ? "Fechar menu" : "Abrir menu"} aria-expanded={menuOpen} aria-controls="site-navigation" onClick={() => setMenuOpen((open) => !open)}>
-            {menuOpen ? <X size={22} /> : <Menu size={22} />}
-          </button>
         </div>
       </header>
 
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <section className="hero-section">
           <div className="hero-section__image" />
           <div className="hero-section__shade" />
@@ -214,9 +235,9 @@ export default function Home() {
               <p>O produto organiza a jornada completa sem esconder as partes difíceis: fonte, qualidade do dado, diagnóstico e rastreabilidade continuam juntos.</p>
             </div>
             <div className="capability-list">
-              {capabilities.map(({ number, eyebrow, title, body, icon: Icon, tone }) => <article className={`capability-card capability-card--${tone}`} key={number}>
+              {capabilities.map(({ number, eyebrow, title, body, icon: Icon, tone, href }) => <article className={`capability-card capability-card--${tone}`} key={number}>
                 <div className="capability-card__top"><span>{number}</span><Icon size={20} strokeWidth={1.5} /></div>
-                <div className="capability-card__content"><span className="eyebrow">{eyebrow}</span><h3>{title}</h3><p>{body}</p><a href="#confiabilidade" aria-label={`Saiba mais sobre ${eyebrow}`}><ArrowUpRight size={17} /></a></div>
+                <div className="capability-card__content"><span className="eyebrow">{eyebrow}</span><h3>{title}</h3><p>{body}</p><a href={href} aria-label={`Saiba mais sobre ${eyebrow}`}><ArrowUpRight size={17} /></a></div>
               </article>)}
             </div>
           </div>
