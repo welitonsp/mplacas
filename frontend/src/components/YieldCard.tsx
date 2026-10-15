@@ -51,12 +51,14 @@ export function YieldCard({
   // (compat retroativa, ver `contracts.ts::optionalPeriodOrMissing`) — o card
   // continua funcionando sem ele, só sem a data explícita.
   period = null,
+  className,
 }: {
   daily: AnomalyDailyPoint[]
   periodYieldKwhPerKwhM2: MetricValue
   yieldAtypicalThresholdPercent: MetricValue
   periodYieldSampleDays: number
   period?: AnomalyPeriod | null
+  className?: string
 }) {
   const periodYield = toNumber(periodYieldKwhPerKwhM2)
 
@@ -82,7 +84,7 @@ export function YieldCard({
     .slice(0, 3)
 
   return (
-    <Card>
+    <Card className={className}>
       <p className="text-xs font-medium text-gray-500">
         Rendimento médio da janela analisada ({periodYieldSampleDays}{' '}
         {periodYieldSampleDays === 1 ? 'dia' : 'dias'})

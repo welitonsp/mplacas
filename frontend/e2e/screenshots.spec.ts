@@ -56,7 +56,12 @@ async function interceptarApi(page: import('@playwright/test').Page) {
       },
     ],
     ['**/energy/executive/latest*', executivePayload],
-    ['**/energy/anomalies/latest*', anomalyPayload],
+    // Com rendimento do período, para a captura mostrar a "Leitura do
+    // período" em paisagem (Produção diária + Rendimento lado a lado).
+    [
+      '**/energy/anomalies/latest*',
+      { ...anomalyPayload, period_yield_kwh_per_kwh_m2: '4.12', period_yield_sample_days: 3 },
+    ],
     ['**/photovoltaic/summary*', photovoltaicSummaryPayload],
     ['**/energy/financial-return/latest*', financialReturnUnavailablePayload],
     ['**/devices/daily-status*', deviceDailyStatusPayload],

@@ -215,7 +215,15 @@ export function ProductionPage() {
       />
       <section className="mb-6">
         <SectionTitle as="h2">Resumo operacional</SectionTitle>
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        {/* "Produção do último dia vs. esperada" mora ao lado de "Última
+            produção" (pedido do dono do produto): o número e a régua contra o
+            esperado são lidos juntos. A partir do tablet são 3 colunas: linha 1
+            = "Última produção" + régua (2 colunas); linha 2 = baseline, desvio
+            e sequência. No celular são 2 colunas e a régua ocupa a linha
+            inteira — `grid-flow-row-dense` puxa o "Baseline" para o lado de
+            "Última produção" em vez de deixar um buraco. Seis colunas no
+            desktop espremiam os números (testado em 1280/1440 px). */}
+        <div className="grid grid-flow-row-dense grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
           <SummaryTile
             label="Última produção"
             value={formatKwh(latestActualProduction)}
@@ -228,6 +236,11 @@ export function ProductionPage() {
             }
             tone="brand"
           />
+          {/* Compara o último dia com dado diário coletado (real vs. esperado,
+              mesma escala kWh/dia) — não o total do ciclo (~30 dias) contra uma
+              média diária. A produção do ciclo continua visível no nó
+              "Produção" de `EnergyFlowDiagram`, na Visão Geral. */}
+          <LatestDailyProductionCard anomalyState={anomalyState} className="col-span-2 h-full" />
           <SummaryTile
             label="Baseline esperado (período)"
             value={formatDailyKwh(latestExpectedProduction)}
@@ -303,8 +316,9 @@ export function ProductionPage() {
         </section>
 
         {/* Leitura do período (média, desempenho, tendência, gatilho) e
-            rendimento — o gráfico em si subiu para logo abaixo do resumo. */}
-        <section className="md:col-span-4 lg:col-span-8 2xl:col-span-9">
+            rendimento lado a lado (paisagem) — o gráfico em si subiu para logo
+            abaixo do resumo, e o card do último dia foi para o resumo. */}
+        <section className="md:col-span-6 lg:col-span-12">
           <ProductionHistorySection
             layout="details"
             detailsHeading="Leitura do período"
@@ -314,15 +328,6 @@ export function ProductionPage() {
             periodDays={periodDays}
             onPeriodChange={setPeriodDays}
           />
-        </section>
-
-        <section className="md:col-span-2 lg:col-span-4 2xl:col-span-3">
-          <SectionTitle as="h2">Produção do último dia vs. esperada</SectionTitle>
-          {/* Compara o último dia com dado diário coletado (real vs. esperado,
-              mesma escala kWh/dia) — não o total do ciclo (~30 dias) contra uma
-              média diária. A produção do ciclo continua visível no nó
-              "Produção" de `EnergyFlowDiagram`, na Visão Geral. */}
-          <LatestDailyProductionCard anomalyState={anomalyState} className="h-full" />
         </section>
       </div>
     </>

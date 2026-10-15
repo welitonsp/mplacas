@@ -274,10 +274,17 @@ export function ProductionHistorySection({
     return chart
   }
 
+  // `details` com rendimento disponível: os dois cards lado a lado no desktop
+  // (orientação paisagem), empilhados no celular. Sem rendimento agregado
+  // (mesma condição em que o `YieldCard` não renderiza), "Produção diária"
+  // ocupa a largura toda em vez de deixar uma coluna vazia.
+  const landscape = layout === 'details' && toNumber(anomalyState.data.period_yield_kwh_per_kwh_m2) != null
+
   return (
     <div className="space-y-4">
       {layout === 'details' && detailsHeading && <SectionTitle as="h2">{detailsHeading}</SectionTitle>}
-      <Card className="sm:p-6">
+      <div className={landscape ? 'grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:gap-6' : 'space-y-4'}>
+      <Card className={landscape ? 'h-full sm:p-6' : 'sm:p-6'}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">Produção diária</p>
@@ -292,7 +299,9 @@ export function ProductionHistorySection({
           {layout === 'all' && periodSelector}
         </div>
 
-        <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-5 border-t border-[var(--color-border)] pt-5 xl:grid-cols-4">
+        <dl
+          className={`mt-5 grid grid-cols-2 gap-x-6 gap-y-5 border-t border-[var(--color-border)] pt-5 ${landscape ? '2xl:grid-cols-4' : 'xl:grid-cols-4'}`}
+        >
           <div className="min-w-0">
             <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Média no período</dt>
             <dd className="mt-1 font-display text-[22px] font-semibold tabular-nums text-[var(--color-text-primary)]">
@@ -332,6 +341,16 @@ export function ProductionHistorySection({
         </dl>
       </Card>
 
+      {landscape ? (
+        <YieldCard
+          daily={anomalyState.data.daily}
+          periodYieldKwhPerKwhM2={anomalyState.data.period_yield_kwh_per_kwh_m2}
+          yieldAtypicalThresholdPercent={anomalyState.data.yield_atypical_threshold_percent}
+          periodYieldSampleDays={anomalyState.data.period_yield_sample_days}
+          period={anomalyState.data.period}
+          className="h-full"
+        />
+      ) : (
       <div className={layout === 'all' && hasIrradiation ? 'grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]' : ''}>
         {layout === 'all' && chart}
         {/* `YieldCard` recebe `anomalyState.data.daily` INTEIRO, não
@@ -352,6 +371,8 @@ export function ProductionHistorySection({
           periodYieldSampleDays={anomalyState.data.period_yield_sample_days}
           period={anomalyState.data.period}
         />
+      </div>
+      )}
       </div>
     </div>
   )
