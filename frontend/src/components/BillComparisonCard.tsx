@@ -84,14 +84,14 @@ export function BillComparisonCard({
     matchText = 'Indisponível'
     matchNote = 'A fatura deste ciclo não trouxe a tarifa do Fio B.'
   } else if (Math.abs(difference) <= BILL_MATCH_TOLERANCE_BRL) {
-    matchText = 'Bate com a fatura'
-    matchNote = 'O cálculo reproduz o valor cobrado.'
+    matchText = 'Confere com o valor cobrado'
+    matchNote = 'Diferença de centavos entre o cálculo e a fatura.'
   } else if (difference > 0) {
     matchText = `${formatCurrency(difference)} de outros itens`
-    matchNote = 'Cobranças que o cálculo não explica, como retroativos ou multas.'
+    matchNote = 'Cobrado além do cálculo. Pode ser custo mínimo, retroativo ou multa: confira a fatura.'
   } else {
     matchText = `${formatCurrency(Math.abs(difference))} a menos`
-    matchNote = 'A fatura veio abaixo do cálculo (ex.: descontos ou devoluções).'
+    matchNote = 'A fatura veio abaixo do cálculo. Pode ser desconto ou devolução: confira a fatura.'
   }
 
   return (
@@ -137,7 +137,7 @@ export function BillComparisonCard({
           <Detail
             label="Créditos guardados"
             value={`${formatNumber(indicators.credit_balance_kwh, 2)} kWh`}
-            note={creditValue != null ? `Valem cerca de ${formatCurrency(creditValue)} na tarifa atual.` : undefined}
+            note={creditValue != null ? `Valem cerca de ${formatCurrency(creditValue)}, já descontado o Fio B.` : undefined}
           />
           <Detail label="Conferência com a fatura" value={matchText} note={matchNote} />
         </dl>

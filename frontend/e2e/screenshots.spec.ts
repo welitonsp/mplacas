@@ -82,7 +82,7 @@ async function interceptarApi(page: import('@playwright/test').Page) {
             compensated_kwh: '221',
             excess_credit_kwh: '14.000',
             bill_without_solar_brl: '334.22',
-            credit_balance_value_brl: '14.16',
+            credit_balance_value_brl: '11.01',
             modeled_bill_brl: '68.91',
             bill_model_difference_brl: '1.31',
           },

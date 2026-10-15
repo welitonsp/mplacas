@@ -150,18 +150,39 @@ def analyze_energy_cycle(
         bill_without_solar_brl = (
             reconciliation.estimated_total_consumption_kwh * tariff + bill.public_lighting_brl
         ).quantize(cents, rounding=ROUND_HALF_UP)
-    credit_balance_value_brl = (
-        (bill.credit_balance_kwh * tariff).quantize(cents, rounding=ROUND_HALF_UP)
+    # Um kWh de crédito, quando usado, evita a tarifa cheia mas ainda paga o
+    # Fio B da parcela compensada (Lei 14.300). Valor líquido = tarifa − Fio B
+    # quando a fatura traz o Fio B; sem ele, a tarifa cheia (teto).
+    credit_unit_value = (
+        tariff - bill.wire_b_tariff_brl_kwh
         if tariff is not None
+        and bill.wire_b_tariff_brl_kwh is not None
+        and bill.wire_b_tariff_brl_kwh < tariff
+        else tariff
+    )
+    credit_balance_value_brl = (
+        (bill.credit_balance_kwh * credit_unit_value).quantize(cents, rounding=ROUND_HALF_UP)
+        if credit_unit_value is not None
         else None
     )
     modeled_bill_brl: Decimal | None = None
     bill_model_difference_brl: Decimal | None = None
-    if tariff is not None and bill.wire_b_tariff_brl_kwh is not None:
-        uncompensated = max(Decimal("0"), bill.imported_kwh - bill.compensated_kwh)
+    # Conferência do modelo contra a fatura. Sem consumo importado no ciclo
+    # (dado ausente), o modelo viraria "só iluminação" e fabricaria uma
+    # diferença enganosa — então fica `None`, como a economia. O Fio B incide
+    # só sobre a energia compensada que foi de fato consumida (nunca acima do
+    # importado). Não inclui o custo de disponibilidade nem retroativos: a
+    # diferença que sobra é mostrada como tal, sem presumir a causa.
+    if (
+        tariff is not None
+        and bill.wire_b_tariff_brl_kwh is not None
+        and bill.imported_kwh > 0
+    ):
+        compensated_used = min(bill.compensated_kwh, bill.imported_kwh)
+        uncompensated = bill.imported_kwh - compensated_used
         modeled_bill_brl = (
             uncompensated * tariff
-            + bill.compensated_kwh * bill.wire_b_tariff_brl_kwh
+            + compensated_used * bill.wire_b_tariff_brl_kwh
             + bill.public_lighting_brl
         ).quantize(cents, rounding=ROUND_HALF_UP)
         bill_model_difference_brl = (bill.total_amount_brl - modeled_bill_brl).quantize(

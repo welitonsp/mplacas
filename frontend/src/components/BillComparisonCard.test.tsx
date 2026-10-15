@@ -26,7 +26,7 @@ const base: ExecutiveIndicators = {
   compensated_kwh: '221',
   excess_credit_kwh: '14.000',
   bill_without_solar_brl: '334.22',
-  credit_balance_value_brl: '14.16',
+  credit_balance_value_brl: '11.01',
   modeled_bill_brl: '68.91',
   bill_model_difference_brl: '1.31',
 }
@@ -45,13 +45,13 @@ describe('BillComparisonCard', () => {
     expect(screen.getByText('Sem a usina, você pagaria').nextElementSibling?.textContent).toMatch(/334,22/)
     expect(screen.getByText('Com a usina, você pagou').nextElementSibling?.textContent).toMatch(/70,22/)
     expect(within(detail('Energia que saiu para a rede')).getByText(/14 kWh passaram do consumo/)).toBeInTheDocument()
-    expect(within(detail('Créditos guardados')).getByText(/14,16/)).toBeInTheDocument()
+    expect(within(detail('Créditos guardados')).getByText(/11,01/)).toBeInTheDocument()
     expect(within(detail('Conferência com a fatura')).getByText(/1,31 de outros itens/)).toBeInTheDocument()
   })
 
-  it('diferença pequena aparece como "bate com a fatura"', () => {
+  it('diferença de centavos aparece como "confere com o valor cobrado"', () => {
     render(<BillComparisonCard indicators={{ ...base, bill_model_difference_brl: '0.02' }} referenceMonth="2026-09" />)
-    expect(within(detail('Conferência com a fatura')).getByText('Bate com a fatura')).toBeInTheDocument()
+    expect(within(detail('Conferência com a fatura')).getByText('Confere com o valor cobrado')).toBeInTheDocument()
   })
 
   it('sem tarifa (campos null) o card não aparece — nada de R$ 0,00 fabricado', () => {
