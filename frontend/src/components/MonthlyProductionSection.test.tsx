@@ -136,7 +136,7 @@ describe('MonthlyProductionSection', () => {
   it('expõe uma tabela sr-only com ciclo, valor e qualidade dos dados por linha', () => {
     render(<MonthlyProductionSection history={buildHistory()} plantId={PLANT_ID} />)
 
-    const table = document.querySelector('table.sr-only') as HTMLElement
+    const table = document.querySelector('.sr-only > table') as HTMLElement
     expect(table).toBeInTheDocument()
 
     const partialRow = within(table).getByText('mai/26').closest('tr') as HTMLElement
