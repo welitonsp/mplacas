@@ -90,6 +90,7 @@ const FILL_PAIRS: Array<[string, DesignTokenName]> = [
   ['energy-grid', '--color-energy-grid'],
   ['energy-consumption', '--color-energy-consumption'],
   ['chart-reference', '--color-chart-reference'],
+  ['chart-unassessed', '--color-chart-unassessed'],
 ]
 
 // Padrão de "badge": texto `-text` sobre o próprio fundo `-light` da mesma

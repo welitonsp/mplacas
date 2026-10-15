@@ -13,6 +13,15 @@ import {
 } from '../lib/dashboard/visuals'
 import { Card } from './Card'
 
+// Dia sem produção esperada para comparar (`level === null`). Antes era cinza
+// (`SEVERITY_BAR.neutral`), e numa usina ainda sem baseline sazonal o gráfico
+// inteiro ficava cinza — "sem cor" para quem olha.
+// - Nenhum dia avaliado: a barra é só produção medida → verde de produção.
+// - Mistura de dias avaliados e não avaliados: azul próprio, para não se
+//   confundir com o verde de "Normal".
+const UNASSESSED_ONLY_BAR = 'bg-[var(--color-energy-solar)]'
+const UNASSESSED_MIXED_BAR = 'bg-[var(--color-chart-unassessed)]'
+
 export function ProductionHistoryChart({
   daily,
   currentStreakDays,
@@ -132,6 +141,7 @@ export function ProductionHistoryChart({
   // ganha uma entrada explícita pra essa cor não aparecer sem explicação
   // (regra de acessibilidade: cor nunca sozinha, sempre com rótulo).
   const hasUnassessedDay = daily.some((d) => d.level === null)
+  const allUnassessed = daily.every((d) => d.level === null)
 
   const activeIndex = selectedIndex ?? daily.length - 1
   const activeDay = daily[activeIndex]
@@ -264,15 +274,25 @@ export function ProductionHistoryChart({
       {/* Legenda em linha, sem pílulas: cor + rótulo, como em gráficos de
           produto (ADR-077). As cores aqui são as mesmas das barras. */}
       <ul className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] text-[var(--color-text-secondary)]">
-        {ANOMALY_LEGEND.map((item) => (
-          <li key={item.level} className="inline-flex items-center gap-2">
-            <span className={`h-2.5 w-2.5 rounded-[3px] ${SEVERITY_BAR[levelSeverity(item.level)]}`} />
-            {item.label}
-          </li>
-        ))}
-        {hasUnassessedDay && (
+        {/* Sem nenhum dia avaliado (usina ainda sem baseline sazonal), não há
+            normal/atenção/anomalia para legendar: a barra é só produção
+            medida, na cor de produção da marca. */}
+        {allUnassessed ? (
           <li className="inline-flex items-center gap-2">
-            <span className={`h-2.5 w-2.5 rounded-[3px] ${SEVERITY_BAR.neutral}`} />
+            <span className={`h-2.5 w-2.5 rounded-[3px] ${UNASSESSED_ONLY_BAR}`} />
+            Produção medida (sem esperado para comparar)
+          </li>
+        ) : (
+          ANOMALY_LEGEND.map((item) => (
+            <li key={item.level} className="inline-flex items-center gap-2">
+              <span className={`h-2.5 w-2.5 rounded-[3px] ${SEVERITY_BAR[levelSeverity(item.level)]}`} />
+              {item.label}
+            </li>
+          ))
+        )}
+        {hasUnassessedDay && !allUnassessed && (
+          <li className="inline-flex items-center gap-2">
+            <span className={`h-2.5 w-2.5 rounded-[3px] ${UNASSESSED_MIXED_BAR}`} />
             Sem expectativa
           </li>
         )}
@@ -497,7 +517,11 @@ export function ProductionHistoryChart({
                       <span
                         data-testid="production-history-bar"
                         className={`w-full max-w-[44px] rounded-t-[6px] transition-[filter,box-shadow] duration-150 motion-reduce:transition-none ${
-                          SEVERITY_BAR[severity]
+                          severity === 'neutral'
+                            ? allUnassessed
+                              ? UNASSESSED_ONLY_BAR
+                              : UNASSESSED_MIXED_BAR
+                            : SEVERITY_BAR[severity]
                         } ${
                           isActive
                             ? 'ring-2 ring-[var(--color-text-primary)] ring-offset-2 ring-offset-[var(--color-surface)]'

@@ -135,6 +135,9 @@ function ProductionHealthHero({
   }
 
   const recent = latestProductionDays(anomalyData.daily, DEFAULT_PRODUCTION_PERIOD_DAYS)
+  // Nenhum dia com esperado (usina sem baseline sazonal ainda): as barras são
+  // só produção medida, em verde — não cinza (ver `ProductionHistoryChart`).
+  const recentAllUnassessed = recent.every((day) => day.level === null)
   const alertSignal = productionAlertSignal(anomalyData.daily)
   const action = productionHealthAction(alertSignal.tone)
   const confidence = buildDataConfidenceSummary(quality, latestDataDate)
@@ -212,7 +215,13 @@ function ProductionHealthHero({
                     <span
                       data-testid="production-health-mini-bar"
                       data-severity={severity}
-                      className={`relative z-10 w-full max-w-10 rounded-t-md ${SEVERITY_BAR[severity]}`}
+                      className={`relative z-10 w-full max-w-10 rounded-t-md ${
+                        severity === 'neutral'
+                          ? recentAllUnassessed
+                            ? 'bg-[var(--color-energy-solar)]'
+                            : 'bg-[var(--color-chart-unassessed)]'
+                          : SEVERITY_BAR[severity]
+                      }`}
                       style={{ height: `calc(${actualHeight}% * 0.82)` }}
                       aria-hidden="true"
                     />
@@ -228,15 +237,28 @@ function ProductionHealthHero({
               ))}
             </div>
             <p className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-[var(--color-text-secondary)]" aria-hidden="true">
-              <span className="inline-flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-success)]" />Normal
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-warning)]" />Atenção
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-danger)]" />Anomalia
-              </span>
+              {recentAllUnassessed ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-energy-solar)]" />Produção medida (sem esperado para comparar)
+                </span>
+              ) : (
+                <>
+                  <span className="inline-flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-success)]" />Normal
+                  </span>
+                  <span className="inline-flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-warning)]" />Atenção
+                  </span>
+                  <span className="inline-flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-danger)]" />Anomalia
+                  </span>
+                  {recent.some((day) => day.level === null) && (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-chart-unassessed)]" />Sem expectativa
+                    </span>
+                  )}
+                </>
+              )}
               <span className="inline-flex items-center gap-2">
                 <span className="w-4 border-t-2 border-dashed border-[var(--color-chart-reference)]" />Esperado do dia
               </span>
