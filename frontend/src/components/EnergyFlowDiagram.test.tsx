@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { EnergyFlowDiagram } from './EnergyFlowDiagram'
 
 describe('EnergyFlowDiagram', () => {
-  it('monta o SankeyFlow com os valores corretos de produção, autoconsumo, injeção e importação', () => {
+  it('monta as duas barras de composição com os valores de produção, autoconsumo, injeção e importação', () => {
     render(
       <EnergyFlowDiagram
         production={100}
@@ -14,11 +14,17 @@ describe('EnergyFlowDiagram', () => {
       />
     )
 
-    const svg = screen.getByRole('img')
-    expect(svg).toHaveAttribute(
+    const [producao, consumo] = screen.getAllByRole('img')
+    expect(producao).toHaveAttribute(
       'aria-label',
-      'Produção de 100 kWh: 60 kWh consumidos diretamente, 40 kWh injetados na rede. Consumo estimado total de 80 kWh: 60 kWh de produção própria, 20 kWh importados da rede.',
+      'Produção de 100 kWh: 60 kWh consumidos diretamente, 40 kWh injetados na rede.',
     )
+    expect(consumo).toHaveAttribute(
+      'aria-label',
+      'Consumo estimado total de 80 kWh: 60 kWh de produção própria, 20 kWh importados da rede.',
+    )
+    // O antigo nó "Rede" (injetado + importado = 60) não existe na fatura.
+    expect(screen.queryByText('Rede')).not.toBeInTheDocument()
   })
 
   it('não renderiza o diagrama quando não há dados suficientes', () => {

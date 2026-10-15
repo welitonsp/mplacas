@@ -5,12 +5,15 @@ export type StackedBarSegment = {
   label: string
   value: number
   tone?: ChartTone
+  // Cor explícita (token CSS) quando o segmento é ENERGIA, não severidade —
+  // ex.: `var(--color-energy-solar)` para autossuficiência (ADR-077).
+  color?: string
 }
 
 const TONE_BG_VAR: Record<ChartTone, string> = {
-  success: 'var(--color-success-text)',
-  warning: 'var(--color-warning-text)',
-  danger: 'var(--color-danger-text)',
+  success: 'var(--color-success)',
+  warning: 'var(--color-warning)',
+  danger: 'var(--color-danger)',
   neutral: 'var(--color-brand-primary)',
 }
 
@@ -72,13 +75,13 @@ export function StackedBar({
       <div
         role="img"
         aria-label={ariaLabel}
-        className="flex w-full overflow-hidden rounded-full bg-[var(--color-chart-track)]"
+        className="flex w-full gap-[3px] overflow-hidden rounded-full bg-[var(--color-chart-track)]"
         style={{ height }}
       >
         {effectiveTotal > 0 &&
           renderableSegments.map((segment, index) => {
             const pct = Math.min(Math.max((segment.value / effectiveTotal) * 100, 0), 100)
-            const color = TONE_BG_VAR[segment.tone ?? 'neutral']
+            const color = segment.color ?? TONE_BG_VAR[segment.tone ?? 'neutral']
             return (
               <div
                 key={`${segment.label}-${index}`}
@@ -93,20 +96,19 @@ export function StackedBar({
             )
           })}
       </div>
-      <ul className="flex flex-wrap gap-2 text-sm" aria-hidden="true">
+      <ul className="flex flex-wrap gap-x-5 gap-y-1.5 text-[13px]" aria-hidden="true">
         {segments.map((segment, index) => (
-          <li
-            key={`${segment.label}-legend-${index}`}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm"
-          >
+          <li key={`${segment.label}-legend-${index}`} className="inline-flex items-center gap-2">
             <span
-              className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+              className="inline-block h-2.5 w-2.5 shrink-0 rounded-[3px]"
               style={{
                 backgroundColor:
-                  segment.value > 0 ? TONE_BG_VAR[segment.tone ?? 'neutral'] : 'var(--color-chart-track)',
+                  segment.value > 0
+                    ? segment.color ?? TONE_BG_VAR[segment.tone ?? 'neutral']
+                    : 'var(--color-chart-track)',
               }}
             />
-            <span className="text-gray-600">{segment.label}</span>
+            <span className="text-[var(--color-text-secondary)]">{segment.label}</span>
             <span className="font-semibold tabular-nums text-[var(--color-text-primary)]">
               {formatValue(segment.value)}
             </span>

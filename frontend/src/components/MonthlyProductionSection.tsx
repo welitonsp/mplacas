@@ -143,7 +143,7 @@ export function MonthlyProductionSection({
       label: formatCycleLabel(cycle.referenceMonth),
       value: cycle.productionKwh,
       unavailableLabel: 'sem dado',
-      tone: hasGap ? 'warning' : 'neutral',
+      tone: 'neutral',
       ...(hasGap
         ? {
             badge: { label: 'dados parciais', tone: 'warning' as const },
@@ -169,7 +169,7 @@ export function MonthlyProductionSection({
         // são completos.
         legend={
           hasAnyGap
-            ? [{ label: 'Dados parciais — dias sem telemetria coletada', tone: 'warning', dashed: true }]
+            ? [{ label: 'Dados parciais — dias sem telemetria coletada', tone: 'neutral', dashed: true }]
             : undefined
         }
       />

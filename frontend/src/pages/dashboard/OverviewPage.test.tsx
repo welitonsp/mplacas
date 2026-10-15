@@ -248,17 +248,18 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     // `Card`) para pegar o mesmo container de antes (SVG + tabela sr-only +
     // parágrafo de resumo).
     const flowSvg = screen.getByRole('img', { name: /^Produção de/ })
-    const flowSection = flowSvg.closest('.rounded-2xl') as HTMLElement
+    const flowSection = flowSvg.closest('[data-testid="energy-flow-embedded"]') as HTMLElement
     expect(flowSection).not.toBeNull()
-    expect(within(flowSection).getAllByText(/120 kWh/).length).toBeGreaterThan(0)
-    expect(within(flowSection).getAllByText(/80 kWh/).length).toBeGreaterThan(0)
-    expect(within(flowSection).getAllByText(/420 kWh/).length).toBeGreaterThan(0)
-    expect(within(flowSection).getAllByText(/540 kWh/).length).toBeGreaterThan(0)
+    // Barras de composição (ADR-077): valores na legenda, total no título.
+    expect(flowSection).toHaveTextContent('Da rede120')
+    expect(flowSection).toHaveTextContent('Injetada na rede80')
+    expect(flowSection).toHaveTextContent('Consumida na casa420')
+    expect(flowSection).toHaveTextContent('540 kWh')
 
     // E não aparecem duplicados fora dele, em nenhum outro card do módulo.
     const outsideFlow = document.body
     const allOccurrences = (pattern: RegExp) =>
-      within(outsideFlow).getAllByText(pattern).filter((el) => !flowSection.contains(el))
+      within(outsideFlow).queryAllByText(pattern).filter((el) => !flowSection.contains(el))
     expect(allOccurrences(/^120 kWh$/)).toHaveLength(0)
     expect(allOccurrences(/^80 kWh$/)).toHaveLength(0)
     expect(allOccurrences(/^420 kWh$/)).toHaveLength(0)

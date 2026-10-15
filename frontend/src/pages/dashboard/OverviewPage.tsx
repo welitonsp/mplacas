@@ -538,8 +538,8 @@ export function OverviewPage() {
                             // `EnergyFlowDiagram`). Os dois segmentos usam tom
                             // neutro — `tone: 'success'` era usado aqui por
                             // engano em "Autossuficiência".
-                            { label: 'Autossuficiência', value: selfSufficiencyPercent, tone: 'neutral' },
-                            { label: 'Dependência da rede', value: gridDependencyPercent, tone: 'neutral' },
+                            { label: 'Autossuficiência', value: selfSufficiencyPercent, color: 'var(--color-energy-solar)' },
+                            { label: 'Dependência da rede', value: gridDependencyPercent, color: 'var(--color-energy-grid)' },
                           ]}
                           total={100}
                           valueFormatter={(value) => `${formatNumber(value, 1)}%`}
