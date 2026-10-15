@@ -84,13 +84,28 @@ class BillingReconciliation:
     generation_cycle_kwh: Decimal | None = None
     meter_vs_injection_delta_kwh: Decimal | None = None
     origin_vs_meter_delta_kwh: Decimal | None = None
+    # Energia injetada que passou do consumo do ciclo e virou crédito
+    # ("EXCEDENTE RECEBIDO" na fatura SCEE). Só existe quando a fatura traz o
+    # registro do medidor; sem ele, `None` — nunca um zero fabricado.
+    excess_credit_kwh: Decimal | None = None
 
 
 def reconcile_bill(*, bill: UtilityBill, cycle_production_kwh: Decimal) -> BillingReconciliation:
     bill.validate()
     if cycle_production_kwh < 0:
         raise ValueError("cycle production cannot be negative")
-    self_consumption = max(Decimal("0"), cycle_production_kwh - bill.injected_kwh)
+    # Energia que de fato saiu para a rede. Na fatura SCEE da Equatorial a
+    # linha "INJEÇÃO SCEE" (`injected_kwh`) é a energia COMPENSADA no ciclo; a
+    # injeção real é o registro "ENERGIA GERAÇÃO" do medidor
+    # (`generation_cycle_kwh`). Conferido na fatura real de set/2026:
+    # INJEÇÃO SCEE 221 = consumo 221; ENERGIA GERAÇÃO 235; 235 − 221 = 14 kWh
+    # de "EXCEDENTE RECEBIDO". Usar 221 inflava o autoconsumo (e a economia)
+    # pelos 14 kWh que viraram crédito. Sem o registro do medidor (layouts
+    # antigos), `injected_kwh` continua sendo a melhor informação disponível.
+    grid_injection = (
+        bill.generation_cycle_kwh if bill.generation_cycle_kwh is not None else bill.injected_kwh
+    )
+    self_consumption = max(Decimal("0"), cycle_production_kwh - grid_injection)
     total_consumption = bill.imported_kwh + self_consumption
     self_consumption_rate = (
         self_consumption / cycle_production_kwh * Decimal("100")
@@ -104,17 +119,22 @@ def reconcile_bill(*, bill: UtilityBill, cycle_production_kwh: Decimal) -> Billi
     )
 
     generation_cycle_kwh = bill.generation_cycle_kwh
+    excess_credit: Decimal | None
     if generation_cycle_kwh is not None:
         meter_vs_injection = (generation_cycle_kwh - bill.injected_kwh).quantize(Decimal("0.001"))
         origin_vs_meter = (cycle_production_kwh - generation_cycle_kwh).quantize(Decimal("0.001"))
+        excess_credit = max(Decimal("0"), generation_cycle_kwh - bill.compensated_kwh).quantize(
+            Decimal("0.001")
+        )
     else:
         meter_vs_injection = None
         origin_vs_meter = None
+        excess_credit = None
 
     return BillingReconciliation(
         cycle_production_kwh=cycle_production_kwh.quantize(Decimal("0.001")),
         imported_kwh=bill.imported_kwh,
-        injected_kwh=bill.injected_kwh,
+        injected_kwh=grid_injection,
         estimated_self_consumption_kwh=self_consumption.quantize(Decimal("0.001")),
         estimated_total_consumption_kwh=total_consumption.quantize(Decimal("0.001")),
         self_consumption_rate_percent=self_consumption_rate.quantize(Decimal("0.1")),
@@ -122,4 +142,5 @@ def reconcile_bill(*, bill: UtilityBill, cycle_production_kwh: Decimal) -> Billi
         generation_cycle_kwh=generation_cycle_kwh,
         meter_vs_injection_delta_kwh=meter_vs_injection,
         origin_vs_meter_delta_kwh=origin_vs_meter,
+        excess_credit_kwh=excess_credit,
     )

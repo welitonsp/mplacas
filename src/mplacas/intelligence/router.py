@@ -33,6 +33,10 @@ router = APIRouter(
 _executive_dashboard_read_model = ExecutiveDashboardReadModel()
 
 
+def _optional(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
 def _serialize(result) -> dict[str, object]:
     intelligence = result.intelligence
     reconciliation = intelligence.reconciliation
@@ -78,6 +82,13 @@ def _serialize(result) -> dict[str, object]:
                 else None
             ),
             "savings_unavailable_reason": intelligence.savings_unavailable_reason,
+            # "Conta com e sem a usina" — todos opcionais (null sem tarifa).
+            "compensated_kwh": str(intelligence.compensated_kwh),
+            "excess_credit_kwh": _optional(reconciliation.excess_credit_kwh),
+            "bill_without_solar_brl": _optional(intelligence.bill_without_solar_brl),
+            "credit_balance_value_brl": _optional(intelligence.credit_balance_value_brl),
+            "modeled_bill_brl": _optional(intelligence.modeled_bill_brl),
+            "bill_model_difference_brl": _optional(intelligence.bill_model_difference_brl),
         },
         "diagnostics": [
             {

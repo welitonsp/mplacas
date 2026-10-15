@@ -56,7 +56,39 @@ async function interceptarApi(page: import('@playwright/test').Page) {
         ],
       },
     ],
-    ['**/energy/executive/latest*', executivePayload],
+    // Ciclo coerente com a fatura real de set/2026 (ver
+    // `BillComparisonCard`), para a captura mostrar "conta com e sem a usina".
+    [
+      '**/energy/executive/latest*',
+      {
+        ...executivePayload,
+        current_cycle: {
+          ...executivePayload.current_cycle,
+          reference_month: '2026-09',
+          indicators: {
+            ...executivePayload.current_cycle.indicators,
+            cycle_production_kwh: '400.000',
+            imported_kwh: '221',
+            injected_kwh: '235',
+            estimated_self_consumption_kwh: '165.000',
+            estimated_total_consumption_kwh: '386.000',
+            bill_energy_component_brl: '40.01',
+            total_amount_brl: '70.22',
+            public_lighting_brl: '30.21',
+            tariff_with_taxes_brl_kwh: '0.787589',
+            tariff_without_taxes_brl_kwh: '0.613030',
+            credit_balance_kwh: '17.98',
+            estimated_savings_brl: '264.00',
+            compensated_kwh: '221',
+            excess_credit_kwh: '14.000',
+            bill_without_solar_brl: '334.22',
+            credit_balance_value_brl: '11.01',
+            modeled_bill_brl: '68.91',
+            bill_model_difference_brl: '1.31',
+          },
+        },
+      },
+    ],
     // Com rendimento do período, para a captura mostrar a "Leitura do
     // período" em paisagem (Produção diária + Rendimento lado a lado).
     [

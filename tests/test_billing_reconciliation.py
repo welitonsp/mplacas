@@ -155,3 +155,43 @@ def test_bill_accepts_all_three_real_production_tariffs(with_taxes: Decimal) -> 
         wire_b_tariff_brl_kwh=Decimal("0.175126"),
     )
     bill.validate()  # must not raise
+
+
+def _scee_september_2026() -> UtilityBill:
+    # Números da fatura SCEE real da Equatorial Goiás de set/2026: medidor com
+    # ENERGIA ATIVA 221 e ENERGIA GERAÇÃO 235; linha "INJEÇÃO SCEE" 221
+    # (= compensada); "EXCEDENTE RECEBIDO" 14 kWh; saldo 17,98 kWh.
+    return UtilityBill(
+        distributor="EQUATORIAL_GO",
+        reference_month="2026-09",
+        cycle_start=date(2026, 8, 17),
+        cycle_end=date(2026, 9, 14),
+        billed_days=29,
+        imported_kwh=Decimal("221"),
+        injected_kwh=Decimal("221"),
+        compensated_kwh=Decimal("221"),
+        credit_balance_kwh=Decimal("17.98"),
+        total_amount_brl=Decimal("70.22"),
+        public_lighting_brl=Decimal("30.21"),
+        generation_cycle_kwh=Decimal("235"),
+        tariff_with_taxes_brl_kwh=Decimal("0.787589"),
+        tariff_without_taxes_brl_kwh=Decimal("0.613030"),
+        wire_b_tariff_brl_kwh=Decimal("0.175126"),
+    )
+
+
+def test_self_consumption_uses_meter_injection_not_scee_compensated_line() -> None:
+    # Inversor produziu 400 kWh; 235 saíram para a rede (medidor) → 165 de
+    # autoconsumo. Com a linha SCEE (221) seriam 179: 14 kWh a mais, que na
+    # verdade viraram crédito.
+    result = reconcile_bill(bill=_scee_september_2026(), cycle_production_kwh=Decimal("400"))
+    assert result.injected_kwh == Decimal("235")
+    assert result.estimated_self_consumption_kwh == Decimal("165.000")
+    assert result.estimated_total_consumption_kwh == Decimal("386.000")
+    assert result.excess_credit_kwh == Decimal("14.000")
+
+
+def test_without_meter_register_falls_back_to_scee_injection_line() -> None:
+    result = reconcile_bill(bill=make_bill(), cycle_production_kwh=Decimal("610"))
+    assert result.injected_kwh == Decimal("182")
+    assert result.excess_credit_kwh is None

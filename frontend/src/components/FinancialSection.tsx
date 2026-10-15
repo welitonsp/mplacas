@@ -6,6 +6,7 @@ import { SectionTitle } from './SectionTitle'
 import { CurrencyCard } from './CurrencyCard'
 import { StackedBar } from './charts/StackedBar'
 import { EstimatedSavingsCard } from './EstimatedSavingsCard'
+import { BillComparisonCard } from './BillComparisonCard'
 import { FinancialReturnSection } from './FinancialReturnSection'
 import { MetricStrip } from './MetricStrip'
 import { RetryableError } from './RetryableError'
@@ -119,6 +120,10 @@ export function FinancialSection({
           />
         </div>
       </section>
+
+      {/* A pergunta central do dono da usina — quanto pagaria sem ela —
+          logo depois dos quatro números do resumo. */}
+      <BillComparisonCard indicators={indicators} referenceMonth={referenceMonth} />
 
       <section className="md:col-span-6 lg:col-span-12" aria-label="Decisão financeira do ciclo">
         <FinancialDecisionPanel
