@@ -24,11 +24,14 @@ function renderLoginPage() {
 }
 
 describe('LoginPage — acessibilidade e tokens de design', () => {
-  it('mostra a proposta executiva e a prévia do cockpit no primeiro acesso', () => {
+  it('mostra a proposta no primeiro acesso, sem números inventados de "prévia"', () => {
     renderLoginPage()
 
-    expect(screen.getByText('Prévia do cockpit')).toBeInTheDocument()
-    expect(screen.getByText('Operação, técnica e financeiro no mesmo olhar')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
+    expect(screen.getByText('Gestão de energia solar com leitura executiva.')).toBeInTheDocument()
+    expect(screen.queryByText('Prévia do cockpit')).not.toBeInTheDocument()
+    expect(screen.queryByText('92%')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Senha')).not.toHaveAttribute('placeholder')
     expect(screen.getByText('Sessão protegida por credenciais operacionais. O backend valida permissões a cada requisição.')).toBeInTheDocument()
   })
 
