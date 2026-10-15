@@ -82,6 +82,31 @@ describe('BillsSection — importar e conferir faturas', () => {
     )
   })
 
+  it('sem o registro do medidor, não afirma o que saiu para a rede: mostra a linha da fatura com o nome dela', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(
+      json({ count: 1, items: [{ ...pendingBill, generation_cycle_kwh: null }] }),
+    )
+
+    render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+
+    const review = await screen.findByRole('article', { name: 'Fatura de set/2026' })
+    expect(within(review).queryByText('Energia injetada na rede')).not.toBeInTheDocument()
+    expect(within(review).getByText('Injeção SCEE (como na fatura)').nextElementSibling?.textContent).toBe(
+      '221 kWh',
+    )
+  })
+
+  it('reenvio de fatura ainda pendente (HTTP 200) avisa que ela já estava lá', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json({ count: 1, items: [pendingBill] }))
+    vi.spyOn(api, 'uploadBillPdf').mockResolvedValue(json({ status: 'already_imported', bill: pendingBill }, 200))
+
+    const { container } = render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    await screen.findByRole('article', { name: 'Fatura de set/2026' })
+    chooseFile(container, pdfFile())
+
+    expect(await screen.findByRole('status')).toHaveTextContent('já tinha sido importada e aguarda sua conferência')
+  })
+
   it('sem pendentes, diz isso em vez de mostrar uma lista vazia', async () => {
     vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json({ count: 0, items: [] }))
 

@@ -147,6 +147,24 @@ def test_intake_pdf_cross_tenant_is_not_found(cross_tenant_setup, monkeypatch) -
     assert response.json() == {"detail": "plant not found"}
 
 
+def test_intake_pdf_with_read_role_is_forbidden(cross_tenant_setup, monkeypatch) -> None:
+    org_a, _, _, _ = cross_tenant_setup
+    read_token_a = encode_access_token(uuid.uuid4(), org_a, OperationsRole.READ.value)
+
+    async def fake_extract(content: bytes, **kwargs):  # pragma: no cover - should never run
+        raise AssertionError("PDF extraction should not run for a READ credential")
+
+    monkeypatch.setattr(billing_router, "extract_pdf_text_isolated", fake_extract)
+
+    response = TestClient(app).post(
+        f"/billing/intake-pdf?plant_id={PLANT_A}",
+        headers={"Authorization": f"Bearer {read_token_a}", "Content-Type": "application/pdf"},
+        content=b"%PDF-1.7 read-only user trying to import",
+    )
+
+    assert response.status_code == 403
+
+
 def test_pending_bills_cross_tenant_is_not_found(cross_tenant_setup) -> None:
     _, _, _, token_b = cross_tenant_setup
     client = TestClient(app)

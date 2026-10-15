@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from mplacas.audit.repository import AuditEventRepository
@@ -131,6 +131,7 @@ async def _read_limited_body(request: Request, *, max_bytes: int) -> bytes:
 @router.post("/intake-pdf", status_code=status.HTTP_202_ACCEPTED)
 async def intake_bill_pdf(
     request: Request,
+    response: Response,
     scoped: AdminPlant,
 ) -> dict[str, object]:
     """Importa a fatura em PDF enviada pelo site (mesmo leitor do Telegram).
@@ -187,14 +188,31 @@ async def intake_bill_pdf(
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
         repository = UtilityBillRepository(session)
-        try:
-            record = await repository.create_pending(
-                bill,
-                plant_id=scoped.plant_id,
-                source_text=source_text,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        # Reenvio do mesmo PDF (mesmo texto extraído) não cria nada: devolve o
+        # registro existente com o estado REAL dele (pendente, confirmada ou
+        # rejeitada), HTTP 200 em vez de 202, e a auditoria marca o reenvio —
+        # para nenhum cliente nem a trilha registrarem uma importação que não
+        # aconteceu.
+        existing = await repository.find_by_source_text(
+            plant_id=scoped.plant_id, source_text=source_text
+        )
+        if existing is not None:
+            record = existing
+        else:
+            try:
+                record = await repository.create_pending(
+                    bill,
+                    plant_id=scoped.plant_id,
+                    source_text=source_text,
+                )
+            except ValueError as exc:
+                # Mensagem fixa: o `ValueError` de `bill.validate()` pode trazer
+                # valores lidos do documento.
+                raise HTTPException(
+                    status_code=409,
+                    detail="Os valores lidos desta fatura não passaram na validação.",
+                ) from exc
+        duplicate = existing is not None
         await AuditEventRepository(session).record(
             request,
             action="billing.intake_pdf",
@@ -205,10 +223,14 @@ async def intake_bill_pdf(
                 "plant_id": str(record.plant_id),
                 "reference_month": record.reference_month,
                 "status": record.status.value,
+                "duplicate": duplicate,
             },
         )
         await session.commit()
         await session.refresh(record)
+    if duplicate:
+        response.status_code = status.HTTP_200_OK
+        return {"status": "already_imported", "bill": _serialize(record)}
     return {"status": "pending_review", "bill": _serialize(record)}
 
 

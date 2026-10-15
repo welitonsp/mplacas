@@ -160,11 +160,17 @@ function PendingBillReview({
     }
   }
 
-  // O que a fatura chama de "injeção SCEE" é a energia COMPENSADA; a energia
-  // que de fato saiu para a rede é o registro "ENERGIA GERAÇÃO" do medidor
-  // (`generation_cycle_kwh`). Sem esse registro (layouts antigos), o campo
-  // `injected_kwh` do parser genérico é a própria injeção.
-  const injectedToGrid = bill.generationCycleKwh ?? bill.injectedKwh
+  // Na fatura SCEE da Equatorial, a linha "INJEÇÃO SCEE" (`injected_kwh`) é a
+  // energia COMPENSADA no ciclo; a energia que de fato saiu para a rede é o
+  // registro "ENERGIA GERAÇÃO" do medidor (`generation_cycle_kwh`). Conferido
+  // na fatura real de set/2026: INJEÇÃO SCEE 221 kWh = consumo 221 kWh;
+  // ENERGIA GERAÇÃO 235 kWh; 235 − 221 = 14 kWh de "excedente recebido" que
+  // virou crédito (ver o documento de diagnóstico, seção "Primeira fatura
+  // conferida"). Sem o registro do medidor, a tela NÃO afirma o que saiu para
+  // a rede: mostra a linha da fatura com o nome que ela tem.
+  const injectedField = bill.generationCycleKwh
+    ? { label: 'Energia injetada na rede', value: kwh(bill.generationCycleKwh) }
+    : { label: 'Injeção SCEE (como na fatura)', value: kwh(bill.injectedKwh) }
 
   return (
     <article
@@ -194,7 +200,7 @@ function PendingBillReview({
           value={`${formatFullDate(bill.cycleStart)} a ${formatFullDate(bill.cycleEnd)} · ${bill.billedDays} dias`}
         />
         <BillField label="Energia puxada da rede" value={kwh(bill.importedKwh)} />
-        <BillField label="Energia injetada na rede" value={kwh(injectedToGrid)} />
+        <BillField label={injectedField.label} value={injectedField.value} />
         <BillField label="Energia compensada" value={kwh(bill.compensatedKwh)} />
         <BillField label="Saldo de créditos" value={kwh(bill.creditBalanceKwh)} />
         <BillField label="Iluminação pública" value={formatCurrency(bill.publicLightingBrl)} />
@@ -307,10 +313,18 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
           })
         } else {
           setHighlightedId(bill.id)
-          setFeedback({
-            tone: 'success',
-            message: `Fatura de ${monthLabel(bill)} lida. Confira os valores abaixo e confirme.`,
-          })
+          // 200 = reenvio de uma fatura que já estava pendente; 202 = nova.
+          setFeedback(
+            response.status === 200
+              ? {
+                  tone: 'info',
+                  message: `A fatura de ${monthLabel(bill)} já tinha sido importada e aguarda sua conferência.`,
+                }
+              : {
+                  tone: 'success',
+                  message: `Fatura de ${monthLabel(bill)} lida. Confira os valores abaixo e confirme.`,
+                },
+          )
         }
         pending.refetch()
       } catch {

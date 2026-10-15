@@ -46,6 +46,11 @@ class FakeUtilityBillRepository:
     def __init__(self, session) -> None:
         self.session = session
 
+    existing_record = None
+
+    async def find_by_source_text(self, *, plant_id, source_text):
+        return type(self).existing_record
+
     async def create_pending(self, bill, *, plant_id, source_text):
         return SimpleNamespace(
             id=uuid.UUID("00000000-0000-0000-0000-000000000132"),
@@ -245,6 +250,7 @@ def _install_pdf_fakes(monkeypatch, *, extracted_text: str = "texto extraido da 
     monkeypatch.setattr(billing_router, "extract_pdf_text_isolated", fake_extract)
     monkeypatch.setattr(billing_router, "parse_equatorial_bill_text", fake_parse)
     monkeypatch.setattr(billing_router, "UtilityBillRepository", FakeUtilityBillRepository)
+    monkeypatch.setattr(FakeUtilityBillRepository, "existing_record", None)
     FakeAuditEventRepository.events = []
     monkeypatch.setattr(billing_router, "AuditEventRepository", FakeAuditEventRepository)
     return calls
@@ -290,6 +296,7 @@ def test_intake_pdf_creates_pending_bill_with_all_read_fields(monkeypatch) -> No
         "plant_id": str(_PDF_PLANT_ID),
         "reference_month": "2026-09",
         "status": "PENDING_REVIEW",
+        "duplicate": False,
     }
     get_settings.cache_clear()
 
@@ -374,5 +381,99 @@ def test_intake_pdf_requires_credentials(monkeypatch) -> None:
     )
 
     assert response.status_code in (401, 403)
+    assert "content" not in calls
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_resend_of_confirmed_bill_reports_real_state_and_marks_duplicate(
+    monkeypatch,
+) -> None:
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+    existing = SimpleNamespace(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000199"),
+        plant_id=_PDF_PLANT_ID,
+        distributor="EQUATORIAL_GO",
+        reference_month="2026-09",
+        cycle_start=date(2026, 8, 17),
+        cycle_end=date(2026, 9, 14),
+        billed_days=29,
+        imported_kwh=Decimal("221.00"),
+        injected_kwh=Decimal("221.00"),
+        compensated_kwh=Decimal("221.00"),
+        credit_balance_kwh=Decimal("17.98"),
+        total_amount_brl=Decimal("70.22"),
+        public_lighting_brl=Decimal("30.21"),
+        generation_cycle_kwh=Decimal("235.00"),
+        tariff_with_taxes_brl_kwh=None,
+        tariff_without_taxes_brl_kwh=None,
+        wire_b_tariff_brl_kwh=None,
+        status=BillStatus.CONFIRMED,
+        created_at=None,
+        reviewed_at=None,
+    )
+    monkeypatch.setattr(FakeUtilityBillRepository, "existing_record", existing)
+
+    async def must_not_create(self, bill, *, plant_id, source_text):  # pragma: no cover
+        raise AssertionError("a resend must not create a new bill")
+
+    monkeypatch.setattr(FakeUtilityBillRepository, "create_pending", must_not_create)
+
+    response = _post_pdf(_PDF_BYTES)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "already_imported"
+    assert response.json()["bill"]["status"] == "CONFIRMED"
+    event = FakeAuditEventRepository.events[-1]
+    assert event["details"]["duplicate"] is True
+    assert event["details"]["status"] == "CONFIRMED"
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_validation_error_returns_fixed_message(monkeypatch) -> None:
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+
+    async def invalid(self, bill, *, plant_id, source_text):
+        raise ValueError("tariff_with_taxes_brl_kwh is outside the plausible range: 48.69")
+
+    monkeypatch.setattr(FakeUtilityBillRepository, "create_pending", invalid)
+
+    response = _post_pdf(_PDF_BYTES)
+
+    assert response.status_code == 409
+    assert "48.69" not in response.text
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_rejects_empty_body(monkeypatch) -> None:
+    _configure(monkeypatch)
+    calls = _install_pdf_fakes(monkeypatch)
+
+    response = _post_pdf(b"")
+
+    assert response.status_code == 415
+    assert "content" not in calls
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_size_limit_holds_without_content_length(monkeypatch) -> None:
+    _configure(monkeypatch)
+    monkeypatch.setenv("MPLACAS_TELEGRAM_DOCUMENT_MAX_BYTES", "16")
+    get_settings.cache_clear()
+    calls = _install_pdf_fakes(monkeypatch)
+
+    def chunks():
+        yield b"%PDF-1.7 "
+        yield b"x" * 64
+
+    # Gerador = envio em partes (chunked), sem Content-Length declarado.
+    response = TestClient(app).post(
+        f"/billing/intake-pdf?plant_id={_PDF_PLANT_ID}",
+        headers={"X-API-Key": "synthetic-key", "Content-Type": "application/pdf"},
+        content=chunks(),
+    )
+
+    assert response.status_code == 413
     assert "content" not in calls
     get_settings.cache_clear()
