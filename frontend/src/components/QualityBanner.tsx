@@ -11,7 +11,7 @@ export function QualityBanner({ quality, compact = false }: { quality: CycleQual
 
   if (items.length === 0) {
     return (
-      <p className="mt-4 flex items-center gap-1.5 text-xs text-[var(--color-success)]">
+      <p className="mt-4 flex items-center gap-1.5 text-xs text-[var(--color-success-text)]">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]" />
         Dados consolidados — nenhuma pendência neste ciclo.
       </p>

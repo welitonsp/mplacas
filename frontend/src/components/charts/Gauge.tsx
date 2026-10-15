@@ -70,9 +70,13 @@ export function Gauge({
 
   return (
     <div
-      className={`relative inline-flex flex-col items-center ${className}`.trim()}
+      className={`inline-flex flex-col items-center ${className}`.trim()}
       style={{ width: size }}
     >
+      {/* O texto central é posicionado sobre o ANEL, não sobre o bloco
+          inteiro: antes, com um rótulo de duas ou três linhas embaixo
+          ("Corrigido por temperatura"), o "85%" descia e encavalava no anel. */}
+      <div className="relative" style={{ width: size, height: size }}>
       <svg viewBox="0 0 36 36" width={size} height={size} role="img" aria-label={ariaLabel}>
         <circle
           cx="18"
@@ -101,8 +105,9 @@ export function Gauge({
       >
         {displayValue}
       </div>
+      </div>
       {label && (
-        <p className="mt-1 text-center text-xs font-medium text-gray-500">
+        <p className="mt-1.5 text-center text-xs font-medium leading-4 text-[var(--color-text-secondary)]">
           {label}
         </p>
       )}

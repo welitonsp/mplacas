@@ -9,7 +9,8 @@ import { EstimatedSavingsCard } from './EstimatedSavingsCard'
 import { FinancialReturnSection } from './FinancialReturnSection'
 import { MetricStrip } from './MetricStrip'
 import { RetryableError } from './RetryableError'
-import { FinancialDecisionPanel } from './FinancialDecisionPanel'
+import { FinancialDecisionPanel, buildFinancialDecision } from './FinancialDecisionPanel'
+import { SummaryTile } from './SummaryTile'
 
 // Bloco 3 — "Quanto custou? Qual o retorno?" (Etapa 7 da refatoração de
 // `DashboardPage`): dois blocos financeiros que sempre andam juntos (custo do
@@ -70,8 +71,49 @@ export function FinancialSection({
           ? 'Cadastre o CAPEX'
           : 'Acumulado sobre o investimento'
 
+  const decision = buildFinancialDecision({
+    indicators,
+    referenceMonth,
+    financialReturn: financialReturn.data,
+    financialReturnError: financialReturn.error,
+  })
+  const evidenceFor = (label: string) => decision.evidence.find((item) => item.label === label)
+
   return (
     <>
+      {/* Indicadores primeiro, decisão depois — mesma ordem da Visão Geral
+          (ADR-077). Os quatro números saíram da coluna lateral do painel de
+          decisão, que os repetia. */}
+      <section className="md:col-span-6 lg:col-span-12">
+        <SectionTitle as="h2">Resumo financeiro</SectionTitle>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          <SummaryTile
+            label="Economia estimada"
+            value={estimatedSavings == null ? 'R$ —' : formatCurrency(estimatedSavings)}
+            supportingText={estimatedSavings == null ? 'Tarifa do ciclo ausente' : `Estimado · ciclo ${referenceMonth}`}
+            tone={estimatedSavings == null ? 'warning' : 'neutral'}
+          />
+          <SummaryTile
+            label="Cobertura por créditos"
+            value={creditCoverage == null ? '—' : `${formatNumber(creditCoverage, 1)}%`}
+            supportingText="Do consumo coberto"
+            tone={evidenceFor('Cobertura créditos')?.tone ?? 'neutral'}
+          />
+          <SummaryTile
+            label="ROI acumulado"
+            value={roiPercent == null ? '—' : `${formatNumber(roiPercent, 1)}%`}
+            supportingText={roiSupportingText}
+            tone="neutral"
+          />
+          <SummaryTile
+            label="Payback"
+            value={evidenceFor('Payback')?.value ?? '—'}
+            supportingText={decision.label}
+            tone={evidenceFor('Payback')?.tone ?? 'neutral'}
+          />
+        </div>
+      </section>
+
       <section className="md:col-span-6 lg:col-span-12" aria-label="Decisão financeira do ciclo">
         <FinancialDecisionPanel
           indicators={indicators}
@@ -79,30 +121,6 @@ export function FinancialSection({
           financialReturn={financialReturn.data}
           financialReturnError={financialReturn.error}
         />
-      </section>
-
-      <section className="md:col-span-6 lg:col-span-12">
-        <SectionTitle as="h2">Resumo financeiro</SectionTitle>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <FinancialSummaryTile
-            label="Economia estimada"
-            value={estimatedSavings == null ? 'R$ —' : formatCurrency(estimatedSavings)}
-            supportingText={estimatedSavings == null ? 'Tarifa do ciclo ausente' : `Ciclo ${referenceMonth}`}
-            tone="solar"
-          />
-          <FinancialSummaryTile
-            label="Cobertura por créditos"
-            value={creditCoverage == null ? '—' : `${formatNumber(creditCoverage, 1)}%`}
-            supportingText="Quanto do consumo foi coberto"
-            tone="grid"
-          />
-          <FinancialSummaryTile
-            label="ROI acumulado"
-            value={roiPercent == null ? '—' : `${formatNumber(roiPercent, 1)}%`}
-            supportingText={roiSupportingText}
-            tone="investment"
-          />
-        </div>
       </section>
 
       {/* Valores em R$ (total da fatura, componente de energia, iluminação
@@ -145,7 +163,7 @@ export function FinancialSection({
                 originou. Mesmo texto/estilo de `HeroCard.tsx`, único outro
                 lugar do app que já mostra este dado (lá, só no módulo Visão
                 Geral). */}
-            <p className="-mt-3 mb-4 text-xs font-medium text-gray-500">
+            <p className="-mt-2 mb-4 text-[13px] font-medium text-[var(--color-text-secondary)]">
               Ciclo de referência: {referenceMonth}
             </p>
             {/* Decomposição da fatura (energia + iluminação pública [+
@@ -158,17 +176,17 @@ export function FinancialSection({
                 skill `financial-visualization`. */}
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] gap-4 items-stretch">
               {billTotalAmount != null && billEnergyComponent != null && billPublicLighting != null ? (
-                <div className="rounded-lg border border-gray-200 bg-[var(--color-surface)] p-4">
-                  <p className="text-xs font-medium text-gray-500">
+                <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)]">
+                  <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">
                     Valor total da fatura
                   </p>
-                  <p className="mt-1 mb-3 text-2xl font-semibold text-gray-900 tabular-nums">
+                  <p className="mt-1 mb-4 font-display text-[28px] font-semibold tabular-nums text-[var(--color-text-primary)]">
                     {formatCurrency(billTotalAmount)}
                   </p>
                   <StackedBar
                     segments={[
                       { label: 'Componente energia', value: billEnergyComponent, tone: 'neutral' },
-                      { label: 'Iluminação pública', value: billPublicLighting, tone: 'warning' },
+                      { label: 'Iluminação pública', value: billPublicLighting, color: 'var(--color-energy-consumption)' },
                       ...(billOtherCharges != null && billOtherCharges > 0.005
                         ? [{ label: 'Outros encargos', value: billOtherCharges, tone: 'danger' as const }]
                         : []),
@@ -265,33 +283,5 @@ export function FinancialSection({
         )}
       </section>
     </>
-  )
-}
-
-function FinancialSummaryTile({
-  label,
-  value,
-  supportingText,
-  tone,
-}: {
-  label: string
-  value: string
-  supportingText: string
-  tone: 'solar' | 'grid' | 'investment'
-}) {
-  const toneClass =
-    tone === 'solar'
-      ? 'bg-[var(--color-energy-solar)]'
-      : tone === 'grid'
-        ? 'bg-[var(--color-energy-grid)]'
-        : 'bg-[var(--color-energy-consumption)]'
-
-  return (
-    <div className="min-h-[7.5rem] rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 shadow-sm sm:min-h-[8.5rem] sm:p-4">
-      <div className={`mb-3 h-1.5 w-12 rounded-sm sm:mb-4 ${toneClass}`} />
-      <p className="text-xs font-medium text-gray-500">{label}</p>
-      <p className="mt-2 text-xl font-semibold text-gray-900 tabular-nums sm:text-2xl">{value}</p>
-      <p className="mt-1 text-xs text-gray-500">{supportingText}</p>
-    </div>
   )
 }

@@ -343,86 +343,84 @@ export function ProductionDiagnosticPanel({
   const playbook = diagnosis.playbook ?? defaultPlaybook(diagnosis.tone)
   const alertSignal = anomalyState.data ? productionAlertSignal(anomalyState.data.daily) : null
 
+  // Visual (ADR-077, etapa 4): mesma gramática do painel de decisão da Visão
+  // Geral — rótulo + texto em vez de caixas dentro de caixas, sinais como
+  // lista compacta (a cor fica só no valor, junto do texto), plano em colunas.
   return (
-    <Card accent={diagnosis.tone} className="overflow-hidden">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.6fr)] lg:items-start">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-medium text-gray-500">Diagnóstico de produção</p>
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${SEVERITY_BG[diagnosis.tone]} ${SEVERITY_TEXT[diagnosis.tone]}`}
-            >
-              Confiança {diagnosis.confidence.toLowerCase()}
-            </span>
-            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
-              {window}
-            </span>
-            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
-              {owner}
-            </span>
+    <Card className="sm:p-7">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">Diagnóstico de produção</p>
+        <span
+          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${SEVERITY_BG[diagnosis.tone]} ${SEVERITY_TEXT[diagnosis.tone]}`}
+        >
+          Confiança {diagnosis.confidence.toLowerCase()}
+        </span>
+        <span aria-hidden="true" className="text-[13px] text-[var(--color-text-secondary)]">·</span>
+        <span className="text-[13px] text-[var(--color-text-secondary)]">{window}</span>
+        <span aria-hidden="true" className="text-[13px] text-[var(--color-text-secondary)]">·</span>
+        <span className="text-[13px] text-[var(--color-text-secondary)]">{owner}</span>
+      </div>
+
+      <h2 className="mt-2 text-[22px] font-semibold leading-tight text-[var(--color-text-primary)]">{diagnosis.title}</h2>
+      <p className="mt-1.5 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">{diagnosis.cause}</p>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <dl className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Impacto</dt>
+            <dd className="mt-1 text-[15px] leading-6 text-[var(--color-text-primary)]">{diagnosis.impact}</dd>
           </div>
-
-          <h2 className="mt-2 text-xl font-semibold tracking-tight text-gray-950">{diagnosis.title}</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600">{diagnosis.cause}</p>
-
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-              <p className="text-xs font-medium text-gray-500">Impacto</p>
-              <p className="mt-2 text-sm leading-6 text-gray-700">{diagnosis.impact}</p>
-            </div>
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-              <p className="text-xs font-medium text-gray-500">Próxima ação</p>
-              <p className="mt-2 text-sm leading-6 text-gray-700">{diagnosis.action}</p>
-            </div>
+          <div>
+            <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Próxima ação</dt>
+            <dd className="mt-1 text-[15px] leading-6 text-[var(--color-text-primary)]">{diagnosis.action}</dd>
           </div>
-        </div>
+        </dl>
 
-        <div role="group" aria-label="Sinais do diagnóstico de produção" className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
+        <div
+          role="group"
+          aria-label="Sinais do diagnóstico de produção"
+          className="grid grid-cols-2 gap-x-5 gap-y-4 border-t border-[var(--color-border)] pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0"
+        >
           {diagnosis.signals.map((signal) => (
-            <div
-              key={signal.label}
-              className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[signal.tone]} px-3 py-2`}
-            >
-              <p className="text-xs font-medium text-gray-500">{signal.label}</p>
-              <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[signal.tone]}`}>{signal.value}</p>
+            <div key={signal.label} className="min-w-0">
+              <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">{signal.label}</p>
+              <p className={`mt-0.5 text-[15px] font-semibold ${signal.tone === 'neutral' ? 'text-[var(--color-text-primary)]' : SEVERITY_TEXT[signal.tone]}`}>
+                {signal.value}
+              </p>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        {/* O bloco "Evidências usadas" saiu daqui em 2026-08-27 (R-1 de
-            docs/ANALISE_DENSIDADE_TELAS_2026-08-27.md). Ele era literalmente
-            `signals.map(s => `${s.label}: ${s.value}`).join(' · ')` — a mesma
-            lista já renderizada como cards logo acima, repetida em prosa.
-            Nenhum chamador passava `evidenceSummary`, então sempre caía nesse
-            fallback. Remoção pura: nada de informação se perdeu. */}
-        <p className="rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
-          Plano de produção
-        </p>
-
+      <div className="mt-6 border-t border-[var(--color-border)] pt-5">
+        {/* "Evidências usadas" saiu em 2026-08-27 (R-1): repetia os sinais. */}
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">Plano de produção</h3>
+          {alertSignal && (
+            <p className="flex gap-1.5 text-[13px] text-[var(--color-text-secondary)]">
+              <span>Critério de alerta</span>
+              <span className={`font-semibold ${SEVERITY_TEXT[alertSignal.tone]}`}>{alertSignal.label}</span>
+            </p>
+          )}
+        </div>
         {alertSignal && (
-          <div className={`mt-4 rounded-xl border border-[var(--color-border)] ${SEVERITY_BG[alertSignal.tone]} p-3`}>
-            <p className="text-xs font-medium text-gray-500">Critério de alerta</p>
-            <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[alertSignal.tone]}`}>
-              {alertSignal.label}
-            </p>
-            <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">
-              {alertSignal.detail} Regra: 7 dias contra esperado; sem baseline, 7 dias contra a janela anterior.
-            </p>
-          </div>
+          <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
+            {alertSignal.detail} Regra: 7 dias contra esperado; sem baseline, 7 dias contra a janela anterior.
+          </p>
         )}
 
-        <ol aria-label="Plano operacional de produção" className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <ol aria-label="Plano operacional de produção" className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-3">
           {playbook.map((step, index) => (
-            <li key={step.title} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
-              <div className="flex items-center gap-2">
-                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${SEVERITY_BG[diagnosis.tone]} ${SEVERITY_TEXT[diagnosis.tone]}`}>
-                  {index + 1}
-                </span>
-                <p className="text-sm font-semibold text-[var(--color-text)]">{step.title}</p>
-              </div>
-              <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">{step.detail}</p>
+            <li key={step.title} className="flex gap-3">
+              <span
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${SEVERITY_BG[diagnosis.tone]} ${SEVERITY_TEXT[diagnosis.tone]}`}
+              >
+                {index + 1}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[15px] font-semibold text-[var(--color-text-primary)]">{step.title}</span>
+                <span className="mt-0.5 block text-[13px] leading-5 text-[var(--color-text-secondary)]">{step.detail}</span>
+              </span>
             </li>
           ))}
         </ol>

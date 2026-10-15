@@ -20,7 +20,6 @@ import {
 import { formatNumber, formatShortDate, toNumber } from '../../lib/format'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
 import { SectionTitle } from '../../components/SectionTitle'
-import { StackedBar } from '../../components/charts/StackedBar'
 import { HeroCard } from '../../components/HeroCard'
 import { QualityBanner } from '../../components/QualityBanner'
 import { TrendCard } from '../../components/TrendCard'
@@ -28,7 +27,6 @@ import { EnergyFlowDiagram } from '../../components/EnergyFlowDiagram'
 import { DiagnosticsCard } from '../../components/DiagnosticsCard'
 import { EmptyState } from '../../components/EmptyState'
 import { hasIncompleteDailyProduction } from '../../components/EnergyProductionSection'
-import { MetricCard } from '../../components/MetricCard'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
@@ -94,9 +92,8 @@ function ProductionHealthHero({
       <section
         data-testid="production-health-hero"
         aria-label="Produção e saúde da usina"
-        className="md:col-span-6 lg:col-span-12"
       >
-        <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
+        <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] sm:p-7">
           <div className="animate-pulse space-y-4">
             <div className="h-3 w-32 rounded bg-gray-200" />
             <div className="h-8 w-72 max-w-full rounded bg-gray-200" />
@@ -123,14 +120,13 @@ function ProductionHealthHero({
       <section
         data-testid="production-health-hero"
         aria-label="Produção e saúde da usina"
-        className="md:col-span-6 lg:col-span-12"
       >
-        <div className="rounded-3xl border border-gray-200 bg-gray-50 p-5 text-gray-700 shadow-sm">
+        <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] sm:p-7">
           <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
             Indicador chave
           </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-gray-950">
-            Produção e Saúde da Usina
+          <h2 className="mt-2 text-[22px] font-semibold leading-tight text-[var(--color-text-primary)]">
+            Produção dos últimos 7 dias
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600">{title}. {detail}</p>
         </div>
@@ -148,132 +144,131 @@ function ProductionHealthHero({
     .map((day) => ({ day, actual: toNumber(day.actual_production_kwh) }))
     .filter((item): item is { day: NonNullable<typeof item.day>; actual: number } => item.actual != null)
   const totalProduction = productionValues.reduce((sum, item) => sum + item.actual, 0)
-  const latestPoint = [...recent].reverse().find((day) => toNumber(day.actual_production_kwh) != null) ?? null
-  const latestActual = latestPoint ? toNumber(latestPoint.actual_production_kwh) : null
   const maxBar = Math.max(
     ...recent.map((day) => toNumber(day.actual_production_kwh) ?? 0),
     ...recent.map((day) => toNumber(day.expected_production_kwh) ?? 0),
     1,
   )
 
+  // Cartão de produção recente (ADR-077, etapa 4). "Último dia" e
+  // "Desempenho vs esperado" saíram daqui: estão na linha de indicadores logo
+  // acima. Ficam o gráfico dos 7 dias, a média/total do recorte e a ação.
   return (
-    <section
-      data-testid="production-health-hero"
-      aria-label="Produção e saúde da usina"
-      className="md:col-span-6 lg:col-span-12"
-    >
-      <div className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-        <div className="grid gap-6 p-5 md:p-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(18rem,0.95fr)] lg:items-end">
-          <div>
+    <section data-testid="production-health-hero" aria-label="Produção e saúde da usina">
+      <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] sm:p-7">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
-                Indicador chave
-              </p>
-              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${PRODUCTION_HEALTH_CLASSES[alertSignal.tone]}`}>
+              <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">Indicador chave</p>
+              <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${PRODUCTION_HEALTH_CLASSES[alertSignal.tone]}`}>
                 {alertSignal.label}
               </span>
               <span
                 data-testid="production-health-confidence-badge"
-                className={`rounded-full border px-3 py-1 text-xs font-semibold ${PRODUCTION_HEALTH_CLASSES[confidence.tone]}`}
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${PRODUCTION_HEALTH_CLASSES[confidence.tone]}`}
               >
                 {confidence.label} · ciclo {referenceMonth}
               </span>
             </div>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-gray-950 md:text-3xl">
-              Produção e Saúde da Usina
+            <h2 className="mt-2 text-[22px] font-semibold leading-tight text-[var(--color-text-primary)]">
+              Produção dos últimos 7 dias
             </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-700">
-              {alertSignal.detail} Este é o primeiro sinal operacional: mostra se a usina está gerando dentro do esperado nos últimos 7 dias.
-            </p>
-            <div
-              data-testid="production-health-action"
-              className={`mt-4 max-w-3xl rounded-2xl border px-3 py-3 ${PRODUCTION_HEALTH_CLASSES[alertSignal.tone]}`}
-            >
-              <p className="text-xs font-semibold opacity-80">Próxima ação</p>
-              <p className="mt-1 text-base font-semibold">{action.title}</p>
-              <p className="mt-1 text-sm leading-6 opacity-85">{action.detail}</p>
-            </div>
-            <Link
-              to={DASHBOARD_PRODUCTION_PATH}
-              className="mt-4 inline-flex min-h-[44px] items-center rounded-full bg-[var(--color-brand-primary)] px-4 text-sm font-semibold text-[var(--color-on-brand)] shadow-sm transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 motion-reduce:transition-none"
-            >
-              Abrir análise completa <span aria-hidden="true" className="ml-1">→</span>
-            </Link>
+            <p className="mt-1.5 max-w-2xl text-[15px] leading-6 text-[var(--color-text-secondary)]">{alertSignal.detail}</p>
           </div>
-
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 shadow-sm">
-              <p className="text-xs font-semibold text-gray-500">Último dia</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
-                {latestActual == null ? '—' : `${formatNumber(latestActual, 1)} kWh`}
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                {latestPoint ? formatShortDate(latestPoint.date) : 'sem dado diário'}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 shadow-sm">
-              <p className="text-xs font-semibold text-gray-500">Média 7 dias</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
-                {average.average == null ? '—' : `${formatNumber(average.average, 1)} kWh/dia`}
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                {average.days} {average.days === 1 ? 'dia com dado' : 'dias com dado'}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 shadow-sm">
-              <p className="text-xs font-semibold text-gray-500">Desempenho vs esperado</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
-                {performance.percent == null ? '—' : `${formatNumber(performance.percent, 1)}%`}
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                {performance.assessedDays > 0 ? `${performance.assessedDays} dias avaliados` : 'sem baseline no recorte'}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 shadow-sm">
-              <p className="text-xs font-semibold text-gray-500">Total 7 dias</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
-                {productionValues.length === 0 ? '—' : `${formatNumber(totalProduction, 1)} kWh`}
-              </p>
-              <p className="mt-1 text-xs text-gray-500">produção acumulada recente</p>
-            </div>
-          </div>
+          <Link
+            to={DASHBOARD_PRODUCTION_PATH}
+            className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border)] px-4 text-sm font-semibold text-[var(--color-text-primary)] transition-colors duration-150 hover:border-[var(--color-gray-300)] hover:bg-[var(--color-gray-50)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none"
+          >
+            Abrir análise completa <span aria-hidden="true">→</span>
+          </Link>
         </div>
 
-        <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-5 py-4 md:px-6">
-          <div className="flex h-24 items-end gap-2" aria-label="Mini gráfico dos últimos 7 dias">
-            {recent.map((day) => {
-              const actual = toNumber(day.actual_production_kwh) ?? 0
-              const expected = toNumber(day.expected_production_kwh)
-              const severity = levelSeverity(day.level)
-              const actualHeight = Math.max(6, Math.min(100, (actual / maxBar) * 100))
-              const expectedHeight = expected == null ? null : Math.max(6, Math.min(100, (expected / maxBar) * 100))
+        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(16rem,1fr)] lg:items-stretch">
+          <div className="min-w-0">
+            <div className="flex h-44 items-end gap-2 border-b border-[var(--color-gray-300)]" aria-label="Mini gráfico dos últimos 7 dias">
+              {recent.map((day) => {
+                const actualValue = toNumber(day.actual_production_kwh)
+                const actual = actualValue ?? 0
+                const expected = toNumber(day.expected_production_kwh)
+                const severity = levelSeverity(day.level)
+                const actualHeight = Math.max(4, Math.min(100, (actual / maxBar) * 100))
+                const expectedHeight = expected == null ? null : Math.max(4, Math.min(100, (expected / maxBar) * 100))
 
-              return (
-                <div
-                  key={day.date}
-                  className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
-                  aria-label={`${formatShortDate(day.date)}: ${formatNumber(actual, 1)} kWh, ${levelLabel(day.level)}`}
-                >
-                  <div className="relative flex h-full w-full max-w-12 items-end justify-center">
+                return (
+                  <div
+                    key={day.date}
+                    className="relative flex h-full min-w-0 flex-1 flex-col items-center justify-end"
+                    aria-label={`${formatShortDate(day.date)}: ${formatNumber(actual, 1)} kWh, ${levelLabel(day.level)}`}
+                  >
                     {expectedHeight != null && (
                       <span
-                        className="absolute bottom-0 w-full rounded-t-md border-t-2 border-dashed border-[var(--color-chart-reference)]"
-                        style={{ height: `${expectedHeight}%` }}
+                        className="absolute inset-x-1 border-t-2 border-dashed border-[var(--color-chart-reference)]"
+                        style={{ bottom: `calc(${expectedHeight}% * 0.82)` }}
                         aria-hidden="true"
                       />
                     )}
+                    <span className="relative z-20 mb-1 rounded bg-[var(--color-surface)] px-1 text-xs font-semibold tabular-nums text-[var(--color-text-primary)]" aria-hidden="true">
+                      {actualValue == null ? '—' : formatNumber(actualValue, 0)}
+                    </span>
                     <span
                       data-testid="production-health-mini-bar"
                       data-severity={severity}
-                      className={`relative z-10 w-full max-w-8 rounded-t-lg ${SEVERITY_BAR[severity]}`}
-                      style={{ height: `${actualHeight}%` }}
+                      className={`relative z-10 w-full max-w-10 rounded-t-md ${SEVERITY_BAR[severity]}`}
+                      style={{ height: `calc(${actualHeight}% * 0.82)` }}
                       aria-hidden="true"
                     />
                   </div>
-                  <span className="text-xs font-semibold text-gray-600 tabular-nums">{formatShortDate(day.date)}</span>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
+            <div className="mt-1.5 flex gap-2" aria-hidden="true">
+              {recent.map((day) => (
+                <span key={day.date} className="min-w-0 flex-1 text-center text-xs tabular-nums text-[var(--color-text-secondary)]">
+                  {formatShortDate(day.date)}
+                </span>
+              ))}
+            </div>
+            <p className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-[var(--color-text-secondary)]" aria-hidden="true">
+              <span className="inline-flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-success)]" />Produção medida
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="w-4 border-t-2 border-dashed border-[var(--color-chart-reference)]" />Esperado do dia
+              </span>
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <dl className="grid grid-cols-2 gap-4">
+              <div>
+                <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Média 7 dias</dt>
+                <dd className="mt-1 font-display text-[22px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+                  {average.average == null ? '—' : formatNumber(average.average, 1)}
+                  {average.average != null && <span className="ml-1 font-sans text-sm font-medium text-[var(--color-text-secondary)]">kWh/dia</span>}
+                </dd>
+                <dd className="text-xs text-[var(--color-text-secondary)]">
+                  {average.days} {average.days === 1 ? 'dia com dado' : 'dias com dado'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Total 7 dias</dt>
+                <dd className="mt-1 font-display text-[22px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+                  {productionValues.length === 0 ? '—' : formatNumber(totalProduction, 1)}
+                  {productionValues.length > 0 && <span className="ml-1 font-sans text-sm font-medium text-[var(--color-text-secondary)]">kWh</span>}
+                </dd>
+                <dd className="text-xs text-[var(--color-text-secondary)]">
+                  {performance.assessedDays > 0 ? `${performance.assessedDays} dias com esperado` : 'sem esperado no recorte'}
+                </dd>
+              </div>
+            </dl>
+            <div
+              data-testid="production-health-action"
+              className={`mt-auto rounded-2xl border px-4 py-3.5 ${PRODUCTION_HEALTH_CLASSES[alertSignal.tone]}`}
+            >
+              <p className="text-xs font-semibold opacity-85">Próxima ação</p>
+              <p className="mt-0.5 text-[15px] font-semibold">{action.title}</p>
+              <p className="mt-1 text-[13px] leading-5 opacity-90">{action.detail}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -367,6 +362,11 @@ export function OverviewPage() {
   // e pela lista completa (`DiagnosticsCard`) — mesma lista, duas
   // apresentações.
   const diagnostics = data ? combineDiagnostics(data) : []
+  // Desempenho do recorte recente para o cartão "Desempenho vs esperado" —
+  // mesmo cálculo que o cartão de produção usa, feito uma vez só.
+  const recentPerformance = anomalies.data
+    ? productionPerformancePercent(latestProductionDays(anomalies.data.daily, DEFAULT_PRODUCTION_PERIOD_DAYS))
+    : { percent: null, assessedDays: 0 }
 
   // Enquanto a lista de usinas (`PlantContext`) ainda carrega, nenhuma
   // requisição deste módulo foi disparada — mesmo esqueleto de carregamento
@@ -411,7 +411,7 @@ export function OverviewPage() {
           identifica o produto, não a rota atual — por isso um heading por
           módulo deixou de ser redundante. */}
       <PageHeader
-        eyebrow="Cockpit"
+        eyebrow="Painel da usina"
         title="Visão Geral"
         description="Minha usina está bem hoje?"
         headingRef={headingRef}
@@ -430,198 +430,129 @@ export function OverviewPage() {
 
       {executiveLoading && !data && <MetricCardSkeletonGrid />}
 
-        {data && indicators && quality && (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
-            <ProductionHealthHero
-              anomalyData={anomalies.data}
-              loading={anomalies.status === 'loading'}
-              error={anomalies.error}
-              quality={quality}
-              latestDataDate={latestDataDate}
-              referenceMonth={data.current_cycle.reference_month}
-            />
-
-            {buildDataConfidenceSummary(quality, latestDataDate).tone !== 'success' && (
-              <section className="md:col-span-6 lg:col-span-12" aria-label="Confiança dos dados do ciclo">
-                <DataConfidenceStrip
-                  quality={quality}
-                  latestDataDate={latestDataDate}
-                  referenceMonth={data.current_cycle.reference_month}
-                />
-              </section>
-            )}
-
-            <section className="md:col-span-6 lg:col-span-12" aria-label="Decisão executiva do ciclo">
-              <ExecutiveDecisionPanel
-                dashboard={data}
-                diagnostics={diagnostics}
-                latestProduction={latestProduction}
+      {data && indicators && quality && (
+        <div className="flex flex-col gap-5 sm:gap-6">
+          {buildDataConfidenceSummary(quality, latestDataDate).tone !== 'success' && (
+            <section aria-label="Confiança dos dados do ciclo">
+              <DataConfidenceStrip
+                quality={quality}
                 latestDataDate={latestDataDate}
-              />
-            </section>
-
-            {/* Faixa de estado — o hero de fato da página (diagnóstico de UX
-                aprovado pelo usuário): une "está indo bem?" (`HeroCard`, saúde
-                da usina) e "para onde foi a energia?" (`EnergyFlowDiagram`)
-                numa única superfície com fundo de marca, full-width, acima da
-                dobra. Ordem de leitura preservada — estado à esquerda, fluxo à
-                direita, exatamente como as duas perguntas se sucedem. Fundo
-                `--color-brand-primary-light` é só SUPERFÍCIE de estrutura
-                (nunca codifica severidade de dado — isso continua vindo
-                inteiramente de `SEVERITY_*`/`accent` do `HeroCard`/badges
-                dentro dela); funciona nos dois temas sem token novo (ADR-071:
-                `#eff6ff` claro / `#132038` escuro). */}
-            <section
-              data-testid="hero-band"
-              aria-label="Resumo executivo da usina"
-              className="overview-cockpit md:col-span-6 lg:col-span-12 overflow-hidden rounded-3xl border border-[var(--color-border)] bg-[var(--color-brand-primary-light)]"
-            >
-              <div className="grid grid-cols-1 gap-7 p-6 md:p-8 lg:grid-cols-12 lg:items-start">
-                {/* Estado — ~5/12 em telas largas (`lg:`), primeiro no DOM
-                    (também primeiro em mobile, onde a faixa empilha). */}
-                <div className="lg:col-span-5 lg:border-r lg:border-[var(--color-border)] lg:pr-8">
-                  <HeroCard
-                    referenceMonth={data.current_cycle.reference_month}
-                    headline={data.headline}
-                    status={data.status}
-                    healthScore={indicators.health_score}
-                    latestDataDate={latestDataDate}
-                    lastSyncedAt={lastUpdated}
-                    diagnostics={diagnostics}
-                    embedded
-                  />
-                  <QualityBanner quality={quality} compact />
-                </div>
-
-                {/* Fluxo — ~7/12 em telas largas. Único diagrama de fluxo
-                    (autoconsumo/injetada/importada não se repetem em mais
-                    visuais) + o resumo proporcional dos mesmos fluxos logo
-                    abaixo (StackedBar de autossuficiência/dependência da
-                    rede). */}
-                <div className="lg:col-span-7">
-                  {/* "— ciclo {referenceMonth}" (achado A2 do audit de honestidade
-                      de dado): o rótulo interno "Fluxo de energia no ciclo" foi
-                      removido de `EnergyFlowDiagram` por duplicar este `<h2>`
-                      externo, mas isso também removeu a única menção a "ciclo" da
-                      faixa hero — sem ela nada aqui deixa claro que o diagrama é
-                      do CICLO DE FATURAMENTO FECHADO, não de tempo real (ao
-                      contrário do que produtos concorrentes como SolarEdge/
-                      Enphase/Tesla costumam mostrar num diagrama de fluxo em
-                      destaque). Carimbar o período no título resolve isso sem
-                      reintroduzir a duplicação — mesmo tratamento no `h3` de
-                      "Origem do consumo" logo abaixo (achado A3). */}
-                  <SectionTitle as="h2">{`Fluxo de energia — ciclo ${data.current_cycle.reference_month}`}</SectionTitle>
-                  <EnergyFlowDiagram
-                    production={indicators.cycle_production_kwh}
-                    selfConsumption={indicators.estimated_self_consumption_kwh}
-                    injected={indicators.injected_kwh}
-                    imported={indicators.imported_kwh}
-                    consumption={indicators.estimated_total_consumption_kwh}
-                    partial={hasIncompleteDailyProduction(quality)}
-                    embedded
-                  />
-
-                  {/* A barra resume a origem do consumo. Quando uma das duas
-                      parcelas está ausente, preservamos os cards separados
-                      para não fabricar uma composição de 100%. */}
-                  <div className="mt-4">
-                    {selfSufficiencyPercent != null && gridDependencyPercent != null ? (
-                      <div className="border-t border-[var(--color-border)] pt-4">
-                        <SectionTitle as="h3">{`Origem do consumo — ciclo ${data.current_cycle.reference_month}`}</SectionTitle>
-                        <StackedBar
-                          segments={[
-                            // Composição do consumo (de onde a energia veio), não
-                            // severidade — autossuficiência alta não é "boa" nem
-                            // dependência da rede é "ruim" no sentido de
-                            // bom/ruim, é só como o total se distribuiu (achado M3
-                            // do audit; mesmo raciocínio do fluxo em
-                            // `EnergyFlowDiagram`). Os dois segmentos usam tom
-                            // neutro — `tone: 'success'` era usado aqui por
-                            // engano em "Autossuficiência".
-                            { label: 'Autossuficiência', value: selfSufficiencyPercent, color: 'var(--color-energy-solar)' },
-                            { label: 'Dependência da rede', value: gridDependencyPercent, color: 'var(--color-energy-grid)' },
-                          ]}
-                          total={100}
-                          valueFormatter={(value) => `${formatNumber(value, 1)}%`}
-                        />
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <MetricCard
-                          label="Autossuficiência"
-                          value={indicators.self_sufficiency_rate_percent}
-                          unit="%"
-                          barPercent={selfSufficiencyPercent}
-                        />
-                        <MetricCard
-                          label="Dependência da rede"
-                          value={indicators.grid_dependency_rate_percent}
-                          unit="%"
-                          barPercent={gridDependencyPercent}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <OverviewKpiRail
-                cycleProduction={indicators.cycle_production_kwh}
-                latestProduction={latestProduction}
-                latestProductionDate={latestDataDate}
-                estimatedSavings={indicators.estimated_savings_brl}
-                savingsUnavailableReason={indicators.savings_unavailable_reason}
                 referenceMonth={data.current_cycle.reference_month}
               />
             </section>
+          )}
 
-            {/* O chip de atenção do cockpit aponta para esta seção. Quando há
-                tendência, diagnóstico e evolução formam duas colunas; sem
-                comparação disponível, o diagnóstico mantém largura de leitura. */}
-            <section id="diagnosticos" className="md:col-span-6 lg:col-span-12">
-              <div className={`grid gap-6 ${data.trend ? 'lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]' : ''}`}>
-                <div className={data.trend ? '' : 'lg:max-w-3xl'}>
-                  <SectionTitle as="h2">Atenção e próximos passos</SectionTitle>
-                  <DiagnosticsCard diagnostics={diagnostics} plantId={plantId} />
-                </div>
+          {/* Resumo (ADR-077): estado da usina à esquerda, fluxo de energia à
+              direita — as duas primeiras perguntas do dono, nesta ordem. */}
+          <section
+            data-testid="hero-band"
+            aria-label="Resumo executivo da usina"
+            className="overview-cockpit grid overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+          >
+            <div className="p-5 sm:p-7">
+              <HeroCard
+                referenceMonth={data.current_cycle.reference_month}
+                headline={data.headline}
+                status={data.status}
+                healthScore={indicators.health_score}
+                latestDataDate={latestDataDate}
+                lastSyncedAt={lastUpdated}
+                diagnostics={diagnostics}
+                embedded
+              />
+              <QualityBanner quality={quality} compact />
+            </div>
 
-                {data.trend && (
-                  <div>
-                    <SectionTitle as="h2">Evolução do ciclo</SectionTitle>
-                    <TrendCard trend={data.trend} />
-                  </div>
-                )}
+            <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-5 sm:p-7 lg:border-l lg:border-t-0">
+              {/* "— ciclo {mês}" (achado A2): deixa claro que é o ciclo de
+                  faturamento fechado, não tempo real. */}
+              <h2 className="text-base font-bold text-[var(--color-text-primary)]">
+                {`Fluxo de energia — ciclo ${data.current_cycle.reference_month}`}
+              </h2>
+              <div className="mt-5">
+                <EnergyFlowDiagram
+                  production={indicators.cycle_production_kwh}
+                  selfConsumption={indicators.estimated_self_consumption_kwh}
+                  injected={indicators.injected_kwh}
+                  imported={indicators.imported_kwh}
+                  consumption={indicators.estimated_total_consumption_kwh}
+                  partial={hasIncompleteDailyProduction(quality)}
+                  embedded
+                />
               </div>
-            </section>
 
-            {/* "Energia e produção" (importada/injetada/autoconsumo/consumo)
-                foi removida da composição — os mesmos quatro números já
-                aparecem em "Fluxo de energia" (`EnergyFlowDiagram`), com a
-                relação entre eles, que os cards isolados não davam. O
-                componente `EnergyProductionSection` continua existindo em
-                `components/` para reuso futuro, só não compõe mais este
-                módulo. */}
+              {/* Origem do consumo em percentual — dois números, não uma
+                  terceira barra: a composição já está desenhada acima. Valor
+                  ausente vira "—", nunca 0% nem 100% fabricado. */}
+              <div role="group" aria-label={`Origem do consumo — ciclo ${data.current_cycle.reference_month}`}>
+              <dl className="mt-6 grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+                  <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Autossuficiência</dt>
+                  <dd className="mt-0.5 font-display text-[22px] font-semibold tabular-nums text-[var(--color-success-text)]">
+                    {selfSufficiencyPercent == null ? '—' : `${formatNumber(selfSufficiencyPercent, 1)}%`}
+                  </dd>
+                </div>
+                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+                  <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Dependência da rede</dt>
+                  <dd className="mt-0.5 font-display text-[22px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+                    {gridDependencyPercent == null ? '—' : `${formatNumber(gridDependencyPercent, 1)}%`}
+                  </dd>
+                </div>
+              </dl>
+              </div>
+            </div>
+          </section>
 
-            {/* Bloco "Quanto produziu? Qual o histórico?" (produção por
-                ciclo de faturamento, histórico diário e produção do último
-                dia vs. esperada) mora no módulo próprio em
-                `pages/dashboard/ProductionPage.tsx` (ADR-072, Etapa 4) — não
-                aparece mais aqui, para não duplicar entre as rotas
-                `/dashboard/producao` e esta. */}
+          <OverviewKpiRail
+            cycleProduction={indicators.cycle_production_kwh}
+            latestProduction={latestProduction}
+            latestProductionDate={latestDataDate}
+            estimatedSavings={indicators.estimated_savings_brl}
+            savingsUnavailableReason={indicators.savings_unavailable_reason}
+            referenceMonth={data.current_cycle.reference_month}
+            performancePercent={recentPerformance.percent}
+            performanceAssessedDays={recentPerformance.assessedDays}
+          />
 
-            {/* Bloco "Quanto custou? Qual o retorno?" (financeiro completo:
-                custo do ciclo, tarifas, créditos e retorno do investimento)
-                mora no módulo próprio em `pages/dashboard/FinancialPage.tsx`
-                (ADR-072, Etapa 3) — não aparece mais aqui, para não duplicar
-                entre as rotas `/dashboard/financeiro` e esta. */}
+          <ProductionHealthHero
+            anomalyData={anomalies.data}
+            loading={anomalies.status === 'loading'}
+            error={anomalies.error}
+            quality={quality}
+            latestDataDate={latestDataDate}
+            referenceMonth={data.current_cycle.reference_month}
+          />
 
-            {/* O bloco "Como está o desempenho técnico?" (PR, yield
-                específico, disponibilidade de reporte, degradação e
-                atribuição de causa de perda) mora no módulo próprio em
-                `pages/dashboard/TechnicalPage.tsx` (ADR-072, Etapa 2) — não
-                aparece mais aqui, para não duplicar entre as rotas
-                `/dashboard/tecnico` e esta. */}
-          </div>
-        )}
+          <section aria-label="Decisão executiva do ciclo">
+            <ExecutiveDecisionPanel
+              dashboard={data}
+              diagnostics={diagnostics}
+              latestProduction={latestProduction}
+              latestDataDate={latestDataDate}
+            />
+          </section>
+
+          {/* O chip de atenção do resumo aponta para esta seção. */}
+          <section id="diagnosticos">
+            <div className={`grid gap-6 ${data.trend ? 'lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]' : ''}`}>
+              <div className={data.trend ? '' : 'lg:max-w-3xl'}>
+                <SectionTitle as="h2">Atenção e próximos passos</SectionTitle>
+                <DiagnosticsCard diagnostics={diagnostics} plantId={plantId} />
+              </div>
+
+              {data.trend && (
+                <div>
+                  <SectionTitle as="h2">Evolução do ciclo</SectionTitle>
+                  <TrendCard trend={data.trend} />
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Produção por ciclo, financeiro completo e desempenho técnico
+              moram nos módulos próprios (ADR-072) — não se repetem aqui. */}
+        </div>
+      )}
     </>
   )
 }

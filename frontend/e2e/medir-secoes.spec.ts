@@ -58,7 +58,7 @@ test('medir seções por módulo', async ({ page }) => {
   await page.waitForURL('**/dashboard/**')
 
   for (const rotulo of MODULOS) {
-    const link = page.getByRole('link', { name: rotulo })
+    const link = page.getByRole('navigation', { name: 'Seções do painel' }).getByRole('link', { name: rotulo, exact: true })
     await link.scrollIntoViewIfNeeded()
     await link.click({ force: true })
     await page.waitForTimeout(600)

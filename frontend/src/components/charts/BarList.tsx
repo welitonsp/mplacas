@@ -88,8 +88,8 @@ export function BarList({
         const color = TONE_BG_VAR[item.tone ?? 'neutral']
 
         const labelColumn = (
-          <div className="w-28 shrink-0 sm:w-32">
-            <span className="block truncate text-sm font-medium text-gray-700" title={item.label}>
+          <div className="w-32 shrink-0 sm:w-40">
+            <span className="block text-sm font-medium leading-5 text-[var(--color-text-primary)] [overflow-wrap:anywhere]" title={item.label}>
               {item.label}
             </span>
             {item.badge && (

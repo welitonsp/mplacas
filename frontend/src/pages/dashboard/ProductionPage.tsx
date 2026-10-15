@@ -208,16 +208,11 @@ export function ProductionPage() {
         title="Produção"
         description="Acompanhe ciclos fechados, geração diária e desvios contra o esperado para priorizar a investigação certa."
         headingRef={headingRef}
-        insights={[
-          { label: 'Pergunta', value: 'A geração caiu ou normalizou?' },
-          { label: 'Leitura', value: 'Ciclo, dia e desvio' },
-          { label: 'Saída', value: 'Ação operacional' },
-        ]}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
       />
       <section className="mb-6">
         <SectionTitle as="h2">Resumo operacional</SectionTitle>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           <SummaryTile
             label="Última produção"
             value={formatKwh(latestActualProduction)}

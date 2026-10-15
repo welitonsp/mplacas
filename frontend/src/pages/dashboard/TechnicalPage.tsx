@@ -180,16 +180,11 @@ export function TechnicalPage() {
         title="Técnico"
         description="Entenda se a usina está performando bem, se os dados são confiáveis e qual causa técnica merece investigação primeiro."
         headingRef={headingRef}
-        insights={[
-          { label: 'Pergunta', value: 'Qual causa atacar primeiro?' },
-          { label: 'Leitura', value: 'PR, perdas e disponibilidade' },
-          { label: 'Saída', value: 'Plano de investigação' },
-        ]}
         actions={<RefreshBar onRefresh={refreshAll} loading={anyLoading} className="mb-0 lg:justify-self-end" />}
       />
       <section className="mb-6">
         <SectionTitle as="h2">Resumo técnico</SectionTitle>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           <SummaryTile
             label="Saúde técnica"
             value={technicalHealthLabel(performanceRatio)}

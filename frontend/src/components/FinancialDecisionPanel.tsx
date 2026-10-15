@@ -266,18 +266,6 @@ export function FinancialDecisionPanel({
               </span>
             </div>
 
-            <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
-              {decision.evidence.map((item) => (
-                <div
-                  key={item.label}
-                  className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[item.tone]} px-3 py-2`}
-                >
-                  <p className="text-xs font-medium text-gray-500">{item.label}</p>
-                  <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[item.tone]}`}>{item.value}</p>
-                </div>
-              ))}
-            </div>
-
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
               <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
                 <p className="text-xs font-medium text-gray-500">Próxima decisão</p>
@@ -307,57 +295,42 @@ export function FinancialDecisionPanel({
     )
   }
 
+  // Visual (ADR-077, etapa 4): a decisão, sem a coluna de evidências — os
+  // quatro números estão no "Resumo financeiro" logo acima. `decision.evidence`
+  // continua no modelo (e alimenta aquele resumo).
   return (
-    <Card accent={decision.tone} className="overflow-hidden">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="max-w-3xl">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-medium text-gray-500">Decisão financeira</p>
-            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${SEVERITY_BG[decision.tone]} ${SEVERITY_TEXT[decision.tone]}`}>
-              {decision.label}
-            </span>
-            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
-              {decision.window}
-            </span>
-            <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
-              {decision.owner}
-            </span>
-          </div>
-          <h2 className="mt-2 text-xl font-semibold tracking-tight text-gray-950">{decision.title}</h2>
-          <p className="mt-2 text-sm leading-6 text-gray-600">{decision.summary}</p>
-        </div>
-
-        <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[440px]">
-          {decision.evidence.map((item) => (
-            <div
-              key={item.label}
-              className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[item.tone]} px-3 py-2`}
-            >
-              <p className="text-xs font-medium text-gray-500">{item.label}</p>
-              <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[item.tone]}`}>{item.value}</p>
-            </div>
-          ))}
-        </div>
+    <Card className="sm:p-7">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">Decisão financeira</p>
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${SEVERITY_BG[decision.tone]} ${SEVERITY_TEXT[decision.tone]}`}>
+          {decision.label}
+        </span>
+        <span aria-hidden="true" className="text-[13px] text-[var(--color-text-secondary)]">·</span>
+        <span className="text-[13px] text-[var(--color-text-secondary)]">{decision.window}</span>
+        <span aria-hidden="true" className="text-[13px] text-[var(--color-text-secondary)]">·</span>
+        <span className="text-[13px] text-[var(--color-text-secondary)]">{decision.owner}</span>
       </div>
+      <h2 className="mt-2 text-[22px] font-semibold leading-tight text-[var(--color-text-primary)]">{decision.title}</h2>
+      <p className="mt-1.5 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">{decision.summary}</p>
 
-      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-        <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-          <p className="text-xs font-medium text-gray-500">Próxima decisão</p>
-          <p className="mt-2 text-sm leading-6 text-gray-700">{decision.primaryAction}</p>
+      <div className="mt-6 grid gap-6 border-t border-[var(--color-border)] pt-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <div>
+          <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">Próxima decisão</p>
+          <p className="mt-1 text-[15px] leading-6 text-[var(--color-text-primary)]">{decision.primaryAction}</p>
         </div>
 
-        <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-          <p className="text-xs font-medium text-gray-500">Plano financeiro</p>
-          <ol aria-label="Plano financeiro executivo" className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div>
+          <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">Plano financeiro</p>
+          <ol aria-label="Plano financeiro executivo" className="mt-3 grid grid-cols-1 gap-5 md:grid-cols-3">
             {decision.playbook.map((step, index) => (
-              <li key={step.title}>
-                <div className="flex items-center gap-2">
-                  <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${SEVERITY_BG[decision.tone]} ${SEVERITY_TEXT[decision.tone]}`}>
-                    {index + 1}
-                  </span>
-                  <p className="text-sm font-semibold text-[var(--color-text)]">{step.title}</p>
-                </div>
-                <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{step.detail}</p>
+              <li key={step.title} className="flex gap-3 md:flex-col md:gap-2">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${SEVERITY_BG[decision.tone]} ${SEVERITY_TEXT[decision.tone]}`}>
+                  {index + 1}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[15px] font-semibold text-[var(--color-text-primary)]">{step.title}</span>
+                  <span className="mt-0.5 block text-[13px] leading-5 text-[var(--color-text-secondary)]">{step.detail}</span>
+                </span>
               </li>
             ))}
           </ol>

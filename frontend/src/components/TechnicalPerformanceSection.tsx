@@ -44,7 +44,9 @@ export function TechnicalPerformanceSection({ summary }: { summary: Photovoltaic
                 unavailableReason={summary.performance_unavailable_reason}
               />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* `items-start`: a lista de perdas é bem mais alta que o cartão de
+                degradação; esticar os dois deixava um cartão quase vazio. */}
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
               <BaselineDegradationCard
                 baseline={summary.baseline}
                 unavailableReason={summary.baseline_unavailable_reason}

@@ -152,7 +152,7 @@ test.describe('captura das telas', () => {
       // no DashboardNav), e a partir do terceiro item o link nasce fora da
       // viewport. Trazer para a área visível antes de clicar evita depender do
       // auto-scroll no limite do tempo de ação.
-      const link = page.getByRole('link', { name: modulo.rotulo })
+      const link = page.getByRole('navigation', { name: 'Seções do painel' }).getByRole('link', { name: modulo.rotulo, exact: true })
       await link.scrollIntoViewIfNeeded()
       // `force` pula a checagem de estabilidade do Playwright, e isso é
       // deliberado. No mobile o menu é um scroller horizontal (`overflow-x-auto`
@@ -169,7 +169,7 @@ test.describe('captura das telas', () => {
       // Guarda contra a captura silenciosamente errada: se a sessão cair, o app
       // manda para o login e a imagem sairia da tela errada com o teste verde.
       await expect(page).toHaveURL(new RegExp(`/dashboard/`))
-      await expect(page.getByRole('link', { name: modulo.rotulo })).toHaveAttribute(
+      await expect(page.getByRole('navigation', { name: 'Seções do painel' }).getByRole('link', { name: modulo.rotulo, exact: true })).toHaveAttribute(
         'aria-current',
         'page'
       )
