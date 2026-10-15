@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { DashboardNav } from './DashboardNav'
 import {
@@ -71,25 +71,15 @@ describe('DashboardNav', () => {
       const link = screen.getByRole('link', { name })
       expect(link.className).toMatch(/focus-visible:ring-2 focus-visible:ring-\[var\(--color-brand-primary\)\]/)
       expect(link.className).toMatch(/min-h-\[56px\]/)
+      expect(link.className).toMatch(/lg:min-h-\[44px\]/)
     }
   })
 
-  it('mostra pergunta-chave, foco e entregável do módulo ativo junto da rotina de leitura', () => {
+  it('não repete o antigo roteiro de leitura em toda tela', () => {
     renderNav(DASHBOARD_TECHNICAL_PATH)
 
-    const context = screen.getByRole('group', { name: 'Contexto do módulo ativo' })
-    expect(context).toHaveTextContent('Agora: Técnico')
-    expect(context).toHaveTextContent('Pergunta-chave')
-    expect(context).toHaveTextContent('Qual causa técnica atacar primeiro?')
-    expect(context).toHaveTextContent('Foco de leitura')
-    expect(context).toHaveTextContent('Investigue PR, perdas, degradação e disponibilidade.')
-    expect(context).toHaveTextContent('Entregável')
-    expect(context).toHaveTextContent('Plano de investigação por causa provável, evidência e impacto.')
-
-    const routine = screen.getByRole('list', { name: 'Rotina executiva de leitura' })
-    expect(within(routine).getByText('Visão Geral')).toBeInTheDocument()
-    expect(within(routine).getByText('Produção')).toBeInTheDocument()
-    expect(within(routine).getByText('Financeiro')).toBeInTheDocument()
-    expect(within(routine).getByText('Técnico')).toHaveClass('font-semibold')
+    expect(screen.queryByText('Pergunta-chave')).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Rotina executiva de leitura' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('link')).toHaveLength(4)
   })
 })

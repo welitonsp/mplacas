@@ -106,8 +106,7 @@ export function LoginPage() {
       <main className="relative mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_27rem] lg:px-8 2xl:max-w-[96rem]">
         <section className="space-y-8">
           <div className="inline-flex items-center gap-3 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/80 px-3 py-2 shadow-sm backdrop-blur">
-            <BrandMark className="h-8 w-auto text-[var(--color-brand-primary)]" />
-            <span className="text-sm font-semibold text-[var(--color-text-primary)]">Mplacas</span>
+            <BrandMark className="text-[var(--color-text-primary)]" />
             <span className="h-1 w-1 rounded-full bg-[var(--color-border)]" aria-hidden="true" />
             <span className="text-xs font-medium text-[var(--color-text-secondary)]">Cockpit solar</span>
           </div>

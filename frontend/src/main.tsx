@@ -36,7 +36,7 @@ function ConfigErrorScreen() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm text-center">
         <div className="bg-[var(--color-surface)] rounded-2xl shadow-sm border border-gray-200 p-8">
-          <h1 className="text-lg font-semibold text-gray-900">Não foi possível carregar o Mplacas</h1>
+          <h1 className="text-lg font-semibold text-gray-900">Não foi possível carregar o MPlacas</h1>
           <p className="mt-2 text-sm text-gray-500">
             O painel não pôde ser iniciado. Tente recarregar a página; se o problema continuar,
             entre em contato com o suporte.

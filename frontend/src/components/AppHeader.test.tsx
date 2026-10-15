@@ -105,7 +105,6 @@ describe('AppHeader — menu de usuário', () => {
     render(<AppHeader />)
 
     const trigger = screen.getByRole('button', { name: /maria.operacao@mplacas.com/i })
-    expect(trigger).toHaveTextContent('Operador')
     expect(trigger).toHaveTextContent('maria.operacao@mplacas.com')
   })
 

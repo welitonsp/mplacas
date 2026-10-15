@@ -32,7 +32,7 @@ export function PageHeader({
           </h1>
           <p className="mt-2 max-w-2xl text-[15px] leading-6 text-[var(--color-text-secondary)]">{description}</p>
         </div>
-        {actions && <div className="shrink-0">{actions}</div>}
+        {actions && <div className="min-w-0 max-w-full">{actions}</div>}
       </div>
 
       {insights && insights.length > 0 && (
