@@ -66,6 +66,38 @@ async function interceptarApi(page: import('@playwright/test').Page) {
     ['**/energy/financial-return/latest*', financialReturnUnavailablePayload],
     ['**/devices/daily-status*', deviceDailyStatusPayload],
     ['**/reports/monthly/history*', monthlyHistoryPayload],
+    // Uma fatura aguardando conferência, para a captura mostrar o card
+    // "Faturas de energia" do Financeiro no estado mais rico.
+    [
+      '**/billing/pending*',
+      {
+        count: 1,
+        items: [
+          {
+            id: 'bill-captura',
+            plant_id: 'plant-1',
+            distributor: 'EQUATORIAL_GO',
+            reference_month: '2026-09',
+            cycle_start: '2026-08-17',
+            cycle_end: '2026-09-14',
+            billed_days: 29,
+            imported_kwh: '221.00',
+            injected_kwh: '221.00',
+            compensated_kwh: '221.00',
+            credit_balance_kwh: '17.98',
+            total_amount_brl: '70.22',
+            public_lighting_brl: '30.21',
+            generation_cycle_kwh: '235.00',
+            tariff_with_taxes_brl_kwh: '0.787589',
+            tariff_without_taxes_brl_kwh: '0.613030',
+            wire_b_tariff_brl_kwh: '0.175126',
+            status: 'PENDING_REVIEW',
+            created_at: null,
+            reviewed_at: null,
+          },
+        ],
+      },
+    ],
   ]
 
   // O catch-all vem PRIMEIRO de propósito: o Playwright resolve rotas em ordem

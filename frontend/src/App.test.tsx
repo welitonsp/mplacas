@@ -84,6 +84,12 @@ vi.mock('./lib/api', () => ({
   fetchMonthlyProductionHistory: vi.fn(async () => {
     throw new Error('mock: sem rede em App.test.tsx')
   }),
+  fetchPendingBills: vi.fn(async () => {
+    throw new Error('mock: sem rede em App.test.tsx')
+  }),
+  uploadBillPdf: vi.fn(),
+  confirmBill: vi.fn(),
+  rejectBill: vi.fn(),
   fetchPlants: () => apiMock.fetchPlants(),
   configureApi: vi.fn(),
 }))

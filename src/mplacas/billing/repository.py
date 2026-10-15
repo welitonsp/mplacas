@@ -17,6 +17,22 @@ class UtilityBillRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def find_by_source_text(
+        self, *, plant_id: uuid.UUID, source_text: str
+    ) -> UtilityBillRecord | None:
+        """Fatura já importada para esta usina com exatamente o mesmo texto.
+
+        Mesma chave de idempotência de ``create_pending`` (hash do texto
+        extraído), exposta para quem precisa saber ANTES se é um reenvio.
+        """
+        source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+        return await self._session.scalar(
+            select(UtilityBillRecord).where(
+                UtilityBillRecord.plant_id == plant_id,
+                UtilityBillRecord.source_hash == source_hash,
+            )
+        )
+
     async def create_pending(
         self,
         bill: UtilityBill,

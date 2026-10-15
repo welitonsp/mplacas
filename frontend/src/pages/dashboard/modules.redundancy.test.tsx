@@ -33,6 +33,10 @@ function installApiMock() {
     fetchFinancialReturn: vi.fn(async () => jsonResponse(financialReturnUnavailablePayload)),
     fetchPlants: vi.fn(async () => [singlePlant]),
     updateFinancialConfiguration: vi.fn(async () => jsonResponse({})),
+    fetchPendingBills: vi.fn(async () => jsonResponse({ count: 0, items: [] })),
+    uploadBillPdf: vi.fn(async () => jsonResponse({})),
+    confirmBill: vi.fn(async () => jsonResponse({})),
+    rejectBill: vi.fn(async () => jsonResponse({})),
     configureApi: vi.fn(),
   }))
 }
