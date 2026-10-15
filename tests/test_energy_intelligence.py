@@ -166,3 +166,64 @@ def test_rejects_invalid_quality_counters() -> None:
             cycle_production_kwh=Decimal("300"),
             missing_days=-1,
         )
+
+
+def test_bill_with_and_without_solar_and_model_check_on_real_scee_bill() -> None:
+    bill = UtilityBill(
+        distributor="EQUATORIAL_GO",
+        reference_month="2026-09",
+        cycle_start=date(2026, 8, 17),
+        cycle_end=date(2026, 9, 14),
+        billed_days=29,
+        imported_kwh=Decimal("221"),
+        injected_kwh=Decimal("221"),
+        compensated_kwh=Decimal("221"),
+        credit_balance_kwh=Decimal("17.98"),
+        total_amount_brl=Decimal("70.22"),
+        public_lighting_brl=Decimal("30.21"),
+        generation_cycle_kwh=Decimal("235"),
+        tariff_with_taxes_brl_kwh=Decimal("0.787589"),
+        tariff_without_taxes_brl_kwh=Decimal("0.613030"),
+        wire_b_tariff_brl_kwh=Decimal("0.175126"),
+    )
+
+    result = analyze_energy_cycle(bill=bill, cycle_production_kwh=Decimal("400"))
+
+    # Consumo total = 221 da rede + 165 direto do telhado (400 − 235) = 386.
+    # Sem usina: 386 × 0,787589 + 30,21 = 304,009 + 30,21 = 334,219 → 334,22.
+    assert result.bill_without_solar_brl == Decimal("334.22")
+    # Economia = sem usina − pago = 334,22 − 70,22 = 264,00, igual à fórmula
+    # antiga (consumo × tarifa − componente de energia), agora com o consumo
+    # certo.
+    assert result.estimated_savings_brl == Decimal("264.00")
+    # Créditos: 17,98 × 0,787589 = 14,16.
+    assert result.credit_balance_value_brl == Decimal("14.16")
+    # Conferência: 0 não compensado + 221 × 0,175126 (= 38,70) + 30,21 = 68,91;
+    # a fatura cobrou 70,22 → R$ 1,31 que o modelo não explica (o retroativo
+    # "PARC INJET S/ DESC RET 21/22" da fatura).
+    assert result.modeled_bill_brl == Decimal("68.91")
+    assert result.bill_model_difference_brl == Decimal("1.31")
+    assert result.compensated_kwh == Decimal("221")
+
+
+def test_bill_comparison_fields_are_null_without_tariff() -> None:
+    bill = UtilityBill(
+        distributor="EQUATORIAL_GO",
+        reference_month="2026-06",
+        cycle_start=date(2026, 5, 18),
+        cycle_end=date(2026, 6, 16),
+        billed_days=30,
+        imported_kwh=Decimal("278"),
+        injected_kwh=Decimal("182"),
+        compensated_kwh=Decimal("278"),
+        credit_balance_kwh=Decimal("63.98"),
+        total_amount_brl=Decimal("80.21"),
+        public_lighting_brl=Decimal("30.21"),
+    )
+
+    result = analyze_energy_cycle(bill=bill, cycle_production_kwh=Decimal("300"))
+
+    assert result.bill_without_solar_brl is None
+    assert result.credit_balance_value_brl is None
+    assert result.modeled_bill_brl is None
+    assert result.bill_model_difference_brl is None

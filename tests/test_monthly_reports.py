@@ -176,7 +176,7 @@ def _snapshot(report: MonthlyEnergyReport) -> MonthlyReportSnapshot:
 
 def test_package_version_matches_pyproject() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-    assert __version__ == pyproject["project"]["version"] == "0.2.0"
+    assert __version__ == pyproject["project"]["version"] == "0.3.0"
 
 
 @pytest.mark.asyncio
@@ -203,7 +203,7 @@ async def test_monthly_report_projects_the_existing_deterministic_dashboard(monk
         "stable_tolerance_percent": Decimal("3.0"),
         "plant_scope": UNRESTRICTED_PLANT_SCOPE,
     }
-    assert report.calculation_version == "0.2.0"
+    assert report.calculation_version == "0.3.0"
     assert report.reference_month == "2026-06"
     assert report.metrics[0].nature == "MEASURED_AGGREGATE"
     assert report.metrics[0].source == "DAILY_ENERGY_AGGREGATE"

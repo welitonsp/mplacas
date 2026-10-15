@@ -55,10 +55,25 @@ class EnergyCycleIntelligence:
     tariff_with_taxes_brl_kwh: Decimal | None = None
     tariff_without_taxes_brl_kwh: Decimal | None = None
     credit_balance_kwh: Decimal = Decimal("0")
+    compensated_kwh: Decimal = Decimal("0")
     # `None` quando a fatura não tem tarifa registrada — nunca um R$ 0,00
     # fabricado. Ver `savings_unavailable_reason` para o motivo explícito.
     estimated_savings_brl: Decimal | None = None
     savings_unavailable_reason: str | None = None
+    # "Sua conta com e sem a usina" (fase 3 do plano de inteligência
+    # financeira). Todos `None` quando falta a tarifa — nunca R$ 0,00.
+    # - `bill_without_solar_brl`: o que a fatura do MESMO ciclo custaria sem a
+    #   usina: todo o consumo comprado da rede à tarifa com impostos, mais a
+    #   iluminação pública. `estimated_savings_brl` = esta − total pago.
+    # - `credit_balance_value_brl`: saldo de créditos × tarifa do ciclo.
+    # - `modeled_bill_brl`/`bill_model_difference_brl`: conferência do modelo
+    #   contra a fatura real (padrão "bill match" do mercado): energia não
+    #   compensada à tarifa cheia + Fio B sobre a compensada + iluminação.
+    #   A diferença mostra o que o modelo não explica (retroativos, multas).
+    bill_without_solar_brl: Decimal | None = None
+    credit_balance_value_brl: Decimal | None = None
+    modeled_bill_brl: Decimal | None = None
+    bill_model_difference_brl: Decimal | None = None
 
 
 def analyze_energy_cycle(
@@ -127,6 +142,31 @@ def analyze_energy_cycle(
             rounding=ROUND_HALF_UP,
         )
         savings_unavailable_reason = None
+
+    cents = Decimal("0.01")
+    tariff = bill.tariff_with_taxes_brl_kwh
+    bill_without_solar_brl: Decimal | None = None
+    if estimated_savings_brl is not None and tariff is not None:
+        bill_without_solar_brl = (
+            reconciliation.estimated_total_consumption_kwh * tariff + bill.public_lighting_brl
+        ).quantize(cents, rounding=ROUND_HALF_UP)
+    credit_balance_value_brl = (
+        (bill.credit_balance_kwh * tariff).quantize(cents, rounding=ROUND_HALF_UP)
+        if tariff is not None
+        else None
+    )
+    modeled_bill_brl: Decimal | None = None
+    bill_model_difference_brl: Decimal | None = None
+    if tariff is not None and bill.wire_b_tariff_brl_kwh is not None:
+        uncompensated = max(Decimal("0"), bill.imported_kwh - bill.compensated_kwh)
+        modeled_bill_brl = (
+            uncompensated * tariff
+            + bill.compensated_kwh * bill.wire_b_tariff_brl_kwh
+            + bill.public_lighting_brl
+        ).quantize(cents, rounding=ROUND_HALF_UP)
+        bill_model_difference_brl = (bill.total_amount_brl - modeled_bill_brl).quantize(
+            cents, rounding=ROUND_HALF_UP
+        )
 
     score = 100
     diagnostics: list[EnergyDiagnostic] = []
@@ -253,6 +293,11 @@ def analyze_energy_cycle(
         tariff_with_taxes_brl_kwh=bill.tariff_with_taxes_brl_kwh,
         tariff_without_taxes_brl_kwh=bill.tariff_without_taxes_brl_kwh,
         credit_balance_kwh=bill.credit_balance_kwh,
+        compensated_kwh=bill.compensated_kwh,
         estimated_savings_brl=estimated_savings_brl,
         savings_unavailable_reason=savings_unavailable_reason,
+        bill_without_solar_brl=bill_without_solar_brl,
+        credit_balance_value_brl=credit_balance_value_brl,
+        modeled_bill_brl=modeled_bill_brl,
+        bill_model_difference_brl=bill_model_difference_brl,
     )

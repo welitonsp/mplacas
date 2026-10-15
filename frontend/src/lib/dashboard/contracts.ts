@@ -31,6 +31,15 @@ export interface ExecutiveIndicators {
   // explícito (ver intelligence/energy_engine.py::analyze_energy_cycle).
   estimated_savings_brl: MetricValue
   savings_unavailable_reason: string | null
+  // "Sua conta com e sem a usina" (calculado no backend, versão de cálculo
+  // 0.3.0). `null` quando falta a tarifa ou o backend ainda não emite o campo
+  // — nunca um zero fabricado.
+  compensated_kwh?: MetricValue
+  excess_credit_kwh?: MetricValue
+  bill_without_solar_brl?: MetricValue
+  credit_balance_value_brl?: MetricValue
+  modeled_bill_brl?: MetricValue
+  bill_model_difference_brl?: MetricValue
 }
 
 // Vocabulário compartilhado com o backend (ver
@@ -598,6 +607,12 @@ export function parseExecutiveDashboard(payload: unknown): ExecutiveDashboardRes
         credit_balance_kwh: metricValue(indicators, 'credit_balance_kwh'),
         estimated_savings_brl: metricValue(indicators, 'estimated_savings_brl'),
         savings_unavailable_reason: optionalString(indicators, 'savings_unavailable_reason'),
+        compensated_kwh: metricValueOrMissing(indicators, 'compensated_kwh'),
+        excess_credit_kwh: metricValueOrMissing(indicators, 'excess_credit_kwh'),
+        bill_without_solar_brl: metricValueOrMissing(indicators, 'bill_without_solar_brl'),
+        credit_balance_value_brl: metricValueOrMissing(indicators, 'credit_balance_value_brl'),
+        modeled_bill_brl: metricValueOrMissing(indicators, 'modeled_bill_brl'),
+        bill_model_difference_brl: metricValueOrMissing(indicators, 'bill_model_difference_brl'),
       },
       diagnostics: parseDiagnostics(currentCycle),
     },
