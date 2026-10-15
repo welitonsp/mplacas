@@ -366,14 +366,14 @@ export function ProductionHistoryChart({
                 em vez de esticar um SVG sobre uma área que inclui a régua de
                 datas abaixo. */}
             <div
-              className="relative rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+              className="relative"
               style={{ height: '220px' }}
             >
               {/* 3 gridlines horizontais (0, max/2, max) para a grandeza
                   principal — sem elas as barras não têm referência de leitura. */}
-              <span className="pointer-events-none absolute inset-x-0 top-0 border-t border-gray-100" />
-              <span className="pointer-events-none absolute inset-x-0 border-t border-gray-100" style={{ top: '50%' }} />
-              <span className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-gray-100" />
+              <span className="pointer-events-none absolute inset-x-0 top-0 border-t border-[var(--color-chart-grid)]" />
+              <span className="pointer-events-none absolute inset-x-0 border-t border-[var(--color-chart-grid)]" style={{ top: '50%' }} />
+              <span className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-[var(--color-gray-300)]" />
 
               {averageLineY != null && (
                 <svg
@@ -454,7 +454,7 @@ export function ProductionHistoryChart({
                   return (
                     <div
                       key={d.date}
-                      className="relative flex h-full flex-1 items-end rounded-sm"
+                      className="relative flex h-full flex-1 items-end justify-center rounded-sm"
                       style={{ minWidth: '6px' }}
                       onMouseEnter={() => setSelectedIndex(i)}
                       onClick={() => setSelectedIndex(i)}
@@ -470,7 +470,7 @@ export function ProductionHistoryChart({
                         </span>
                       )}
                       <span
-                        className={`w-full rounded-t-md transition-all duration-150 ${
+                        className={`w-full max-w-[44px] rounded-t-md transition-all duration-150 ${
                           SEVERITY_BAR[severity]
                         } ${
                           isActive ? 'ring-2 ring-[var(--color-text-primary)] ring-offset-1 ring-offset-[var(--color-surface)]' : 'opacity-85 hover:opacity-100'
@@ -493,10 +493,12 @@ export function ProductionHistoryChart({
                 `minWidth` das barras acima (ver P1-05) — assim ela rola junto
                 com o gráfico e os rótulos sempre correspondem às barras reais,
                 mesmo em telas menores que a largura mínima do gráfico. */}
-            <div className="mt-1 flex justify-between text-xs text-gray-500 tabular-nums">
-              <span>{formatShortDate(daily[0].date)}</span>
-              <span>{formatShortDate(daily[Math.floor(daily.length / 2)].date)}</span>
-              <span>{formatShortDate(daily[daily.length - 1].date)}</span>
+            {/* Primeiro/meio/último dia SEM repetir: com 2 dias, "meio" e
+                "último" eram a mesma data e o eixo mostrava 30/07 duas vezes. */}
+            <div className="mt-1 flex justify-between text-xs text-[var(--color-text-secondary)] tabular-nums">
+              {[...new Set([0, Math.floor(daily.length / 2), daily.length - 1])].map((index) => (
+                <span key={daily[index].date}>{formatShortDate(daily[index].date)}</span>
+              ))}
             </div>
           </div>
         </div>

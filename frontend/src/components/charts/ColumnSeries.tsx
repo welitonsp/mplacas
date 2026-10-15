@@ -9,11 +9,30 @@ import { useChartEntrance } from './useChartEntrance'
 // contrato de dado de entrada.
 export type ColumnSeriesItem = BarListItem
 
+// `neutral` é a cor de PRODUÇÃO (verde da marca, ADR-077): toda série de
+// colunas hoje mostra energia gerada. Severidade usa os preenchimentos
+// próprios — não as variantes de texto, que são escuras demais como área.
 const TONE_BG_VAR: Record<ChartTone, string> = {
-  success: 'var(--color-success-text)',
-  warning: 'var(--color-warning-text)',
-  danger: 'var(--color-danger-text)',
-  neutral: 'var(--color-brand-primary)',
+  success: 'var(--color-success)',
+  warning: 'var(--color-warning)',
+  danger: 'var(--color-danger)',
+  neutral: 'var(--color-energy-solar)',
+}
+
+// Largura máxima da coluna. Sem teto, 3 ciclos viravam 3 blocos de ~170 px
+// cada — lia como mancha, não como gráfico. Com teto, a coluna fica fina e
+// centrada no seu espaço, como em qualquer gráfico de barras bem desenhado.
+const MAX_COLUMN_WIDTH = 56
+
+/** Arredonda o topo do eixo para um valor "redondo" acima do máximo
+ * (1.050 → 1.200), para a coluna mais alta não encostar no teto. */
+export function niceAxisMax(value: number): number {
+  if (!(value > 0) || !Number.isFinite(value)) return value
+  const magnitude = 10 ** Math.floor(Math.log10(value))
+  const steps = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
+  const normalized = value / magnitude
+  const step = steps.find((candidate) => candidate >= normalized - 1e-9) ?? 10
+  return step * magnitude
 }
 
 // Mesma paleta de selo (chip) usada em `BarList`, duplicada aqui pelo mesmo
@@ -95,7 +114,8 @@ export function ColumnSeries({
   const assessableValues = items
     .map((item) => item.value)
     .filter((value): value is number => value != null)
-  const effectiveMax = maxValue ?? (assessableValues.length > 0 ? Math.max(...assessableValues) : 0)
+  const effectiveMax =
+    maxValue ?? (assessableValues.length > 0 ? niceAxisMax(Math.max(...assessableValues)) : 0)
 
   // Animação de entrada (uma vez por montagem, nunca em refetch — ver
   // `useChartEntrance`): cada coluna (com dado ou o marcador tracejado de
@@ -106,7 +126,7 @@ export function ColumnSeries({
 
   // Equivalente textual completo do gráfico inteiro — usado no `aria-label`
   // do `role="img"` que envolve só a área visual (barras), mesmo padrão de
-  // `StackedBar`/`SankeyFlow`. Inclui o selo de qualidade quando presente,
+  // `StackedBar`. Inclui o selo de qualidade quando presente,
   // para o estado "dados parciais" ser verificável via `aria-label`, não só
   // visualmente (ver instrução da tarefa).
   const ariaLabel = items
@@ -159,20 +179,20 @@ export function ColumnSeries({
           <div style={{ minWidth: columnsMinWidth }}>
             <div role="img" aria-label={ariaLabel} className="relative" style={{ height: CHART_HEIGHT }}>
               <span
-                className="pointer-events-none absolute inset-x-0 top-0 border-t border-gray-100"
+                className="pointer-events-none absolute inset-x-0 top-0 border-t border-[var(--color-chart-grid)]"
                 aria-hidden="true"
               />
               <span
-                className="pointer-events-none absolute inset-x-0 border-t border-gray-100"
+                className="pointer-events-none absolute inset-x-0 border-t border-[var(--color-chart-grid)]"
                 style={{ top: '50%' }}
                 aria-hidden="true"
               />
               <span
-                className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-gray-100"
+                className="pointer-events-none absolute inset-x-0 bottom-0 border-t border-[var(--color-gray-300)]"
                 aria-hidden="true"
               />
 
-              <div className="flex h-full items-end gap-2" aria-hidden="true">
+              <div className="relative flex h-full items-end gap-2" aria-hidden="true">
                 {items.map((item, index) => {
                   if (item.value == null) {
                     return (
@@ -182,8 +202,8 @@ export function ColumnSeries({
                         style={{ minWidth: MIN_COLUMN_WIDTH }}
                       >
                         <div
-                          className="w-full rounded-t-sm border-2 border-dashed border-[var(--color-chart-track)] transition-[height] duration-150 motion-reduce:transition-none"
-                          style={{ height: entered ? NO_DATA_MARKER_HEIGHT : 0 }}
+                          className="w-full rounded-t-md border-2 border-dashed border-[var(--color-gray-300)] transition-[height] duration-150 motion-reduce:transition-none"
+                          style={{ height: entered ? NO_DATA_MARKER_HEIGHT : 0, maxWidth: MAX_COLUMN_WIDTH }}
                         />
                       </div>
                     )
@@ -206,13 +226,17 @@ export function ColumnSeries({
                           classe CSS/cor (ver instrução da tarefa). */}
                       <div
                         data-quality={badgeTone ? 'partial' : 'complete'}
-                        className={`w-full rounded-t-sm transition-[height] duration-150 motion-reduce:transition-none ${
+                        className={`w-full rounded-t-md transition-[height] duration-150 motion-reduce:transition-none ${
                           badgeTone ? 'border-2 border-dashed' : ''
                         }`}
                         style={{
                           height: entered ? barHeight : 0,
-                          backgroundColor: color,
-                          ...(badgeTone ? { borderColor: TONE_BG_VAR[badgeTone] } : {}),
+                          maxWidth: MAX_COLUMN_WIDTH,
+                          // Dado parcial: mesma cor, preenchimento claro +
+                          // contorno tracejado. Lê como "incompleto", não
+                          // como alerta (laranja é reservado a atenção).
+                          backgroundColor: badgeTone ? `color-mix(in srgb, ${color} 28%, transparent)` : color,
+                          ...(badgeTone ? { borderColor: color } : {}),
                         }}
                       />
                     </div>
@@ -233,7 +257,7 @@ export function ColumnSeries({
                   className="flex flex-1 flex-col items-center gap-0.5 text-center"
                   style={{ minWidth: MIN_COLUMN_WIDTH }}
                 >
-                  <span className="text-xs text-gray-600" title={item.label}>
+                  <span className="text-xs text-[var(--color-text-secondary)]" title={item.label}>
                     {item.label}
                   </span>
                   <span className="text-xs font-semibold tabular-nums text-[var(--color-text-primary)]">
@@ -278,7 +302,7 @@ export function ColumnSeries({
 
       {/* Alternativa tabular equivalente para leitor de tela que prefira
           navegar os dados como tabela em vez de prosa no `aria-label` (mesmo
-          padrão de `SankeyFlow`) — inclui a contagem exata de dias sem dado
+          padrão das demais primitivas) — inclui a contagem exata de dias sem dado
           de `description`, que nunca aparece só em tooltip. */}
       {/* `sr-only` no WRAPPER, não na tabela: tabela ignora `width: 1px` e
           alargava a página no celular (overflow.spec, 360 px). */}

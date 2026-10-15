@@ -187,10 +187,10 @@ describe('ProductionPage — seção "Produção por ciclo de faturamento"', () 
     expect(visual.getByText('abr/26')).toBeInTheDocument()
     expect(visual.getByText('mai/26')).toBeInTheDocument()
     expect(visual.getByText('980 kWh')).toBeInTheDocument()
-    // "1.050 kWh" aparece duas vezes dentro da parte visual: o valor da
-    // coluna abr/26 E o tique do topo do eixo Y, já que abr/26 é o maior
-    // valor da série (mesma coincidência tratada em `ColumnSeries.test.tsx`).
-    expect(visual.getAllByText('1.050 kWh')).toHaveLength(2)
+    // O topo do eixo é arredondado para cima (1.050 → 1.200, `niceAxisMax`),
+    // então o maior valor aparece uma vez só, na própria coluna.
+    expect(visual.getAllByText('1.050 kWh')).toHaveLength(1)
+    expect(visual.getByText('1.200 kWh')).toBeInTheDocument()
     expect(visual.getByText('500 kWh')).toBeInTheDocument()
 
     // mai/26 tem missing_days: 3 no payload — único ciclo com o selo de
