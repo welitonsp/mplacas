@@ -145,7 +145,7 @@ export function FinancialSection({
                 originou. Mesmo texto/estilo de `HeroCard.tsx`, único outro
                 lugar do app que já mostra este dado (lá, só no módulo Visão
                 Geral). */}
-            <p className="-mt-3 mb-4 text-xs font-medium text-gray-500 uppercase tracking-wide">
+            <p className="-mt-3 mb-4 text-xs font-medium text-gray-500">
               Ciclo de referência: {referenceMonth}
             </p>
             {/* Decomposição da fatura (energia + iluminação pública [+
@@ -159,7 +159,7 @@ export function FinancialSection({
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] gap-4 items-stretch">
               {billTotalAmount != null && billEnergyComponent != null && billPublicLighting != null ? (
                 <div className="rounded-lg border border-gray-200 bg-[var(--color-surface)] p-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  <p className="text-xs font-medium text-gray-500">
                     Valor total da fatura
                   </p>
                   <p className="mt-1 mb-3 text-2xl font-semibold text-gray-900 tabular-nums">
@@ -289,7 +289,7 @@ function FinancialSummaryTile({
   return (
     <div className="min-h-[7.5rem] rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 shadow-sm sm:min-h-[8.5rem] sm:p-4">
       <div className={`mb-3 h-1.5 w-12 rounded-sm sm:mb-4 ${toneClass}`} />
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="text-xs font-medium text-gray-500">{label}</p>
       <p className="mt-2 text-xl font-semibold text-gray-900 tabular-nums sm:text-2xl">{value}</p>
       <p className="mt-1 text-xs text-gray-500">{supportingText}</p>
     </div>

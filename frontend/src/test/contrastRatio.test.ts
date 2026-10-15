@@ -74,6 +74,7 @@ const TEXT_PAIRS: Array<[string, DesignTokenName]> = [
   ['gray-700', '--color-gray-700'],
   ['gray-800', '--color-gray-800'],
   ['gray-900', '--color-gray-900'],
+  ['gray-950', '--color-gray-950'],
 ]
 
 // Tokens de PREENCHIMENTO (badge/barra/ponto — nunca `color` de texto, ver
@@ -85,6 +86,10 @@ const FILL_PAIRS: Array<[string, DesignTokenName]> = [
   ['success', '--color-success'],
   ['warning', '--color-warning'],
   ['danger', '--color-danger'],
+  ['energy-solar', '--color-energy-solar'],
+  ['energy-grid', '--color-energy-grid'],
+  ['energy-consumption', '--color-energy-consumption'],
+  ['chart-reference', '--color-chart-reference'],
 ]
 
 // Padrão de "badge": texto `-text` sobre o próprio fundo `-light` da mesma
@@ -96,6 +101,10 @@ const TEXT_ON_OWN_LIGHT_BG_PAIRS: Array<[string, DesignTokenName, DesignTokenNam
   ['warning-text sobre warning-light', '--color-warning-text', '--color-warning-light'],
   ['danger-text sobre danger-light', '--color-danger-text', '--color-danger-light'],
   ['data-secondary sobre data-secondary-light', '--color-data-secondary', '--color-data-secondary-light'],
+  // Botão primário: texto sobre a cor de marca. No tema escuro antigo era
+  // `text-white` sobre azul claro, reprovado — por isso existe `--color-on-brand`.
+  ['on-brand sobre brand-primary', '--color-on-brand', '--color-brand-primary'],
+  ['brand-primary sobre brand-primary-light (item de menu ativo)', '--color-brand-primary', '--color-brand-primary-light'],
 ]
 
 describe.each([

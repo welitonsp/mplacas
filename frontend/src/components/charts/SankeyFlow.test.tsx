@@ -86,7 +86,7 @@ describe('SankeyFlow', () => {
       />,
     )
 
-    const table = document.querySelector('table.sr-only')
+    const table = document.querySelector('.sr-only > table')
     expect(table).toBeInTheDocument()
     expect(table).toHaveTextContent('Produção')
     expect(table).toHaveTextContent('543.6 kWh')

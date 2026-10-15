@@ -8,7 +8,7 @@ import { Card } from './Card'
 export function CurrencyCard({ label, value }: { label: string; value: MetricValue }) {
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+      <p className="text-xs font-medium text-gray-500">{label}</p>
       <p className="mt-2 text-xl font-semibold text-gray-900 tabular-nums sm:text-2xl">{formatCurrency(value)}</p>
     </Card>
   )

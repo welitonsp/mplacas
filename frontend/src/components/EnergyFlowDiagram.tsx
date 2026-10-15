@@ -70,7 +70,7 @@ export function EnergyFlowDiagram({
   const content = (
     <>
       {partial && (
-        <span className="absolute right-3 top-3 rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-warning)]">
+        <span className="absolute right-3 top-3 rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold text-[var(--color-warning)]">
           Parcial
         </span>
       )}

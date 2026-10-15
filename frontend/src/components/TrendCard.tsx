@@ -23,7 +23,7 @@ export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
 
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+      <p className="text-xs font-medium text-gray-500">
         Comparação com o ciclo anterior
       </p>
       <p className="mt-1 text-xs text-gray-500">

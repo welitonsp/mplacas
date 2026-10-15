@@ -308,11 +308,11 @@ export function ProductionDiagnosticPanel({
           <>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Impacto</p>
+                <p className="text-xs font-medium text-gray-500">Impacto</p>
                 <p className="mt-2 text-sm leading-6 text-gray-700">{diagnosis.impact}</p>
               </div>
               <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Próxima ação</p>
+                <p className="text-xs font-medium text-gray-500">Próxima ação</p>
                 <p className="mt-2 text-sm leading-6 text-gray-700">{diagnosis.action}</p>
               </div>
             </div>
@@ -327,7 +327,7 @@ export function ProductionDiagnosticPanel({
                   key={signal.label}
                   className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[signal.tone]} px-3 py-2`}
                 >
-                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{signal.label}</p>
+                  <p className="text-xs font-medium text-gray-500">{signal.label}</p>
                   <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[signal.tone]}`}>{signal.value}</p>
                 </div>
               ))}
@@ -348,7 +348,7 @@ export function ProductionDiagnosticPanel({
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.6fr)] lg:items-start">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnóstico de produção</p>
+            <p className="text-xs font-medium text-gray-500">Diagnóstico de produção</p>
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-semibold ${SEVERITY_BG[diagnosis.tone]} ${SEVERITY_TEXT[diagnosis.tone]}`}
             >
@@ -367,11 +367,11 @@ export function ProductionDiagnosticPanel({
 
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Impacto</p>
+              <p className="text-xs font-medium text-gray-500">Impacto</p>
               <p className="mt-2 text-sm leading-6 text-gray-700">{diagnosis.impact}</p>
             </div>
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Próxima ação</p>
+              <p className="text-xs font-medium text-gray-500">Próxima ação</p>
               <p className="mt-2 text-sm leading-6 text-gray-700">{diagnosis.action}</p>
             </div>
           </div>
@@ -383,7 +383,7 @@ export function ProductionDiagnosticPanel({
               key={signal.label}
               className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[signal.tone]} px-3 py-2`}
             >
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{signal.label}</p>
+              <p className="text-xs font-medium text-gray-500">{signal.label}</p>
               <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[signal.tone]}`}>{signal.value}</p>
             </div>
           ))}
@@ -403,7 +403,7 @@ export function ProductionDiagnosticPanel({
 
         {alertSignal && (
           <div className={`mt-4 rounded-xl border border-[var(--color-border)] ${SEVERITY_BG[alertSignal.tone]} p-3`}>
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Critério de alerta</p>
+            <p className="text-xs font-medium text-gray-500">Critério de alerta</p>
             <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[alertSignal.tone]}`}>
               {alertSignal.label}
             </p>

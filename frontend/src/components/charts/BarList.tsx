@@ -132,7 +132,7 @@ export function BarList({
             <div className="flex items-center gap-3">
               {labelColumn}
               <div
-                className={`relative flex-1 overflow-hidden rounded-lg bg-[var(--color-chart-track)] shadow-inner ring-1 ring-inset ring-black/5 ${BAR_HEIGHT_CLASS}`}
+                className={`relative flex-1 overflow-hidden rounded-lg bg-[var(--color-chart-track)] ${BAR_HEIGHT_CLASS}`}
                 role="progressbar"
                 aria-valuenow={item.value}
                 aria-valuemin={0}
@@ -140,10 +140,10 @@ export function BarList({
                 aria-label={`${item.label}: ${formatValue(item.value)}`}
               >
                 <div
-                  className="h-full rounded-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                  className="h-full rounded-lg transition-[width] duration-300 ease-out motion-reduce:transition-none"
                   style={{
                     width: `${entered ? pct : 0}%`,
-                    background: `linear-gradient(90deg, ${color}, color-mix(in srgb, ${color} 72%, white))`,
+                    background: color,
                   }}
                 />
               </div>

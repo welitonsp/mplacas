@@ -54,7 +54,7 @@ function KpiItem({
           <KpiIcon name={icon} />
         </span>
         <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+          <p className="text-xs font-medium text-gray-500">{label}</p>
           <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-gray-900 sm:text-xl">{value}</p>
           <p className="mt-1 text-xs leading-relaxed text-gray-500">{meta}</p>
         </div>

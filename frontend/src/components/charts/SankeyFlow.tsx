@@ -209,7 +209,7 @@ export function SankeyFlow({
                 y={box.y + 24}
                 textAnchor="middle"
                 className="fill-gray-500"
-                style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' }}
+                style={{ fontSize: 12, fontWeight: 600 }}
               >
                 {node.label}
               </text>
@@ -230,35 +230,39 @@ export function SankeyFlow({
       {/* Alternativa tabular equivalente para leitor de tela que não navega
           bem um SVG complexo com múltiplos traços sobrepostos (ver skill
           `accessible-charts`). */}
-      <table className="sr-only">
-        <caption>Fluxo de energia: valores por nó e por fluxo</caption>
-        <thead>
-          <tr>
-            <th scope="col">Nó</th>
-            <th scope="col">Valor</th>
-          </tr>
-        </thead>
-        <tbody>
-          {nodes.map((node) => (
-            <tr key={node.id}>
-              <th scope="row">{node.label}</th>
-              <td>{formatValue(node.value)}</td>
+      {/* `sr-only` no WRAPPER, não na tabela: tabela ignora `width: 1px` e
+          alargava a página no celular (overflow.spec, 360 px). */}
+      <div className="sr-only">
+        <table>
+          <caption>Fluxo de energia: valores por nó e por fluxo</caption>
+          <thead>
+            <tr>
+              <th scope="col">Nó</th>
+              <th scope="col">Valor</th>
             </tr>
-          ))}
-          {flows.map((flow, index) => {
-            const from = nodeById.get(flow.from)?.label ?? flow.from
-            const to = nodeById.get(flow.to)?.label ?? flow.to
-            return (
-              <tr key={`${flow.from}-${flow.to}-flow-${index}`}>
-                <th scope="row">
-                  {from} → {to}
-                </th>
-                <td>{formatValue(flow.value)}</td>
+          </thead>
+          <tbody>
+            {nodes.map((node) => (
+              <tr key={node.id}>
+                <th scope="row">{node.label}</th>
+                <td>{formatValue(node.value)}</td>
               </tr>
-            )
-          })}
-        </tbody>
-      </table>
+            ))}
+            {flows.map((flow, index) => {
+              const from = nodeById.get(flow.from)?.label ?? flow.from
+              const to = nodeById.get(flow.to)?.label ?? flow.to
+              return (
+                <tr key={`${flow.from}-${flow.to}-flow-${index}`}>
+                  <th scope="row">
+                    {from} → {to}
+                  </th>
+                  <td>{formatValue(flow.value)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

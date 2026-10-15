@@ -13,9 +13,9 @@ describe('MetricStrip', () => {
       />
     )
 
-    // Um único Card (`rounded-2xl`) contendo os dois itens — não um Card por
+    // Um único Card (`rounded-[var(--radius-card)]`) contendo os dois itens — não um Card por
     // item (esse é o ponto da tira: menos caixas, não menos dado).
-    expect(container.querySelectorAll('.rounded-2xl')).toHaveLength(1)
+    expect(container.querySelectorAll('.rounded-\\[var\\(--radius-card\\)\\]')).toHaveLength(1)
 
     expect(screen.getByText('Tarifa com impostos')).toBeInTheDocument()
     expect(screen.getByText(/0,85/)).toBeInTheDocument()

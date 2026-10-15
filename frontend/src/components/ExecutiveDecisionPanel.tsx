@@ -276,7 +276,7 @@ export function ExecutiveDecisionPanel({
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.55fr)] lg:items-start">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{decision.eyebrow}</p>
+            <p className="text-xs font-medium text-gray-500">{decision.eyebrow}</p>
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-semibold ${SEVERITY_BG[decision.tone]} ${SEVERITY_TEXT[decision.tone]}`}
             >
@@ -295,22 +295,22 @@ export function ExecutiveDecisionPanel({
 
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Impacto</p>
+              <p className="text-xs font-medium text-gray-500">Impacto</p>
               <p className="mt-2 text-sm leading-6 text-gray-700">{decision.impact}</p>
             </div>
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Próxima ação</p>
+              <p className="text-xs font-medium text-gray-500">Próxima ação</p>
               <p className="mt-2 text-sm leading-6 text-gray-700">{decision.action}</p>
             </div>
           </div>
 
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Janela de decisão</p>
+              <p className="text-xs font-medium text-gray-500">Janela de decisão</p>
               <p className="mt-1 text-sm font-semibold text-gray-950">{decision.cadence}</p>
             </div>
             <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Responsável sugerido</p>
+              <p className="text-xs font-medium text-gray-500">Responsável sugerido</p>
               <p className="mt-1 text-sm font-semibold text-gray-950">{decision.owner}</p>
             </div>
           </div>
@@ -323,14 +323,14 @@ export function ExecutiveDecisionPanel({
                 key={signal.label}
                 className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[signal.tone]} px-3 py-2`}
               >
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{signal.label}</p>
+                <p className="text-xs font-medium text-gray-500">{signal.label}</p>
                 <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[signal.tone]}`}>{signal.value}</p>
               </div>
             ))}
           </div>
 
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Plano de ação</p>
+            <p className="text-xs font-medium text-gray-500">Plano de ação</p>
             <ol aria-label="Plano executivo de ação" className="mt-3 space-y-3">
               {decision.playbook.map((item) => (
                 <li key={`${item.step}-${item.title}`} className="flex gap-3">

@@ -113,7 +113,7 @@ export function LoginPage() {
           </div>
 
           <div className="max-w-3xl space-y-4">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+            <p className="text-sm font-semibold text-[var(--color-brand-primary)]">
               Painel operacional
             </p>
             <h1 className="text-4xl font-bold leading-tight tracking-tight text-[var(--color-text-primary)] sm:text-5xl lg:text-6xl">
@@ -142,7 +142,7 @@ export function LoginPage() {
           <aside className="max-w-3xl rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)]/80 p-4 shadow-[var(--shadow-cockpit)] backdrop-blur">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+                <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
                   Prévia do cockpit
                 </p>
                 <p className="mt-1 text-lg font-bold text-[var(--color-text-primary)]">
@@ -271,12 +271,12 @@ export function LoginPage() {
               type="submit"
               disabled={loading}
               aria-busy={loading}
-              className="mt-2 inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[var(--color-brand-primary)] px-4 py-3 text-sm font-bold text-white shadow-[0_18px_36px_-20px_var(--color-brand-primary)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-brand-primary-dark)] hover:shadow-[0_22px_44px_-22px_var(--color-brand-primary)] active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 motion-reduce:transition-none"
+              className="mt-2 inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[var(--color-brand-primary)] px-4 py-3 text-sm font-bold text-[var(--color-on-brand)] shadow-[0_18px_36px_-20px_var(--color-brand-primary)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-brand-primary-dark)] hover:shadow-[0_22px_44px_-22px_var(--color-brand-primary)] active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 motion-reduce:transition-none"
             >
               {loading && (
                 <span
                   aria-hidden="true"
-                  className="h-4 w-4 rounded-full border-2 border-white/45 border-t-white animate-spin"
+                  className="h-4 w-4 rounded-full border-2 border-current/40 border-t-current animate-spin"
                 />
               )}
               {loading ? 'Entrando...' : 'Entrar no painel'}

@@ -36,7 +36,7 @@ export function ProductionHistoryChart({
   if (daily.length === 0) {
     return (
       <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+        <p className="text-xs font-medium text-gray-500">
           Histórico de produção diária
         </p>
         <p className="mt-4 text-sm text-gray-500">
@@ -232,7 +232,7 @@ export function ProductionHistoryChart({
     <Card interactive className="overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          <p className="text-xs font-medium text-gray-500">
             Histórico de produção diária ({daily.length} dias)
           </p>
           {performancePercent != null && (
@@ -292,7 +292,7 @@ export function ProductionHistoryChart({
           aria-label="Resumo executivo do período de produção"
         >
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+            <p className="text-xs font-semibold text-gray-500">
               Total produzido
             </p>
             <p className="mt-1 text-lg font-semibold text-gray-950 tabular-nums">
@@ -304,7 +304,7 @@ export function ProductionHistoryChart({
           </div>
 
           <div className="rounded-2xl border border-[var(--color-success)]/20 bg-[var(--color-success-light)] px-3 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-success-text)]/80">
+            <p className="text-xs font-semibold text-[var(--color-success-text)]/80">
               Melhor dia
             </p>
             <p className="mt-1 text-lg font-semibold text-[var(--color-success-text)] tabular-nums">
@@ -316,7 +316,7 @@ export function ProductionHistoryChart({
           </div>
 
           <div className="rounded-2xl border border-[var(--color-warning)]/25 bg-[var(--color-warning-light)] px-3 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-warning-text)]/80">
+            <p className="text-xs font-semibold text-[var(--color-warning-text)]/80">
               Pior dia
             </p>
             <p className="mt-1 text-lg font-semibold text-[var(--color-warning-text)] tabular-nums">
@@ -366,7 +366,7 @@ export function ProductionHistoryChart({
                 em vez de esticar um SVG sobre uma área que inclui a régua de
                 datas abaixo. */}
             <div
-              className="relative rounded-2xl border border-[var(--color-border)] bg-[linear-gradient(180deg,var(--color-surface)_0%,var(--color-surface-subtle)_100%)] shadow-inner"
+              className="relative rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]"
               style={{ height: '220px' }}
             >
               {/* 3 gridlines horizontais (0, max/2, max) para a grandeza
@@ -463,14 +463,14 @@ export function ProductionHistoryChart({
                         <span
                           data-testid="production-bar-date-label"
                           aria-hidden="true"
-                          className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 rounded-full border border-[var(--color-border)] bg-white/95 px-1.5 py-0.5 text-xs font-semibold leading-none text-gray-700 shadow-sm tabular-nums"
+                          className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-xs font-semibold leading-none text-gray-700 shadow-sm tabular-nums"
                           style={{ bottom: `calc(${Math.max(barHeightPercent, 2)}% + 6px)` }}
                         >
                           {formatShortDate(d.date)}
                         </span>
                       )}
                       <span
-                        className={`w-full rounded-t-md shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] transition-all duration-150 ${
+                        className={`w-full rounded-t-md transition-all duration-150 ${
                           SEVERITY_BAR[severity]
                         } ${
                           isActive ? 'ring-2 ring-[var(--color-text-primary)] ring-offset-1 ring-offset-[var(--color-surface)]' : 'opacity-85 hover:opacity-100'
@@ -503,7 +503,7 @@ export function ProductionHistoryChart({
       </div>
 
       <div
-        className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-[var(--color-border)] bg-[linear-gradient(135deg,var(--color-surface)_0%,var(--color-surface-subtle)_100%)] p-3 text-xs text-gray-600 shadow-sm"
+        className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-3 text-xs text-gray-600"
         aria-live="polite"
       >
         <span className="inline-flex rounded-full bg-[var(--color-brand-primary-light)] px-2.5 py-1 font-semibold text-[var(--color-brand-primary)]">

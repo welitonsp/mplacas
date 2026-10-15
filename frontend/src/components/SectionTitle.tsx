@@ -6,12 +6,12 @@
 // - `h2`: mais peso/tamanho (`text-lg font-semibold`), para se destacar do
 //   corpo dos cards que ele agrupa.
 // - `h3`: tratamento de "olho de sobrancelha" (`text-xs font-medium
-//   uppercase tracking-wide text-gray-500`) — reaproveita exatamente a
+//   text-gray-500`) — reaproveita exatamente a
 //   classe já usada em ~39 outros lugares do projeto para rótulo secundário
 //   (ver `CurrencyCard`, `MetricCard`, `Gauge`, etc.), não uma classe nova.
 const HEADING_CLASS: Record<'h2' | 'h3', string> = {
   h2: 'relative mb-4 flex items-center gap-2 text-lg font-semibold text-gray-900 tracking-tight before:h-5 before:w-1 before:rounded-full before:bg-[var(--color-brand-primary)]',
-  h3: 'text-xs font-medium text-gray-500 uppercase tracking-wide',
+  h3: 'text-xs font-medium text-gray-500',
 }
 
 export function SectionTitle({

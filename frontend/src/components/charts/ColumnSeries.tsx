@@ -280,28 +280,32 @@ export function ColumnSeries({
           navegar os dados como tabela em vez de prosa no `aria-label` (mesmo
           padrão de `SankeyFlow`) — inclui a contagem exata de dias sem dado
           de `description`, que nunca aparece só em tooltip. */}
-      <table className="sr-only">
-        <caption>Valor e qualidade dos dados por item da série</caption>
-        <thead>
-          <tr>
-            <th scope="col">Item</th>
-            <th scope="col">Valor</th>
-            <th scope="col">Qualidade dos dados</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item, index) => (
-            <tr key={`${item.label}-row-${index}`}>
-              <th scope="row">{item.label}</th>
-              <td>{item.value == null ? item.unavailableLabel ?? 'sem dado' : formatValue(item.value)}</td>
-              <td>
-                {item.badge ? item.badge.label : 'completo'}
-                {item.description ? ` — ${item.description}` : ''}
-              </td>
+      {/* `sr-only` no WRAPPER, não na tabela: tabela ignora `width: 1px` e
+          alargava a página no celular (overflow.spec, 360 px). */}
+      <div className="sr-only">
+        <table>
+          <caption>Valor e qualidade dos dados por item da série</caption>
+          <thead>
+            <tr>
+              <th scope="col">Item</th>
+              <th scope="col">Valor</th>
+              <th scope="col">Qualidade dos dados</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {items.map((item, index) => (
+              <tr key={`${item.label}-row-${index}`}>
+                <th scope="row">{item.label}</th>
+                <td>{item.value == null ? item.unavailableLabel ?? 'sem dado' : formatValue(item.value)}</td>
+                <td>
+                  {item.badge ? item.badge.label : 'completo'}
+                  {item.description ? ` — ${item.description}` : ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

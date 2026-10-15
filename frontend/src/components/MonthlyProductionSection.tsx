@@ -65,12 +65,12 @@ function MonthlyExportControl({ plantId }: { plantId: string }) {
         onClick={handleExport}
         disabled={downloading}
         aria-busy={downloading}
-        className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-[var(--color-brand-primary)] px-4 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-brand-primary-dark)] hover:shadow-md active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-primary)] focus:ring-offset-2 focus:ring-offset-[var(--color-surface)] focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-sm motion-reduce:transition-none"
+        className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-[var(--color-brand-primary)] px-4 text-sm font-semibold text-[var(--color-on-brand)] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-brand-primary-dark)] hover:shadow-md active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-primary)] focus:ring-offset-2 focus:ring-offset-[var(--color-surface)] focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-sm motion-reduce:transition-none"
       >
         {downloading && (
           <span
             aria-hidden="true"
-            className="h-3.5 w-3.5 rounded-full border-2 border-white/45 border-t-white animate-spin"
+            className="h-3.5 w-3.5 rounded-full border-2 border-current/40 border-t-current animate-spin"
           />
         )}
         {downloading ? `Gerando ${EXPORT_FORMAT_LABELS[format]}...` : `Baixar ${EXPORT_FORMAT_LABELS[format]}`}
@@ -156,7 +156,7 @@ export function MonthlyProductionSection({
 
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+      <p className="text-xs font-medium text-gray-500">
         Últimos {cyclesReturned} {cyclesReturned === 1 ? 'ciclo' : 'ciclos'}
       </p>
       <ColumnSeries

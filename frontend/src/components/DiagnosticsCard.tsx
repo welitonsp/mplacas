@@ -16,7 +16,7 @@ export function DiagnosticsCard({ diagnostics, plantId }: { diagnostics: Diagnos
     return (
       <Card>
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnósticos</p>
+          <p className="text-xs font-medium text-gray-500">Diagnósticos</p>
           <span className="rounded-full bg-[var(--color-success-light)] px-2.5 py-1 text-xs font-semibold text-[var(--color-success-text)]">
             Sem alertas
           </span>
@@ -32,7 +32,7 @@ export function DiagnosticsCard({ diagnostics, plantId }: { diagnostics: Diagnos
   return (
     <Card>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnósticos</p>
+        <p className="text-xs font-medium text-gray-500">Diagnósticos</p>
         <span className="rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-semibold text-gray-600">
           {diagnostics.length} {diagnostics.length === 1 ? 'item' : 'itens'}
         </span>

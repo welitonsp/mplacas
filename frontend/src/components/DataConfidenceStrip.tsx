@@ -104,13 +104,13 @@ export function DataConfidenceStrip({
           </p>
           <dl className="grid gap-3 sm:grid-cols-2 lg:min-w-[28rem]">
             <div className="rounded-xl bg-[var(--color-surface-subtle)] px-3 py-2.5">
-              <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              <dt className="text-xs font-semibold text-[var(--color-text-muted)]">
                 Diretriz
               </dt>
               <dd className="mt-1 text-sm font-semibold text-[var(--color-text)]">{summary.decisionGuidance}</dd>
             </div>
             <div className="rounded-xl bg-[var(--color-surface-subtle)] px-3 py-2.5">
-              <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              <dt className="text-xs font-semibold text-[var(--color-text-muted)]">
                 Próximo check
               </dt>
               <dd className="mt-1 text-sm font-semibold text-[var(--color-text)]">{summary.nextCheck}</dd>

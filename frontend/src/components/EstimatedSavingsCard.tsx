@@ -19,7 +19,7 @@ export function EstimatedSavingsCard({
   if (unavailableReason != null) {
     return (
       <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Economia estimada</p>
+        <p className="text-xs font-medium text-gray-500">Economia estimada</p>
         <p className="mt-4 text-sm text-gray-500">{savingsUnavailableMessage(unavailableReason)}</p>
       </Card>
     )
@@ -27,7 +27,7 @@ export function EstimatedSavingsCard({
 
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Economia estimada</p>
+      <p className="text-xs font-medium text-gray-500">Economia estimada</p>
       <p className="mt-2 text-2xl font-semibold text-gray-900 tabular-nums">{formatCurrency(value)}</p>
     </Card>
   )
