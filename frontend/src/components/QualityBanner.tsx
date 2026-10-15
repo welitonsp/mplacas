@@ -33,7 +33,7 @@ export function QualityBanner({ quality, compact = false }: { quality: CycleQual
 
   return (
     <Card dashed tone="warning" padding="p-4" className="mt-4">
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-warning)]">
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-warning)]">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
         Dados parciais neste ciclo
       </p>

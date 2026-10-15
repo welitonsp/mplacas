@@ -102,7 +102,7 @@ export function Gauge({
         {displayValue}
       </div>
       {label && (
-        <p className="mt-1 text-center text-xs font-medium text-gray-500 uppercase tracking-wide">
+        <p className="mt-1 text-center text-xs font-medium text-gray-500">
           {label}
         </p>
       )}

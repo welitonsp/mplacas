@@ -126,7 +126,7 @@ function ProductionHealthHero({
         className="md:col-span-6 lg:col-span-12"
       >
         <div className="rounded-3xl border border-gray-200 bg-gray-50 p-5 text-gray-700 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+          <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
             Indicador chave
           </p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-gray-950">
@@ -162,11 +162,11 @@ function ProductionHealthHero({
       aria-label="Produção e saúde da usina"
       className="md:col-span-6 lg:col-span-12"
     >
-      <div className="overflow-hidden rounded-3xl border border-[var(--color-brand-primary)]/20 bg-[linear-gradient(135deg,var(--color-surface)_0%,var(--color-brand-primary-light)_100%)] shadow-[0_18px_50px_-28px_rgba(37,99,235,0.55)]">
+      <div className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
         <div className="grid gap-6 p-5 md:p-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(18rem,0.95fr)] lg:items-end">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+              <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
                 Indicador chave
               </p>
               <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${PRODUCTION_HEALTH_CLASSES[alertSignal.tone]}`}>
@@ -189,21 +189,21 @@ function ProductionHealthHero({
               data-testid="production-health-action"
               className={`mt-4 max-w-3xl rounded-2xl border px-3 py-3 ${PRODUCTION_HEALTH_CLASSES[alertSignal.tone]}`}
             >
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] opacity-80">Próxima ação</p>
+              <p className="text-xs font-semibold opacity-80">Próxima ação</p>
               <p className="mt-1 text-base font-semibold">{action.title}</p>
               <p className="mt-1 text-sm leading-6 opacity-85">{action.detail}</p>
             </div>
             <Link
               to={DASHBOARD_PRODUCTION_PATH}
-              className="mt-4 inline-flex min-h-[44px] items-center rounded-full bg-[var(--color-brand-primary)] px-4 text-sm font-semibold text-white shadow-sm transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 motion-reduce:transition-none"
+              className="mt-4 inline-flex min-h-[44px] items-center rounded-full bg-[var(--color-brand-primary)] px-4 text-sm font-semibold text-[var(--color-on-brand)] shadow-sm transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 motion-reduce:transition-none"
             >
               Abrir análise completa <span aria-hidden="true" className="ml-1">→</span>
             </Link>
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/70 bg-white/80 px-3 py-3 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Último dia</p>
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 shadow-sm">
+              <p className="text-xs font-semibold text-gray-500">Último dia</p>
               <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
                 {latestActual == null ? '—' : `${formatNumber(latestActual, 1)} kWh`}
               </p>
@@ -211,8 +211,8 @@ function ProductionHealthHero({
                 {latestPoint ? formatShortDate(latestPoint.date) : 'sem dado diário'}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/70 bg-white/80 px-3 py-3 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Média 7 dias</p>
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 shadow-sm">
+              <p className="text-xs font-semibold text-gray-500">Média 7 dias</p>
               <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
                 {average.average == null ? '—' : `${formatNumber(average.average, 1)} kWh/dia`}
               </p>
@@ -220,8 +220,8 @@ function ProductionHealthHero({
                 {average.days} {average.days === 1 ? 'dia com dado' : 'dias com dado'}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/70 bg-white/80 px-3 py-3 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Desempenho vs esperado</p>
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 shadow-sm">
+              <p className="text-xs font-semibold text-gray-500">Desempenho vs esperado</p>
               <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
                 {performance.percent == null ? '—' : `${formatNumber(performance.percent, 1)}%`}
               </p>
@@ -229,8 +229,8 @@ function ProductionHealthHero({
                 {performance.assessedDays > 0 ? `${performance.assessedDays} dias avaliados` : 'sem baseline no recorte'}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/70 bg-white/80 px-3 py-3 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Total 7 dias</p>
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 shadow-sm">
+              <p className="text-xs font-semibold text-gray-500">Total 7 dias</p>
               <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">
                 {productionValues.length === 0 ? '—' : `${formatNumber(totalProduction, 1)} kWh`}
               </p>
@@ -239,7 +239,7 @@ function ProductionHealthHero({
           </div>
         </div>
 
-        <div className="border-t border-white/70 bg-white/55 px-5 py-4 md:px-6">
+        <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-5 py-4 md:px-6">
           <div className="flex h-24 items-end gap-2" aria-label="Mini gráfico dos últimos 7 dias">
             {recent.map((day) => {
               const actual = toNumber(day.actual_production_kwh) ?? 0

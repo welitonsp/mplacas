@@ -19,7 +19,7 @@ export function ReportingAvailabilityCard({
   if (performance === null) {
     return (
       <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Disponibilidade de reporte</p>
+        <p className="text-xs font-medium text-gray-500">Disponibilidade de reporte</p>
         <p className="mt-4 text-sm text-gray-500">
           {performanceUnavailableMessage(unavailableReason ?? 'NO_PERFORMANCE_RESULTS')}
         </p>
@@ -32,7 +32,7 @@ export function ReportingAvailabilityCard({
   if (availability === null) {
     return (
       <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Disponibilidade de reporte</p>
+        <p className="text-xs font-medium text-gray-500">Disponibilidade de reporte</p>
         <p className="mt-2 text-sm text-gray-500">{formatNumber(availability)}</p>
         <p className="mt-1 text-xs text-gray-500">
           Fração de devices que enviaram dados no dia — não é o uptime dos equipamentos.

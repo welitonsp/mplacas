@@ -70,7 +70,7 @@ export function AiExplanationPanel({ plantId }: { plantId: string }) {
     <div className="mt-4 border-t border-[var(--color-border)] pt-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Explicação por IA</p>
+          <p className="text-xs font-medium text-gray-500">Explicação por IA</p>
           <p className="mt-1 text-xs text-gray-500">
             Interpretação opcional, gerada sob demanda, dos diagnósticos acima — nunca é o dado oficial.
           </p>

@@ -272,7 +272,7 @@ export function FinancialDecisionPanel({
                   key={item.label}
                   className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[item.tone]} px-3 py-2`}
                 >
-                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{item.label}</p>
+                  <p className="text-xs font-medium text-gray-500">{item.label}</p>
                   <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[item.tone]}`}>{item.value}</p>
                 </div>
               ))}
@@ -280,12 +280,12 @@ export function FinancialDecisionPanel({
 
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
               <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Próxima decisão</p>
+                <p className="text-xs font-medium text-gray-500">Próxima decisão</p>
                 <p className="mt-2 text-sm leading-6 text-gray-700">{decision.primaryAction}</p>
               </div>
 
               <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Plano financeiro</p>
+                <p className="text-xs font-medium text-gray-500">Plano financeiro</p>
                 <ol aria-label="Plano financeiro executivo" className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                   {decision.playbook.map((step, index) => (
                     <li key={step.title}>
@@ -312,7 +312,7 @@ export function FinancialDecisionPanel({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-3xl">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Decisão financeira</p>
+            <p className="text-xs font-medium text-gray-500">Decisão financeira</p>
             <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${SEVERITY_BG[decision.tone]} ${SEVERITY_TEXT[decision.tone]}`}>
               {decision.label}
             </span>
@@ -333,7 +333,7 @@ export function FinancialDecisionPanel({
               key={item.label}
               className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[item.tone]} px-3 py-2`}
             >
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{item.label}</p>
+              <p className="text-xs font-medium text-gray-500">{item.label}</p>
               <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[item.tone]}`}>{item.value}</p>
             </div>
           ))}
@@ -342,12 +342,12 @@ export function FinancialDecisionPanel({
 
       <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Próxima decisão</p>
+          <p className="text-xs font-medium text-gray-500">Próxima decisão</p>
           <p className="mt-2 text-sm leading-6 text-gray-700">{decision.primaryAction}</p>
         </div>
 
         <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Plano financeiro</p>
+          <p className="text-xs font-medium text-gray-500">Plano financeiro</p>
           <ol aria-label="Plano financeiro executivo" className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
             {decision.playbook.map((step, index) => (
               <li key={step.title}>

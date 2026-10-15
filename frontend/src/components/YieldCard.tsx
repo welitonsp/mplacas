@@ -83,7 +83,7 @@ export function YieldCard({
 
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+      <p className="text-xs font-medium text-gray-500">
         Rendimento médio da janela analisada ({periodYieldSampleDays}{' '}
         {periodYieldSampleDays === 1 ? 'dia' : 'dias'})
       </p>
@@ -113,7 +113,7 @@ export function YieldCard({
         </p>
       ) : (
         <>
-          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-gray-500">
+          <p className="mt-4 text-xs font-medium text-gray-500">
             Dias com rendimento fora do padrão
           </p>
           <ul className="mt-2 space-y-2 text-xs text-gray-600">

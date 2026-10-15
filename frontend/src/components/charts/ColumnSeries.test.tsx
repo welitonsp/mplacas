@@ -165,7 +165,7 @@ describe('ColumnSeries', () => {
       />,
     )
 
-    const table = document.querySelector('table.sr-only') as HTMLElement
+    const table = document.querySelector('.sr-only > table') as HTMLElement
     expect(table).toBeInTheDocument()
 
     const rowA = within(table).getByText('A').closest('tr') as HTMLElement

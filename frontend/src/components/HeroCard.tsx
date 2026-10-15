@@ -49,7 +49,7 @@ export function HeroCard({
         }`}
       >
         <div className="[grid-area:headline]">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          <p className="text-xs font-medium text-gray-500">
             Ciclo de referência: {referenceMonth}
           </p>
           <p className={`mt-1 font-semibold tracking-tight text-gray-900 ${embedded ? 'text-2xl' : 'text-3xl'}`}>

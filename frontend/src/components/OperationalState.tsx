@@ -130,7 +130,7 @@ export function OperationalState({
         </div>
         <div className={centered ? '' : 'min-w-0 flex-1'}>
           {eyebrow && (
-            <p className={`${centered ? 'mt-6' : ''} text-xs font-semibold uppercase tracking-[0.18em] ${meta.text}`}>
+            <p className={`${centered ? 'mt-6' : ''} text-xs font-semibold ${meta.text}`}>
               {eyebrow}
             </p>
           )}

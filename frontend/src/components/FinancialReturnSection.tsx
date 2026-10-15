@@ -37,7 +37,7 @@ export function FinancialReturnSection({
   if (financialReturn.unavailable_reason === 'INVESTMENT_NOT_REGISTERED') {
     return (
       <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Retorno do investimento</p>
+        <p className="text-xs font-medium text-gray-500">Retorno do investimento</p>
         <p className="mt-4 text-sm text-gray-500">
           {financialReturnUnavailableMessage('INVESTMENT_NOT_REGISTERED')}
         </p>
@@ -49,7 +49,7 @@ export function FinancialReturnSection({
   if (financialReturn.unavailable_reason !== null) {
     return (
       <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Retorno do investimento</p>
+        <p className="text-xs font-medium text-gray-500">Retorno do investimento</p>
         <p className="mt-4 text-sm text-gray-500">
           {financialReturnUnavailableMessage(financialReturn.unavailable_reason)}
         </p>
@@ -76,10 +76,10 @@ export function FinancialReturnSection({
 
   return (
     <Card padding="p-0" className="overflow-hidden">
-      <div className="bg-[linear-gradient(135deg,var(--color-surface)_0%,var(--color-brand-primary-light)_100%)] p-4 sm:p-5">
+      <div className="bg-[var(--color-surface)] p-4 sm:p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+            <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
               Retorno do investimento
             </p>
             <p className="mt-2 text-sm leading-6 text-gray-600">
@@ -87,7 +87,7 @@ export function FinancialReturnSection({
             </p>
           </div>
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm sm:min-w-40 sm:text-right">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Payback</p>
+            <p className="text-xs font-medium text-gray-500">Payback</p>
             <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-gray-950">
               {paybackLabel}
             </p>
@@ -98,7 +98,7 @@ export function FinancialReturnSection({
         <div className="mt-5">
           <div className="flex items-end justify-between gap-3">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">ROI acumulado</p>
+              <p className="text-xs font-medium text-gray-500">ROI acumulado</p>
               <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-gray-950">
                 {formatNumber(roiPercent, 1)}
                 <span className="ml-1 text-base font-semibold text-gray-500">%</span>
@@ -131,19 +131,19 @@ export function FinancialReturnSection({
       <div className="p-4 sm:p-5">
         <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
-            <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Investido</dt>
+            <dt className="text-xs font-medium text-gray-500">Investido</dt>
             <dd className="mt-1 font-semibold tabular-nums text-gray-900">
               {formatCurrency(financialReturn.investment_amount_brl)}
             </dd>
           </div>
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
-            <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Economia acumulada</dt>
+            <dt className="text-xs font-medium text-gray-500">Economia acumulada</dt>
             <dd className="mt-1 font-semibold tabular-nums text-gray-900">
               {formatCurrency(financialReturn.accumulated_savings_brl)}
             </dd>
           </div>
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
-            <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Média mensal</dt>
+            <dt className="text-xs font-medium text-gray-500">Média mensal</dt>
             <dd className="mt-1 font-semibold tabular-nums text-gray-900">
               {formatCurrency(financialReturn.average_monthly_savings_brl)}
             </dd>

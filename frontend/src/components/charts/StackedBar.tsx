@@ -72,7 +72,7 @@ export function StackedBar({
       <div
         role="img"
         aria-label={ariaLabel}
-        className="flex w-full overflow-hidden rounded-full bg-[var(--color-chart-track)] shadow-inner ring-1 ring-inset ring-black/5"
+        className="flex w-full overflow-hidden rounded-full bg-[var(--color-chart-track)]"
         style={{ height }}
       >
         {effectiveTotal > 0 &&
@@ -84,10 +84,10 @@ export function StackedBar({
                 key={`${segment.label}-${index}`}
                 title={`${segment.label}: ${formatValue(segment.value)}`}
                 aria-hidden="true"
-                className="h-full shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] transition-[width] duration-300 ease-out motion-reduce:transition-none first:rounded-l-full last:rounded-r-full"
+                className="h-full transition-[width] duration-300 ease-out motion-reduce:transition-none first:rounded-l-full last:rounded-r-full"
                 style={{
                   width: `${entered ? pct : 0}%`,
-                  background: `linear-gradient(90deg, ${color}, color-mix(in srgb, ${color} 74%, white))`,
+                  background: color,
                 }}
               />
             )

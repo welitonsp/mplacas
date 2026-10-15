@@ -107,18 +107,18 @@ export function Bullet({
   return (
     <div className={`flex flex-col gap-1 ${className}`.trim()}>
       {label && (
-        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</span>
+        <span className="text-xs font-medium text-gray-500">{label}</span>
       )}
       <div
         role="img"
         aria-label={ariaLabel}
-        className={`relative w-full overflow-hidden rounded-full bg-[var(--color-chart-track)] shadow-inner ring-1 ring-inset ring-black/5 ${BAR_HEIGHT_CLASS}`}
+        className={`relative w-full overflow-hidden rounded-full bg-[var(--color-chart-track)] ${BAR_HEIGHT_CLASS}`}
       >
         <div
-          className="h-full rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] transition-[width] duration-300 ease-out motion-reduce:transition-none"
+          className="h-full rounded-full transition-[width] duration-300 ease-out motion-reduce:transition-none"
           style={{
             width: `${entered ? valuePct : 0}%`,
-            background: `linear-gradient(90deg, ${color}, color-mix(in srgb, ${color} 72%, white))`,
+            background: color,
           }}
         />
         {targetPct != null && (

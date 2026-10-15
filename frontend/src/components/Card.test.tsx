@@ -7,7 +7,7 @@ describe('Card', () => {
     render(<Card>conteúdo</Card>)
 
     const card = screen.getByText('conteúdo')
-    expect(card.className).toMatch(/rounded-2xl/)
+    expect(card.className).toMatch(/rounded-\[var\(--radius-card\)\]/)
     expect(card.className).toMatch(/border-\[var\(--color-border\)\]/)
     expect(card.className).toMatch(/bg-\[var\(--color-surface\)\]/)
     expect(card.className).not.toMatch(/border-dashed/)
@@ -50,6 +50,6 @@ describe('Card', () => {
 
     const card = screen.getByText('conteúdo')
     expect(card.className).toMatch(/mt-4/)
-    expect(card.className).toMatch(/rounded-2xl/)
+    expect(card.className).toMatch(/rounded-\[var\(--radius-card\)\]/)
   })
 })

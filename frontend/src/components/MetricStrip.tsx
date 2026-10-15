@@ -51,7 +51,7 @@ export function MetricStrip({ items, className = '' }: { items: MetricStripItem[
     <Card className={`grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-6 ${className}`.trim()}>
       {items.map((item) => (
         <div key={item.label}>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{item.label}</p>
+          <p className="text-xs font-medium text-gray-500">{item.label}</p>
           <p className="mt-2 text-lg font-semibold text-gray-900 tabular-nums sm:text-2xl">
             {formatNumber(item.value, item.maximumFractionDigits)}
             {item.unit && <span className="ml-1 text-sm font-normal text-gray-500">{item.unit}</span>}

@@ -63,7 +63,7 @@ export function LatestDailyProductionCard({
 
   return (
     <Card className={className}>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+      <p className="text-xs font-medium text-gray-500">
         Produção de {formatFullDate(latestPoint.date)} vs. esperada
       </p>
       <div className="mt-4">

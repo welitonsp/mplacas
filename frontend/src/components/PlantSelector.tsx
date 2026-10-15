@@ -28,7 +28,7 @@ export function PlantSelector() {
       <span className="ml-1 flex min-w-0 max-w-[min(52vw,18rem)] items-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-2.5 py-1 text-gray-700 shadow-sm">
         <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
         <span className="min-w-0">
-          <span className="block text-[12px] font-semibold uppercase leading-4 tracking-[0.12em] text-[var(--color-text-muted)]">
+          <span className="block text-[12px] font-semibold leading-4 text-[var(--color-text-muted)]">
             Usina ativa
           </span>
           <span className="block truncate text-sm font-semibold leading-5 text-gray-900">{activePlant.name}</span>
@@ -49,7 +49,7 @@ export function PlantSelector() {
       </label>
       <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
       <span className="min-w-0">
-        <span className="block text-[12px] font-semibold uppercase leading-4 tracking-[0.12em] text-[var(--color-text-muted)]">
+        <span className="block text-[12px] font-semibold leading-4 text-[var(--color-text-muted)]">
           Usina ativa
         </span>
         {/* Alvo de toque mínimo (~44px, WCAG 2.5.8) sem redesenhar o chip

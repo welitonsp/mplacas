@@ -181,10 +181,10 @@ export function ProductionHistorySection({
 
   return (
     <div className="space-y-4">
-      <Card className="border-[var(--color-brand-primary)]/15 bg-[linear-gradient(135deg,var(--color-surface)_0%,var(--color-brand-primary-light)_100%)]">
+      <Card className="">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+            <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
               Produção diária
             </p>
             <h3 className="mt-1 text-lg font-semibold text-gray-950">
@@ -206,8 +206,8 @@ export function ProductionHistorySection({
                   onClick={() => handlePeriodSelect(days)}
                   className={`min-h-[44px] rounded-full border px-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none ${
                     active
-                      ? 'border-[var(--color-brand-primary)] bg-[var(--color-brand-primary)] text-white shadow-sm'
-                      : 'border-gray-200 bg-[var(--color-surface)] text-gray-700 hover:-translate-y-0.5 hover:bg-white hover:text-gray-950 hover:shadow-sm'
+                      ? 'border-[var(--color-brand-primary)] bg-[var(--color-brand-primary)] text-[var(--color-on-brand)] shadow-sm'
+                      : 'border-gray-200 bg-[var(--color-surface)] text-gray-700 hover:-translate-y-0.5 hover:bg-[var(--color-surface)] hover:text-gray-950 hover:shadow-sm'
                   }`}
                 >
                   {days} dias
@@ -219,7 +219,7 @@ export function ProductionHistorySection({
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-2xl border border-gray-200 bg-[var(--color-surface)]/85 px-3 py-3">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+            <p className="text-[12px] font-semibold text-[var(--color-text-muted)]">
               Média no período
             </p>
             <p className="mt-1 text-xl font-semibold text-gray-950 tabular-nums">
@@ -231,7 +231,7 @@ export function ProductionHistorySection({
           </div>
 
           <div className="rounded-2xl border border-gray-200 bg-[var(--color-surface)]/85 px-3 py-3">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+            <p className="text-[12px] font-semibold text-[var(--color-text-muted)]">
               Desempenho médio
             </p>
             <p className="mt-1 text-xl font-semibold text-gray-950 tabular-nums">
@@ -245,7 +245,7 @@ export function ProductionHistorySection({
           </div>
 
           <div className={`rounded-2xl border px-3 py-3 ${SIGNAL_STYLES[averageTrend.tone]}`}>
-            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] opacity-80">
+            <p className="text-[12px] font-semibold opacity-80">
               Tendência do recorte
             </p>
             <p className="mt-1 text-xl font-semibold">
@@ -257,7 +257,7 @@ export function ProductionHistorySection({
           </div>
 
           <div className={`rounded-2xl border px-3 py-3 ${SIGNAL_STYLES[alertSignal.tone]}`}>
-            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] opacity-80">
+            <p className="text-[12px] font-semibold opacity-80">
               Gatilho de alerta
             </p>
             <p className="mt-1 text-xl font-semibold">

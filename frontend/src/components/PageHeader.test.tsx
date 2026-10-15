@@ -25,7 +25,7 @@ describe('PageHeader', () => {
     const heading = screen.getByRole('heading', { level: 1, name: 'Visão Geral' })
     expect(screen.getByText('Painel executivo')).toBeInTheDocument()
     expect(screen.getByText('Saúde, energia e resultado da sua usina em um só lugar.')).toBeInTheDocument()
-    expect(screen.getByText('Pergunta')).toBeInTheDocument()
+    expect(screen.getByText('Pergunta:')).toBeInTheDocument()
     expect(screen.getByText('A usina exige decisão agora?')).toBeInTheDocument()
     expect(screen.getByText('Saúde, energia e caixa')).toBeInTheDocument()
     expect(screen.getByText('Prioridade executiva')).toBeInTheDocument()
@@ -44,6 +44,6 @@ describe('PageHeader', () => {
     )
 
     expect(screen.getByRole('heading', { level: 1, name: 'Técnico' })).toBeInTheDocument()
-    expect(screen.queryByText('Pergunta')).not.toBeInTheDocument()
+    expect(screen.queryByText('Pergunta:')).not.toBeInTheDocument()
   })
 })

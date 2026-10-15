@@ -24,7 +24,7 @@ export function PerformanceRatioCard({
   if (performance === null) {
     return (
       <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Performance ratio (PR)</p>
+        <p className="text-xs font-medium text-gray-500">Performance ratio (PR)</p>
         <p className="mt-4 text-sm text-gray-500">
           {performanceUnavailableMessage(unavailableReason ?? 'NO_PERFORMANCE_RESULTS')}
         </p>
@@ -37,7 +37,7 @@ export function PerformanceRatioCard({
 
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Performance ratio (PR)</p>
+      <p className="text-xs font-medium text-gray-500">Performance ratio (PR)</p>
       <div className="mt-3 flex items-start justify-around gap-4">
         <PrGauge value={pr} label="Bruto" />
         <PrGauge value={prCorrected} label="Corrigido por temperatura" />
@@ -65,7 +65,7 @@ function PrGauge({ value, label }: { value: number | null; label: string }) {
         >
           —
         </div>
-        <p className="mt-1 text-center text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+        <p className="mt-1 text-center text-xs font-medium text-gray-500">{label}</p>
       </div>
     )
   }

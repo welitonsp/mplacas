@@ -230,7 +230,7 @@ export function TechnicalDiagnosticPanel({ summary }: { summary: PhotovoltaicSum
                 key={signal.label}
                 className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2"
               >
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{signal.label}</p>
+                <p className="text-xs font-medium text-gray-500">{signal.label}</p>
                 <p className="mt-1 text-sm font-semibold text-[var(--color-text-secondary)]">{signal.value}</p>
               </div>
             ))}
@@ -265,7 +265,7 @@ export function TechnicalDiagnosticPanel({ summary }: { summary: PhotovoltaicSum
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-3xl">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Diagnóstico de causa</p>
+            <p className="text-xs font-medium text-gray-500">Diagnóstico de causa</p>
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-semibold ${SEVERITY_BG[diagnosis.tone]} ${SEVERITY_TEXT[diagnosis.tone]}`}
             >
@@ -288,7 +288,7 @@ export function TechnicalDiagnosticPanel({ summary }: { summary: PhotovoltaicSum
               key={signal.label}
               className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[signal.tone]} px-3 py-2`}
             >
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{signal.label}</p>
+              <p className="text-xs font-medium text-gray-500">{signal.label}</p>
               <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[signal.tone]}`}>{signal.value}</p>
             </div>
           ))}
@@ -297,11 +297,11 @@ export function TechnicalDiagnosticPanel({ summary }: { summary: PhotovoltaicSum
 
       <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
         <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Impacto operacional</p>
+          <p className="text-xs font-medium text-gray-500">Impacto operacional</p>
           <p className="mt-2 text-sm leading-6 text-gray-700">{diagnosis.impact}</p>
         </div>
         <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Próxima ação</p>
+          <p className="text-xs font-medium text-gray-500">Próxima ação</p>
           <p className="mt-2 text-sm leading-6 text-gray-700">{diagnosis.action}</p>
         </div>
       </div>

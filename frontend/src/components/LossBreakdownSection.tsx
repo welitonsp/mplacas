@@ -21,7 +21,7 @@ export function LossBreakdownSection({
   if (losses === null) {
     return (
       <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Por que produzi menos</p>
+        <p className="text-xs font-medium text-gray-500">Por que produzi menos</p>
         <p className="mt-4 text-sm text-gray-500">
           {lossesUnavailableMessage(unavailableReason ?? 'NO_LOSS_ASSESSMENTS')}
         </p>
@@ -48,7 +48,7 @@ export function LossBreakdownSection({
 
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Por que produzi menos</p>
+      <p className="text-xs font-medium text-gray-500">Por que produzi menos</p>
       <BarList
         className="mt-3"
         items={items}

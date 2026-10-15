@@ -91,8 +91,8 @@ export function DashboardNav() {
       aria-label="Seções do painel"
       className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm"
     >
-      <div className="hidden border-b border-[var(--color-border)] bg-[linear-gradient(135deg,var(--color-brand-primary-light)_0%,var(--color-surface)_100%)] px-4 py-4 lg:block">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-brand-primary)]">
+      <div className="hidden border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-4 lg:block">
+        <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
           Operação solar
         </p>
         <p className="mt-2 text-sm font-semibold text-gray-950">
@@ -118,7 +118,7 @@ export function DashboardNav() {
                 }`
               }
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/70 text-current ring-1 ring-inset ring-black/5 transition-transform duration-200 group-hover:scale-105 motion-reduce:transition-none sm:h-9 sm:w-9">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-surface)] text-current ring-1 ring-inset ring-[var(--color-border)] transition-transform duration-200 group-hover:scale-105 motion-reduce:transition-none sm:h-9 sm:w-9">
                 <NavItemIcon name={item.icon} />
               </span>
               <span className="min-w-0 text-left">
@@ -137,12 +137,12 @@ export function DashboardNav() {
         aria-label="Contexto do módulo ativo"
         className="hidden border-t border-[var(--color-border)] px-4 py-4 lg:block"
       >
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-brand-primary)]">
+        <p className="text-xs font-semibold text-[var(--color-brand-primary)]">
           Agora: {activeItem.label}
         </p>
         <div className="mt-3 space-y-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+            <p className="text-xs font-semibold text-gray-500">
               Pergunta-chave
             </p>
             <p className="mt-1 text-sm font-semibold leading-5 text-gray-950">
@@ -150,7 +150,7 @@ export function DashboardNav() {
             </p>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+            <p className="text-xs font-semibold text-gray-500">
               Foco de leitura
             </p>
             <p className="mt-1 text-xs leading-5 text-gray-600">
@@ -158,7 +158,7 @@ export function DashboardNav() {
             </p>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+            <p className="text-xs font-semibold text-gray-500">
               Entregável
             </p>
             <p className="mt-1 text-xs leading-5 text-gray-600">
@@ -169,7 +169,7 @@ export function DashboardNav() {
       </div>
 
       <div className="hidden border-t border-[var(--color-border)] px-4 py-4 lg:block">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+        <p className="text-xs font-semibold text-gray-500">
           Rotina de leitura
         </p>
         <ol aria-label="Rotina executiva de leitura" className="mt-3 space-y-2">
@@ -181,7 +181,7 @@ export function DashboardNav() {
                   aria-hidden="true"
                   className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                     isActive
-                      ? 'bg-[var(--color-brand-primary)] text-white'
+                      ? 'bg-[var(--color-brand-primary)] text-[var(--color-on-brand)]'
                       : 'bg-gray-100 text-gray-500'
                   }`}
                 >

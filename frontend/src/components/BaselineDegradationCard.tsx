@@ -30,7 +30,7 @@ export function BaselineDegradationCard({
   if (baseline === null) {
     return (
       <Card>
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Degradação anualizada</p>
+        <p className="text-xs font-medium text-gray-500">Degradação anualizada</p>
         <p className="mt-4 text-sm text-gray-500">
           {baselineUnavailableMessage(unavailableReason ?? 'NO_PERFORMANCE_HISTORY', referenceCompleteOn)}
         </p>
@@ -45,7 +45,7 @@ export function BaselineDegradationCard({
 
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Degradação anualizada</p>
+      <p className="text-xs font-medium text-gray-500">Degradação anualizada</p>
       {annualized === null ? (
         <p className="mt-4 text-sm text-gray-500">
           Ainda não disponível — são necessários pelo menos 180 dias entre o período de

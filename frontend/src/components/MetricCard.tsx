@@ -24,11 +24,11 @@ export function MetricCard({
   return (
     <Card dashed={partial} className={className}>
       {partial && (
-        <span className="absolute right-3 top-3 rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-warning)]">
+        <span className="absolute right-3 top-3 rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold text-[var(--color-warning)]">
           Parcial
         </span>
       )}
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+      <p className="text-xs font-medium text-gray-500">{label}</p>
       <p className="mt-2 text-xl font-semibold text-gray-900 tabular-nums sm:text-2xl">
         {formatNumber(value, maximumFractionDigits)}
         {unit && <span className="ml-1 text-sm font-normal text-gray-500">{unit}</span>}

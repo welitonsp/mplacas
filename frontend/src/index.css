@@ -96,130 +96,162 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-:root {
-  --color-brand-primary: #2563eb;
-  --color-brand-primary-dark: #1d4ed8;
-  --color-brand-primary-light: #eff6ff;
-  --color-surface: #ffffff;
-  --color-surface-subtle: #f8fafc;
-  --color-border: #e2e8f0;
-  --color-text-primary: #0f172a;
-  --color-text-secondary: #475569;
-  --color-danger: #dc2626;
-  --color-danger-light: #fef2f2;
-  --color-success: #16a34a;
-  --color-success-light: #f0fdf4;
-  --color-warning: #d97706;
-  --color-warning-light: #fffbeb;
-  /* Variantes de TEXTO dos tokens de severidade acima — `--color-success`/
-     `--color-warning` reprovam WCAG 2.2 AA (4.5:1) quando usados como cor de
-     texto sobre branco (medido: 3,30:1 e 3,19:1 respectivamente, ver
-     docs/UI_UX_AUDIT_2026-08-04.md P1-03). Estes tokens `-text` existem só
-     para uso em `color`/`text-*`; `--color-success`/`--color-warning`
-     continuam intocados para fundo/preenchimento (badges, barras). Nenhuma
-     mudança de semântica de severidade, só de acessibilidade do texto. */
-  --color-success-text: #15803d;
-  --color-warning-text: #b45309;
-  /* `--color-danger` (#dc2626, 4,83:1) já passa em AA, mas esta variante é
-     ainda mais segura (6,29:1) e mantém o mesmo padrão dos dois tokens
-     acima para o consumidor não ter que decidir caso a caso. */
-  --color-danger-text: #b91c1c;
-  /* Linha de referência/esperado dos gráficos (ex.: `ProductionHistoryChart`)
-     — substitui `border-gray-400` (#9ca3af), que reprova o mínimo de 3:1 para
-     elementos gráficos (WCAG 1.4.11, medido ~2,54:1). */
-  --color-chart-reference: #64748b;
-  /* Trilho de barras de progresso/gráfico (ex.: `role="progressbar"`) —
-     substitui `bg-gray-100`, que também não garante 3:1 contra os
-     preenchimentos de severidade. */
-  --color-chart-track: #e2e8f0;
-  /* Dado quantitativo/categórico (irradiância, rendimento) — NÃO é severidade.
-     Roxo escolhido deliberadamente fora do eixo success(verde)/warning(âmbar)/
-     danger(vermelho) para não sugerir "bom/ruim" num valor que é só uma medida
-     de sol, não um julgamento de estado da usina. Ver skill dataviz. */
-  --color-data-secondary: #7c3aed;
-  --color-data-secondary-light: #f5f3ff;
-  --color-energy-solar: #a16207;
-  --color-energy-solar-light: #fefce8;
-  --color-energy-grid: #2563eb;
-  --color-energy-consumption: #7c3aed;
-  --shadow-cockpit: 0 24px 70px -38px rgb(15 23 42 / 0.42);
+/* ── Identidade visual 2026-10 (ADR-077) ──────────────────────────────────
+   Duas cores de marca com papel fixo, as mesmas do relatório PDF mensal
+   (`src/mplacas/reports/export/theme.py`): VERDE = energia efetivamente
+   produzida/aproveitada; MARINHO = estrutura, referência e o que veio da rede.
+   Laranja e vermelho ficam reservados a sinais de atenção — nunca decoração.
 
-  /* Instrui o navegador a desenhar controles nativos (popup de <select>,
-     ícone de <input type="date">, scrollbar, autofill) na paleta clara —
-     sem isto o UA pode renderizá-los na paleta padrão do SO mesmo com o
-     resto da página em tema claro. Espelha o `color-scheme: dark;` do
-     bloco `:root[data-theme="dark"]` abaixo. */
+   Os NOMES dos tokens são os mesmos de antes (o app inteiro já os consome);
+   mudaram os VALORES. Todo hex daqui está espelhado em
+   `src/test/designTokens.ts`, onde o contraste WCAG é calculado por fórmula
+   nos dois temas — mudou aqui, muda lá. */
+:root {
+  --color-brand-primary: #00406e;
+  --color-brand-primary-dark: #002d4f;
+  --color-brand-primary-light: #e6eff6;
+  /* Texto/ícone SOBRE fundo de marca (botão primário, item ativo cheio). Antes
+     o app usava `text-white` fixo, que no tema escuro ficava sobre um azul
+     claro com contraste reprovado. */
+  --color-on-brand: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f3f5f8;
+  /* Superfície rebaixada DENTRO de um cartão (painel lateral, segmento de
+     controle). Distingue de `surface-subtle`, que é o fundo da página. */
+  --color-surface-sunken: #f7f9fb;
+  --color-border: #e1e7ee;
+  --color-text-primary: #0e1b2a;
+  --color-text-secondary: #556576;
+  /* Aliases: componentes antigos usavam estes dois nomes sem que existissem
+     no CSS — o texto herdava a cor do pai por acaso. Agora resolvem. */
+  --color-text: var(--color-text-primary);
+  --color-text-muted: var(--color-text-secondary);
+  --color-danger: #d64545;
+  --color-danger-light: #fdecec;
+  --color-success: #009c77;
+  --color-success-light: #dff3ec;
+  --color-warning: #c9720a;
+  --color-warning-light: #fdf0dd;
+  /* Variantes de TEXTO da severidade: os preenchimentos acima não passam 4,5:1
+     como texto no tema claro. Use `-text` em `color`, o resto em fundo/barra. */
+  --color-success-text: #00775b;
+  --color-warning-text: #9a5205;
+  --color-danger-text: #b42318;
+  /* Linha de referência/esperado dos gráficos. */
+  --color-chart-reference: #3e5c76;
+  --color-chart-track: #e8edf2;
+  --color-chart-grid: #edf1f5;
+  /* Dado quantitativo que NÃO é severidade (irradiância, rendimento). */
+  --color-data-secondary: #6941c6;
+  --color-data-secondary-light: #f2eefc;
+  /* Energia: produção/sol (verde), rede (marinho), consumo total (azul
+     acinzentado), injetado na rede (verde claro, sempre com rótulo). */
+  --color-energy-solar: #009c77;
+  --color-energy-solar-light: #dff3ec;
+  --color-energy-grid: #00406e;
+  --color-energy-consumption: #547f9e;
+  --color-energy-export: #8fd5c1;
+  --shadow-card: 0 1px 2px rgb(14 27 42 / 0.05), 0 8px 24px rgb(14 27 42 / 0.04);
+  --shadow-cockpit: var(--shadow-card);
+  --radius-card: 1.25rem;
+  --radius-control: 0.625rem;
+
+  /* Escala de cinza fria, afinada com a tinta `#0e1b2a`. O cinza padrão do
+     Tailwind é neutro-quente e destoava do marinho da marca; `gray-500` também
+     ficava abaixo de 4,5:1 sobre o fundo da página. */
+  --color-gray-50: #f7f9fb;
+  --color-gray-100: #eef2f6;
+  --color-gray-200: #e1e7ee;
+  --color-gray-300: #c9d3dd;
+  --color-gray-400: #93a1b0;
+  --color-gray-500: #5e6e7f;
+  --color-gray-600: #4a5a6b;
+  --color-gray-700: #354556;
+  --color-gray-800: #1f2e3e;
+  --color-gray-900: #13212f;
+  --color-gray-950: #0b1622;
+
   color-scheme: light;
 
-  /* Manrope nos 4 pesos que o app realmente usa (400/500/600/700 — conferido
-     contra as classes Tailwind em uso). `system-ui` permanece como fallback
-     imediato enquanto a fonte carrega e se ela falhar. */
   font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  /* `style` e não `none`: não há arquivo itálico de Manrope, e sem permitir a
-     síntese o disclaimer em AiExplanationPanel.tsx:129 perderia o itálico em
-     silêncio. Peso continua proibido de ser sintetizado — os 4 são reais. */
+  /* `style` e não `none`: não há arquivo itálico de Manrope. Peso continua
+     proibido de ser sintetizado — os 4 são reais. */
   font-synthesis: style;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Tema escuro opcional — ADR-071. Bloco aditivo, fora de qualquer @layer, para
-   sobrepor tanto o :root claro acima quanto a paleta padrão do Tailwind v4
-   (declarada em `@layer theme`) sem !important — ver ADR-071 Decisão 3 para a
-   explicação de cascata. Nada no app ainda lê/escreve `data-theme` (Fase 2/3
-   do ADR); este bloco só existe para já ficar disponível quando isso ocorrer.
-   Valores calculados/documentados em docs/ADR-071-dark-mode.md (Decisão 4/5) —
-   não recalcule aqui, só espelhe. Os hex correspondentes também vivem em
-   `frontend/src/test/designTokens.ts` (DARK_TOKENS) para o teste de
-   contraste (ADR-071 Decisão 7); se um valor mudar aqui, precisa mudar nos
-   dois lugares. `--color-white`/`--color-black`/`--color-slate-*`/
-   `--color-blue-*`/`--color-indigo-*`/`--color-cyan-*`/`--color-rose-*`
-   deliberadamente NÃO são redefinidos aqui (ADR-071 Decisão 3). */
+/* Tema escuro (ADR-071 mecanismo; ADR-077 valores). Fora de @layer para
+   sobrepor a paleta padrão do Tailwind sem !important. Fundo quase preto
+   azulado, superfícies em degraus de luminosidade (não sombra), e as cores de
+   marca clareadas para manter contraste — verde e marinho continuam com o
+   mesmo papel. */
 :root[data-theme="dark"] {
-  /* Contraparte escura do `color-scheme: light;` do :root claro acima —
-     faz o navegador desenhar popup nativo de <select> (PlantSelector.tsx),
-     ícone de <input type="date"> (CapexRegistrationForm.tsx), scrollbar e
-     autofill na paleta escura quando `data-theme="dark"` está ativo. */
   color-scheme: dark;
 
-  --color-brand-primary: #5b8def;
-  --color-brand-primary-dark: #8fb8ff;
-  --color-brand-primary-light: #132038;
-  --color-surface: #111a2b;
-  --color-surface-subtle: #0a0f1c;
-  --color-border: #2a3648;
-  --color-text-primary: #eef1f7;
-  --color-text-secondary: #9aa7bc;
-  --color-danger: #ef4444;
-  --color-danger-light: #2a1414;
-  --color-success: #22c55e;
-  --color-success-light: #0f2417;
-  --color-warning: #f59e0b;
-  --color-warning-light: #271b0a;
-  --color-success-text: #4ade80;
-  --color-warning-text: #fbbf24;
-  --color-danger-text: #f87171;
-  --color-chart-reference: #8291a8;
-  --color-chart-track: #263144;
-  --color-data-secondary: #c4b5fd;
-  --color-data-secondary-light: #1e1b33;
-  --color-energy-solar: #facc15;
-  --color-energy-solar-light: #29230d;
-  --color-energy-grid: #7aa2f7;
-  --color-energy-consumption: #c4b5fd;
-  --shadow-cockpit: 0 28px 80px -42px rgb(0 0 0 / 0.8);
+  --color-brand-primary: #7aaedb;
+  --color-brand-primary-dark: #a7cbea;
+  --color-brand-primary-light: #142638;
+  --color-on-brand: #06182a;
+  --color-surface: #111922;
+  --color-surface-subtle: #0a1017;
+  --color-surface-sunken: #151f2a;
+  --color-border: #22303e;
+  --color-text-primary: #e7edf4;
+  --color-text-secondary: #9babbc;
+  --color-danger: #f07167;
+  --color-danger-light: #3a1a18;
+  --color-success: #2bc79b;
+  --color-success-light: #11352c;
+  --color-warning: #f0a23c;
+  --color-warning-light: #33240f;
+  --color-success-text: #52dbb3;
+  --color-warning-text: #f5b865;
+  --color-danger-text: #f79a92;
+  --color-chart-reference: #8fa6bc;
+  --color-chart-track: #1f2b37;
+  --color-chart-grid: #1b2632;
+  --color-data-secondary: #b9a4f5;
+  --color-data-secondary-light: #221b3a;
+  --color-energy-solar: #2bc79b;
+  --color-energy-solar-light: #11352c;
+  --color-energy-grid: #7aaedb;
+  --color-energy-consumption: #8fa6bc;
+  --color-energy-export: #1f735d;
+  --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.02);
+  --shadow-cockpit: var(--shadow-card);
 
-  --color-gray-50: #0d1420;
-  --color-gray-100: #161f30;
-  --color-gray-200: #212c40;
-  --color-gray-300: #3a4760;
-  --color-gray-400: #78839a;
-  --color-gray-500: #93a0b5;
-  --color-gray-600: #b7c1d1;
-  --color-gray-700: #d3dae5;
-  --color-gray-800: #e6eaf1;
-  --color-gray-900: #f3f5f9;
+  --color-gray-50: #0d141c;
+  --color-gray-100: #151f2a;
+  --color-gray-200: #1e2a36;
+  --color-gray-300: #2e3d4c;
+  --color-gray-400: #8193a6;
+  --color-gray-500: #9babbc;
+  --color-gray-600: #b4c1ce;
+  --color-gray-700: #cdd6df;
+  --color-gray-800: #e0e7ee;
+  --color-gray-900: #eef2f6;
+  --color-gray-950: #f6f8fa;
+}
+
+/* Utilitários semânticos para o Tailwind: `bg-card`, `bg-page`, `text-ink`,
+   `text-muted`, `border-line`, `text-brand-ink`, `font-display` etc. Nenhum nome
+   repete uma variável de `:root` — repetir criaria referência circular. `inline` faz a classe
+   apontar para a variável (que muda com o tema), não para um valor congelado. */
+@theme inline {
+  --color-page: var(--color-surface-subtle);
+  --color-card: var(--color-surface);
+  --color-sunken: var(--color-surface-sunken);
+  --color-line: var(--color-border);
+  --color-ink: var(--color-text-primary);
+  --color-muted: var(--color-text-secondary);
+  --color-brand: var(--color-brand-primary);
+  --color-brand-soft: var(--color-brand-primary-light);
+  --color-brand-ink: var(--color-on-brand);
+  --color-solar: var(--color-energy-solar);
+  --color-grid-energy: var(--color-energy-grid);
+  --font-display: 'Space Grotesk', 'Manrope', system-ui, sans-serif;
 }
 
 body {
@@ -233,9 +265,19 @@ body {
   min-height: 100vh;
 }
 
+/* Títulos em Space Grotesk com tracking levemente negativo — números e títulos
+   ganham a voz da marca; corpo de texto segue em Manrope. */
+@layer base {
+  h1,
+  h2 {
+    font-family: 'Space Grotesk', 'Manrope', system-ui, sans-serif;
+    letter-spacing: -0.015em;
+  }
+}
+
+/* Cartão principal da Visão Geral. Antes: gradiente radial + sombra pesada,
+   que no tema escuro virava uma mancha. Agora superfície limpa. */
 .overview-cockpit {
-  background:
-    radial-gradient(circle at 92% 2%, color-mix(in srgb, var(--color-energy-solar) 16%, transparent), transparent 28rem),
-    linear-gradient(135deg, var(--color-surface) 0%, var(--color-brand-primary-light) 100%);
-  box-shadow: var(--shadow-cockpit);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
 }

@@ -176,7 +176,7 @@ export function AppHeader() {
             onClick={handleThemeToggle}
             aria-label={themeControlLabel}
             title={themeControlLabel}
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:text-gray-900 hover:shadow-md active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-surface)] hover:text-gray-900 hover:shadow-md active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none"
           >
             {effectiveTheme === 'light' ? (
               <SunIcon className="h-5 w-5" />
@@ -194,7 +194,7 @@ export function AppHeader() {
               aria-controls={menuId}
               aria-label={username ? `Menu de ${username}` : 'Menu do usuário'}
               onClick={() => setMenuOpen((prev) => !prev)}
-              className="flex min-h-[44px] items-center gap-2 rounded-full border border-gray-200 bg-gray-50 pl-1.5 pr-2 text-sm text-gray-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:text-gray-900 hover:shadow-md active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none"
+              className="flex min-h-[44px] items-center gap-2 rounded-full border border-gray-200 bg-gray-50 pl-1.5 pr-2 text-sm text-gray-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-surface)] hover:text-gray-900 hover:shadow-md active:translate-y-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none"
             >
               <span
                 aria-hidden="true"
@@ -203,7 +203,7 @@ export function AppHeader() {
                 {operatorInitial}
               </span>
               <span className="hidden min-w-0 text-left md:block">
-                <span className="block text-[12px] font-semibold uppercase leading-4 tracking-[0.12em] text-[var(--color-text-muted)]">
+                <span className="block text-[12px] font-semibold leading-4 text-[var(--color-text-muted)]">
                   Operador
                 </span>
                 <span className="block max-w-[10rem] truncate text-sm font-semibold leading-5 text-gray-900">
@@ -222,7 +222,7 @@ export function AppHeader() {
                 className="absolute right-0 mt-2 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-[var(--color-surface)] shadow-xl"
               >
                 <div className="border-b border-gray-100 bg-[var(--color-surface-subtle)] px-4 py-3">
-                  <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+                  <p className="text-[12px] font-semibold text-[var(--color-text-muted)]">
                     Sessão operacional
                   </p>
                   <div className="mt-2 flex items-center gap-3">
