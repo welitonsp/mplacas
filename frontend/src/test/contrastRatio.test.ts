@@ -175,3 +175,15 @@ describe('--color-gray-400 — exceção conhecida (banida como texto por nome, 
     expect(ratio).toBeGreaterThanOrEqual(4.5)
   })
 })
+
+describe('--color-energy-export — exceção documentada (ADR-077)', () => {
+  // O verde-claro do "injetado na rede" fica abaixo de 3:1 contra a superfície
+  // e quase igual ao verde do sol no escuro. Aceito porque o segmento NUNCA é
+  // o único portador da informação: a legenda logo abaixo traz rótulo e valor
+  // em kWh, e a barra tem `aria-label` com os mesmos números
+  // (`EnergyFlowDiagram`). Se algum dia um segmento perder a legenda, este
+  // teste é o lembrete de que a cor sozinha não passa na 1.4.11.
+  it('fica abaixo de 3:1 no tema claro — por isso exige legenda com valor', () => {
+    expect(contrastRatio(LIGHT_TOKENS['--color-energy-export'], LIGHT_BG.surface)).toBeLessThan(3)
+  })
+})

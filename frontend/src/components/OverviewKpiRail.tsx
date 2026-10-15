@@ -7,12 +7,25 @@ import { DASHBOARD_FINANCIAL_PATH, DASHBOARD_PRODUCTION_PATH } from '../routes'
 
 // Natureza do número, sempre visível (skill `data-quality-ui`): medido vem da
 // telemetria/fatura; calculado é derivado pelo motor; estimado é inferência.
-type Nature = 'Medido' | 'Calculado' | 'Estimado'
+// Sem valor, o selo diz POR QUÊ (carregando / indisponível) em vez de
+// carimbar "Medido" num travessão.
+type Nature = 'Medido' | 'Medido · parcial' | 'Calculado' | 'Estimado' | 'Carregando' | 'Indisponível'
 
 const NATURE_CLASS: Record<Nature, string> = {
   Medido: 'bg-[var(--color-success-light)] text-[var(--color-success-text)]',
+  'Medido · parcial': 'bg-[var(--color-warning-light)] text-[var(--color-warning-text)]',
   Calculado: 'border border-[var(--color-border)] text-[var(--color-text-secondary)]',
   Estimado: 'border border-dashed border-[var(--color-gray-400)] text-[var(--color-text-secondary)]',
+  Carregando: 'bg-[var(--color-gray-100)] text-[var(--color-text-secondary)]',
+  Indisponível: 'bg-[var(--color-gray-100)] text-[var(--color-text-secondary)]',
+}
+
+type DailyStatus = 'loading' | 'error' | 'ready'
+
+function natureFor(value: unknown, nature: Nature, dailyStatus: DailyStatus = 'ready'): Nature {
+  if (value != null) return nature
+  if (dailyStatus === 'loading') return 'Carregando'
+  return 'Indisponível'
 }
 
 function KpiCard({
@@ -70,6 +83,8 @@ export function OverviewKpiRail({
   referenceMonth,
   performancePercent = null,
   performanceAssessedDays = 0,
+  dailyStatus = 'ready',
+  cyclePartial = false,
 }: {
   cycleProduction: MetricValue
   latestProduction: MetricValue
@@ -81,6 +96,12 @@ export function OverviewKpiRail({
   // `productionPerformancePercent`, nunca aqui).
   performancePercent?: number | null
   performanceAssessedDays?: number
+  // Estado do recurso diário (`/energy/anomalies/latest`), que alimenta
+  // "Último dia" e "Desempenho": carregando/erro não é o mesmo que "sem dado".
+  dailyStatus?: DailyStatus
+  // Ciclo com dias ausentes/provisórios/incompletos: a soma do ciclo inclui
+  // linhas provisórias, então "Medido" vira "Medido · parcial".
+  cyclePartial?: boolean
 }) {
   const savingsAvailable = savingsUnavailableReason == null && estimatedSavings != null
   const savingsMeta = savingsAvailable
@@ -88,41 +109,49 @@ export function OverviewKpiRail({
     : savingsUnavailableReason
       ? savingsUnavailableMessage(savingsUnavailableReason)
       : 'Economia estimada ainda não disponível para este ciclo.'
+  const dailyMeta = (ready: string) =>
+    dailyStatus === 'loading'
+      ? 'Carregando produção diária'
+      : dailyStatus === 'error'
+        ? 'Produção diária não carregou'
+        : ready
+  const cycleValue = cycleProduction == null || cycleProduction === '' ? null : cycleProduction
+  const latestValue = latestProduction == null || latestProduction === '' ? null : latestProduction
 
   return (
     <div role="group" aria-label="Resumo executivo do ciclo" className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
       <KpiCard
         label="Produção do ciclo"
-        value={formatNumber(cycleProduction)}
-        unit="kWh"
-        nature="Medido"
+        value={cycleValue == null ? '—' : formatNumber(cycleValue)}
+        unit={cycleValue == null ? undefined : 'kWh'}
+        nature={natureFor(cycleValue, cyclePartial ? 'Medido · parcial' : 'Medido')}
         meta={`Ciclo ${referenceMonth}`}
         to={DASHBOARD_PRODUCTION_PATH}
       />
       <KpiCard
         label="Último dia coletado"
-        value={formatNumber(latestProduction)}
-        unit="kWh"
-        nature="Medido"
-        meta={latestProductionDate ? `Dado de ${formatFullDate(latestProductionDate)}` : 'Ainda sem produção diária'}
+        value={latestValue == null ? '—' : formatNumber(latestValue)}
+        unit={latestValue == null ? undefined : 'kWh'}
+        nature={natureFor(latestValue, 'Medido', dailyStatus)}
+        meta={dailyMeta(latestProductionDate ? `Dado de ${formatFullDate(latestProductionDate)}` : 'Ainda sem produção diária')}
         to={DASHBOARD_PRODUCTION_PATH}
       />
       <KpiCard
         label="Desempenho vs esperado"
         value={performancePercent == null ? '—' : formatNumber(performancePercent, 1)}
         unit={performancePercent == null ? undefined : '%'}
-        nature="Calculado"
-        meta={
+        nature={natureFor(performancePercent, 'Calculado', dailyStatus)}
+        meta={dailyMeta(
           performanceAssessedDays > 0
             ? `${performanceAssessedDays} ${performanceAssessedDays === 1 ? 'dia avaliado' : 'dias avaliados'}`
-            : 'Sem esperado no recorte'
-        }
+            : 'Sem esperado no recorte',
+        )}
         to={DASHBOARD_PRODUCTION_PATH}
       />
       <KpiCard
         label="Economia estimada"
-        value={savingsAvailable ? formatCurrency(estimatedSavings) : 'Indisponível'}
-        nature="Estimado"
+        value={savingsAvailable ? formatCurrency(estimatedSavings) : '—'}
+        nature={savingsAvailable ? 'Estimado' : 'Indisponível'}
         meta={savingsMeta}
         to={DASHBOARD_FINANCIAL_PATH}
       />

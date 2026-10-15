@@ -23,6 +23,9 @@ describe('EnergyFlowDiagram', () => {
       'aria-label',
       'Consumo estimado total de 80 kWh: 60 kWh de produção própria, 20 kWh importados da rede.',
     )
+    // Autoconsumo é inferido pelo motor: o qualificador nunca pode sumir.
+    expect(screen.getByText('Consumida na casa (estimado)')).toBeInTheDocument()
+    expect(document.body).toHaveTextContent('De onde veio o consumo (estimado)')
     // O antigo nó "Rede" (injetado + importado = 60) não existe na fatura.
     expect(screen.queryByText('Rede')).not.toBeInTheDocument()
   })

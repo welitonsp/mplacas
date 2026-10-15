@@ -74,7 +74,7 @@ export function EnergyFlowDiagram({
   const content = (
     <>
       {partial && (
-        <span className="absolute right-0 top-0 rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold text-[var(--color-warning-text)]">
+        <span className="mb-4 inline-block rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold text-[var(--color-warning-text)]">
           Parcial
         </span>
       )}
@@ -84,7 +84,7 @@ export function EnergyFlowDiagram({
           total={production_}
           ariaLabel={`Produção de ${formatNumber(production_)} kWh: ${formatNumber(selfConsumption_)} kWh consumidos diretamente, ${formatNumber(injected_)} kWh injetados na rede.`}
           segments={[
-            { label: 'Consumida na casa', value: selfConsumption_, color: 'var(--color-energy-solar)' },
+            { label: 'Consumida na casa (estimado)', value: selfConsumption_, color: 'var(--color-energy-solar)' },
             { label: 'Injetada na rede', value: injected_, color: 'var(--color-energy-export)' },
           ]}
         />
@@ -106,7 +106,7 @@ export function EnergyFlowDiagram({
     return (
       <div
         data-testid="energy-flow-embedded"
-        className={`relative ${partial ? 'rounded-2xl border border-dashed border-[var(--color-warning)] p-4 pt-9' : ''}`}
+        className={partial ? 'rounded-2xl border border-dashed border-[var(--color-warning)] p-4' : ''}
       >
         {content}
       </div>
@@ -157,7 +157,7 @@ function CompositionBar({
           <li key={segment.label} className="inline-flex items-center gap-2">
             <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: segment.color }} />
             {segment.label}
-            <span className="font-semibold tabular-nums text-[var(--color-text-primary)]">{formatNumber(segment.value)}</span>
+            <span className="font-semibold tabular-nums text-[var(--color-text-primary)]">{formatNumber(segment.value)} kWh</span>
           </li>
         ))}
       </ul>
