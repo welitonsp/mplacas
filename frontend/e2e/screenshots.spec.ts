@@ -30,6 +30,7 @@ const MODULOS = [
   { rotulo: 'Produção', nome: 'producao' },
   { rotulo: 'Financeiro', nome: 'financeiro' },
   { rotulo: 'Técnico', nome: 'tecnico' },
+  { rotulo: 'Minha usina', nome: 'minha-usina' },
 ] as const
 
 /** Responde a cada endpoint que o painel consome, sem tocar em rede real. */
@@ -66,6 +67,40 @@ async function interceptarApi(page: import('@playwright/test').Page) {
     ['**/energy/financial-return/latest*', financialReturnUnavailablePayload],
     ['**/devices/daily-status*', deviceDailyStatusPayload],
     ['**/reports/monthly/history*', monthlyHistoryPayload],
+    // Cadastro parcial (4 de 7), para a captura mostrar itens feitos e pendentes.
+    [
+      '**/plants/*/setup',
+      {
+        plant_id: singlePlant.id,
+        name: singlePlant.name,
+        technical: {
+          plant_id: singlePlant.id,
+          dc_capacity_kwp: '4.400',
+          ac_capacity_kw: null,
+          array_tilt_degrees: null,
+          array_azimuth_degrees: null,
+          module_technology: 'MONOCRYSTALLINE_SILICON',
+          commissioned_on: '2025-09-01',
+          devices: [],
+        },
+        latitude: null,
+        longitude: null,
+        financial: { plant_id: singlePlant.id, investment_amount_brl: '11200.00', investment_recorded_on: null },
+        confirmed_bills: 0,
+        pending_bills: 1,
+        items: [
+          { key: 'LOCATION', done: false },
+          { key: 'DC_CAPACITY', done: true },
+          { key: 'COMMISSIONED_ON', done: true },
+          { key: 'ORIENTATION', done: false },
+          { key: 'MODULE_TECHNOLOGY', done: true },
+          { key: 'INVESTMENT', done: true },
+          { key: 'CONFIRMED_BILL', done: false },
+        ],
+        completed: 4,
+        total: 7,
+      },
+    ],
     // Uma fatura aguardando conferência, para a captura mostrar o card
     // "Faturas de energia" do Financeiro no estado mais rico.
     [
@@ -181,7 +216,7 @@ test.describe('captura das telas', () => {
     await page.screenshot({ path: `e2e/capturas/${info.project.name}/login.png`, fullPage: true })
   })
 
-  test('painel — os 4 modulos', async ({ page }, info) => {
+  test('painel — os modulos', async ({ page }, info) => {
     await autenticar(page)
 
     for (const modulo of MODULOS) {

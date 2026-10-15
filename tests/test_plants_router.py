@@ -479,3 +479,80 @@ def test_financial_configuration_is_tenant_and_role_scoped(
     assert plant is not None
     assert plant.investment_amount_brl is None
     assert asyncio.run(_audit_events(factory)) == []
+
+
+def test_setup_starts_empty_and_lists_every_item_as_pending(
+    tenancy_setup, client: TestClient
+) -> None:
+    _, _, _, _, token_a_read, _ = tenancy_setup
+    response = client.get(
+        f"/plants/{PLANT_A}/setup",
+        headers={"Authorization": f"Bearer {token_a_read}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["plant_id"] == str(PLANT_A)
+    assert [item["key"] for item in body["items"]] == [
+        "LOCATION",
+        "DC_CAPACITY",
+        "COMMISSIONED_ON",
+        "ORIENTATION",
+        "MODULE_TECHNOLOGY",
+        "INVESTMENT",
+        "CONFIRMED_BILL",
+    ]
+    assert all(item["done"] is False for item in body["items"])
+    assert body["completed"] == 0
+    assert body["total"] == 7
+    assert body["confirmed_bills"] == 0
+    assert body["latitude"] is None
+
+
+def test_setup_reflects_what_the_owner_filled_in(tenancy_setup, client: TestClient) -> None:
+    _, _, _, token_a_admin, _, _ = tenancy_setup
+    headers = {"Authorization": f"Bearer {token_a_admin}"}
+    assert client.patch(
+        f"/plants/{PLANT_A}/technical-configuration",
+        headers=headers,
+        json={
+            "dc_capacity_kwp": "4.400",
+            "commissioned_on": "2025-09-01",
+            "array_tilt_degrees": "15",
+            "array_azimuth_degrees": "0",
+        },
+    ).status_code == 200
+    assert client.patch(
+        f"/plants/{PLANT_A}/location",
+        headers=headers,
+        json={"latitude": "-17.74", "longitude": "-48.62"},
+    ).status_code == 200
+    assert client.patch(
+        f"/plants/{PLANT_A}/financial-configuration",
+        headers=headers,
+        json={"investment_amount_brl": "11200.00"},
+    ).status_code == 200
+
+    body = client.get(f"/plants/{PLANT_A}/setup", headers=headers).json()
+
+    done = {item["key"]: item["done"] for item in body["items"]}
+    assert done == {
+        "LOCATION": True,
+        "DC_CAPACITY": True,
+        "COMMISSIONED_ON": True,
+        "ORIENTATION": True,
+        "MODULE_TECHNOLOGY": False,
+        "INVESTMENT": True,
+        "CONFIRMED_BILL": False,
+    }
+    assert body["completed"] == 5
+    assert body["technical"]["commissioned_on"] == "2025-09-01"
+    assert body["financial"]["investment_amount_brl"] == "11200.00"
+
+
+def test_setup_is_tenant_scoped(tenancy_setup, client: TestClient) -> None:
+    _, _, _, _, _, token_b_admin = tenancy_setup
+    response = client.get(
+        f"/plants/{PLANT_A}/setup",
+        headers={"Authorization": f"Bearer {token_b_admin}"},
+    )
+    assert response.status_code == 404

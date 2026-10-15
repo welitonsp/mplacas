@@ -200,3 +200,42 @@ async def test_update_location_sets_coordinates(session):
     )
 
     assert (plant.latitude, plant.longitude) == (Decimal("-17.74"), Decimal("-48.62"))
+
+
+async def test_setup_status_counts_confirmed_and_pending_bills(session):
+    from mplacas.billing.db_models import BillStatus, UtilityBillRecord
+
+    def bill(month: str, status: BillStatus) -> UtilityBillRecord:
+        return UtilityBillRecord(
+            plant_id=PLANT_A1,
+            distributor="EQUATORIAL_GO",
+            reference_month=month,
+            cycle_start=date(2026, 8, 17),
+            cycle_end=date(2026, 9, 14),
+            billed_days=29,
+            imported_kwh=Decimal("221"),
+            injected_kwh=Decimal("221"),
+            compensated_kwh=Decimal("221"),
+            credit_balance_kwh=Decimal("17.98"),
+            total_amount_brl=Decimal("70.22"),
+            status=status,
+            source_hash=f"hash-{month}",
+        )
+
+    session.add_all(
+        [
+            bill("2026-08", BillStatus.CONFIRMED),
+            bill("2026-09", BillStatus.PENDING_REVIEW),
+            bill("2026-07", BillStatus.REJECTED),
+        ]
+    )
+    await session.flush()
+
+    plant = await PlantService(session).get(PLANT_A1)
+    status = await PlantService(session).setup_status(plant)
+
+    assert status.confirmed_bills == 1
+    assert status.pending_bills == 1
+    done = {item.key.value: item.done for item in status.items}
+    assert done["CONFIRMED_BILL"] is True
+    assert done["DC_CAPACITY"] is False

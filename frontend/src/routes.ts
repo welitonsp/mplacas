@@ -12,18 +12,22 @@ const OVERVIEW_SEGMENT = 'visao-geral'
 const PRODUCTION_SEGMENT = 'producao'
 const FINANCIAL_SEGMENT = 'financeiro'
 const TECHNICAL_SEGMENT = 'tecnico'
+// "Minha usina": onde o cliente informa os dados da própria usina.
+const SETUP_SEGMENT = 'minha-usina'
 
 export const DASHBOARD_MODULE_SEGMENTS = {
   overview: OVERVIEW_SEGMENT,
   production: PRODUCTION_SEGMENT,
   financial: FINANCIAL_SEGMENT,
   technical: TECHNICAL_SEGMENT,
+  setup: SETUP_SEGMENT,
 } as const
 
 export const DASHBOARD_OVERVIEW_PATH = `${DASHBOARD_ROOT_PATH}/${OVERVIEW_SEGMENT}` as const
 export const DASHBOARD_PRODUCTION_PATH = `${DASHBOARD_ROOT_PATH}/${PRODUCTION_SEGMENT}` as const
 export const DASHBOARD_FINANCIAL_PATH = `${DASHBOARD_ROOT_PATH}/${FINANCIAL_SEGMENT}` as const
 export const DASHBOARD_TECHNICAL_PATH = `${DASHBOARD_ROOT_PATH}/${TECHNICAL_SEGMENT}` as const
+export const DASHBOARD_SETUP_PATH = `${DASHBOARD_ROOT_PATH}/${SETUP_SEGMENT}` as const
 
 // Rota de aterrissagem: para onde `DashboardIndexRedirect` (índice de
 // `/dashboard` e catch-all `/dashboard/*`) redireciona por padrão.

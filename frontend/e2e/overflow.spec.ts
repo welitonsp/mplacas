@@ -25,7 +25,7 @@ import {
   singlePlant,
 } from '../src/test/dashboardFixtures'
 
-const MODULOS = ['Visão Geral', 'Produção', 'Financeiro', 'Técnico'] as const
+const MODULOS = ['Visão Geral', 'Produção', 'Financeiro', 'Técnico', 'Minha usina'] as const
 
 test.describe('layout não rola de lado', () => {
   test.skip(({ isMobile }) => !isMobile, 'específico de viewport estreita')
@@ -49,6 +49,34 @@ test.describe('layout não rola de lado', () => {
       ['**/energy/financial-return/latest*', financialReturnUnavailablePayload],
       ['**/devices/daily-status*', deviceDailyStatusPayload],
       ['**/reports/monthly/history*', monthlyHistoryPayload],
+      ['**/billing/pending*', { count: 0, items: [] }],
+      [
+        '**/plants/*/setup',
+        {
+          plant_id: singlePlant.id,
+          name: singlePlant.name,
+          technical: {
+            plant_id: singlePlant.id,
+            dc_capacity_kwp: null,
+            ac_capacity_kw: null,
+            array_tilt_degrees: null,
+            array_azimuth_degrees: null,
+            module_technology: null,
+            commissioned_on: null,
+            devices: [],
+          },
+          latitude: null,
+          longitude: null,
+          financial: { plant_id: singlePlant.id, investment_amount_brl: null, investment_recorded_on: null },
+          confirmed_bills: 0,
+          pending_bills: 0,
+          items: ['LOCATION', 'DC_CAPACITY', 'COMMISSIONED_ON', 'ORIENTATION', 'MODULE_TECHNOLOGY', 'INVESTMENT', 'CONFIRMED_BILL'].map(
+            (key) => ({ key, done: false })
+          ),
+          completed: 0,
+          total: 7,
+        },
+      ],
     ]
     for (const [padrao, corpo] of rotas) {
       await page.route(padrao, (r) =>

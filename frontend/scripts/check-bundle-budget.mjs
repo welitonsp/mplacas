@@ -85,6 +85,14 @@ const BUDGETS = [
     limitKb: 15,
   },
   {
+    // "Minha usina" (cadastro feito pelo próprio cliente), entrou em
+    // 2026-10-15 como quinto módulo. Medido: 6,32 kB; teto com folga para os
+    // formulários que ainda vão chegar (ex.: conta do inversor).
+    name: 'módulo PlantSetupPage',
+    match: /^PlantSetupPage-.*\.js$/,
+    limitKb: 10,
+  },
+  {
     name: 'LoginPage',
     match: /^LoginPage-.*\.js$/,
     limitKb: 5,
