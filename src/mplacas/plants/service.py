@@ -12,9 +12,10 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mplacas.billing.db_models import BillStatus, UtilityBillRecord
 from mplacas.core.authorization import PlantScope
 from mplacas.db.models import Device, Plant
 from mplacas.organizations.db_models import OrganizationRecord
@@ -24,6 +25,9 @@ from mplacas.plants.schemas import (
     PlantFinancialConfigurationUpdateRequest,
     PlantFinancialConfigurationView,
     PlantLocationUpdateRequest,
+    PlantSetupItem,
+    PlantSetupItemKey,
+    PlantSetupView,
     PlantTechnicalConfigurationUpdateRequest,
     PlantTechnicalConfigurationView,
 )
@@ -191,6 +195,49 @@ class PlantService:
             if field_name in payload.model_fields_set:
                 setattr(plant, field_name, getattr(payload, field_name))
         await self._session.flush()
+
+    async def setup_status(self, plant: Plant) -> PlantSetupView:
+        """Estado do cadastro da usina: o que já foi informado e o que falta.
+
+        Cada item libera uma parte do sistema (localização → clima e
+        irradiância; potência → produção esperada; data de ligação → retorno
+        do investimento; etc.). A regra de "feito" fica aqui, num lugar só.
+        """
+        rows = (
+            await self._session.execute(
+                select(UtilityBillRecord.status, func.count())
+                .where(UtilityBillRecord.plant_id == plant.id)
+                .group_by(UtilityBillRecord.status)
+            )
+        ).all()
+        counts: dict[BillStatus, int] = {status: int(total) for status, total in rows}
+        confirmed = int(counts.get(BillStatus.CONFIRMED, 0))
+        pending = int(counts.get(BillStatus.PENDING_REVIEW, 0))
+        done_by_key = {
+            PlantSetupItemKey.LOCATION: plant.latitude is not None and plant.longitude is not None,
+            PlantSetupItemKey.DC_CAPACITY: plant.installed_power_kwp is not None,
+            PlantSetupItemKey.COMMISSIONED_ON: plant.commissioned_on is not None,
+            PlantSetupItemKey.ORIENTATION: (
+                plant.array_tilt_degrees is not None and plant.array_azimuth_degrees is not None
+            ),
+            PlantSetupItemKey.MODULE_TECHNOLOGY: plant.module_technology is not None,
+            PlantSetupItemKey.INVESTMENT: plant.investment_amount_brl is not None,
+            PlantSetupItemKey.CONFIRMED_BILL: confirmed > 0,
+        }
+        items = tuple(PlantSetupItem(key=key, done=done_by_key[key]) for key in PlantSetupItemKey)
+        return PlantSetupView(
+            plant_id=plant.id,
+            name=plant.name,
+            technical=await self.technical_configuration(plant),
+            latitude=plant.latitude,
+            longitude=plant.longitude,
+            financial=self.financial_configuration(plant),
+            confirmed_bills=confirmed,
+            pending_bills=pending,
+            items=items,
+            completed=sum(1 for item in items if item.done),
+            total=len(items),
+        )
 
     async def update_location(self, plant: Plant, payload: PlantLocationUpdateRequest) -> None:
         plant.latitude = payload.latitude

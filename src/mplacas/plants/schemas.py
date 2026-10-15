@@ -122,3 +122,43 @@ class PlantTechnicalConfigurationView(BaseModel):
     module_technology: ModuleTechnology | None
     commissioned_on: date | None
     devices: tuple[DevicePowerConfigurationView, ...]
+
+
+class PlantSetupItemKey(str, enum.Enum):
+    """Itens do cadastro da usina, na ordem em que a tela os apresenta.
+
+    A regra de "feito" de cada item mora em ``PlantService.setup_status`` — a
+    tela só mostra; nunca decide sozinha o que falta.
+    """
+
+    LOCATION = "LOCATION"
+    DC_CAPACITY = "DC_CAPACITY"
+    COMMISSIONED_ON = "COMMISSIONED_ON"
+    ORIENTATION = "ORIENTATION"
+    MODULE_TECHNOLOGY = "MODULE_TECHNOLOGY"
+    INVESTMENT = "INVESTMENT"
+    CONFIRMED_BILL = "CONFIRMED_BILL"
+
+
+class PlantSetupItem(BaseModel):
+    key: PlantSetupItemKey
+    done: bool
+
+
+class PlantSetupView(BaseModel):
+    """Tudo o que o dono da usina informou (ou falta informar), numa leitura.
+
+    Base da área "Dados da usina": o checklist e os formulários pré-preenchidos.
+    """
+
+    plant_id: uuid.UUID
+    name: str
+    technical: PlantTechnicalConfigurationView
+    latitude: Decimal | None
+    longitude: Decimal | None
+    financial: PlantFinancialConfigurationView
+    confirmed_bills: int
+    pending_bills: int
+    items: tuple[PlantSetupItem, ...]
+    completed: int
+    total: int

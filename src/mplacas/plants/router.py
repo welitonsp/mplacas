@@ -19,6 +19,7 @@ from mplacas.plants.schemas import (
     PlantFinancialConfigurationUpdateRequest,
     PlantFinancialConfigurationView,
     PlantLocationUpdateRequest,
+    PlantSetupView,
     PlantTechnicalConfigurationUpdateRequest,
     PlantTechnicalConfigurationView,
 )
@@ -85,6 +86,24 @@ async def list_plants(principal: ReadPrincipal) -> dict[str, object]:
 
     items = [_plant_list_item(entry) for entry in entries]
     return {"count": len(items), "items": items}
+
+
+@router.get("/{plant_id}/setup", response_model=PlantSetupView)
+async def get_plant_setup(scoped: ReadPlantPath) -> PlantSetupView:
+    """Estado do cadastro da usina (área "Dados da usina" do frontend).
+
+    Uma leitura com tudo o que o dono informou e o checklist do que falta. Os
+    PATCH de configuração técnica, localização e investimento continuam sendo
+    as rotas de escrita; esta é só a leitura que as reúne.
+    """
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        service = PlantService(session)
+        try:
+            plant = await service.get(scoped.plant_id)
+        except PlantNotFoundError:
+            raise _plant_not_found() from None
+        return await service.setup_status(plant)
 
 
 @router.get(

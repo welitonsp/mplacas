@@ -3,18 +3,30 @@ import {
   DASHBOARD_FINANCIAL_PATH,
   DASHBOARD_OVERVIEW_PATH,
   DASHBOARD_PRODUCTION_PATH,
+  DASHBOARD_SETUP_PATH,
   DASHBOARD_TECHNICAL_PATH,
 } from '../routes'
 
-import { Activity, LayoutGrid, Wallet, Zap, type LucideIcon } from 'lucide-react'
+import { Activity, House, LayoutGrid, Wallet, Zap, type LucideIcon } from 'lucide-react'
 
-type NavKey = 'overview' | 'production' | 'financial' | 'technical'
+type NavKey = 'overview' | 'production' | 'financial' | 'technical' | 'setup'
 
-const NAV_ITEMS: ReadonlyArray<{ key: NavKey; to: string; label: string; icon: LucideIcon }> = [
+// `shortLabel`: rótulo da barra do celular quando o completo quebraria em duas
+// linhas (5 itens em 360 px). O nome acessível continua sendo o `label`.
+const NAV_ITEMS: ReadonlyArray<{
+  key: NavKey
+  to: string
+  label: string
+  shortLabel?: string
+  icon: LucideIcon
+}> = [
   { key: 'overview', to: DASHBOARD_OVERVIEW_PATH, label: 'Visão Geral', icon: LayoutGrid },
   { key: 'production', to: DASHBOARD_PRODUCTION_PATH, label: 'Produção', icon: Zap },
   { key: 'financial', to: DASHBOARD_FINANCIAL_PATH, label: 'Financeiro', icon: Wallet },
   { key: 'technical', to: DASHBOARD_TECHNICAL_PATH, label: 'Técnico', icon: Activity },
+  // Cadastro feito pelo próprio cliente (o sistema será vendido a outros
+  // donos de usina) — por último, porque é consultado menos que os módulos.
+  { key: 'setup', to: DASHBOARD_SETUP_PATH, label: 'Minha usina', shortLabel: 'Usina', icon: House },
 ]
 
 // Navegação dos módulos (ADR-072; visual ADR-077, etapa 2).
@@ -33,8 +45,8 @@ export function DashboardNav() {
       aria-label="Seções do painel"
       className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)] pb-[env(safe-area-inset-bottom)] lg:static lg:border-0 lg:bg-transparent lg:pb-0"
     >
-      <ul className="mx-auto grid max-w-xl grid-cols-4 gap-1 px-2 py-1.5 lg:max-w-none lg:grid-cols-1 lg:gap-1 lg:p-0">
-        {NAV_ITEMS.map(({ key, to, label, icon: Icon }) => (
+      <ul className="mx-auto grid max-w-xl grid-cols-5 gap-1 px-2 py-1.5 lg:max-w-none lg:grid-cols-1 lg:gap-1 lg:p-0">
+        {NAV_ITEMS.map(({ key, to, label, shortLabel, icon: Icon }) => (
           <li key={key}>
             <NavLink
               to={to}
@@ -57,7 +69,14 @@ export function DashboardNav() {
                   >
                     <Icon className="h-5 w-5" strokeWidth={isActive ? 2.2 : 1.9} />
                   </span>
-                  <span>{label}</span>
+                  {shortLabel ? (
+                    <>
+                      <span className="lg:hidden">{shortLabel}</span>
+                      <span className="hidden lg:inline">{label}</span>
+                    </>
+                  ) : (
+                    <span>{label}</span>
+                  )}
                 </>
               )}
             </NavLink>

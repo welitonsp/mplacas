@@ -133,8 +133,16 @@ export function AppHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:gap-4 sm:px-6 lg:px-8 2xl:max-w-[96rem]">
-        <BrandMark showWordmark={false} className="shrink-0 sm:hidden" />
-        <BrandMark className="hidden shrink-0 text-[var(--color-text-primary)] sm:inline-flex" />
+        {/* A troca ícone ↔ marca completa fica num invólucro: o `BrandMark`
+            tem `inline-flex` próprio, que vencia o `hidden` passado por
+            `className` e mostrava as duas marcas no celular, empurrando o
+            nome da usina para fora da tela. */}
+        <span className="flex shrink-0 sm:hidden">
+          <BrandMark showWordmark={false} />
+        </span>
+        <span className="hidden shrink-0 sm:flex">
+          <BrandMark className="text-[var(--color-text-primary)]" />
+        </span>
         <span aria-hidden="true" className="hidden h-6 w-px bg-[var(--color-border)] sm:block" />
         <PlantSelector />
 

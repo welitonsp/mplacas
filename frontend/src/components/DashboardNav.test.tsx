@@ -6,10 +6,11 @@ import {
   DASHBOARD_FINANCIAL_PATH,
   DASHBOARD_OVERVIEW_PATH,
   DASHBOARD_PRODUCTION_PATH,
+  DASHBOARD_SETUP_PATH,
   DASHBOARD_TECHNICAL_PATH,
 } from '../routes'
 
-// Harness mínimo: 4 rotas reais, para exercitar navegação de verdade.
+// Harness mínimo: 5 rotas reais, para exercitar navegação de verdade.
 // `NavLink`/`aria-current` só fazem sentido dentro de um roteador que resolve
 // qual rota está ativa.
 function renderNav(initialEntry: string) {
@@ -21,13 +22,14 @@ function renderNav(initialEntry: string) {
         <Route path={DASHBOARD_PRODUCTION_PATH} element={<p>Conteúdo — Produção</p>} />
         <Route path={DASHBOARD_FINANCIAL_PATH} element={<p>Conteúdo — Financeiro</p>} />
         <Route path={DASHBOARD_TECHNICAL_PATH} element={<p>Conteúdo — Técnico</p>} />
+        <Route path={DASHBOARD_SETUP_PATH} element={<p>Conteúdo — Minha usina</p>} />
       </Routes>
     </MemoryRouter>,
   )
 }
 
 describe('DashboardNav', () => {
-  it('renderiza um <nav aria-label="Seções do painel"> com os 4 links', () => {
+  it('renderiza um <nav aria-label="Seções do painel"> com os 5 links', () => {
     renderNav(DASHBOARD_OVERVIEW_PATH)
 
     const nav = screen.getByRole('navigation', { name: 'Seções do painel' })
@@ -37,6 +39,7 @@ describe('DashboardNav', () => {
     expect(screen.getByRole('link', { name: 'Produção' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Financeiro' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Técnico' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Minha usina' })).toBeInTheDocument()
   })
 
   it('marca aria-current="page" apenas no link do módulo ativo, e navega ao clicar nos outros 3', () => {
@@ -62,12 +65,16 @@ describe('DashboardNav', () => {
     expect(screen.getByRole('link', { name: 'Técnico' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'Financeiro' })).not.toHaveAttribute('aria-current')
     expect(screen.getByText('Conteúdo — Técnico')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('link', { name: 'Minha usina' }))
+    expect(screen.getByRole('link', { name: 'Minha usina' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByText('Conteúdo — Minha usina')).toBeInTheDocument()
   })
 
   it('cada link usa o padrão de foco visível e touch target confortável', () => {
     renderNav(DASHBOARD_OVERVIEW_PATH)
 
-    for (const name of ['Visão Geral', 'Produção', 'Financeiro', 'Técnico']) {
+    for (const name of ['Visão Geral', 'Produção', 'Financeiro', 'Técnico', 'Minha usina']) {
       const link = screen.getByRole('link', { name })
       expect(link.className).toMatch(/focus-visible:ring-2 focus-visible:ring-\[var\(--color-brand-primary\)\]/)
       expect(link.className).toMatch(/min-h-\[56px\]/)
@@ -80,6 +87,6 @@ describe('DashboardNav', () => {
 
     expect(screen.queryByText('Pergunta-chave')).not.toBeInTheDocument()
     expect(screen.queryByRole('list', { name: 'Rotina executiva de leitura' })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('link')).toHaveLength(4)
+    expect(screen.getAllByRole('link')).toHaveLength(5)
   })
 })

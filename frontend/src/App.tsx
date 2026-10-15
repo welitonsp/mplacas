@@ -27,6 +27,9 @@ const FinancialPage = lazy(() =>
 const TechnicalPage = lazy(() =>
   import('./pages/dashboard/TechnicalPage').then((module) => ({ default: module.TechnicalPage }))
 )
+const PlantSetupPage = lazy(() =>
+  import('./pages/dashboard/PlantSetupPage').then((module) => ({ default: module.PlantSetupPage }))
+)
 
 function RouteFallback() {
   return (
@@ -76,6 +79,7 @@ export function App() {
               <Route path={DASHBOARD_MODULE_SEGMENTS.production} element={<ProductionPage />} />
               <Route path={DASHBOARD_MODULE_SEGMENTS.financial} element={<FinancialPage />} />
               <Route path={DASHBOARD_MODULE_SEGMENTS.technical} element={<TechnicalPage />} />
+              <Route path={DASHBOARD_MODULE_SEGMENTS.setup} element={<PlantSetupPage />} />
               <Route path="*" element={<DashboardIndexRedirect />} />
             </Route>
             {/* Default: redirect to dashboard (ProtectedRoute will redirect to /login if unauthenticated) */}

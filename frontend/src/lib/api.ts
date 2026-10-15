@@ -337,6 +337,44 @@ export async function updateFinancialConfiguration(
   })
 }
 
+// Cadastro da usina ("Minha usina"). `GET /plants/{id}/setup` reúne em uma
+// leitura o que o dono já informou e o checklist do que falta (a regra de
+// "feito" de cada item é do backend). As escritas usam as rotas que já
+// existiam: configuração técnica, localização e investimento — todas ADMIN
+// (`AdminPlantPath`); uma credencial READ recebe 403, tratado na tela.
+export async function fetchPlantSetup(plantId: string): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/setup`)
+}
+
+export interface TechnicalConfigurationUpdatePayload {
+  dc_capacity_kwp?: string | null
+  ac_capacity_kw?: string | null
+  array_tilt_degrees?: string | null
+  array_azimuth_degrees?: string | null
+  module_technology?: string | null
+  commissioned_on?: string | null
+}
+
+export async function updateTechnicalConfiguration(
+  plantId: string,
+  payload: TechnicalConfigurationUpdatePayload,
+): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/technical-configuration`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updatePlantLocation(
+  plantId: string,
+  payload: { latitude: string; longitude: string },
+): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/location`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
 // Faturas de energia (`/billing/*`). Importar, confirmar e rejeitar exigem
 // perfil ADMIN no backend (`AdminPlant`/`AdminPrincipal`) — uma credencial READ
 // recebe 403, tratado na tela (mesma limitação conhecida do
