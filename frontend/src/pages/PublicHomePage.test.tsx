@@ -33,7 +33,15 @@ describe('PublicHomePage — clareza comercial e conversão', () => {
     expect(screen.getByText('O que acontece quando faltam dados?').tagName).toBe('SUMMARY')
   })
 
-  it('associa o controle do menu ao elemento de navegação e permite fechar por âncora', () => {
+  it('leva cada card de capacidade ao aprofundamento correspondente', () => {
+    render(<Home />)
+
+    expect(screen.getByRole('link', { name: 'Saiba mais sobre Telemetria consolidada' })).toHaveAttribute('href', '#como-funciona')
+    expect(screen.getByRole('link', { name: 'Saiba mais sobre Diagnóstico determinístico' })).toHaveAttribute('href', '#confiabilidade')
+    expect(screen.getByRole('link', { name: 'Saiba mais sobre Relatório auditável' })).toHaveAttribute('href', '#duvidas')
+  })
+
+  it('associa o controle do menu à navegação e encaminha o foco para o primeiro link ao abrir', () => {
     render(<Home />)
 
     const toggle = screen.getByRole('button', { name: 'Abrir menu' })
@@ -41,7 +49,30 @@ describe('PublicHomePage — clareza comercial e conversão', () => {
     expect(toggle).toHaveAttribute('aria-controls', nav.id)
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('link', { name: 'Como funciona' })).toHaveFocus()
     fireEvent.click(screen.getByRole('link', { name: 'Dúvidas' }))
     expect(screen.getByRole('button', { name: 'Abrir menu' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('fecha o menu com Escape e devolve o foco ao controle', () => {
+    render(<Home />)
+
+    const toggle = screen.getByRole('button', { name: 'Abrir menu' })
+    fireEvent.click(toggle)
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(screen.getByRole('button', { name: 'Abrir menu' })).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveFocus()
+  })
+
+  it('oferece atalho de teclado para o conteúdo principal e alvo de toque confortável no menu', () => {
+    const { container } = render(<Home />)
+
+    const skip = screen.getByRole('link', { name: 'Pular para o conteúdo' })
+    expect(skip).toHaveAttribute('href', '#main-content')
+    expect(container.querySelector('main#main-content')).toBeInTheDocument()
+
+    const toggle = screen.getByRole('button', { name: 'Abrir menu' })
+    expect(toggle.className).toContain('menu-toggle')
   })
 })
