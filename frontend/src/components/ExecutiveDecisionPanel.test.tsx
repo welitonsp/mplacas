@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { ExecutiveDecisionPanel, buildExecutiveDecision } from './ExecutiveDecisionPanel'
 import { anomalyPayload, executivePayload } from '../test/dashboardFixtures'
 import type { Diagnostic, ExecutiveDashboardResponse } from '../lib/dashboard/contracts'
@@ -93,7 +93,7 @@ describe('ExecutiveDecisionPanel', () => {
     ])
   })
 
-  it('expõe os sinais usados na decisão: saúde, produção, último dia e economia', () => {
+  it('mantém os sinais no modelo da decisão sem redesenhá-los no painel', () => {
     const parsed = dashboard()
 
     render(
@@ -104,14 +104,15 @@ describe('ExecutiveDecisionPanel', () => {
       />,
     )
 
-    const signals = screen.getByRole('group', { name: 'Sinais usados na decisão' })
-    expect(within(signals).getByText('Saúde')).toBeInTheDocument()
-    expect(within(signals).getByText('70/100')).toBeInTheDocument()
-    expect(within(signals).getByText('Produção do ciclo')).toBeInTheDocument()
-    expect(within(signals).getByText('500 kWh')).toBeInTheDocument()
-    expect(within(signals).getByText('Último dia (30/07/2026)')).toBeInTheDocument()
-    expect(within(signals).getByText('40 kWh')).toBeInTheDocument()
-    expect(within(signals).getByText('Economia estimada')).toBeInTheDocument()
-    expect(within(signals).getByText(/R\$\s*120,40/)).toBeInTheDocument()
+    // Os sinais continuam no modelo da decisão, mas não são redesenhados no
+    // painel — os mesmos números já estão no resumo e nos indicadores.
+    expect(screen.queryByRole('group', { name: 'Sinais usados na decisão' })).not.toBeInTheDocument()
+    const decision = buildExecutiveDecision({ dashboard: parsed, diagnostics: [], ...latestProduction() })
+    expect(decision.signals.map((signal) => signal.label)).toEqual([
+      'Saúde',
+      'Produção do ciclo',
+      'Último dia (30/07/2026)',
+      'Economia estimada',
+    ])
   })
 })

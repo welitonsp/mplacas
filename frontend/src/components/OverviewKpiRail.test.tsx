@@ -25,11 +25,24 @@ describe('OverviewKpiRail', () => {
     renderRail()
 
     const rail = screen.getByRole('group', { name: 'Resumo executivo do ciclo' })
-    expect(within(rail).getByText('500 kWh')).toBeInTheDocument()
-    expect(within(rail).getByText('40 kWh')).toBeInTheDocument()
-    expect(within(rail).getByText(/R\$\s*120,40/)).toBeInTheDocument()
+    const [ciclo, ultimo, desempenho, economia] = within(rail).getAllByRole('link')
+    expect(ciclo).toHaveTextContent('Produção do ciclo500kWhMedidoCiclo 2026-07')
+    expect(ultimo).toHaveTextContent('40kWh')
     expect(within(rail).getByText('Dado de 30/07/2026')).toBeInTheDocument()
+    expect(desempenho).toHaveTextContent('—')
+    expect(desempenho).toHaveTextContent('Sem esperado no recorte')
+    expect(economia).toHaveTextContent(/R\$\s*120,40/)
+    expect(economia).toHaveTextContent('Estimado')
     expect(within(rail).getAllByText(/2026-07/)).toHaveLength(2)
+  })
+
+  it('mostra o desempenho calculado com a quantidade de dias avaliados', () => {
+    renderRail({ performancePercent: 88.64, performanceAssessedDays: 2 })
+
+    const desempenho = screen.getAllByRole('link')[2]
+    expect(desempenho).toHaveTextContent('88,6%')
+    expect(desempenho).toHaveTextContent('Calculado')
+    expect(desempenho).toHaveTextContent('2 dias avaliados')
   })
 
   it('leva produção e financeiro aos módulos correspondentes', () => {
@@ -37,6 +50,7 @@ describe('OverviewKpiRail', () => {
 
     const links = screen.getAllByRole('link', { name: /Ver detalhes/ })
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      DASHBOARD_PRODUCTION_PATH,
       DASHBOARD_PRODUCTION_PATH,
       DASHBOARD_PRODUCTION_PATH,
       DASHBOARD_FINANCIAL_PATH,

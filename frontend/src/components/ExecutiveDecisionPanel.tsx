@@ -271,83 +271,73 @@ export function ExecutiveDecisionPanel({
 }) {
   const decision = buildExecutiveDecision({ dashboard, diagnostics, latestProduction, latestDataDate })
 
+  // Visual (ADR-077, etapa 4): só a DECISÃO. Os "sinais" (saúde, produção do
+  // ciclo, último dia, economia) continuam calculados em `decision.signals`
+  // para quem consome `buildExecutiveDecision`, mas não são mais desenhados
+  // aqui — os quatro números já estão no resumo e nos indicadores logo acima,
+  // e repeti-los numa coluna lateral era a principal redundância da tela.
+  // O `summary` (= headline do ciclo) também já é o título do resumo.
+  const badgeLabel =
+    decision.tone === 'danger'
+      ? 'Resolver primeiro'
+      : decision.tone === 'warning'
+        ? 'Acompanhar hoje'
+        : decision.tone === 'success'
+          ? 'Rotina'
+          : 'Monitorar'
+
   return (
-    <Card accent={decision.tone} className="overflow-hidden sm:p-6">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.55fr)] lg:items-start">
-        <div>
+    <Card className="sm:p-7">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-medium text-gray-500">{decision.eyebrow}</p>
+            <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">{decision.eyebrow}</p>
             <span
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${SEVERITY_BG[decision.tone]} ${SEVERITY_TEXT[decision.tone]}`}
+              className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${SEVERITY_BG[decision.tone]} ${SEVERITY_TEXT[decision.tone]}`}
             >
-              {decision.tone === 'danger'
-                ? 'Resolver primeiro'
-                : decision.tone === 'warning'
-                  ? 'Acompanhar hoje'
-                  : decision.tone === 'success'
-                    ? 'Rotina'
-                    : 'Monitorar'}
+              {badgeLabel}
             </span>
           </div>
+          <h2 className="mt-2 text-[22px] font-semibold leading-tight text-[var(--color-text-primary)]">{decision.title}</h2>
 
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-gray-950">{decision.title}</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600">{decision.summary}</p>
-
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-              <p className="text-xs font-medium text-gray-500">Impacto</p>
-              <p className="mt-2 text-sm leading-6 text-gray-700">{decision.impact}</p>
+          <dl className="mt-5 grid gap-5 sm:grid-cols-2">
+            <div>
+              <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Impacto</dt>
+              <dd className="mt-1 text-[15px] leading-6 text-[var(--color-text-primary)]">{decision.impact}</dd>
             </div>
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-              <p className="text-xs font-medium text-gray-500">Próxima ação</p>
-              <p className="mt-2 text-sm leading-6 text-gray-700">{decision.action}</p>
+            <div>
+              <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Próxima ação</dt>
+              <dd className="mt-1 text-[15px] leading-6 text-[var(--color-text-primary)]">{decision.action}</dd>
             </div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-              <p className="text-xs font-medium text-gray-500">Janela de decisão</p>
-              <p className="mt-1 text-sm font-semibold text-gray-950">{decision.cadence}</p>
+            <div>
+              <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Janela de decisão</dt>
+              <dd className="mt-1 text-[15px] font-semibold text-[var(--color-text-primary)]">{decision.cadence}</dd>
             </div>
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-              <p className="text-xs font-medium text-gray-500">Responsável sugerido</p>
-              <p className="mt-1 text-sm font-semibold text-gray-950">{decision.owner}</p>
+            <div>
+              <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Responsável sugerido</dt>
+              <dd className="mt-1 text-[15px] font-semibold text-[var(--color-text-primary)]">{decision.owner}</dd>
             </div>
-          </div>
+          </dl>
         </div>
 
-        <div className="grid gap-3">
-          <div role="group" aria-label="Sinais usados na decisão" className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
-            {decision.signals.map((signal) => (
-              <div
-                key={signal.label}
-                className={`rounded-2xl border border-[var(--color-border)] ${SEVERITY_BG[signal.tone]} px-3 py-2`}
-              >
-                <p className="text-xs font-medium text-gray-500">{signal.label}</p>
-                <p className={`mt-1 text-sm font-semibold ${SEVERITY_TEXT[signal.tone]}`}>{signal.value}</p>
-              </div>
+        <div className="min-w-0 border-t border-[var(--color-border)] pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+          <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">Plano de ação</p>
+          <ol aria-label="Plano executivo de ação" className="mt-3 space-y-4">
+            {decision.playbook.map((item) => (
+              <li key={`${item.step}-${item.title}`} className="flex gap-3">
+                <span
+                  aria-hidden="true"
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${SEVERITY_BG[item.tone]} ${SEVERITY_TEXT[item.tone]}`}
+                >
+                  {item.step}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[15px] font-semibold text-[var(--color-text-primary)]">{item.title}</span>
+                  <span className="mt-0.5 block text-[13px] leading-5 text-[var(--color-text-secondary)]">{item.detail}</span>
+                </span>
+              </li>
             ))}
-          </div>
-
-          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-            <p className="text-xs font-medium text-gray-500">Plano de ação</p>
-            <ol aria-label="Plano executivo de ação" className="mt-3 space-y-3">
-              {decision.playbook.map((item) => (
-                <li key={`${item.step}-${item.title}`} className="flex gap-3">
-                  <span
-                    aria-hidden="true"
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${SEVERITY_BG[item.tone]} ${SEVERITY_TEXT[item.tone]}`}
-                  >
-                    {item.step}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-gray-950">{item.title}</span>
-                    <span className="mt-1 block text-xs leading-5 text-gray-600">{item.detail}</span>
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </div>
+          </ol>
         </div>
       </div>
     </Card>

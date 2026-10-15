@@ -62,7 +62,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     await renderOverviewPage()
 
-    await screen.findByText('Origem do consumo — ciclo 2026-07')
+    await screen.findByRole('group', { name: 'Origem do consumo — ciclo 2026-07' })
     await waitFor(() => {
       expect(fetchExecutiveMock).toHaveBeenCalledTimes(1)
       expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(1)
@@ -78,15 +78,21 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     const { container } = await renderOverviewPage()
 
     const productionHero = await screen.findByRole('region', { name: 'Produção e saúde da usina' })
-    expect(within(productionHero).getByRole('heading', { level: 2, name: 'Produção e Saúde da Usina' })).toBeInTheDocument()
+    expect(within(productionHero).getByRole('heading', { level: 2, name: 'Produção dos últimos 7 dias' })).toBeInTheDocument()
     expect(within(productionHero).getByText('Indicador chave')).toBeInTheDocument()
     expect(within(productionHero).getByText('Aguardando dados')).toBeInTheDocument()
     expect(within(productionHero).getByTestId('production-health-confidence-badge')).toHaveTextContent('Alta confiança · ciclo 2026-07')
     expect(within(productionHero).getByText('Próxima ação')).toBeInTheDocument()
     expect(within(productionHero).getByText('Coletar mais dados')).toBeInTheDocument()
-    expect(within(productionHero).getByText('Último dia')).toBeInTheDocument()
     expect(within(productionHero).getByText('Média 7 dias')).toBeInTheDocument()
-    expect(within(productionHero).getByText('Desempenho vs esperado')).toBeInTheDocument()
+    expect(within(productionHero).getByText('Total 7 dias')).toBeInTheDocument()
+    // "Último dia" e "Desempenho vs esperado" moraram aqui e na linha de
+    // indicadores ao mesmo tempo; agora só na linha de indicadores.
+    expect(within(productionHero).queryByText('Último dia')).not.toBeInTheDocument()
+    expect(within(productionHero).queryByText('Desempenho vs esperado')).not.toBeInTheDocument()
+    const kpis = screen.getByRole('group', { name: 'Resumo executivo do ciclo' })
+    expect(within(kpis).getByText('Desempenho vs esperado')).toBeInTheDocument()
+    expect(within(kpis).getByText('88,6')).toBeInTheDocument()
     expect(within(productionHero).getByRole('link', { name: /Abrir análise completa/ })).toHaveAttribute('href', '/dashboard/producao')
     const miniBars = within(productionHero).getAllByTestId('production-health-mini-bar')
     expect(miniBars.map((bar) => bar.getAttribute('data-severity'))).toEqual(['warning', 'success'])
@@ -99,11 +105,17 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(within(decisionSection).getByRole('heading', { level: 2, name: 'Ciclo pede acompanhamento' })).toBeInTheDocument()
     expect(within(decisionSection).getByText('Acompanhar hoje')).toBeInTheDocument()
     expect(within(decisionSection).getByText('Próxima ação')).toBeInTheDocument()
-    expect(within(decisionSection).getByRole('group', { name: 'Sinais usados na decisão' })).toBeInTheDocument()
+    expect(within(decisionSection).queryByRole('group', { name: 'Sinais usados na decisão' })).not.toBeInTheDocument()
 
-    const sections = Array.from(container.querySelectorAll('main > div.grid > section'))
-    expect(sections[0]).toBe(productionHero)
-    expect(sections[1]).toBe(decisionSection)
+    // Ordem de leitura (ADR-077): resumo → indicadores → produção recente →
+    // decisão → diagnósticos.
+    const band = container.querySelector('[data-testid="hero-band"]') as HTMLElement
+    const sections = Array.from(container.querySelectorAll('main > div.flex > section'))
+    expect(sections[0]).toBe(band)
+    expect(sections[1]).toBe(productionHero)
+    expect(sections[2]).toBe(decisionSection)
+    expect(band.compareDocumentPosition(kpis) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(kpis.compareDocumentPosition(productionHero) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('mantém confiança dos dados como seção grande só quando há ressalva de qualidade', async () => {
@@ -147,31 +159,26 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(screen.queryByText('Origem do consumo')).not.toBeInTheDocument()
   })
 
-  it('unifica autossuficiência e dependência da rede em uma única StackedBar de 2 segmentos somando 100%', async () => {
+  it('mostra autossuficiência e dependência da rede como dois números, sem uma terceira barra de composição', async () => {
     vi.resetModules()
     installApiMock()
 
     await renderOverviewPage()
 
-    await screen.findByText('Origem do consumo — ciclo 2026-07')
-
-    const bar = screen.getByRole('img', { name: /Total 100%/ })
-    expect(bar).toHaveAttribute(
-      'aria-label',
-      'Total 100%: Autossuficiência 77,7%, Dependência da rede 22,3%',
-    )
-
-    expect(screen.getByText('Autossuficiência')).toBeInTheDocument()
-    expect(screen.getByText('Dependência da rede')).toBeInTheDocument()
-    expect(screen.getAllByText('77,7%').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('22,3%').length).toBeGreaterThan(0)
+    const origem = await screen.findByRole('group', { name: 'Origem do consumo — ciclo 2026-07' })
+    expect(within(origem).getByText('Autossuficiência')).toBeInTheDocument()
+    expect(within(origem).getByText('77,7%')).toBeInTheDocument()
+    expect(within(origem).getByText('Dependência da rede')).toBeInTheDocument()
+    expect(within(origem).getByText('22,3%')).toBeInTheDocument()
+    // A composição já está desenhada no fluxo; não há mais barra "Total 100%".
+    expect(screen.queryByRole('img', { name: /Total 100%/ })).not.toBeInTheDocument()
   })
 
   // Migrado junto com a `StackedBar` para dentro da faixa de estado — o
   // fallback (2 `MetricCard` separados quando um dos dois indicadores vem
   // `null`, em vez de fabricar a barra com metade do dado ausente) precisa
   // continuar funcionando na nova localização exatamente como antes.
-  it('mantém o fallback de dois MetricCard (em vez da StackedBar) quando um dos dois indicadores vem null, agora dentro da faixa de estado', async () => {
+  it('mostra "—" (nunca 0% ou 100% fabricado) quando um dos dois percentuais vem null', async () => {
     vi.resetModules()
     const executiveWithNullGridDependency = {
       ...executivePayload,
@@ -185,29 +192,13 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     }
     installApiMock({ executivePayload: executiveWithNullGridDependency })
 
-    const { container } = await renderOverviewPage()
+    await renderOverviewPage()
 
-    await screen.findByText('Autossuficiência')
-
-    // Sem os dois valores, a StackedBar (e seu rótulo de seção) não aparece.
-    expect(screen.queryByRole('img', { name: /Total 100%/ })).not.toBeInTheDocument()
-    expect(screen.queryByText('Origem do consumo — ciclo 2026-07')).not.toBeInTheDocument()
-
-    // Os dois `MetricCard` aparecem no lugar, dentro da coluna de fluxo da
-    // faixa — o valor disponível continua visível com sua barra de progresso,
-    // e o valor ausente mostra "—" em vez de esconder o card inteiro. Valor e
-    // unidade são checados separadamente (não como string combinada "77,7%")
-    // porque `MetricCard` os renderiza em nós de texto distintos (valor +
-    // `<span>` de unidade) — mesmo padrão já usado por `MetricCard.test.tsx`.
-    const band = container.querySelector('[data-testid="hero-band"]') as HTMLElement
-    expect(band).not.toBeNull()
-    expect(within(band).getByText('Autossuficiência')).toBeInTheDocument()
-    expect(within(band).getByText('Dependência da rede')).toBeInTheDocument()
-    expect(within(band).getByText(/77,7/)).toBeInTheDocument()
-    expect(within(band).getAllByText('%').length).toBeGreaterThan(0)
-    expect(within(band).getByText('—')).toBeInTheDocument()
-    expect(within(band).getByRole('progressbar', { name: 'Autossuficiência' })).toBeInTheDocument()
-    expect(within(band).queryByRole('progressbar', { name: 'Dependência da rede' })).not.toBeInTheDocument()
+    const origem = await screen.findByRole('group', { name: 'Origem do consumo — ciclo 2026-07' })
+    expect(within(origem).getByText('77,7%')).toBeInTheDocument()
+    expect(within(origem).getByText('—')).toBeInTheDocument()
+    expect(within(origem).queryByText('0%')).not.toBeInTheDocument()
+    expect(within(origem).queryByText('100%')).not.toBeInTheDocument()
   })
 
   it('não renderiza mais a seção "Energia e produção" (redundante com o diagrama de fluxo)', async () => {
@@ -216,7 +207,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     await renderOverviewPage()
 
-    await screen.findByText('Origem do consumo — ciclo 2026-07')
+    await screen.findByRole('group', { name: 'Origem do consumo — ciclo 2026-07' })
 
     expect(screen.queryByText('Energia e produção')).not.toBeInTheDocument()
     // Os mesmos fatos continuam visíveis, só que uma única vez, no diagrama de fluxo.
@@ -229,7 +220,7 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     await renderOverviewPage()
 
-    await screen.findByText('Origem do consumo — ciclo 2026-07')
+    await screen.findByRole('group', { name: 'Origem do consumo — ciclo 2026-07' })
 
     // `EnergyProductionSection` (removida da composição) usava exatamente
     // estes quatro rótulos em cards isolados — se algum deles reaparecer no
@@ -266,28 +257,20 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     expect(allOccurrences(/^540 kWh$/)).toHaveLength(0)
   })
 
-  it('a seção de diagnósticos ocupa a linha inteira abaixo do cockpit, sem deixar uma coluna vazia', async () => {
+  it('a seção de diagnósticos fica por último, em coluna única de leitura', async () => {
     vi.resetModules()
     installApiMock()
 
     const { container } = await renderOverviewPage()
 
-    await screen.findByText('Origem do consumo — ciclo 2026-07')
+    await screen.findByRole('group', { name: 'Origem do consumo — ciclo 2026-07' })
 
-    // O cockpit e a área de atenção usam a linha inteira. A comparação com o
-    // ciclo anterior, quando existe, é organizada dentro da própria seção.
-    const sections = Array.from(container.querySelectorAll('main > div.grid > section'))
+    const sections = Array.from(container.querySelectorAll('main > div.flex > section'))
     expect(sections.length).toBeGreaterThan(0)
-
-    const nonFullWidthAtMd = sections.filter((section) => {
-      const match = section.className.match(/\bmd:col-span-(\d+)\b/)
-      return match !== null && match[1] !== '6'
-    })
-    expect(nonFullWidthAtMd).toHaveLength(0)
-    expect(container.querySelector('#diagnosticos')).toHaveClass('md:col-span-6', 'lg:col-span-12')
+    expect(sections[sections.length - 1]).toBe(container.querySelector('#diagnosticos'))
   })
 
-  it('a faixa de estado une HeroCard e EnergyFlowDiagram numa superfície com fundo de marca, em duas colunas (~5/12 e ~7/12) que empilham fora de `lg`', async () => {
+  it('o resumo une estado da usina e fluxo de energia, em duas colunas que empilham fora de `lg`', async () => {
     vi.resetModules()
     installApiMock()
 
@@ -297,36 +280,20 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
 
     const band = container.querySelector('[data-testid="hero-band"]') as HTMLElement
     expect(band).not.toBeNull()
-    // Superfície de ESTRUTURA (nunca codifica severidade de dado — isso
-    // continua vindo só de `SEVERITY_*`/`accent` dentro dela), full-width no
-    // grid de topo (`md:col-span-6 lg:col-span-12`), mesmo token dos dois
-    // temas (ADR-071), cantos generosos e padding maior que o `Card` padrão.
-    expect(band.className).toMatch(/\bmd:col-span-6\b/)
-    expect(band.className).toMatch(/\blg:col-span-12\b/)
-    expect(band.className).toMatch(/bg-\[var\(--color-brand-primary-light\)\]/)
-    expect(band.className).toMatch(/\brounded-3xl\b/)
-
-    // Dentro da faixa: HeroCard à esquerda (~5/12), fluxo à direita (~7/12),
-    // só a partir de `lg` — abaixo disso empilha (Hero primeiro, fluxo
-    // depois), ordem de leitura preservada tanto no DOM quanto no layout
-    // empilhado.
-    const innerGrid = band.querySelector(':scope > div.grid') as HTMLElement
-    expect(innerGrid).not.toBeNull()
-    const [stateColumn, flowColumn] = Array.from(innerGrid.children) as HTMLElement[]
-    expect(stateColumn.className).toMatch(/\blg:col-span-5\b/)
-    expect(flowColumn.className).toMatch(/\blg:col-span-7\b/)
+    // Duas colunas iguais só a partir de `lg`; abaixo empilha com o estado
+    // primeiro (ordem de leitura igual no DOM e na tela).
+    expect(band.className).toMatch(/\blg:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)\]/)
+    const [stateColumn, flowColumn] = Array.from(band.children) as HTMLElement[]
     expect(within(stateColumn).getByText(/Ciclo de referência/)).toBeInTheDocument()
     expect(within(flowColumn).getByRole('heading', { level: 2, name: 'Fluxo de energia — ciclo 2026-07' })).toBeInTheDocument()
+    expect(within(flowColumn).getByRole('group', { name: 'Origem do consumo — ciclo 2026-07' })).toBeInTheDocument()
 
-    // A StackedBar de indicadores percentuais é a tira sob o diagrama —
-    // continua dentro da mesma coluna do fluxo, não numa seção à parte.
-    expect(within(flowColumn).getByText('Origem do consumo — ciclo 2026-07')).toBeInTheDocument()
-    expect(within(flowColumn).getByRole('img', { name: /Total 100%/ })).toBeInTheDocument()
-
-    const summary = within(band).getByRole('group', { name: 'Resumo executivo do ciclo' })
-    expect(within(summary).getByText('500 kWh')).toBeInTheDocument()
-    expect(within(summary).getByText('40 kWh')).toBeInTheDocument()
-    expect(within(summary).getByText(/R\$\s*120,40/)).toBeInTheDocument()
+    // Os indicadores ficam FORA do resumo, logo abaixo dele.
+    expect(within(band).queryByRole('group', { name: 'Resumo executivo do ciclo' })).not.toBeInTheDocument()
+    const summary = screen.getByRole('group', { name: 'Resumo executivo do ciclo' })
+    expect(summary).toHaveTextContent('500kWh')
+    expect(summary).toHaveTextContent('40kWh')
+    expect(summary).toHaveTextContent(/R\$\s*120,40/)
   })
 })
 
@@ -350,7 +317,7 @@ describe('OverviewPage — erro global tem retry associado', () => {
     const retryButton = screen.getByRole('button', { name: 'Tentar novamente' })
     fireEvent.click(retryButton)
 
-    await screen.findByText('Origem do consumo — ciclo 2026-07')
+    await screen.findByRole('group', { name: 'Origem do consumo — ciclo 2026-07' })
     expect(executiveCalls).toBe(2)
   })
 
@@ -379,7 +346,7 @@ describe('OverviewPage — erro global tem retry associado', () => {
     const retryButton = screen.getByRole('button', { name: 'Tentar novamente' })
     fireEvent.click(retryButton)
 
-    await screen.findByText('Origem do consumo — ciclo 2026-07')
+    await screen.findByRole('group', { name: 'Origem do consumo — ciclo 2026-07' })
     expect(executiveCalls).toBe(2)
     await waitFor(() => {
       expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(2)

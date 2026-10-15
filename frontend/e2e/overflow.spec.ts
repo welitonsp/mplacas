@@ -63,7 +63,7 @@ test.describe('layout não rola de lado', () => {
     await page.waitForURL('**/dashboard/**')
 
     for (const rotulo of MODULOS) {
-      const link = page.getByRole('link', { name: rotulo })
+      const link = page.getByRole('navigation', { name: 'Seções do painel' }).getByRole('link', { name: rotulo, exact: true })
       await link.scrollIntoViewIfNeeded()
       await link.click({ force: true })
       await expect(page.getByRole('main')).toBeVisible()

@@ -49,10 +49,10 @@ export function HeroCard({
         }`}
       >
         <div className="[grid-area:headline]">
-          <p className="text-xs font-medium text-gray-500">
+          <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">
             Ciclo de referência: {referenceMonth}
           </p>
-          <p className={`mt-1 font-semibold tracking-tight text-gray-900 ${embedded ? 'text-2xl' : 'text-3xl'}`}>
+          <p className={`mt-1.5 font-display font-semibold leading-tight tracking-[-0.015em] text-[var(--color-text-primary)] ${embedded ? 'text-[24px] sm:text-[26px]' : 'text-3xl'}`}>
             {headline}
           </p>
           <AttentionSummary diagnostics={diagnostics} />
@@ -84,7 +84,43 @@ export function HeroCard({
   )
 
   if (embedded) {
-    return <div data-testid="hero-card-embedded" className="h-full py-1">{content}</div>
+    // Resumo da Visão Geral (ADR-077): anel de saúde AO LADO do título, como no
+    // protótipo aprovado — empilhado, o anel ficava sozinho no meio do cartão.
+    return (
+      <div data-testid="hero-card-embedded" className="flex flex-col gap-5">
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">
+            Ciclo de referência: {referenceMonth}
+          </p>
+          <span
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${SEVERITY_BG[meta.severity]} ${SEVERITY_TEXT[meta.severity]}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${SEVERITY_DOT[meta.severity]}`} />
+            {meta.label}
+          </span>
+        </div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+          {score != null && (
+            <div className="shrink-0">
+              <Gauge
+                value={score}
+                label="Saúde da usina"
+                valueLabel={`${formatNumber(score, 0)}/100`}
+                tone={meta.severity}
+                size={104}
+              />
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="font-display text-[22px] font-semibold leading-tight tracking-[-0.015em] text-[var(--color-text-primary)] sm:text-[24px]">
+              {headline}
+            </p>
+            <AttentionSummary diagnostics={diagnostics} />
+          </div>
+        </div>
+        <DataFreshness latestDataDate={latestDataDate} lastSyncedAt={lastSyncedAt} />
+      </div>
+    )
   }
 
   return (
