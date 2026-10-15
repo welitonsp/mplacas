@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { AnomalyDailyPoint } from '../lib/dashboard/contracts'
 import { clampPercent, formatNumber, formatShortDate, toNumber } from '../lib/format'
 import { averageActualProduction } from '../lib/dashboard/production-alerts'
@@ -17,9 +17,16 @@ export function ProductionHistoryChart({
   daily,
   currentStreakDays,
   expectedAvailable = true,
+  headerAction,
+  tall = false,
 }: {
   daily: AnomalyDailyPoint[]
   currentStreakDays: number
+  // Controle no canto do cartão (ex.: seletor 7/30/90 dias quando o gráfico
+  // aparece sozinho no topo do módulo Produção).
+  headerAction?: ReactNode
+  // Área de barras mais alta quando o gráfico é o destaque da tela.
+  tall?: boolean
   // `false` quando o baseline sazonal ainda não existe para a usina (ADR-065/068
   // — `expectedProduction.available === false` em `/photovoltaic/summary`). O
   // gráfico de produção real continua útil mesmo assim: só a linha/legenda de
@@ -27,6 +34,7 @@ export function ProductionHistoryChart({
   // montar (ver `ProductionHistorySection`).
   expectedAvailable?: boolean
 }) {
+  const chartHeight = tall ? '280px' : '220px'
   // Dia selecionado. `null` = último dia (padrão inicial). Uma vez que o
   // usuário selecione um dia explicitamente (mouse, teclado), o painel de
   // detalhe permanece nele — não reseta em `mouseleave`/`blur`, que fazia o
@@ -229,104 +237,99 @@ export function ProductionHistoryChart({
     // `interactive`: as barras do gráfico respondem a clique/foco (seleção do
     // dia ativo abaixo) — o hover do card sinaliza essa interatividade, ao
     // contrário dos cards de métrica só-leitura ao redor.
-    <Card interactive className="overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <p className="text-xs font-medium text-gray-500">
+    <Card className="overflow-hidden sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">
             Histórico de produção diária ({daily.length} dias)
+          </h3>
+          <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            {performancePercent != null && (
+              <span
+                className={`font-display text-xl font-semibold tabular-nums ${SEVERITY_TEXT[performanceSeverity(performancePercent)]}`}
+              >
+                Desempenho: {formatNumber(performancePercent, 1)}%
+              </span>
+            )}
+            {belowAverageDays != null && (
+              <span className="text-sm font-medium text-[var(--color-text-secondary)] tabular-nums">
+                {belowAverageDays} {belowAverageDays === 1 ? 'dia' : 'dias'} abaixo da média
+              </span>
+            )}
           </p>
-          {performancePercent != null && (
-            <span
-              className={`text-lg font-semibold tabular-nums ${SEVERITY_TEXT[performanceSeverity(performancePercent)]}`}
-            >
-              Desempenho: {formatNumber(performancePercent, 1)}%
-            </span>
-          )}
-          {belowAverageDays != null && (
-            <span className="text-sm font-semibold text-gray-700 tabular-nums">
-              {belowAverageDays} {belowAverageDays === 1 ? 'dia' : 'dias'} abaixo da média
-            </span>
-          )}
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-          {ANOMALY_LEGEND.map((item) => (
-            <span
-              key={item.level}
-              className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm"
-            >
-              <span className={`h-2 w-2 rounded-full ${SEVERITY_DOT[levelSeverity(item.level)]}`} />
-              {item.label}
-            </span>
-          ))}
-          {hasUnassessedDay && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm">
-              <span className={`h-2 w-2 rounded-full ${SEVERITY_DOT.neutral}`} />
-              Sem expectativa
-            </span>
-          )}
-          {hasExpected && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm">
-              <span className="h-0 w-3 border-t border-dashed border-[var(--color-chart-reference)]" />
-              Média diária esperada (baseline sazonal)
-            </span>
-          )}
-          {averageProduction != null && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm">
-              <span className="h-0 w-3 border-t-2 border-[var(--color-brand-primary)]" />
-              Média da janela exibida
-            </span>
-          )}
-          {hasIrradiation && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 shadow-sm">
-              <span className="h-0 w-3 border-t-2 border-[var(--color-data-secondary)]" />
-              Irradiância solar — eixo à direita, kWh/m²
-            </span>
-          )}
-        </div>
+        {headerAction}
       </div>
 
+      {/* Legenda em linha, sem pílulas: cor + rótulo, como em gráficos de
+          produto (ADR-077). As cores aqui são as mesmas das barras. */}
+      <ul className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] text-[var(--color-text-secondary)]">
+        {ANOMALY_LEGEND.map((item) => (
+          <li key={item.level} className="inline-flex items-center gap-2">
+            <span className={`h-2.5 w-2.5 rounded-[3px] ${SEVERITY_BAR[levelSeverity(item.level)]}`} />
+            {item.label}
+          </li>
+        ))}
+        {hasUnassessedDay && (
+          <li className="inline-flex items-center gap-2">
+            <span className={`h-2.5 w-2.5 rounded-[3px] ${SEVERITY_BAR.neutral}`} />
+            Sem expectativa
+          </li>
+        )}
+        {hasExpected && (
+          <li className="inline-flex items-center gap-2">
+            <span className="w-4 border-t-2 border-dashed border-[var(--color-chart-reference)]" />
+            Média diária esperada (baseline sazonal)
+          </li>
+        )}
+        {averageProduction != null && (
+          <li className="inline-flex items-center gap-2">
+            <span className="w-4 border-t-2 border-[var(--color-brand-primary)]" />
+            Média da janela exibida
+          </li>
+        )}
+        {hasIrradiation && (
+          <li className="inline-flex items-center gap-2">
+            <span className="w-4 border-t-2 border-[var(--color-data-secondary)]" />
+            Irradiância solar — eixo à direita, kWh/m²
+          </li>
+        )}
+      </ul>
+
       {productionReadout != null && (
-        <div
+        <dl
           data-testid="production-period-readout"
-          className="mt-4 grid gap-2 sm:grid-cols-3"
+          className="mt-5 grid grid-cols-3 gap-4 border-t border-[var(--color-border)] pt-4"
           aria-label="Resumo executivo do período de produção"
         >
-          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2.5">
-            <p className="text-xs font-semibold text-gray-500">
-              Total produzido
-            </p>
-            <p className="mt-1 text-lg font-semibold text-gray-950 tabular-nums">
+          <div className="min-w-0">
+            <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Total produzido</dt>
+            <dd className="mt-0.5 font-display text-base font-semibold tabular-nums text-[var(--color-text-primary)] sm:text-xl">
               {formatNumber(productionReadout.total, 1)} kWh
-            </p>
-            <p className="mt-0.5 text-xs text-gray-500">
+            </dd>
+            <dd className="text-xs text-[var(--color-text-secondary)]">
               {productionDays.length} {productionDays.length === 1 ? 'dia com dado' : 'dias com dado'}
-            </p>
+            </dd>
           </div>
-
-          <div className="rounded-2xl border border-[var(--color-success)]/20 bg-[var(--color-success-light)] px-3 py-2.5">
-            <p className="text-xs font-semibold text-[var(--color-success-text)]/80">
-              Melhor dia
-            </p>
-            <p className="mt-1 text-lg font-semibold text-[var(--color-success-text)] tabular-nums">
+          <div className="min-w-0">
+            <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Melhor dia</dt>
+            <dd className="mt-0.5 font-display text-base font-semibold tabular-nums text-[var(--color-success-text)] sm:text-xl">
               {formatNumber(productionReadout.best.actual, 1)} kWh
-            </p>
-            <p className="mt-0.5 text-xs font-medium text-[var(--color-success-text)]/80 tabular-nums">
+            </dd>
+            <dd className="text-xs tabular-nums text-[var(--color-text-secondary)]">
               em {formatShortDate(productionReadout.best.day.date)}
-            </p>
+            </dd>
           </div>
-
-          <div className="rounded-2xl border border-[var(--color-warning)]/25 bg-[var(--color-warning-light)] px-3 py-2.5">
-            <p className="text-xs font-semibold text-[var(--color-warning-text)]/80">
-              Pior dia
-            </p>
-            <p className="mt-1 text-lg font-semibold text-[var(--color-warning-text)] tabular-nums">
+          <div className="min-w-0">
+            <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Pior dia</dt>
+            <dd className="mt-0.5 font-display text-base font-semibold tabular-nums text-[var(--color-warning-text)] sm:text-xl">
               {formatNumber(productionReadout.worst.actual, 1)} kWh
-            </p>
-            <p className="mt-0.5 text-xs font-medium text-[var(--color-warning-text)]/80 tabular-nums">
+            </dd>
+            <dd className="text-xs tabular-nums text-[var(--color-text-secondary)]">
               em {formatShortDate(productionReadout.worst.day.date)}
-            </p>
+            </dd>
           </div>
-        </div>
+        </dl>
       )}
 
       {currentStreakDays > 0 && (
@@ -345,7 +348,7 @@ export function ProductionHistoryChart({
             barras não liam como gráfico de verdade). */}
         <div
           className="flex flex-shrink-0 flex-col justify-between py-0 text-right text-xs text-gray-500 tabular-nums"
-          style={{ height: '220px' }}
+          style={{ height: chartHeight }}
           aria-hidden="true"
         >
           <span>{`${formatNumber(maxValue, 0)} kWh`}</span>
@@ -354,12 +357,9 @@ export function ProductionHistoryChart({
         </div>
 
         <div className="min-w-0 flex-1 overflow-x-auto">
-          <div className="relative" style={{ minWidth: `${daily.length * 8}px` }}>
-            {hasIrradiation && (
-              <span className="pointer-events-none absolute right-0 top-0 z-10 text-xs font-medium text-[var(--color-data-secondary)] tabular-nums">
-                {formatNumber(maxIrradiationScale, 1)} kWh/m²
-              </span>
-            )}
+          {/* Largura mínima = 5 px por barra + 2 px de espaço entre elas
+              (7 px por dia, menos o espaço que sobraria após a última). */}
+          <div className="relative" style={{ minWidth: `${daily.length * 7 - 2}px` }}>
 
             {/* Área das barras + gridlines + polilinhas de referência, todas
                 na mesma altura (220px) — mantém as escalas alinhadas ao pixel
@@ -367,7 +367,7 @@ export function ProductionHistoryChart({
                 datas abaixo. */}
             <div
               className="relative"
-              style={{ height: '220px' }}
+              style={{ height: chartHeight }}
             >
               {/* 3 gridlines horizontais (0, max/2, max) para a grandeza
                   principal — sem elas as barras não têm referência de leitura. */}
@@ -377,7 +377,7 @@ export function ProductionHistoryChart({
 
               {averageLineY != null && (
                 <svg
-                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  className="pointer-events-none absolute inset-0 z-20 h-full w-full"
                   viewBox={`0 0 ${daily.length} 100`}
                   preserveAspectRatio="none"
                   aria-hidden="true"
@@ -388,7 +388,7 @@ export function ProductionHistoryChart({
                     y1={averageLineY}
                     y2={averageLineY}
                     stroke="var(--color-brand-primary)"
-                    strokeWidth="1.6"
+                    strokeWidth="2"
                     vectorEffect="non-scaling-stroke"
                   />
                 </svg>
@@ -396,7 +396,7 @@ export function ProductionHistoryChart({
 
               {hasExpected && expectedLineY != null && (
                 <svg
-                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  className="pointer-events-none absolute inset-0 z-20 h-full w-full"
                   viewBox={`0 0 ${daily.length} 100`}
                   preserveAspectRatio="none"
                   aria-hidden="true"
@@ -407,16 +407,37 @@ export function ProductionHistoryChart({
                     y1={expectedLineY}
                     y2={expectedLineY}
                     stroke="var(--color-chart-reference)"
-                    strokeWidth="1.5"
-                    strokeDasharray="4 3"
+                    strokeWidth="2"
+                    strokeDasharray="6 4"
                     vectorEffect="non-scaling-stroke"
                   />
                 </svg>
               )}
 
+              {/* Rótulo direto na ponta das linhas de referência: lê-se o
+                  valor sem procurar na legenda. */}
+              {hasExpected && expectedLineY != null && (
+                <span
+                  className="pointer-events-none absolute right-1 z-30 -translate-y-full rounded bg-[var(--color-surface)] px-1 text-[11px] font-semibold tabular-nums text-[var(--color-chart-reference)]"
+                  style={{ top: `${expectedLineY}%` }}
+                  aria-hidden="true"
+                >
+                  Esperado {formatNumber(expectedDailyValue, 0)}
+                </span>
+              )}
+              {averageLineY != null && averageProduction != null && (
+                <span
+                  className="pointer-events-none absolute left-1 z-30 -translate-y-full rounded bg-[var(--color-surface)] px-1 text-[11px] font-semibold tabular-nums text-[var(--color-brand-primary)]"
+                  style={{ top: `${averageLineY}%` }}
+                  aria-hidden="true"
+                >
+                  Média {formatNumber(averageProduction, 0)}
+                </span>
+              )}
+
               {hasIrradiation && (
                 <svg
-                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  className="pointer-events-none absolute inset-0 z-20 h-full w-full"
                   viewBox={`0 0 ${daily.length} 100`}
                   preserveAspectRatio="none"
                   aria-hidden="true"
@@ -435,7 +456,7 @@ export function ProductionHistoryChart({
                   por seta esquerda/direita (ver `handleChartKeyDown`), não por
                   Tab atravessando até 90 barras. */}
               <div
-                className="relative z-10 flex h-full items-end gap-[2px] rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+                className={`relative z-10 flex h-full items-end ${daily.length <= 31 ? 'gap-[2px] sm:gap-[3px]' : 'gap-[2px]'} rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]`}
                 tabIndex={0}
                 role="slider"
                 aria-label="Histórico de produção diária. Use as setas esquerda e direita para navegar entre os dias."
@@ -455,7 +476,7 @@ export function ProductionHistoryChart({
                     <div
                       key={d.date}
                       className="relative flex h-full flex-1 items-end justify-center rounded-sm"
-                      style={{ minWidth: '6px' }}
+                      style={{ minWidth: '5px' }}
                       onMouseEnter={() => setSelectedIndex(i)}
                       onClick={() => setSelectedIndex(i)}
                     >
@@ -469,24 +490,28 @@ export function ProductionHistoryChart({
                           {formatShortDate(d.date)}
                         </span>
                       )}
+                      {/* Cor cheia (sem a opacidade de 85% que deixava tudo
+                          "lavado") + um brilho sutil no topo que dá volume à
+                          barra sem mudar a cor de severidade. O dia ativo
+                          ganha contorno; os outros clareiam no hover. */}
                       <span
-                        className={`w-full max-w-[44px] rounded-t-md transition-all duration-150 ${
+                        data-testid="production-history-bar"
+                        className={`w-full max-w-[44px] rounded-t-[6px] transition-[filter,box-shadow] duration-150 motion-reduce:transition-none ${
                           SEVERITY_BAR[severity]
                         } ${
-                          isActive ? 'ring-2 ring-[var(--color-text-primary)] ring-offset-1 ring-offset-[var(--color-surface)]' : 'opacity-85 hover:opacity-100'
+                          isActive
+                            ? 'ring-2 ring-[var(--color-text-primary)] ring-offset-2 ring-offset-[var(--color-surface)]'
+                            : 'hover:brightness-110'
                         }`}
-                        style={{ height: `${Math.max(barHeightPercent, 2)}%` }}
+                        style={{
+                          height: `${Math.max(barHeightPercent, 2)}%`,
+                          backgroundImage: 'linear-gradient(180deg, rgb(255 255 255 / 0.22) 0%, rgb(255 255 255 / 0) 55%)',
+                        }}
                       />
                     </div>
                   )
                 })}
               </div>
-
-              {hasIrradiation && (
-                <span className="pointer-events-none absolute right-0 bottom-0 z-10 text-xs font-medium text-[var(--color-data-secondary)] tabular-nums">
-                  0 kWh/m²
-                </span>
-              )}
             </div>
 
             {/* Régua de datas DENTRO do mesmo container com `overflow-x-auto` e
@@ -502,10 +527,23 @@ export function ProductionHistoryChart({
             </div>
           </div>
         </div>
+        {/* Eixo da irradiância à direita, fora da área rolável (mesma lógica
+            do eixo de kWh à esquerda) — antes os rótulos ficavam por cima das
+            barras e da régua de datas. */}
+        {hasIrradiation && (
+          <div
+            className="flex flex-shrink-0 flex-col justify-between text-left text-xs font-medium text-[var(--color-data-secondary)] tabular-nums"
+            style={{ height: chartHeight }}
+            aria-hidden="true"
+          >
+            <span>{formatNumber(maxIrradiationScale, 1)} kWh/m²</span>
+            <span>0 kWh/m²</span>
+          </div>
+        )}
       </div>
 
       <div
-        className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-3 text-xs text-gray-600"
+        className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-[var(--color-surface-sunken)] px-4 py-3 text-[13px] text-[var(--color-text-secondary)]"
         aria-live="polite"
       >
         <span className="inline-flex rounded-full bg-[var(--color-brand-primary-light)] px-2.5 py-1 font-semibold text-[var(--color-brand-primary)]">

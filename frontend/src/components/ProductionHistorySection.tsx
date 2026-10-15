@@ -14,6 +14,7 @@ import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-cont
 import { baselineUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
 import { formatNumber, toNumber } from '../lib/format'
 import { Card } from './Card'
+import { SectionTitle } from './SectionTitle'
 import { EmptyState } from './EmptyState'
 import { ProductionHistoryChart } from './ProductionHistoryChart'
 import { RetryableError } from './RetryableError'
@@ -66,18 +67,52 @@ function saveStoredPeriodPreference(days: ProductionPeriodDays) {
   }
 }
 
+/**
+ * Período do histórico diário (7/30/90) com preferência lembrada. Exposto para
+ * a página compartilhar UM período entre o gráfico (no topo do módulo) e a
+ * leitura do período (mais abaixo) — os dois sempre mostram o mesmo recorte.
+ */
+export function useProductionPeriodPreference(): [ProductionPeriodDays, (days: ProductionPeriodDays) => void] {
+  const [days, setDays] = useState<ProductionPeriodDays>(readStoredPeriodPreference)
+  const select = (next: ProductionPeriodDays) => {
+    setDays(next)
+    saveStoredPeriodPreference(next)
+  }
+  return [days, select]
+}
+
+// `all`: seletor + leitura do período + gráfico + rendimento (uso isolado).
+// `chart`: só o gráfico, com o seletor de período no próprio cartão — é o que
+//   fica logo abaixo do resumo operacional (pedido do dono do produto).
+// `details`: leitura do período + rendimento, sem seletor (o seletor está no
+//   gráfico); não repete carregamento/erro, que o gráfico já mostra.
+export type ProductionHistoryLayout = 'all' | 'chart' | 'details'
+
 export function ProductionHistorySection({
   anomalyState,
   expectedProduction,
   onRetry,
+  layout = 'all',
+  periodDays,
+  onPeriodChange,
+  detailsHeading,
 }: {
   anomalyState: AnomalyFetchState
   // `null` = baseline sazonal ainda carregando.
   expectedProduction: ExpectedDailyProduction | null
   // Só relevante para o estado `SERVER_ERROR` — reexecuta a busca do histórico.
   onRetry?: () => void
+  layout?: ProductionHistoryLayout
+  // Controlado pela página quando `chart` e `details` aparecem separados;
+  // sem estas props o componente guarda o próprio período (uso isolado).
+  periodDays?: ProductionPeriodDays
+  onPeriodChange?: (days: ProductionPeriodDays) => void
+  // Título da seção em `details` — só aparece quando há conteúdo, para não
+  // sobrar um título solto enquanto o gráfico mostra carregando/erro.
+  detailsHeading?: string
 }) {
-  const [selectedPeriodDays, setSelectedPeriodDays] = useState<ProductionPeriodDays>(readStoredPeriodPreference)
+  const [ownPeriodDays, setOwnPeriodDays] = useProductionPeriodPreference()
+  const selectedPeriodDays = periodDays ?? ownPeriodDays
   const loadingExpected = expectedProduction === null
   // Antes só esperava o histórico terminar de carregar quando a produção
   // esperada estava disponível — o que fazia o card pular direto pro
@@ -85,6 +120,20 @@ export function ProductionHistorySection({
   // (ver diagnóstico do architect). Agora espera sempre, pra poder decidir
   // corretamente no bloco abaixo.
   const loadingHistory = anomalyState.loading && !anomalyState.data
+
+  // Em `details`, carregamento/erro/vazio já aparecem no gráfico acima —
+  // repetir aqui seria o mesmo aviso duas vezes na tela.
+  const dataReady =
+    !loadingExpected &&
+    !loadingHistory &&
+    anomalyState.error == null &&
+    anomalyState.data != null &&
+    (anomalyState.data.expected_unavailable_reason == null ||
+      anomalyState.data.daily.some((d) => toNumber(d.actual_production_kwh) != null))
+
+  if (layout === 'details' && !dataReady) {
+    return null
+  }
 
   if (loadingExpected || loadingHistory) {
     return (
@@ -177,12 +226,57 @@ export function ProductionHistorySection({
   const hasIrradiation = filteredDaily.some((d) => toNumber(d.irradiation_kwh_m2) != null)
 
   function handlePeriodSelect(days: ProductionPeriodDays) {
-    setSelectedPeriodDays(days)
-    saveStoredPeriodPreference(days)
+    if (onPeriodChange) {
+      onPeriodChange(days)
+    } else {
+      setOwnPeriodDays(days)
+    }
+  }
+
+  const periodSelector = (
+    <div
+      role="group"
+      aria-label="Filtrar histórico diário"
+      className="inline-flex rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-1"
+    >
+      {PRODUCTION_PERIOD_OPTIONS.map((days) => {
+        const active = selectedPeriodDays === days
+        return (
+          <button
+            key={days}
+            type="button"
+            aria-pressed={active}
+            onClick={() => handlePeriodSelect(days)}
+            className={`min-h-[44px] rounded-lg px-3.5 text-sm transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none ${
+              active
+                ? 'bg-[var(--color-surface)] font-semibold text-[var(--color-text-primary)] shadow-[0_1px_2px_rgb(0_0_0_/_0.12)]'
+                : 'font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+            }`}
+          >
+            {days} dias
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  const chart = (
+    <ProductionHistoryChart
+      daily={filteredDaily}
+      currentStreakDays={anomalyState.data.current_streak_days}
+      expectedAvailable={expectedAvailable}
+      headerAction={layout === 'chart' ? periodSelector : undefined}
+      tall={layout === 'chart'}
+    />
+  )
+
+  if (layout === 'chart') {
+    return chart
   }
 
   return (
     <div className="space-y-4">
+      {layout === 'details' && detailsHeading && <SectionTitle as="h2">{detailsHeading}</SectionTitle>}
       <Card className="sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
@@ -195,32 +289,7 @@ export function ProductionHistorySection({
             </p>
           </div>
 
-          {/* Controle segmentado (ADR-077): um trilho com a opção ativa em
-              relevo, em vez de três pílulas soltas com sombra. */}
-          <div
-            role="group"
-            aria-label="Filtrar histórico diário"
-            className="inline-flex rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-1"
-          >
-            {PRODUCTION_PERIOD_OPTIONS.map((days) => {
-              const active = selectedPeriodDays === days
-              return (
-                <button
-                  key={days}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => handlePeriodSelect(days)}
-                  className={`min-h-[44px] rounded-lg px-3.5 text-sm transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none ${
-                    active
-                      ? 'bg-[var(--color-surface)] font-semibold text-[var(--color-text-primary)] shadow-[0_1px_2px_rgb(0_0_0_/_0.12)]'
-                      : 'font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
-                  }`}
-                >
-                  {days} dias
-                </button>
-              )
-            })}
-          </div>
+          {layout === 'all' && periodSelector}
         </div>
 
         <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-5 border-t border-[var(--color-border)] pt-5 xl:grid-cols-4">
@@ -263,12 +332,8 @@ export function ProductionHistorySection({
         </dl>
       </Card>
 
-      <div className={hasIrradiation ? 'grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]' : ''}>
-        <ProductionHistoryChart
-          daily={filteredDaily}
-          currentStreakDays={anomalyState.data.current_streak_days}
-          expectedAvailable={expectedAvailable}
-        />
+      <div className={layout === 'all' && hasIrradiation ? 'grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]' : ''}>
+        {layout === 'all' && chart}
         {/* `YieldCard` recebe `anomalyState.data.daily` INTEIRO, não
             `filteredDaily` (plano T7b, P0: "o card afirma o que não
             verificou"). `period_yield_kwh_per_kwh_m2`/
