@@ -242,9 +242,9 @@ describe('OverviewPage — módulo Visão Geral (ADR-072, Etapa 5)', () => {
     const flowSection = flowSvg.closest('[data-testid="energy-flow-embedded"]') as HTMLElement
     expect(flowSection).not.toBeNull()
     // Barras de composição (ADR-077): valores na legenda, total no título.
-    expect(flowSection).toHaveTextContent('Da rede120')
-    expect(flowSection).toHaveTextContent('Injetada na rede80')
-    expect(flowSection).toHaveTextContent('Consumida na casa420')
+    expect(flowSection).toHaveTextContent('Da rede120 kWh')
+    expect(flowSection).toHaveTextContent('Injetada na rede80 kWh')
+    expect(flowSection).toHaveTextContent('Consumida na casa (estimado)420 kWh')
     expect(flowSection).toHaveTextContent('540 kWh')
 
     // E não aparecem duplicados fora dele, em nenhum outro card do módulo.

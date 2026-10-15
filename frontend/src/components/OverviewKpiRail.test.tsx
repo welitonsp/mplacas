@@ -30,6 +30,7 @@ describe('OverviewKpiRail', () => {
     expect(ultimo).toHaveTextContent('40kWh')
     expect(within(rail).getByText('Dado de 30/07/2026')).toBeInTheDocument()
     expect(desempenho).toHaveTextContent('—')
+    expect(desempenho).toHaveTextContent('Indisponível')
     expect(desempenho).toHaveTextContent('Sem esperado no recorte')
     expect(economia).toHaveTextContent(/R\$\s*120,40/)
     expect(economia).toHaveTextContent('Estimado')
@@ -57,13 +58,31 @@ describe('OverviewKpiRail', () => {
     ])
   })
 
+  it('carregando ou sem dado não vira "Medido": o selo diz o motivo', () => {
+    renderRail({ latestProduction: null, latestProductionDate: null, dailyStatus: 'loading' })
+
+    const ultimo = screen.getAllByRole('link')[1]
+    expect(ultimo).toHaveTextContent('—')
+    expect(ultimo).toHaveTextContent('Carregando')
+    expect(ultimo).not.toHaveTextContent('Medido')
+    expect(ultimo).not.toHaveTextContent('kWh')
+  })
+
+  it('ciclo com dados parciais marca a produção como "Medido · parcial"', () => {
+    renderRail({ cyclePartial: true })
+
+    expect(screen.getAllByRole('link')[0]).toHaveTextContent('Medido · parcial')
+  })
+
   it('não fabrica R$ 0 quando a economia está indisponível e mostra o motivo', () => {
     renderRail({
       estimatedSavings: null,
       savingsUnavailableReason: 'TARIFF_NOT_AVAILABLE',
     })
 
-    expect(screen.getByText('Indisponível')).toBeInTheDocument()
+    const economia = screen.getAllByRole('link')[3]
+    expect(economia).toHaveTextContent('Indisponível')
+    expect(economia).not.toHaveTextContent('Estimado')
     expect(screen.queryByText(/R\$\s*0,00/)).not.toBeInTheDocument()
     expect(screen.getByText(/não tem a tarifa com impostos registrada/i)).toBeInTheDocument()
   })

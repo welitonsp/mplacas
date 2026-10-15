@@ -100,7 +100,11 @@ export function HeroCard({
           </span>
         </div>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
-          {score != null && (
+          {score == null ? (
+            <p className="shrink-0 rounded-2xl border border-dashed border-[var(--color-gray-300)] px-4 py-3 text-[13px] text-[var(--color-text-secondary)]">
+              Saúde indisponível
+            </p>
+          ) : (
             <div className="shrink-0">
               <Gauge
                 value={score}

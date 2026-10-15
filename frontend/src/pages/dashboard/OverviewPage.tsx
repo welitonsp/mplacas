@@ -138,7 +138,6 @@ function ProductionHealthHero({
   const alertSignal = productionAlertSignal(anomalyData.daily)
   const action = productionHealthAction(alertSignal.tone)
   const confidence = buildDataConfidenceSummary(quality, latestDataDate)
-  const performance = productionPerformancePercent(recent)
   const average = averageActualProduction(recent)
   const productionValues = recent
     .map((day) => ({ day, actual: toNumber(day.actual_production_kwh) }))
@@ -198,7 +197,7 @@ function ProductionHealthHero({
                   <div
                     key={day.date}
                     className="relative flex h-full min-w-0 flex-1 flex-col items-center justify-end"
-                    aria-label={`${formatShortDate(day.date)}: ${formatNumber(actual, 1)} kWh, ${levelLabel(day.level)}`}
+                    aria-label={`${formatShortDate(day.date)}: ${actualValue == null ? 'sem dado' : `${formatNumber(actualValue, 1)} kWh`}, ${levelLabel(day.level)}`}
                   >
                     {expectedHeight != null && (
                       <span
@@ -230,7 +229,13 @@ function ProductionHealthHero({
             </div>
             <p className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-[var(--color-text-secondary)]" aria-hidden="true">
               <span className="inline-flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-success)]" />Produção medida
+                <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-success)]" />Normal
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-warning)]" />Atenção
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--color-danger)]" />Anomalia
               </span>
               <span className="inline-flex items-center gap-2">
                 <span className="w-4 border-t-2 border-dashed border-[var(--color-chart-reference)]" />Esperado do dia
@@ -257,7 +262,7 @@ function ProductionHealthHero({
                   {productionValues.length > 0 && <span className="ml-1 font-sans text-sm font-medium text-[var(--color-text-secondary)]">kWh</span>}
                 </dd>
                 <dd className="text-xs text-[var(--color-text-secondary)]">
-                  {performance.assessedDays > 0 ? `${performance.assessedDays} dias com esperado` : 'sem esperado no recorte'}
+                  {productionValues.length} {productionValues.length === 1 ? 'dia com dado' : 'dias com dado'}
                 </dd>
               </div>
             </dl>
@@ -349,9 +354,8 @@ export function OverviewPage() {
   const lastUpdated = executive.lastUpdated
   const indicators = data?.current_cycle.indicators
   const quality = data?.current_cycle.quality
-  // Autossuficiência e dependência da rede são complementares (somam 100%) —
-  // convertidos uma única vez para alimentar a `StackedBar` unificada
-  // (ver seção "Indicadores percentuais" abaixo).
+  // Autossuficiência e dependência da rede: convertidos uma vez para os dois
+  // números da coluna de fluxo (valor ausente vira "—").
   const selfSufficiencyPercent = toNumber(indicators?.self_sufficiency_rate_percent ?? null)
   const gridDependencyPercent = toNumber(indicators?.grid_dependency_rate_percent ?? null)
   const latestDataDate = anomalies.data ? latestNonNullProductionDate(anomalies.data.daily) : null
@@ -512,6 +516,8 @@ export function OverviewPage() {
             referenceMonth={data.current_cycle.reference_month}
             performancePercent={recentPerformance.percent}
             performanceAssessedDays={recentPerformance.assessedDays}
+            dailyStatus={anomalies.data ? 'ready' : anomalies.status === 'loading' ? 'loading' : 'error'}
+            cyclePartial={hasIncompleteDailyProduction(quality)}
           />
 
           <ProductionHealthHero

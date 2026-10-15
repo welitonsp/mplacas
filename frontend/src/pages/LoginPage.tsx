@@ -93,45 +93,7 @@ export function LoginPage() {
       />
 
       <main className="relative mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_27rem] lg:px-8 2xl:max-w-[96rem]">
-        {/* Proposta: DEPOIS do formulário no celular (order-2), à esquerda no
-            desktop. Quem abre /login quer entrar; no celular o formulário
-            ficava abaixo de três cartões e de uma prévia. */}
-        <section className="order-2 space-y-8 lg:order-1">
-          <div className="hidden items-center gap-3 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 lg:inline-flex">
-            <BrandMark className="text-[var(--color-text-primary)]" />
-            <span className="h-1 w-1 rounded-full bg-[var(--color-border)]" aria-hidden="true" />
-            <span className="text-xs font-medium text-[var(--color-text-secondary)]">Cockpit solar</span>
-          </div>
-
-          <div className="max-w-3xl space-y-4">
-            <p className="text-sm font-semibold text-[var(--color-brand-primary)]">
-              Painel operacional
-            </p>
-            <h2 className="text-3xl font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-text-primary)] sm:text-5xl lg:text-[56px]">
-              Gestão de energia solar com leitura executiva.
-            </h2>
-            <p className="max-w-2xl text-base leading-relaxed text-[var(--color-text-secondary)] sm:text-lg">
-              Entre em um painel preparado para explicar geração, perdas, retorno financeiro e disponibilidade sem exigir garimpo de dados.
-            </p>
-          </div>
-
-          <ul className="grid max-w-3xl grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
-            {BENEFITS.map((benefit) => (
-              <li key={benefit.title} className="border-t border-[var(--color-border)] pt-4">
-                <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">{benefit.title}</p>
-                <p className="mt-1 text-sm leading-relaxed text-[var(--color-text-secondary)]">
-                  {benefit.description}
-                </p>
-              </li>
-            ))}
-          </ul>
-
-          {/* A "Prévia do cockpit" com Saúde 92% / Performance 87% /
-              Disponibilidade 98% saiu (ADR-077): eram números inventados numa
-              tela de produto que vive de dado medido. */}
-        </section>
-
-        <section className="order-1 w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[0_24px_60px_-32px_rgb(14_27_42_/_0.35)] sm:p-8 lg:order-2">
+        <section className="w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[0_24px_60px_-32px_rgb(14_27_42_/_0.35)] sm:p-8 lg:order-2">
           <BrandMark className="mb-6 text-[var(--color-text-primary)] lg:hidden" />
           <div className="mb-6">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[var(--color-brand-primary-light)] px-3 py-1 text-xs font-semibold text-[var(--color-brand-primary)]">
@@ -178,7 +140,7 @@ export function LoginPage() {
                 // segue anunciada pela região `role="alert"`, e o
                 // `aria-describedby` liga o campo a ela — isso é verdadeiro.
                 aria-describedby={error ? errorId : undefined}
-                className="min-h-[48px] w-full rounded-[var(--radius-control)] border border-[var(--color-gray-300)] bg-[var(--color-surface)] px-4 py-3 text-[var(--color-text-primary)] outline-none transition-all duration-200 placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-brand-primary)] focus:ring-4 focus:ring-[var(--color-brand-primary)]/15 disabled:opacity-50"
+                className="min-h-[48px] w-full rounded-[var(--radius-control)] border border-[var(--color-gray-500)] bg-[var(--color-surface)] px-4 py-3 text-[var(--color-text-primary)] outline-none transition-all duration-200 placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-brand-primary)] focus:ring-4 focus:ring-[var(--color-brand-primary)]/15 disabled:opacity-50"
                 placeholder="Seu usuário"
               />
             </div>
@@ -198,7 +160,7 @@ export function LoginPage() {
                   disabled={loading}
                   // Mesma razão do campo de usuário acima (A-12).
                   aria-describedby={error ? errorId : undefined}
-                  className="min-h-[48px] w-full rounded-[var(--radius-control)] border border-[var(--color-gray-300)] bg-[var(--color-surface)] px-4 py-3 pr-24 text-[var(--color-text-primary)] outline-none transition-all duration-200 placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-brand-primary)] focus:ring-4 focus:ring-[var(--color-brand-primary)]/15 disabled:opacity-50"
+                  className="min-h-[48px] w-full rounded-[var(--radius-control)] border border-[var(--color-gray-500)] bg-[var(--color-surface)] px-4 py-3 pr-24 text-[var(--color-text-primary)] outline-none transition-all duration-200 placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-brand-primary)] focus:ring-4 focus:ring-[var(--color-brand-primary)]/15 disabled:opacity-50"
                 />
                 <button
                   type="button"
@@ -250,6 +212,43 @@ export function LoginPage() {
               Sessão protegida por credenciais operacionais. O backend valida permissões a cada requisição.
             </p>
           </form>
+        </section>
+
+        {/* Proposta: depois do formulário no DOM e no celular; à esquerda só
+            no desktop (`lg:order-1`). Quem abre /login quer entrar. */}
+        <section className="space-y-8 lg:order-1">
+          <div className="hidden items-center gap-3 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 lg:inline-flex">
+            <BrandMark className="text-[var(--color-text-primary)]" />
+            <span className="h-1 w-1 rounded-full bg-[var(--color-border)]" aria-hidden="true" />
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">Cockpit solar</span>
+          </div>
+
+          <div className="max-w-3xl space-y-4">
+            <p className="text-sm font-semibold text-[var(--color-brand-primary)]">
+              Painel operacional
+            </p>
+            <h2 className="text-3xl font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-text-primary)] sm:text-5xl lg:text-[56px]">
+              Gestão de energia solar com leitura executiva.
+            </h2>
+            <p className="max-w-2xl text-base leading-relaxed text-[var(--color-text-secondary)] sm:text-lg">
+              Entre em um painel preparado para explicar geração, perdas, retorno financeiro e disponibilidade sem exigir garimpo de dados.
+            </p>
+          </div>
+
+          <ul className="grid max-w-3xl grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
+            {BENEFITS.map((benefit) => (
+              <li key={benefit.title} className="border-t border-[var(--color-border)] pt-4">
+                <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">{benefit.title}</p>
+                <p className="mt-1 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+                  {benefit.description}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          {/* A "Prévia do cockpit" com Saúde 92% / Performance 87% /
+              Disponibilidade 98% saiu (ADR-077): eram números inventados numa
+              tela de produto que vive de dado medido. */}
         </section>
       </main>
     </div>

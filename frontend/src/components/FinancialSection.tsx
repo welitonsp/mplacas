@@ -108,7 +108,13 @@ export function FinancialSection({
           <SummaryTile
             label="Payback"
             value={evidenceFor('Payback')?.value ?? '—'}
-            supportingText={decision.label}
+            supportingText={
+              evidenceFor('Payback')?.value === 'Recuperado'
+                ? 'Investimento recuperado'
+                : evidenceFor('Payback')?.value && evidenceFor('Payback')?.value !== '—'
+                  ? 'Projeção'
+                  : 'Indisponível'
+            }
             tone={evidenceFor('Payback')?.tone ?? 'neutral'}
           />
         </div>
