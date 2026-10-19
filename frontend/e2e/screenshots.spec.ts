@@ -19,6 +19,7 @@ import {
   photovoltaicSummaryPayload,
   singlePlant,
 } from '../src/test/dashboardFixtures'
+import { investorAvailablePayload } from '../src/test/investorFixtures'
 
 // Rótulo do menu, não segmento de URL: a navegação é feita CLICANDO, nunca com
 // `page.goto`. A sessão vive só em memória (ADR-073), então recarga completa a
@@ -133,6 +134,7 @@ async function interceptarApi(page: import('@playwright/test').Page) {
         total: 7,
       },
     ],
+    ['**/energy/investor/latest*', investorAvailablePayload],
     // Uma fatura aguardando conferência, para a captura mostrar o card
     // "Faturas de energia" do Financeiro no estado mais rico.
     [
@@ -288,6 +290,11 @@ test.describe('captura das telas', () => {
       await expect(page.getByText(/Não foi possível carregar/)).toHaveCount(0)
       await expect(page.getByRole('main')).toBeVisible()
       await expect(page.getByText(/carregando/i)).toHaveCount(0, { timeout: 15_000 })
+      if (modulo.nome === 'financeiro') {
+        // O painel do investidor é carregado sob demanda (React.lazy): sem
+        // esperar o gráfico, a captura sairia sem a seção "Usina × CDI".
+        await expect(page.getByRole('img', { name: /Patrimônio em 25 anos/ })).toBeVisible({ timeout: 15_000 })
+      }
 
       await page.screenshot({
         path: `e2e/capturas/${info.project.name}/painel-${modulo.nome}.png`,

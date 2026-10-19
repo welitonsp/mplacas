@@ -48,3 +48,14 @@ RLS_TABLES: dict[str, RlsTable] = {
 
 def application_rls_tables() -> frozenset[str]:
     return frozenset(RLS_TABLES)
+
+
+# Tabelas de referência pública, sem dono e sem dado de cliente (ex.: CDI e
+# IPCA do Banco Central, ADR-079). Ficam FORA do RLS de propósito: precisam ser
+# lidas por qualquer sessão de organização, e "plataforma" as bloquearia.
+# Toda tabela da aplicação está em exatamente um dos dois conjuntos.
+PUBLIC_REFERENCE_TABLES: frozenset[str] = frozenset({"market_index_monthly"})
+
+
+def classified_application_tables() -> frozenset[str]:
+    return frozenset(RLS_TABLES) | PUBLIC_REFERENCE_TABLES

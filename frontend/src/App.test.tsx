@@ -84,6 +84,9 @@ vi.mock('./lib/api', () => ({
   fetchMonthlyProductionHistory: vi.fn(async () => {
     throw new Error('mock: sem rede em App.test.tsx')
   }),
+  fetchInvestorPanel: vi.fn(async () => {
+    throw new Error('mock: sem rede em App.test.tsx')
+  }),
   fetchPendingBills: vi.fn(async () => {
     throw new Error('mock: sem rede em App.test.tsx')
   }),

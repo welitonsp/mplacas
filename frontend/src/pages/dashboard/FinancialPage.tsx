@@ -1,9 +1,11 @@
-import { fetchExecutiveDashboard, fetchFinancialReturn } from '../../lib/api'
+import { lazy, Suspense } from 'react'
+import { fetchExecutiveDashboard, fetchFinancialReturn, fetchInvestorPanel } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
 import { parseExecutiveDashboard } from '../../lib/dashboard/contracts'
 import { parseFinancialReturn } from '../../lib/dashboard/financial-return-contracts'
+import { parseInvestorPanel } from '../../lib/dashboard/investor-contracts'
 import { FinancialSection } from '../../components/FinancialSection'
 import { EmptyState } from '../../components/EmptyState'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
@@ -11,6 +13,14 @@ import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 import { PageHeader } from '../../components/PageHeader'
 import { BillsSection } from '../../components/BillsSection'
+
+// Painel do investidor sob demanda: chunk próprio (gráfico de patrimônio +
+// premissas), para não estourar o teto de 15 kB do módulo Financeiro.
+const InvestorPanelSection = lazy(() =>
+  import('../../components/InvestorPanelSection').then((module) => ({
+    default: module.InvestorPanelSection,
+  })),
+)
 
 // Módulo Financeiro (ADR-072, Etapa 3) — dois recursos (ver ADR seção 2):
 // `executive` (`/energy/executive/latest`) e `financialReturn`
@@ -47,6 +57,14 @@ export function FinancialPage() {
     errorMessage: 'Erro ao buscar retorno do investimento.',
   })
 
+  // Painel do investidor (ADR-079): usina × CDI líquido, realizado e projeção.
+  const investor = usePlantResource({
+    plantId,
+    fetcher: fetchInvestorPanel,
+    parse: parseInvestorPanel,
+    errorMessage: 'Erro ao buscar a comparação com o CDI.',
+  })
+
   // Refetch único para os 2 recursos deste módulo — usado pelo botão
   // "Atualizar" (`RefreshBar`). O erro do recurso executivo continua com seu
   // próprio retry no banner global (`RetryableError` abaixo); este botão só
@@ -54,10 +72,12 @@ export function FinancialPage() {
   const refreshAll = () => {
     executive.refetch()
     financialReturn.refetch()
+    investor.refetch()
   }
   // Combinado dos 2 recursos — usado pelo `disabled`/texto "Atualizando..."
   // do `RefreshBar`.
-  const loading = executive.status === 'loading' || financialReturn.status === 'loading'
+  const loading =
+    executive.status === 'loading' || financialReturn.status === 'loading' || investor.status === 'loading'
 
   // Enquanto a lista de usinas (`PlantContext`) ainda carrega, nenhuma
   // requisição deste módulo foi disparada — mesmo esqueleto de carregamento
@@ -133,6 +153,16 @@ export function FinancialPage() {
             financialReturn={financialReturn}
             plantId={plantId}
           />
+          <Suspense
+            fallback={
+              <div
+                className="h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)] md:col-span-6 lg:col-span-12"
+                aria-hidden="true"
+              />
+            }
+          >
+            <InvestorPanelSection panel={investor.data} error={investor.error} onRetry={investor.refetch} />
+          </Suspense>
         </div>
       )}
     </>

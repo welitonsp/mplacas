@@ -337,6 +337,13 @@ export async function updateFinancialConfiguration(
   })
 }
 
+// Painel do investidor (ADR-079, `GET /energy/investor/latest`): realizado ×
+// CDI líquido e projeção de vida útil (TIR, VPL, paybacks). Sempre 200 dentro
+// do escopo; o que falta vem em `unavailable_reason`, nunca como erro HTTP.
+export async function fetchInvestorPanel(plantId: string): Promise<Response> {
+  return apiFetch(`/energy/investor/latest?plant_id=${encodeURIComponent(plantId)}`)
+}
+
 // Cadastro da usina ("Minha usina"). `GET /plants/{id}/setup` reúne em uma
 // leitura o que o dono já informou e o checklist do que falta (a regra de
 // "feito" de cada item é do backend). As escritas usam as rotas que já

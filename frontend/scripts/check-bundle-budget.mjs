@@ -93,6 +93,13 @@ const BUDGETS = [
     limitKb: 10,
   },
   {
+    // Painel do investidor (ADR-079), carregado sob demanda pelo Financeiro.
+    // Entrou em 2026-10-19; teto com folga para cenários e premissas editáveis.
+    name: 'InvestorPanelSection',
+    match: /^InvestorPanelSection-.*\.js$/,
+    limitKb: 8,
+  },
+  {
     name: 'LoginPage',
     match: /^LoginPage-.*\.js$/,
     limitKb: 5,

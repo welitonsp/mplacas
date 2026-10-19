@@ -24,6 +24,7 @@ import {
   photovoltaicSummaryPayload,
   singlePlant,
 } from '../src/test/dashboardFixtures'
+import { investorAvailablePayload } from '../src/test/investorFixtures'
 
 const MODULOS = ['Visão Geral', 'Produção', 'Financeiro', 'Técnico', 'Minha usina'] as const
 
@@ -50,6 +51,7 @@ test.describe('layout não rola de lado', () => {
       ['**/devices/daily-status*', deviceDailyStatusPayload],
       ['**/reports/monthly/history*', monthlyHistoryPayload],
       ['**/billing/pending*', { count: 0, items: [] }],
+      ['**/energy/investor/latest*', investorAvailablePayload],
       [
         '**/plants/*/setup',
         {

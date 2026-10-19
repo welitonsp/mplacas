@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import {
   executivePayload,
   financialReturnUnavailablePayload,
+  investorUnavailablePayload,
   jsonResponse,
   singlePlant,
 } from '../../test/dashboardFixtures'
@@ -32,6 +33,7 @@ interface ApiMockOverrides {
   fetchPlants?: () => Promise<unknown[]>
   updateFinancialConfiguration?: (...args: unknown[]) => Promise<Response>
   fetchPendingBills?: (plantId: string) => Promise<Response>
+  fetchInvestorPanel?: (plantId: string) => Promise<Response>
 }
 
 function installApiMock(overrides: ApiMockOverrides = {}) {
@@ -44,6 +46,8 @@ function installApiMock(overrides: ApiMockOverrides = {}) {
     updateFinancialConfiguration:
       overrides.updateFinancialConfiguration ?? vi.fn(async () => jsonResponse({})),
     // Faturas de energia (`BillsSection`) — terceira leitura do módulo.
+    fetchInvestorPanel:
+      overrides.fetchInvestorPanel ?? vi.fn(async () => jsonResponse(investorUnavailablePayload)),
     fetchPendingBills: overrides.fetchPendingBills ?? vi.fn(async () => jsonResponse({ count: 0, items: [] })),
     uploadBillPdf: vi.fn(async () => jsonResponse({})),
     confirmBill: vi.fn(async () => jsonResponse({})),
@@ -60,15 +64,17 @@ async function renderFinancialPage() {
 }
 
 describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
-  it('dispara exatamente 3 requisições de dados — /energy/executive/latest, /energy/financial-return/latest e /billing/pending, nenhuma outra', async () => {
+  it('dispara exatamente 4 requisições de dados — executivo, retorno, faturas pendentes e painel do investidor, nenhuma outra', async () => {
     vi.resetModules()
     const fetchExecutiveMock = vi.fn(async () => jsonResponse(executivePayload))
     const fetchFinancialReturnMock = vi.fn(async () => jsonResponse(financialReturnUnavailablePayload))
     const fetchPendingBillsMock = vi.fn(async () => jsonResponse({ count: 0, items: [] }))
+    const fetchInvestorMock = vi.fn(async () => jsonResponse(investorUnavailablePayload))
     installApiMock({
       fetchExecutiveDashboard: fetchExecutiveMock,
       fetchFinancialReturn: fetchFinancialReturnMock,
       fetchPendingBills: fetchPendingBillsMock,
+      fetchInvestorPanel: fetchInvestorMock,
     })
 
     await renderFinancialPage()
@@ -86,7 +92,9 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
       expect(fetchExecutiveMock).toHaveBeenCalledTimes(1)
       expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(1)
       expect(fetchPendingBillsMock).toHaveBeenCalledTimes(1)
+      expect(fetchInvestorMock).toHaveBeenCalledTimes(1)
     })
+    expect(fetchInvestorMock).toHaveBeenCalledWith(singlePlant.id)
     expect(fetchExecutiveMock).toHaveBeenCalledWith(singlePlant.id)
     expect(fetchFinancialReturnMock).toHaveBeenCalledWith(singlePlant.id)
     expect(fetchPendingBillsMock).toHaveBeenCalledWith(singlePlant.id)

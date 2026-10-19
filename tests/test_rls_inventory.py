@@ -12,8 +12,14 @@ from mplacas.collection import db_models as _collection_models  # noqa: F401
 from mplacas.credentials import db_models as _credential_models  # noqa: F401
 from mplacas.db import models as _models  # noqa: F401
 from mplacas.db.base import Base
-from mplacas.db.rls_inventory import RLS_TABLES, RlsScope, application_rls_tables
+from mplacas.db.rls_inventory import (
+    PUBLIC_REFERENCE_TABLES,
+    RLS_TABLES,
+    RlsScope,
+    classified_application_tables,
+)
 from mplacas.events import db_models as _event_models  # noqa: F401
+from mplacas.market import db_models as _market_models  # noqa: F401
 from mplacas.operations import models as _operation_models  # noqa: F401
 from mplacas.orchestration import db_models as _orchestration_models  # noqa: F401
 from mplacas.organizations import db_models as _organization_models  # noqa: F401
@@ -23,8 +29,15 @@ from mplacas.reports import db_models as _report_models  # noqa: F401
 
 
 def test_every_application_table_has_exactly_one_rls_classification() -> None:
-    assert application_rls_tables() == frozenset(Base.metadata.tables)
+    assert classified_application_tables() == frozenset(Base.metadata.tables)
+    assert not (frozenset(RLS_TABLES) & PUBLIC_REFERENCE_TABLES)
     assert len(RLS_TABLES) == 24
+
+
+def test_public_reference_tables_carry_no_tenant_ownership_column() -> None:
+    for table_name in PUBLIC_REFERENCE_TABLES:
+        columns = set(Base.metadata.tables[table_name].c.keys())
+        assert not columns & {"organization_id", "plant_id", "device_id"}
 
 
 def test_rls_ownership_columns_exist_and_platform_tables_are_explicit() -> None:

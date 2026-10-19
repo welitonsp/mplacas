@@ -534,3 +534,23 @@ def test_plant_investment_amount_migration_matches_orm() -> None:
     assert 'batch.drop_constraint("ck_plants_investment_amount_positive"' in downgrade_body(
         source
     )
+
+
+def test_market_index_monthly_migration_matches_orm() -> None:
+    from mplacas.market.db_models import MarketIndexMonthlyRecord
+
+    source = (
+        ROOT / "migrations" / "versions" / "20261019_0044_add_market_index_monthly.py"
+    ).read_text(encoding="utf-8")
+    columns = MarketIndexMonthlyRecord.__table__.c
+
+    assert 'revision = "20261019_0044"' in source
+    assert 'down_revision = "20260805_0043"' in source
+    assert 'op.drop_table("market_index_monthly")' in source
+    assert 'sa.UniqueConstraint("index_code", "reference_month")' in source
+    assert "sa.Numeric(12, 6)" in source
+    # Dado público e global: sem coluna de dono (fica fora do RLS, ADR-079).
+    assert not {"organization_id", "plant_id"} & set(columns.keys())
+    assert columns.rate_percent.type.precision == 12
+    assert columns.rate_percent.type.scale == 6
+    assert columns.reference_month.type.length == 7

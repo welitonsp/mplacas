@@ -20,7 +20,8 @@ def test_production_configuration_accepts_postgresql_and_operational_key() -> No
     assert "user:secret" not in repr(settings)
     assert settings.safe_summary()["database_backend"] == "postgresql"
     assert settings.safe_summary()["operational_auth_configured"] is True
-    assert settings.safe_summary()["external_http_allowed_host_count"] == 2
+    # NEPViewer, Open-Meteo e Banco Central (CDI/IPCA, ADR-079).
+    assert settings.safe_summary()["external_http_allowed_host_count"] == 3
 
 
 def test_production_rejects_sqlite() -> None:

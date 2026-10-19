@@ -39,7 +39,12 @@ class Settings(BaseSettings):
     nep_account: str | None = None
     nep_password: SecretStr | None = None
     climate_archive_base_url: HttpUrl = HttpUrl("https://archive-api.open-meteo.com/v1/archive")
-    external_http_allowed_hosts: str = "api.nepviewer.net,archive-api.open-meteo.com"
+    external_http_allowed_hosts: str = "api.nepviewer.net,archive-api.open-meteo.com,api.bcb.gov.br"
+    # API pública de séries do Banco Central (CDI/IPCA) — painel do
+    # investidor (ADR-079). Conferida contra a lista acima em tempo de
+    # execução: se o host não estiver liberado, o painel mostra "indicadores
+    # indisponíveis" em vez de impedir o servidor de subir.
+    market_indices_base_url: str = "https://api.bcb.gov.br"
     climate_maximum_backfill_days: int = 366
     pipeline_stale_lock_timeout_minutes: int = 60
     outbox_stale_lock_timeout_minutes: int = 15
