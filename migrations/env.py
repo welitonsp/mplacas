@@ -19,6 +19,7 @@ from mplacas.db import models  # noqa: F401
 from mplacas.db.base import Base
 from mplacas.db.connection import database_connect_args
 from mplacas.events import db_models as event_models  # noqa: F401
+from mplacas.market import db_models as market_models  # noqa: F401
 from mplacas.operations import models as operation_models  # noqa: F401
 from mplacas.orchestration import db_models as orchestration_models  # noqa: F401
 from mplacas.organizations import db_models as organization_models  # noqa: F401

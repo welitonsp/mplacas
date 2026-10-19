@@ -297,3 +297,21 @@ export const monthlyHistoryPayload = {
     },
   ],
 }
+
+// Painel do investidor sem investimento cadastrado — resposta default de
+// `GET /energy/investor/latest` (ADR-079) nos testes do módulo Financeiro.
+export const investorUnavailablePayload = {
+  plant_id: 'plant-1',
+  unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
+  investment_brl: null,
+  commissioned_month: null,
+  months_since_commissioning: null,
+  cycles_counted: 0,
+  calculation_versions: [],
+  includes_pre_correction_cycles: false,
+  low_confidence_baseline: true,
+  indices: { cdi_12m_per_year: null, ipca_12m_per_year: null, as_of_month: null, source: 'Banco Central do Brasil — SGS 4391 (CDI) e 433 (IPCA)' },
+  realized: null,
+  projection: null,
+  premises: null,
+}

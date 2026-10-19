@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query
 
+from mplacas.core.config import get_settings
 from mplacas.core.tenancy import ReadPlant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_principal_context
@@ -23,6 +26,13 @@ from mplacas.intelligence.history_service import (
     EnergyHistoryNotFoundError,
     compare_latest_confirmed_cycles,
 )
+from mplacas.intelligence.investor_service import (
+    InvestorPanel,
+    InvestorPlantNotFoundError,
+    get_investor_panel,
+)
+from mplacas.market.bcb import BcbSgsClient
+from mplacas.market.service import bcb_host_allowed
 from mplacas.photovoltaic.read_service import resolve_expected_daily_production
 
 router = APIRouter(
@@ -30,7 +40,10 @@ router = APIRouter(
     tags=["energy"],
 )
 
+logger = logging.getLogger(__name__)
+
 _executive_dashboard_read_model = ExecutiveDashboardReadModel()
+_bcb_egress_warning_logged = False
 
 
 def _optional(value: object) -> str | None:
@@ -200,8 +213,7 @@ def _serialize_anomalies(result) -> dict[str, object]:
                 ),
                 "deviation_percent": (
                     str(item.assessment.deviation_percent)
-                    if item.assessment is not None
-                    and item.assessment.deviation_percent is not None
+                    if item.assessment is not None and item.assessment.deviation_percent is not None
                     else None
                 ),
                 "yield_kwh_per_kwh_m2": (
@@ -308,9 +320,7 @@ def _serialize_financial_return(result: FinancialReturnResult) -> dict[str, obje
     return {
         "plant_id": str(result.plant_id),
         "investment_amount_brl": (
-            str(result.investment_amount_brl)
-            if result.investment_amount_brl is not None
-            else None
+            str(result.investment_amount_brl) if result.investment_amount_brl is not None else None
         ),
         "investment_recorded_on": (
             result.investment_recorded_on.isoformat()
@@ -366,6 +376,115 @@ async def latest_financial_return(scoped: ReadPlant) -> dict[str, object]:
         except FinancialReturnPlantNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _serialize_financial_return(result)
+
+
+def _dec(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
+def _serialize_investor(panel: InvestorPanel) -> dict[str, object]:
+    realized = panel.realized
+    projection = panel.projection
+    premises = panel.premises
+    return {
+        "plant_id": str(panel.plant_id),
+        "unavailable_reason": panel.unavailable_reason.value if panel.unavailable_reason else None,
+        "investment_brl": _dec(panel.investment_brl),
+        "commissioned_month": panel.commissioned_month,
+        "months_since_commissioning": panel.months_since_commissioning,
+        "cycles_counted": panel.cycles_counted,
+        "calculation_versions": list(panel.calculation_versions),
+        "includes_pre_correction_cycles": panel.includes_pre_correction_cycles,
+        "low_confidence_baseline": panel.low_confidence_baseline,
+        "indices": {
+            "cdi_12m_per_year": _dec(panel.cdi_12m_per_year),
+            "ipca_12m_per_year": _dec(panel.ipca_12m_per_year),
+            "as_of_month": panel.indices_as_of_month,
+            "source": "Banco Central do Brasil — SGS 4391 (CDI) e 433 (IPCA)",
+        },
+        "realized": None
+        if realized is None
+        else {
+            "as_of_month": realized.as_of_month,
+            "months_elapsed": realized.months_elapsed,
+            "accumulated_savings_brl": str(realized.accumulated_savings_brl),
+            "cycles_counted": realized.cycles_counted,
+            "cdi_path_net_brl": str(realized.cdi_path_net_brl),
+            "solar_path_net_brl": str(realized.solar_path_net_brl),
+            "cdi_accumulated_percent": str(realized.cdi_accumulated_percent),
+        },
+        "projection": None
+        if projection is None
+        else {
+            "baseline_monthly_savings_brl": str(projection.baseline_monthly_savings_brl),
+            "irr_per_year": _dec(projection.irr_per_year),
+            "irr_real_per_year": _dec(projection.irr_real_per_year),
+            "cdi_net_per_year": str(projection.cdi_net_per_year),
+            "npv_at_cdi_net_brl": str(projection.npv_at_cdi_net_brl),
+            "payback_simple_months": projection.payback_simple_months,
+            "payback_discounted_months": projection.payback_discounted_months,
+            "lifetime_savings_brl": str(projection.lifetime_savings_brl),
+            "wire_b_applied": projection.wire_b_applied,
+            "patrimony": [
+                {
+                    "year": point.year,
+                    "cdi_path_brl": str(point.cdi_path_brl),
+                    "solar_path_brl": str(point.solar_path_brl),
+                }
+                for point in projection.patrimony
+            ],
+        },
+        "premises": None
+        if premises is None
+        else {
+            "cdi_per_year": str(premises.cdi_per_year),
+            "ipca_per_year": str(premises.ipca_per_year),
+            "tariff_growth_per_year": str(premises.tariff_growth_per_year),
+            "horizon_years": premises.horizon_years,
+            "degradation_per_year": str(premises.degradation_per_year),
+            "om_per_year_fraction": str(premises.om_per_year_fraction),
+            "inverter_replacement_year": premises.inverter_replacement_year,
+            "inverter_replacement_fraction": str(premises.inverter_replacement_fraction),
+            "long_term_income_tax": str(premises.long_term_income_tax),
+        },
+    }
+
+
+@router.get("/investor/latest")
+async def latest_investor_panel(scoped: ReadPlant) -> dict[str, object]:
+    """Painel do investidor (ADR-079): realizado × CDI e projeção de vida útil.
+
+    Leitura; a única escrita é o reabastecimento das taxas públicas de
+    CDI/IPCA (``market_index_monthly``), por isso o ``commit`` no fim.
+    """
+    global _bcb_egress_warning_logged
+    settings = get_settings()
+    allowed = bcb_host_allowed(
+        settings.market_indices_base_url, settings.external_http_allowed_host_set
+    )
+    client = BcbSgsClient(base_url=settings.market_indices_base_url) if allowed else None
+    if not allowed and not _bcb_egress_warning_logged:
+        # Sem isto, uma allowlist explícita sem api.bcb.gov.br deixaria o
+        # painel "indisponível" para sempre sem rastro no log (ADR-079).
+        _bcb_egress_warning_logged = True
+        logger.warning(
+            "market_indices_egress_blocked",
+            extra={"base_url": settings.market_indices_base_url},
+        )
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        try:
+            panel = await get_investor_panel(
+                session,
+                plant_id=scoped.plant_id,
+                today=date.today(),
+                bcb_client=client,
+                plant_scope=scoped.principal.plant_scope,
+            )
+        except InvestorPlantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        await session.commit()
+    return _serialize_investor(panel)
 
 
 @router.get("/anomalies/latest")
