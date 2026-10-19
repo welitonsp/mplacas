@@ -27,20 +27,20 @@ export const investorAvailablePayload = {
   },
   projection: {
     baseline_monthly_savings_brl: '264.00',
-    irr_per_year: '0.3441',
-    irr_real_per_year: '0.2853',
-    cdi_net_per_year: '0.1160',
-    npv_at_cdi_net_brl: '23819.69',
+    irr_per_year: '0.3290',
+    irr_real_per_year: '0.2711',
+    cdi_net_per_year: '0.1332',
+    npv_at_cdi_net_brl: '16204.01',
     payback_simple_months: 44,
-    payback_discounted_months: 55,
+    payback_discounted_months: 57,
     lifetime_savings_brl: '140925.60',
     wire_b_applied: true,
     patrimony: Array.from({ length: 26 }, (_, year) => year).map((year) => ({
       year,
-      cdi_path_brl: String(11200 * 1.116 ** year),
+      cdi_path_brl: String(11200 * 1.1332 ** year),
       // Economia de ~R$ 3.168/ano aplicada no CDI líquido: cruza perto do
-      // payback descontado de 55 meses, como no cálculo real.
-      solar_path_brl: String((3168 * (1.116 ** year - 1)) / 0.116),
+      // payback descontado de 57 meses, como no cálculo real.
+      solar_path_brl: String((3168 * (1.1332 ** year - 1)) / 0.1332),
     })),
   },
   premises: {

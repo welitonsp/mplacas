@@ -4,8 +4,8 @@
 
 **Proposto — 2026-10-19.** Fase 4 do plano de inteligência financeira (documento "MPlacas —
 Inteligência do sistema: diagnóstico e plano"). Régua padrão aprovada pelo usuário: CDB a
-100% do CDI, líquido de IR. Vai passar pelo agente `reviewer` antes do merge, porque cria
-migration e cálculo financeiro.
+100% do CDI, líquido de IR. A primeira revisão do agente `reviewer` não aprovou (2 P1,
+7 P2). As correções e os pontos aceitos estão na seção "Revisão" abaixo.
 
 ## Contexto
 
@@ -55,6 +55,8 @@ explicitamente no Render, é preciso acrescentar `api.bcb.gov.br`.
   regressivo no resgate (22,5% / 20% / 17,5% / 15%).
 - Caminho B (a usina): cada economia confirmada é aplicada no CDI a partir do mês seguinte
   ao seu ciclo, com IR próprio por aporte.
+- Só contam ciclos **posteriores** ao mês da ligação. A fatura do mês da ligação tem geração
+  parcial. O realizado, a projeção e a cobertura usam a mesma regra.
 - Se faltar algum mês de CDI, não há comparação.
 - Na UI, se a cobertura (faturas confirmadas ÷ meses desde a ligação) for menor que 80%, o
   placar A × B não aparece. Mostra-se quantos meses de fatura faltam, porque comparar 1
@@ -70,12 +72,21 @@ explicitamente no Render, é preciso acrescentar `api.bcb.gov.br`.
   fatura confirmada traz a tarifa do Fio B. Desconta-se a parcela adicional sobre os kWh
   compensados: 15/30/45/60/75/90% de 2023 a 2028, e **100% a partir de 2029**. É uma
   premissa conservadora, porque o art. 17 ainda não foi regulamentado.
+- **Régua de longo prazo:** um CDB a 100% do CDI comprado na ligação e resgatado no mês k,
+  com IR regressivo sobre o ganho **no resgate**. É o mesmo método do realizado. Não é um
+  desconto de 15% na taxa a cada ano: isso funcionaria como um come-cotas permanente e
+  subestimaria o CDB em cerca de 25% em 25 anos (achado P1 da revisão).
 - Saídas:
   - TIR nominal e real, por bisseção;
-  - VPL descontado pelo CDI × (1 − 15%);
-  - payback simples e descontado;
-  - economia total na vida útil;
-  - patrimônio anual dos dois caminhos.
+  - patrimônio mês a mês dos dois caminhos, cada um líquido de IR no resgate. Na usina,
+    cada fluxo mensal é aplicado e tem IR pelo seu próprio prazo, e custo é retirada;
+  - **"CDI líquido"** = taxa efetiva de quem fica no CDB até o horizonte:
+    (líquido no resgate ÷ aplicado)^(1/25) − 1. Com CDI de 14,03%, dá cerca de 13,3% ao ano.
+    É a taxa de desconto do VPL e a régua contra a TIR;
+  - payback simples;
+  - **payback "contando o CDI"**: o primeiro mês em que o patrimônio da usina alcança o do
+    CDI. É exatamente o cruzamento das linhas do gráfico;
+  - economia total na vida útil.
 - O CDI futuro é igual ao dos últimos 12 meses. Com menos de 12 faturas, a projeção é
   marcada como de baixa confiança, porque ainda não cobre as estações do ano.
 
@@ -102,6 +113,48 @@ mês.
   celular, os rótulos de ano aparecem a cada 10 anos.
 - A seção é carregada sob demanda (`React.lazy`) e tem orçamento próprio de 8 kB. Isso
   mantém a página Financeiro abaixo dos 15 kB.
+
+## Revisão (reviewer, 2026-10-19)
+
+Corrigido:
+
+- **P1-1.** A régua de longo prazo passou a cobrar o IR no resgate, como descrito acima.
+- **P1-2.** Quando a base tem menos de 12 faturas, ou quando há ciclos pré-0.3.0, aparece uma
+  faixa "Estimativa preliminar" **acima** dos indicadores. Antes o aviso ficava escondido nas
+  premissas.
+- **P2-3.** A cobertura tinha um erro de 1 mês: a fatura do mês da ligação entrava no
+  numerador mas não no denominador. Agora ela fica fora de tudo.
+- **P2-4.** Quando faltam faturas posteriores à ligação, o motivo mostrado é
+  `NO_CONSOLIDATED_SAVINGS`, com texto explicando o porquê, e não mais "Banco Central
+  indisponível". Investimento ≤ 0 conta como não cadastrado.
+- **P2-5.** A gravação das taxas usa um savepoint. Uma corrida entre requisições
+  (IntegrityError) volta a ler o banco em vez de devolver 500. O payload é deduplicado e só
+  meses pedidos e ausentes são gravados; mês já gravado não é sobrescrito. Snapshot com
+  valor ilegível é ignorado.
+- **P2-6.** O parser exige DD/MM/AAAA com mês entre 1 e 12.
+- **P2-7.** Um `market_indices_egress_blocked` é registrado (uma vez por processo) quando o
+  host não está liberado. `bcb_host_allowed` exige HTTPS.
+- **P3.** "0.3" equivale a "0.3.0". As janelas de 12 meses de CDI e IPCA precisam ser
+  contíguas no calendário. `_serialize_investor` agora é tipada.
+
+Aceito, e declarado na UI ou aqui:
+
+- **P2-1.** O enquadramento GD I/GD II é estimado pela **data de ligação**, porque o modelo
+  não tem a data do protocolo de acesso. A lei usa a data do pedido de conexão, e a UI diz
+  isso nas premissas. O erro é conservador: pode aplicar o Fio B a uma usina GD I com
+  ligação tardia. Fica como dívida acrescentar a "data do pedido de conexão" em "Minha
+  usina".
+- **P2-2.** Assume-se que a tarifa do Fio B impressa na fatura já reflete o percentual do
+  ano (60% em 2026). A fatura real de set/2026 traz R$ 0,175126/kWh, o que implica uma tarifa
+  cheia de cerca de R$ 0,29, coerente com a TUSD Fio B da distribuidora. Isso ainda deve ser
+  validado com a REN da Equatorial GO. Os kWh compensados da última fatura são tratados como
+  constantes, sem sazonalidade.
+- **P3** restantes:
+  - o throttle é por processo e por índice;
+  - `date.today()` usa o fuso UTC do servidor (no pior caso, gasta uma tentativa de busca);
+  - não há limite de tamanho na resposta do BCB (host confiável);
+  - a degradação conta desde o mês 0, enquanto o reajuste conta desde a âncora (pequeno
+    viés para menos).
 
 ## Consequências
 

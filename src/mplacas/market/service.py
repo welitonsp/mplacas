@@ -18,6 +18,7 @@ from decimal import Decimal
 from urllib.parse import urlsplit
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.market.bcb import SOURCE, BcbSgsClient, BcbSgsError
@@ -50,8 +51,10 @@ def last_closed_month(today: date) -> str:
 
 
 def bcb_host_allowed(base_url: str, allowed_hosts: frozenset[str]) -> bool:
-    host = (urlsplit(base_url).hostname or "").lower()
-    return bool(host) and host in allowed_hosts
+    """Só HTTPS e só host liberado na allowlist de saída."""
+    parts = urlsplit(base_url)
+    host = (parts.hostname or "").lower()
+    return parts.scheme == "https" and bool(host) and host in allowed_hosts
 
 
 async def monthly_rates(
@@ -94,35 +97,35 @@ async def monthly_rates(
         logger.warning("market_index_fetch_failed", extra={"index_code": index_code})
         return stored
 
-    existing = {
-        record.reference_month: record
-        for record in (
-            await session.scalars(
-                select(MarketIndexMonthlyRecord).where(
-                    MarketIndexMonthlyRecord.index_code == index_code,
-                    MarketIndexMonthlyRecord.reference_month.in_(
-                        [rate.reference_month for rate in fetched]
-                    ),
-                )
-            )
-        ).all()
-    }
+    # Só os meses pedidos e ainda ausentes, sem repetição: o BCB não tem por
+    # que devolver outro mês, e se devolver não é gravado. Mês fechado não
+    # muda depois de publicado, então o que já está no banco não é
+    # sobrescrito.
+    missing_set = set(missing)
+    new_rates: dict[str, Decimal] = {}
     for rate in fetched:
-        record = existing.get(rate.reference_month)
-        if record is None:
-            session.add(
+        if rate.reference_month in missing_set:
+            new_rates.setdefault(rate.reference_month, rate.rate_percent)
+    if not new_rates:
+        return stored
+    try:
+        # Savepoint: outra requisição (ou outro worker) pode ter gravado o
+        # mesmo mês no meio do caminho. A violação da unicidade desfaz só
+        # este bloco, e a leitura do usuário segue com o que está no banco.
+        async with session.begin_nested():
+            session.add_all(
                 MarketIndexMonthlyRecord(
                     index_code=index_code,
-                    reference_month=rate.reference_month,
-                    rate_percent=rate.rate_percent,
+                    reference_month=month,
+                    rate_percent=value,
                     source=SOURCE,
                 )
+                for month, value in sorted(new_rates.items())
             )
-        elif record.rate_percent != rate.rate_percent:
-            record.rate_percent = rate.rate_percent
-        if rate.reference_month in wanted:
-            stored[rate.reference_month] = rate.rate_percent
-    await session.flush()
+    except IntegrityError:
+        logger.info("market_index_concurrent_insert", extra={"index_code": index_code})
+        return await _stored(session, index_code, wanted)
+    stored.update(new_rates)
     return stored
 
 

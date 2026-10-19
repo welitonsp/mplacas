@@ -7,7 +7,7 @@ describe('investor-contracts', () => {
   it('lê o painel completo mantendo números como string', () => {
     const panel = parseInvestorPanel(investorAvailablePayload)
     expect(panel.unavailableReason).toBeNull()
-    expect(panel.projection?.irrPerYear).toBe('0.3441')
+    expect(panel.projection?.irrPerYear).toBe('0.3290')
     expect(panel.projection?.paybackSimpleMonths).toBe(44)
     expect(panel.projection?.patrimony).toHaveLength(26)
     expect(panel.realized?.cyclesCounted).toBe(1)

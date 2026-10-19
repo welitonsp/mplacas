@@ -134,18 +134,16 @@ def realized_comparison(
         accumulated = Decimal("0")
         counted = 0
         for month, saving in sorted(savings_by_month.items()):
-            if month < start_month or month > as_of_month:
+            # Só ciclos posteriores à ligação, a mesma regra da projeção: a
+            # fatura do mês da ligação é de geração parcial, e contá-la aqui
+            # inflaria a cobertura (faturas ÷ meses decorridos) em 1.
+            if month <= start_month or month > as_of_month:
                 continue
             accumulated += saving
             counted += 1
             # economia do mês m entra no fim de m e rende de m+1 até as_of
             held = months_between(month, as_of_month)
-            if held <= 0:
-                growth = _ONE
-            elif month == start_month:
-                growth = total_factor
-            else:
-                growth = factor_from[month]
+            growth = _ONE if held <= 0 else factor_from[month]
             if saving > 0:
                 solar_net += _net_of_tax(saving, saving * growth, held)
             else:
@@ -192,7 +190,7 @@ class Projection:
     baseline_monthly_savings_brl: Decimal
     irr_per_year: Decimal | None
     irr_real_per_year: Decimal | None
-    cdi_net_per_year: Decimal
+    cdi_net_per_year: Decimal  # taxa líquida efetiva do CDB mantido até o horizonte
     npv_at_cdi_net_brl: Decimal
     payback_simple_months: int | None
     payback_discounted_months: int | None
@@ -298,7 +296,43 @@ def project(
                 )
             flows.append(saving - cost)
 
-        cdi_net_year = premises.cdi_per_year * (_ONE - premises.long_term_income_tax)
+        # Régua: CDB a 100% do CDI comprado na ligação e resgatado no mês k,
+        # com IR regressivo sobre o ganho NO RESGATE — o mesmo método do
+        # realizado. (A versão anterior descontava 15% da taxa todo ano, como
+        # um come-cotas permanente, e subestimava o CDB em ~25% em 25 anos.)
+        cdi_monthly = _monthly_rate(premises.cdi_per_year)
+        g = _ONE + cdi_monthly
+        powers = [_ONE]
+        for _ in range(horizon):
+            powers.append(powers[-1] * g)
+        # Valor líquido, n meses depois, de R$ 1 aplicado: bruto menos IR
+        # sobre o ganho pela tabela regressiva do prazo.
+        net_factor = [
+            p - (p - _ONE) * income_tax_rate(_DAYS_PER_MONTH * n) if p > _ONE else p
+            for n, p in enumerate(powers)
+        ]
+
+        def cdi_path(k: int) -> Decimal:
+            return investment_brl * net_factor[k]
+
+        def solar_path(k: int) -> Decimal:
+            # Cada fluxo do mês j é aplicado no CDB e resgatado em k, com IR
+            # próprio pelo prazo k − j. Custo (fluxo negativo) é retirada: tira
+            # o valor e o rendimento bruto que ele teria, sem IR.
+            total = Decimal("0")
+            for j in range(1, k + 1):
+                flow = flows[j]
+                total += flow * (net_factor[k - j] if flow > 0 else powers[k - j])
+            return total
+
+        solar_series = [Decimal("0")]
+        for k in range(1, horizon + 1):
+            solar_series.append(solar_path(k))
+
+        # Taxa líquida efetiva de quem fica no CDB até o fim do horizonte:
+        # (líquido no resgate ÷ aplicado)^(1/anos) − 1. É a taxa de desconto do
+        # VPL e a régua contra a TIR.
+        cdi_net_year = net_factor[horizon] ** (_ONE / Decimal(premises.horizon_years)) - _ONE
         discount_monthly = _monthly_rate(cdi_net_year)
         npv = _npv(flows, discount_monthly)
 
@@ -307,34 +341,27 @@ def project(
         irr_real = (_ONE + irr_year) / inflation - _ONE if irr_year is not None else None
 
         payback_simple: int | None = None
-        payback_disc: int | None = None
         cumulative = Decimal("0")
-        cumulative_disc = Decimal("0")
-        discount = _ONE
-        step = _ONE / (_ONE + discount_monthly)
         for k, flow in enumerate(flows):
             cumulative += flow
-            cumulative_disc += flow * discount
-            discount *= step
             if payback_simple is None and k > 0 and cumulative >= 0:
                 payback_simple = k
-            if payback_disc is None and k > 0 and cumulative_disc >= 0:
-                payback_disc = k
+                break
+        # "Contando o CDI": primeiro mês em que as economias aplicadas no CDB
+        # valem, líquidas, tanto quanto o investimento teria rendido no CDB.
+        # É exatamente o cruzamento das linhas do gráfico de patrimônio.
+        payback_disc = next(
+            (k for k in range(1, horizon + 1) if solar_series[k] >= cdi_path(k)), None
+        )
 
-        patrimony: list[PatrimonyPoint] = []
-        monthly_growth = _ONE + discount_monthly
-        solar = Decimal("0")
-        for k in range(0, horizon + 1):
-            if k > 0:
-                solar = solar * monthly_growth + flows[k]
-            if k % 12 == 0:
-                patrimony.append(
-                    PatrimonyPoint(
-                        year=k // 12,
-                        cdi_path_brl=_q(investment_brl * monthly_growth**k),
-                        solar_path_brl=_q(solar),
-                    )
-                )
+        patrimony = [
+            PatrimonyPoint(
+                year=k // 12,
+                cdi_path_brl=_q(cdi_path(k)),
+                solar_path_brl=_q(solar_series[k]),
+            )
+            for k in range(0, horizon + 1, 12)
+        ]
 
         return Projection(
             baseline_monthly_savings_brl=_q(baseline),

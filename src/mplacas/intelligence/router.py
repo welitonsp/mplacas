@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -26,6 +27,7 @@ from mplacas.intelligence.history_service import (
     compare_latest_confirmed_cycles,
 )
 from mplacas.intelligence.investor_service import (
+    InvestorPanel,
     InvestorPlantNotFoundError,
     get_investor_panel,
 )
@@ -38,7 +40,10 @@ router = APIRouter(
     tags=["energy"],
 )
 
+logger = logging.getLogger(__name__)
+
 _executive_dashboard_read_model = ExecutiveDashboardReadModel()
+_bcb_egress_warning_logged = False
 
 
 def _optional(value: object) -> str | None:
@@ -208,8 +213,7 @@ def _serialize_anomalies(result) -> dict[str, object]:
                 ),
                 "deviation_percent": (
                     str(item.assessment.deviation_percent)
-                    if item.assessment is not None
-                    and item.assessment.deviation_percent is not None
+                    if item.assessment is not None and item.assessment.deviation_percent is not None
                     else None
                 ),
                 "yield_kwh_per_kwh_m2": (
@@ -316,9 +320,7 @@ def _serialize_financial_return(result: FinancialReturnResult) -> dict[str, obje
     return {
         "plant_id": str(result.plant_id),
         "investment_amount_brl": (
-            str(result.investment_amount_brl)
-            if result.investment_amount_brl is not None
-            else None
+            str(result.investment_amount_brl) if result.investment_amount_brl is not None else None
         ),
         "investment_recorded_on": (
             result.investment_recorded_on.isoformat()
@@ -380,7 +382,7 @@ def _dec(value: object) -> str | None:
     return None if value is None else str(value)
 
 
-def _serialize_investor(panel) -> dict[str, object]:
+def _serialize_investor(panel: InvestorPanel) -> dict[str, object]:
     realized = panel.realized
     projection = panel.projection
     premises = panel.premises
@@ -455,14 +457,20 @@ async def latest_investor_panel(scoped: ReadPlant) -> dict[str, object]:
     Leitura; a única escrita é o reabastecimento das taxas públicas de
     CDI/IPCA (``market_index_monthly``), por isso o ``commit`` no fim.
     """
+    global _bcb_egress_warning_logged
     settings = get_settings()
-    client = (
-        BcbSgsClient(base_url=settings.market_indices_base_url)
-        if bcb_host_allowed(
-            settings.market_indices_base_url, settings.external_http_allowed_host_set
-        )
-        else None
+    allowed = bcb_host_allowed(
+        settings.market_indices_base_url, settings.external_http_allowed_host_set
     )
+    client = BcbSgsClient(base_url=settings.market_indices_base_url) if allowed else None
+    if not allowed and not _bcb_egress_warning_logged:
+        # Sem isto, uma allowlist explícita sem api.bcb.gov.br deixaria o
+        # painel "indisponível" para sempre sem rastro no log (ADR-079).
+        _bcb_egress_warning_logged = True
+        logger.warning(
+            "market_indices_egress_blocked",
+            extra={"base_url": settings.market_indices_base_url},
+        )
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
         try:

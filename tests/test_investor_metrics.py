@@ -116,7 +116,11 @@ def test_projection_reproduces_the_documented_example() -> None:
     assert result.payback_discounted_months is not None
     assert result.payback_discounted_months > result.payback_simple_months
     ten_years = next(p for p in result.patrimony if p.year == 10)
-    assert ten_years.cdi_path_brl == Decimal("59947.24")
+    # CDB comprado na ligação e resgatado em 10 anos: IR de 15% só sobre o
+    # ganho, no resgate (não um desconto de 15% na taxa a cada ano).
+    gross = Decimal("20000") * Decimal("1.1365") ** 10
+    expected = gross - (gross - Decimal("20000")) * Decimal("0.15")
+    assert abs(ten_years.cdi_path_brl - expected) < Decimal("0.05")
     assert ten_years.solar_path_brl > ten_years.cdi_path_brl
 
 
@@ -170,3 +174,61 @@ def test_irr_is_none_when_the_plant_never_pays_back() -> None:
     assert result.irr_per_year is None
     assert result.payback_simple_months is None
     assert result.npv_at_cdi_net_brl < 0
+
+
+def test_long_horizon_cdi_benchmark_taxes_the_gain_at_redemption() -> None:
+    # Regressão do achado P1 do reviewer: com CDI de 14% a.a. por 25 anos o CDB
+    # rende 1 + 0,85 × (1,14^25 − 1) ≈ 22,7×, não 1,119^25 ≈ 16,6×.
+    premises = InvestorPremises(
+        cdi_per_year=Decimal("0.14"),
+        ipca_per_year=Decimal("0.045"),
+        tariff_growth_per_year=Decimal("0.045"),
+    )
+    result = project(
+        investment_brl=Decimal("10000"),
+        start_month="2025-09",
+        commissioned_on=date(2025, 9, 1),
+        savings_by_month={"2025-10": Decimal("200")},
+        compensated_kwh_per_month=None,
+        wire_b_tariff_brl_kwh=None,
+        wire_b_reference_year=None,
+        premises=premises,
+    )
+    assert result is not None
+    final = result.patrimony[-1]
+    expected_factor = 1 + Decimal("0.85") * (Decimal("1.14") ** 25 - 1)
+    assert abs(final.cdi_path_brl / Decimal("10000") - expected_factor) < Decimal("0.01")
+    # A taxa líquida efetiva é a que reproduz esse resgate em 25 anos.
+    assert abs((1 + result.cdi_net_per_year) ** 25 - expected_factor) < Decimal("0.05")
+
+
+def test_discounted_payback_is_where_the_patrimony_lines_cross() -> None:
+    result = project(
+        investment_brl=Decimal("11200"),
+        start_month="2025-09",
+        commissioned_on=date(2022, 9, 1),
+        savings_by_month={"2026-09": Decimal("264")},
+        compensated_kwh_per_month=None,
+        wire_b_tariff_brl_kwh=None,
+        wire_b_reference_year=None,
+        premises=PREMISES,
+    )
+    assert result is not None and result.payback_discounted_months is not None
+    year = result.payback_discounted_months / 12
+    before = next(p for p in result.patrimony if p.year == int(year))
+    after = next(p for p in result.patrimony if p.year == int(year) + 1)
+    assert before.solar_path_brl < before.cdi_path_brl
+    assert after.solar_path_brl >= after.cdi_path_brl
+
+
+def test_realized_ignores_the_commissioning_month_bill() -> None:
+    result = realized_comparison(
+        investment_brl=Decimal("10000"),
+        start_month="2025-09",
+        savings_by_month={"2025-09": Decimal("100"), "2025-10": Decimal("300")},
+        cdi_by_month=_flat_cdi("2025-09", 12),
+        as_of_month="2026-09",
+    )
+    assert result is not None
+    assert result.cycles_counted == 1
+    assert result.accumulated_savings_brl == Decimal("300.00")

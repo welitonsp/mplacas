@@ -61,7 +61,7 @@ function UnavailableState({ panel }: { panel: InvestorPanel }) {
       return (
         <EmptyState
           title="Confirme a primeira fatura"
-          description="O retorno é calculado a partir da economia real das faturas confirmadas. Importe a fatura em PDF no topo desta página."
+          description="O retorno usa a economia real das faturas confirmadas a partir do mês seguinte à ligação (a do mês da ligação é de geração parcial). Importe a fatura em PDF no topo desta página."
           tone="brand"
         />
       )
@@ -130,8 +130,36 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
   const coverage = realized ? realized.cyclesCounted / Math.max(1, realized.monthsElapsed) : 0
   const missingCycles = realized ? Math.max(0, realized.monthsElapsed - realized.cyclesCounted) : 0
 
+  // Avisos que mudam a leitura dos números ficam ACIMA deles, visíveis — não
+  // escondidos nas premissas (estimado nunca se apresenta como confirmado).
+  const cautions: string[] = []
+  if (panel.lowConfidenceBaseline) {
+    cautions.push(
+      `A projeção parte de ${panel.cyclesCounted} ${panel.cyclesCounted === 1 ? 'fatura confirmada' : 'faturas confirmadas'}: ainda não cobre as estações do ano e pode mudar bastante. Fica firme com 12 meses de faturas.`,
+    )
+  }
+  if (panel.includesPreCorrectionCycles) {
+    cautions.push(
+      'Parte das faturas foi calculada antes da correção da energia injetada e pode superestimar a economia em cerca de R$ 11 por mês.',
+    )
+  }
+
   return (
     <div className="space-y-4">
+      {cautions.length > 0 && (
+        <div
+          role="note"
+          aria-label="Avisos sobre a projeção"
+          className="rounded-[var(--radius-card)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-light)] px-4 py-3 text-[13px] leading-5 text-[var(--color-warning-text)]"
+        >
+          <p className="font-semibold">Estimativa preliminar</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {cautions.map((text) => (
+              <li key={text}>{text}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <SummaryTile
           label="Rendimento da usina (TIR)"
@@ -142,7 +170,7 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
         <SummaryTile
           label="CDI líquido de IR"
           value={`${percent(projection.cdiNetPerYear)} a.a.`}
-          supportingText={`CDI 12 meses: ${percent(panel.indices.cdi12mPerYear)}`}
+          supportingText={`CDI 12 meses ${percent(panel.indices.cdi12mPerYear)}, IR no resgate`}
           tone="neutral"
         />
         <SummaryTile
@@ -223,7 +251,7 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
                 <li>
                   Economia de partida: {formatCurrency(projection.baselineMonthlySavingsBrl)}/mês, média de{' '}
                   {panel.cyclesCounted} {panel.cyclesCounted === 1 ? 'fatura' : 'faturas'} confirmadas
-                  {panel.lowConfidenceBaseline ? ' (menos de 12: ainda não cobre as estações do ano)' : ''}.
+                  posteriores à ligação.
                 </li>
                 <li>Tarifa reajustada pelo IPCA de 12 meses: {percent(panel.premises.tariffGrowthPerYear)} ao ano.</li>
                 <li>Perda de rendimento das placas: {percent(panel.premises.degradationPerYear)} ao ano.</li>
@@ -235,23 +263,19 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
                 <li>
                   Fio B (Lei 14.300):{' '}
                   {projection.wireBApplied
-                    ? '75% em 2027, 90% em 2028 e integral a partir de 2029 (regra ainda sem regulamentação).'
-                    : 'não aplicado (usina anterior a 2023 ou fatura sem a tarifa do Fio B).'}
+                    ? '75% em 2027, 90% em 2028 e integral a partir de 2029 (regra ainda sem regulamentação). Enquadramento estimado pela data de ligação; a lei usa a data do pedido de conexão.'
+                    : 'não aplicado (ligação antes de 07/01/2023 ou fatura sem a tarifa do Fio B). Enquadramento estimado pela data de ligação; a lei usa a data do pedido de conexão.'}
                 </li>
                 <li>
-                  CDI futuro igual ao dos últimos 12 meses ({percent(panel.premises.cdiPerYear)}), com IR de{' '}
-                  {percent(panel.premises.longTermIncomeTax, 0)}.
+                  CDI futuro igual ao dos últimos 12 meses ({percent(panel.premises.cdiPerYear)}), num CDB mantido até
+                  o resgate, com IR regressivo sobre o ganho ({percent(panel.premises.longTermIncomeTax, 0)} acima de 2
+                  anos). Equivale a {percent(projection.cdiNetPerYear)} ao ano líquidos em{' '}
+                  {panel.premises.horizonYears} anos.
                 </li>
                 <li>
                   Fonte dos índices: {panel.indices.source}
                   {panel.indices.asOfMonth ? `, até ${formatCycleLabel(panel.indices.asOfMonth)}` : ''}.
                 </li>
-                {panel.includesPreCorrectionCycles && (
-                  <li>
-                    Parte das faturas foi calculada antes da correção da energia injetada (versão anterior a 0.3.0) e
-                    pode superestimar a economia em cerca de R$ 11 por mês.
-                  </li>
-                )}
               </ul>
             )}
           </details>

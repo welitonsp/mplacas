@@ -18,10 +18,10 @@ describe('InvestorPanelSection', () => {
   it('mostra TIR contra CDI líquido, VPL, payback e o veredito', () => {
     renderSection(investorAvailablePayload)
     expect(screen.getByRole('heading', { name: /Usina × CDI/ })).toBeInTheDocument()
-    expect(screen.getByText('34,4% a.a.')).toBeInTheDocument()
-    expect(screen.getByText('11,6% a.a.')).toBeInTheDocument()
+    expect(screen.getByText('32,9% a.a.')).toBeInTheDocument()
+    expect(screen.getByText('13,3% a.a.')).toBeInTheDocument()
     expect(screen.getByText('3 anos e 8 meses')).toBeInTheDocument()
-    expect(screen.getByText(/22,8 pontos acima do CDI líquido de IR/)).toBeInTheDocument()
+    expect(screen.getByText(/19,6 pontos acima do CDI líquido de IR/)).toBeInTheDocument()
     expect(screen.getByRole('img', { name: /Patrimônio em 25 anos/ })).toBeInTheDocument()
   })
 
@@ -44,7 +44,28 @@ describe('InvestorPanelSection', () => {
     renderSection(investorAvailablePayload)
     expect(screen.getByText('Premissas da projeção')).toBeInTheDocument()
     expect(screen.getByText(/75% em 2027, 90% em 2028/)).toBeInTheDocument()
-    expect(screen.getByText(/menos de 12: ainda não cobre as estações do ano/)).toBeInTheDocument()
+    expect(screen.getByText(/a lei usa a data do pedido de conexão/)).toBeInTheDocument()
+    expect(screen.getByText(/IR regressivo sobre o ganho/)).toBeInTheDocument()
+  })
+
+  it('com poucas faturas, avisa ACIMA dos números que a projeção é preliminar', () => {
+    renderSection(investorAvailablePayload)
+    const note = screen.getByRole('note', { name: 'Avisos sobre a projeção' })
+    expect(note).toHaveTextContent('Estimativa preliminar')
+    expect(note).toHaveTextContent(/1 fatura confirmada: ainda não cobre as estações do ano/)
+    // O aviso vem antes dos indicadores na ordem de leitura.
+    const tir = screen.getByText('Rendimento da usina (TIR)')
+    expect(note.compareDocumentPosition(tir) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('sinaliza faturas calculadas antes da correção 0.3.0', () => {
+    renderSection({ ...investorAvailablePayload, includes_pre_correction_cycles: true })
+    expect(screen.getByRole('note', { name: 'Avisos sobre a projeção' })).toHaveTextContent(/antes da correção/)
+  })
+
+  it('com 12 faturas e versão corrigida, não mostra aviso', () => {
+    renderSection({ ...investorAvailablePayload, low_confidence_baseline: false, includes_pre_correction_cycles: false })
+    expect(screen.queryByRole('note', { name: 'Avisos sobre a projeção' })).toBeNull()
   })
 
   it('sem investimento cadastrado, leva para Minha usina', () => {

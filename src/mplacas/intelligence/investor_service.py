@@ -11,7 +11,7 @@ import enum
 import uuid
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +24,7 @@ from mplacas.intelligence.investor_metrics import (
     RealizedComparison,
     add_months,
     annualize,
+    months_between,
     project,
     realized_comparison,
 )
@@ -73,7 +74,15 @@ def _version_tuple(version: str) -> tuple[int, ...]:
     for part in version.split("."):
         digits = "".join(ch for ch in part if ch.isdigit())
         parts.append(int(digits) if digits else 0)
+    # "0.3" é a mesma versão que "0.3.0": completa com zeros para comparar.
+    while len(parts) < len(CORRECTED_CALCULATION_VERSION):
+        parts.append(0)
     return tuple(parts)
+
+
+def _last_twelve_contiguous(months: list[str]) -> bool:
+    """Os 12 últimos meses formam uma janela de calendário sem buracos."""
+    return len(months) >= 12 and months_between(months[-12], months[-1]) == 11
 
 
 async def get_investor_panel(
@@ -100,7 +109,13 @@ async def get_investor_panel(
         metric = next((m for m in report.metrics if m.key == _SAVINGS_METRIC_KEY), None)
         if metric is None or metric.value == "":
             continue
-        savings[report.reference_month] = Decimal(metric.value)
+        try:
+            value = Decimal(metric.value)
+        except InvalidOperation:
+            continue  # snapshot com valor ilegível não entra na conta
+        if not value.is_finite():
+            continue
+        savings[report.reference_month] = value
         versions.add(report.calculation_version)
     sorted_versions = tuple(sorted(versions, key=_version_tuple))
     pre_correction = any(_version_tuple(v) < CORRECTED_CALCULATION_VERSION for v in sorted_versions)
@@ -108,6 +123,10 @@ async def get_investor_panel(
     investment = plant.investment_amount_brl
     commissioned_on = plant.commissioned_on
     commissioned_month = commissioned_on.strftime("%Y-%m") if commissioned_on else None
+    # Só ciclos posteriores ao mês da ligação: a fatura do mês da ligação é de
+    # geração parcial e o realizado e a projeção usam a mesma regra (ADR-079).
+    if commissioned_month is not None:
+        savings = {m: v for m, v in savings.items() if m > commissioned_month}
 
     def unavailable(reason: InvestorUnavailableReason, **extra: object) -> InvestorPanel:
         base: dict[str, object] = dict(
@@ -130,7 +149,7 @@ async def get_investor_panel(
         base.update(extra)
         return InvestorPanel(**base)  # type: ignore[arg-type]
 
-    if investment is None:
+    if investment is None or investment <= 0:
         return unavailable(InvestorUnavailableReason.INVESTMENT_NOT_REGISTERED)
     if commissioned_on is None or commissioned_month is None:
         return unavailable(InvestorUnavailableReason.COMMISSIONING_DATE_MISSING)
@@ -153,7 +172,7 @@ async def get_investor_panel(
     )
     cdi_months = sorted(cdi)
     ipca_months = sorted(ipca)
-    if len(cdi_months) < 12 or len(ipca_months) < 12:
+    if not _last_twelve_contiguous(cdi_months) or not _last_twelve_contiguous(ipca_months):
         return unavailable(InvestorUnavailableReason.MARKET_DATA_UNAVAILABLE)
 
     cdi_12m = annualize([cdi[m] for m in cdi_months[-12:]])
@@ -190,6 +209,8 @@ async def get_investor_panel(
         wire_b_reference_year=wire_b_year,
         premises=premises,
     )
+    if projection is None:
+        return unavailable(InvestorUnavailableReason.NO_CONSOLIDATED_SAVINGS)
     year, month = (int(part) for part in commissioned_month.split("-"))
     months_since = (today.year - year) * 12 + (today.month - month)
     return InvestorPanel(

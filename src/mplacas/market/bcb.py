@@ -81,7 +81,14 @@ def parse_monthly_payload(payload: Any) -> tuple[MonthlyRate, ...]:
         if not isinstance(raw_date, str) or not isinstance(raw_value, str):
             raise BcbSgsError("BCB item has unexpected fields")
         parts = raw_date.split("/")
-        if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        if (
+            len(parts) != 3
+            or not all(part.isdigit() for part in parts)
+            or [len(part) for part in parts] != [2, 2, 4]
+            or not 1 <= int(parts[1]) <= 12
+        ):
+            # A tabela é global: um mês "2026-13" gravado aqui valeria para
+            # todos os clientes. Melhor recusar o payload inteiro.
             raise BcbSgsError("BCB date is malformed")
         try:
             value = Decimal(raw_value.replace(",", "."))

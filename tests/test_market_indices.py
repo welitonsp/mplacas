@@ -53,6 +53,8 @@ def test_parse_bcb_payload() -> None:
         [{"data": "2026-09-01", "valor": "1.0"}],
         [{"data": "01/09/2026", "valor": "abc"}],
         [{"data": "01/09/2026", "valor": "48.69"}],  # fora da faixa mensal plausível
+        [{"data": "01/13/2026", "valor": "1.0"}],  # mês 13
+        [{"data": "1/09/26", "valor": "1.0"}],  # ano de 2 dígitos
     ],
 )
 def test_parse_bcb_payload_rejects_malformed(payload) -> None:
@@ -65,6 +67,7 @@ def test_helpers() -> None:
     assert last_closed_month(date(2026, 1, 10)) == "2025-12"
     allowed = frozenset({"api.bcb.gov.br"})
     assert bcb_host_allowed("https://api.bcb.gov.br", allowed)
+    assert not bcb_host_allowed("http://api.bcb.gov.br", allowed)  # só HTTPS
     assert not bcb_host_allowed("https://api.bcb.gov.br", frozenset({"api.nepviewer.net"}))
 
 
@@ -153,3 +156,50 @@ async def test_http_error_status_becomes_domain_error() -> None:
             await BcbSgsClient(client=http).monthly_rates(
                 "CDI", start=date(2026, 1, 1), end=date(2026, 9, 28)
             )
+
+
+async def test_ignores_months_not_requested_and_duplicates_in_the_payload(session) -> None:
+    client = FakeClient(
+        [
+            MonthlyRate("2026-09", Decimal("1.08")),
+            MonthlyRate("2026-09", Decimal("9.99")),  # repetido: vale o primeiro
+            MonthlyRate("2020-01", Decimal("0.50")),  # fora do pedido: não grava
+        ]
+    )
+    rates = await monthly_rates(
+        session,
+        "CDI",
+        start_month="2026-09",
+        end_month="2026-09",
+        client=client,  # type: ignore[arg-type]
+        today=date(2026, 10, 19),
+    )
+    assert rates == {"2026-09": Decimal("1.08")}
+    stored = (await session.scalars(select(MarketIndexMonthlyRecord))).all()
+    assert [(r.reference_month, r.rate_percent) for r in stored] == [("2026-09", Decimal("1.08"))]
+
+
+async def test_concurrent_insert_falls_back_to_what_is_stored(session) -> None:
+    class RacingClient(FakeClient):
+        async def monthly_rates(self, index_code: str, *, start: date, end: date):
+            # Outra requisição grava o mesmo mês enquanto esta buscava no BCB.
+            session.add(
+                MarketIndexMonthlyRecord(
+                    index_code="CDI",
+                    reference_month="2026-09",
+                    rate_percent=Decimal("1.07"),
+                    source="OTHER",
+                )
+            )
+            await session.flush()
+            return (MonthlyRate("2026-09", Decimal("1.08")),)
+
+    rates = await monthly_rates(
+        session,
+        "CDI",
+        start_month="2026-09",
+        end_month="2026-09",
+        client=RacingClient(),  # type: ignore[arg-type]
+        today=date(2026, 10, 19),
+    )
+    assert rates == {"2026-09": Decimal("1.07")}  # sem 500: lê o que ficou no banco

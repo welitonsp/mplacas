@@ -161,6 +161,44 @@ def test_service_explains_what_is_missing(monkeypatch, plant_fields, reason) -> 
     assert panel.projection is None and panel.realized is None
 
 
+def _panel(monkeypatch, snapshots, **plant_fields):
+    factory, engine = asyncio.run(_factory())
+    asyncio.run(_seed(factory, **plant_fields))
+    _FakeSnapshots.items = snapshots
+    monkeypatch.setattr(investor_service, "MonthlyReportSnapshotRepository", _FakeSnapshots)
+
+    async def run():
+        async with factory() as session:
+            return await get_investor_panel(session, plant_id=PLANT, today=TODAY, bcb_client=None)
+
+    panel = asyncio.run(run())
+    asyncio.run(engine.dispose())
+    return panel
+
+
+def test_only_the_commissioning_month_bill_is_not_enough(monkeypatch) -> None:
+    # A fatura do mês da ligação é de geração parcial e não entra na conta; o
+    # motivo é "falta fatura", nunca "Banco Central indisponível".
+    panel = _panel(
+        monkeypatch,
+        (_snapshot("2025-09", "120.00"),),
+        investment_amount_brl=Decimal("11200.00"),
+        commissioned_on=date(2025, 9, 1),
+    )
+    assert panel.unavailable_reason == InvestorUnavailableReason.NO_CONSOLIDATED_SAVINGS
+    assert panel.cycles_counted == 0
+
+
+def test_short_version_string_is_not_flagged_as_pre_correction(monkeypatch) -> None:
+    panel = _panel(
+        monkeypatch,
+        (_snapshot("2026-09", "264.00", "0.3"),),
+        investment_amount_brl=Decimal("11200.00"),
+        commissioned_on=date(2025, 9, 1),
+    )
+    assert panel.includes_pre_correction_cycles is False
+
+
 def test_route_is_tenant_scoped_and_serializes_unavailable_state(monkeypatch) -> None:
     monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
     # Host do BCB fora da lista: a rota nunca sai para a rede, só usa o banco.
