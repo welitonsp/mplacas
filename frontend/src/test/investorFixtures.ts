@@ -30,7 +30,7 @@ export const investorAvailablePayload = {
     irr_per_year: '0.3290',
     irr_real_per_year: '0.2711',
     cdi_net_per_year: '0.1332',
-    npv_at_cdi_net_brl: '16204.01',
+    npv_at_cdi_net_brl: '15356.89',
     payback_simple_months: 44,
     payback_discounted_months: 57,
     lifetime_savings_brl: '140925.60',

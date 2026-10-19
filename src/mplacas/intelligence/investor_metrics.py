@@ -204,6 +204,7 @@ def _monthly_rate(per_year: Decimal) -> Decimal:
 
 
 def _npv(flows: list[Decimal], monthly_rate: Decimal) -> Decimal:
+    """VPL a taxa constante — usado só na bisseção da TIR."""
     total = Decimal("0")
     discount = _ONE
     step = _ONE / (_ONE + monthly_rate)
@@ -330,11 +331,14 @@ def project(
             solar_series.append(solar_path(k))
 
         # Taxa líquida efetiva de quem fica no CDB até o fim do horizonte:
-        # (líquido no resgate ÷ aplicado)^(1/anos) − 1. É a taxa de desconto do
-        # VPL e a régua contra a TIR.
+        # (líquido no resgate ÷ aplicado)^(1/anos) − 1. É a régua contra a TIR
+        # ("equivalente a X% ao ano").
         cdi_net_year = net_factor[horizon] ** (_ONE / Decimal(premises.horizon_years)) - _ONE
-        discount_monthly = _monthly_rate(cdi_net_year)
-        npv = _npv(flows, discount_monthly)
+        # VPL na MESMA régua do gráfico: a diferença de patrimônio no fim do
+        # horizonte trazida a hoje pelo próprio CDB. Descontar o fluxo por uma
+        # taxa constante (a efetiva) dava sinal oposto ao do gráfico perto do
+        # ponto de equilíbrio, porque o IR no resgate não é uma taxa constante.
+        npv = (solar_series[horizon] - cdi_path(horizon)) / net_factor[horizon]
 
         irr_m = _irr_monthly(flows)
         irr_year = (_ONE + irr_m) ** 12 - _ONE if irr_m is not None else None
@@ -347,12 +351,18 @@ def project(
             if payback_simple is None and k > 0 and cumulative >= 0:
                 payback_simple = k
                 break
-        # "Contando o CDI": primeiro mês em que as economias aplicadas no CDB
-        # valem, líquidas, tanto quanto o investimento teria rendido no CDB.
-        # É exatamente o cruzamento das linhas do gráfico de patrimônio.
-        payback_disc = next(
-            (k for k in range(1, horizon + 1) if solar_series[k] >= cdi_path(k)), None
-        )
+        # "Contando o CDI": a partir de que mês as economias aplicadas no CDB
+        # valem, líquidas, pelo menos o que o investimento teria rendido no CDB
+        # — e continuam valendo até o fim. Usa o cruzamento DEFINITIVO: a troca
+        # do inversor pode jogar a usina de volta para baixo, e um primeiro
+        # cruzamento revertido seria uma promessa falsa. Se a usina termina
+        # abaixo do CDI, não há payback, coerente com o sinal do VPL.
+        payback_disc: int | None = None
+        for k in range(horizon, 0, -1):
+            if solar_series[k] >= cdi_path(k):
+                payback_disc = k
+            else:
+                break
 
         patrimony = [
             PatrimonyPoint(

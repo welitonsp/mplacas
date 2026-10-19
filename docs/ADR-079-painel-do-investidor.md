@@ -82,10 +82,16 @@ explicitamente no Render, é preciso acrescentar `api.bcb.gov.br`.
     cada fluxo mensal é aplicado e tem IR pelo seu próprio prazo, e custo é retirada;
   - **"CDI líquido"** = taxa efetiva de quem fica no CDB até o horizonte:
     (líquido no resgate ÷ aplicado)^(1/25) − 1. Com CDI de 14,03%, dá cerca de 13,3% ao ano.
-    É a taxa de desconto do VPL e a régua contra a TIR;
+    É a régua contra a TIR ("equivalente a");
+  - **VPL** = (patrimônio da usina − patrimônio do CDI no ano 25) ÷ fator líquido do CDB em
+    25 anos. É a diferença do gráfico trazida a hoje pelo próprio CDB. Descontar o fluxo a uma
+    taxa constante dava sinal oposto ao do gráfico perto do ponto de equilíbrio (achado P2-A da
+    re-revisão);
   - payback simples;
-  - **payback "contando o CDI"**: o primeiro mês em que o patrimônio da usina alcança o do
-    CDI. É exatamente o cruzamento das linhas do gráfico;
+  - **payback "contando o CDI"**: o mês a partir do qual o patrimônio da usina fica, até o
+    fim, pelo menos igual ao do CDI. É o cruzamento **definitivo**: se a troca do inversor
+    derrubar a usina de volta para baixo, vale o cruzamento seguinte. Não existe quando o VPL
+    é negativo;
   - economia total na vida útil.
 - O CDI futuro é igual ao dos últimos 12 meses. Com menos de 12 faturas, a projeção é
   marcada como de baixa confiança, porque ainda não cobre as estações do ano.
@@ -137,6 +143,11 @@ Corrigido:
 - **P3.** "0.3" equivale a "0.3.0". As janelas de 12 meses de CDI e IPCA precisam ser
   contíguas no calendário. `_serialize_investor` agora é tipada.
 
+Re-revisão (aprovada com ressalva P2-A, já corrigida): o VPL passou para a régua do
+gráfico, e o payback descontado passou a usar o cruzamento definitivo. Um teste de
+propriedade garante que o sinal do VPL é o mesmo da diferença final de patrimônio e que só há
+payback quando essa diferença é ≥ 0.
+
 Aceito, e declarado na UI ou aqui:
 
 - **P2-1.** O enquadramento GD I/GD II é estimado pela **data de ligação**, porque o modelo
@@ -154,7 +165,14 @@ Aceito, e declarado na UI ou aqui:
   - `date.today()` usa o fuso UTC do servidor (no pior caso, gasta uma tentativa de busca);
   - não há limite de tamanho na resposta do BCB (host confiável);
   - a degradação conta desde o mês 0, enquanto o reajuste conta desde a âncora (pequeno
-    viés para menos).
+    viés para menos);
+  - custo (O&M, inversor) entra como retirada pelo rendimento bruto, sem o IR que deixaria
+    de ser pago (viés conservador, contra a usina);
+  - o savepoint é tudo ou nada: se um mês colidir, os demais são buscados só na próxima
+    janela de 6 h;
+  - não há caminho administrativo para corrigir uma taxa errada já gravada, porque mês
+    fechado não é sobrescrito. Se o BCB publicar uma correção, ela tem de ser feita por
+    migration ou manualmente.
 
 ## Consequências
 

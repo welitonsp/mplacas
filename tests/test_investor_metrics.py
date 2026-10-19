@@ -232,3 +232,31 @@ def test_realized_ignores_the_commissioning_month_bill() -> None:
     assert result is not None
     assert result.cycles_counted == 1
     assert result.accumulated_savings_brl == Decimal("300.00")
+
+
+def test_npv_sign_matches_the_patrimony_lines_near_break_even() -> None:
+    # Achado P2-A da re-revisão: com R$ 30 mil e economia de R$ 290/mês, o VPL a
+    # taxa constante dava +R$ 912 enquanto o gráfico terminava com a usina
+    # abaixo do CDI. Agora VPL, gráfico e payback contam a mesma história.
+    premises = InvestorPremises(
+        cdi_per_year=Decimal("0.14"),
+        ipca_per_year=Decimal("0.045"),
+        tariff_growth_per_year=Decimal("0.045"),
+    )
+    for monthly in ("250", "280", "290", "295", "320", "400"):
+        savings = {add_months("2025-09", k): Decimal(monthly) for k in range(1, 13)}
+        result = project(
+            investment_brl=Decimal("30000"),
+            start_month="2025-09",
+            commissioned_on=date(2022, 9, 1),
+            savings_by_month=savings,
+            compensated_kwh_per_month=None,
+            wire_b_tariff_brl_kwh=None,
+            wire_b_reference_year=None,
+            premises=premises,
+        )
+        assert result is not None
+        final = result.patrimony[-1]
+        gap = final.solar_path_brl - final.cdi_path_brl
+        assert (result.npv_at_cdi_net_brl > 0) == (gap > 0), monthly
+        assert (result.payback_discounted_months is not None) == (gap >= 0), monthly
