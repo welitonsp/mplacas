@@ -155,11 +155,28 @@ Aceito, e declarado na UI ou aqui:
   isso nas premissas. O erro é conservador: pode aplicar o Fio B a uma usina GD I com
   ligação tardia. Fica como dívida acrescentar a "data do pedido de conexão" em "Minha
   usina".
-- **P2-2.** Assume-se que a tarifa do Fio B impressa na fatura já reflete o percentual do
-  ano (60% em 2026). A fatura real de set/2026 traz R$ 0,175126/kWh, o que implica uma tarifa
-  cheia de cerca de R$ 0,29, coerente com a TUSD Fio B da distribuidora. Isso ainda deve ser
-  validado com a REN da Equatorial GO. Os kWh compensados da última fatura são tratados como
-  constantes, sem sazonalidade.
+- **P2-2 — validado em 2026-10-20 para a Equatorial GO.** A premissa é que a tarifa do Fio B
+  impressa na fatura já vem multiplicada pelo percentual do ano (60% em 2026). A conferência
+  usou a REH nº 3.544/2025, vigente de 22/10/2025 a 21/10/2026:
+  - Tabela 2, B1 residencial convencional: TUSD R$ 567,67/MWh. TE no SCEE R$ 45,36/MWh. Isso
+    dá R$ 0,61303/kWh, igual à "tarifa sem impostos" da fatura de set/2026.
+  - Tabela 4, B1 residencial: percentuais da TUSD compensada de 76,86% e 69,15%. Lidos como
+    1 − 45% × f (2025) e 1 − 60% × f (2026), os dois dão a mesma fração do Fio B na TUSD,
+    f = 51,42%. Fio B cheio = 0,5142 × 567,67 = R$ 291,9/MWh. 60% disso = R$ 0,17514/kWh, e
+    a fatura traz R$ 0,175126/kWh.
+  - **Conclusão:** a fatura traz o Fio B já na parcela do ano, e `wire_b_full = tarifa ÷
+    percentual do ano` está correto. Os rótulos das colunas da Tabela 4 estavam ilegíveis na
+    cópia consultada. A leitura acima é inferida, mas dois percentuais independentes batem com
+    a fatura até a 4ª casa.
+  - **Para outras distribuidoras:** repetir a conferência com a REH de cada uma antes de
+    vender.
+  - **Ponto aceito que continua:** os kWh compensados da última fatura são tratados como
+    constantes, sem sazonalidade.
+  - **Restrição de infraestrutura:** o portal de dados abertos da ANEEL recusa conexões de
+    servidores em nuvem. Isso foi confirmado neste ambiente e é relatado também pelo
+    mantenedor do espelho `diogoobs/tarifas-aneel`. Dados da ANEEL não podem ser buscados
+    automaticamente pelo Render, como se faz com o BCB. Se o sistema passar a usar tarifas da
+    ANEEL, a entrada será por importação de arquivo.
 - **P3** restantes:
   - o throttle é por processo e por índice;
   - `date.today()` usa o fuso UTC do servidor (no pior caso, gasta uma tentativa de busca);
