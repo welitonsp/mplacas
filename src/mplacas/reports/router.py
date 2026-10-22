@@ -4,10 +4,11 @@ import uuid
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from mplacas.core.security import OperationsPrincipal, require_operations_read
-from mplacas.core.tenancy import ReadPlant
+from mplacas.audit.repository import AuditEventRepository
+from mplacas.core.tenancy import AdminPlant, ReadPlant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_principal_context
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError
@@ -28,6 +29,12 @@ from mplacas.reports.history_service import (
 from mplacas.reports.serialization import (
     monthly_report_to_csv,
     serialize_monthly_report,
+)
+from mplacas.reports.savings_gaps import (
+    ReprocessResult,
+    SavingsGap,
+    list_savings_gaps,
+    reprocess_savings_gaps,
 )
 from mplacas.reports.snapshot import (
     MonthlyReportSnapshot,
@@ -218,6 +225,91 @@ async def monthly_report_history(
         )
     response.headers["Cache-Control"] = "no-store"
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Meses sem economia calculada (ADR-081)
+# ---------------------------------------------------------------------------
+
+
+def _serialize_gap(gap: SavingsGap) -> dict[str, object]:
+    return {
+        "bill_id": str(gap.bill_id),
+        "reference_month": gap.reference_month,
+        "cause": gap.cause.value,
+        "savings_unavailable_reason": gap.savings_unavailable_reason,
+    }
+
+
+def _serialize_reprocess(result: ReprocessResult) -> dict[str, object]:
+    return {
+        "bill_id": str(result.bill_id),
+        "reference_month": result.reference_month,
+        "previous_cause": result.previous_cause.value,
+        "outcome": result.outcome.value,
+        "estimated_savings_brl": result.estimated_savings_brl,
+        "savings_unavailable_reason": result.savings_unavailable_reason,
+        "stored_revision": result.stored_revision,
+    }
+
+
+@router.get("/monthly/savings-gaps")
+async def monthly_savings_gaps(response: Response, scoped: ReadPlant) -> dict[str, object]:
+    """Faturas confirmadas cujo relatório não entrega economia. Leitura pura."""
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        gaps = await list_savings_gaps(
+            session,
+            plant_id=scoped.plant_id,
+            plant_scope=scoped.principal.plant_scope,
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return {"count": len(gaps), "items": [_serialize_gap(gap) for gap in gaps]}
+
+
+@router.post("/monthly/savings-gaps/reprocess")
+async def reprocess_monthly_savings_gaps(
+    request: Request,
+    response: Response,
+    scoped: AdminPlant,
+) -> dict[str, object]:
+    """Refaz o relatório dos meses sem economia, como nova revisão (ADMIN)."""
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        results = await reprocess_savings_gaps(
+            session,
+            plant_id=scoped.plant_id,
+            plant_scope=scoped.principal.plant_scope,
+        )
+        stored = [result for result in results if result.stored_revision is not None]
+        await AuditEventRepository(session).record(
+            request,
+            action="reports.reprocess_savings",
+            resource_type="plant",
+            resource_id=str(scoped.plant_id),
+            outcome="SUCCEEDED",
+            details={
+                "plant_id": str(scoped.plant_id),
+                "gaps": len(results),
+                "revisions": [
+                    {
+                        "reference_month": result.reference_month,
+                        "bill_id": str(result.bill_id),
+                        "revision": result.stored_revision,
+                        "snapshot_id": str(result.snapshot_id),
+                        "outcome": result.outcome.value,
+                    }
+                    for result in stored
+                ],
+            },
+        )
+        await session.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "count": len(results),
+        "recalculated": sum(1 for r in results if r.outcome.value == "RECALCULATED"),
+        "items": [_serialize_reprocess(result) for result in results],
+    }
 
 
 # ---------------------------------------------------------------------------

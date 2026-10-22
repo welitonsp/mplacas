@@ -573,3 +573,29 @@ def test_distributor_tariffs_migration_matches_orm() -> None:
     assert columns.full_brl_kwh.type.precision == 10
     assert columns.full_brl_kwh.type.scale == 6
     assert columns.scee_brl_kwh.nullable is True
+
+
+def test_report_snapshot_revision_migration_matches_orm() -> None:
+    from mplacas.reports.db_models import MonthlyReportSnapshotRecord
+
+    source = (
+        ROOT / "migrations" / "versions" / "20261023_0046_add_report_snapshot_revision.py"
+    ).read_text(encoding="utf-8")
+    table = MonthlyReportSnapshotRecord.__table__
+    unique_sets = {
+        tuple(column.name for column in constraint.columns)
+        for constraint in table.constraints
+        if constraint.__class__.__name__ == "UniqueConstraint"
+    }
+
+    assert 'revision = "20261023_0046"' in source
+    assert 'down_revision = "20261022_0045"' in source
+    # Linhas existentes viram revisão 1 sem backfill ambíguo (ADR-081).
+    assert 'server_default="1"' in source
+    assert 'drop_constraint("uq_monthly_report_snapshots_bill"' in source
+    assert "uq_monthly_report_snapshots_bill_revision" in source
+    # O downgrade só volta ao esquema antigo depois de descartar revisões > 1.
+    assert "DELETE FROM monthly_report_snapshots WHERE revision > 1" in source
+    assert table.c.revision.nullable is False
+    assert ("bill_id", "revision") in unique_sets
+    assert ("bill_id",) not in unique_sets

@@ -78,6 +78,22 @@ class ConfirmedBillReadRepository:
         records = await self._latest(plant_id=plant_id, limit=1)
         return records[0] if records else None
 
+    async def list_for_plant(self, *, plant_id: uuid.UUID) -> tuple[ConfirmedBill, ...]:
+        """Todas as faturas confirmadas da usina, do ciclo mais antigo ao mais recente."""
+        if not self._plant_scope.allows(plant_id):
+            return ()
+        records = (
+            await self._session.execute(
+                select(UtilityBillRecord)
+                .where(
+                    UtilityBillRecord.plant_id == plant_id,
+                    UtilityBillRecord.status == BillStatus.CONFIRMED,
+                )
+                .order_by(UtilityBillRecord.cycle_end, UtilityBillRecord.created_at)
+            )
+        ).scalars()
+        return tuple(_to_confirmed_bill(record) for record in records)
+
     async def two_latest(self, *, plant_id: uuid.UUID) -> tuple[ConfirmedBill, ...]:
         return await self._latest(plant_id=plant_id, limit=2)
 
