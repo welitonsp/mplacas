@@ -136,7 +136,11 @@ _GLUED_INJECTION_LINE_RE = re.compile(_GLUED_INJECTION_LABEL)
 _GLUED_CONSUMPTION_LINE_RE = re.compile(_GLUED_CONSUMPTION_LABEL)
 # Medidor de consumo: leitura atual, consumo do ciclo colado ao nº do medidor,
 # leitura anterior. Confere o consumo lido nas linhas de energia.
-_METER_READING_RE = re.compile(r"energia ativa - kwh (\d{4,6}) (\d+)\S* (\d{4,6})")
+# Sem sobreposição entre `\d+` e o resto do token (só pode seguir um caractere
+# não numérico), para não haver backtracking polinomial em texto hostil.
+_METER_READING_RE = re.compile(
+    r"energia ativa - kwh (\d{4,6}) (\d+)(?:[^\s\d]\S*)? (\d{4,6})"
+)
 # Fio B: tarifa, quantidade, tarifa repetida e valor da linha (= tarifa × qtd).
 _GLUED_WIRE_B_RE = re.compile(
     r"parc injet s/ ?desc[^k]{0,40}kwh (\d+,\d{6})([\d\.]+,\d{2}) "
