@@ -36,6 +36,10 @@ class EnergyDiagnostic:
 # nunca mostrar R$ 0,00 nesses casos, ver EnergyCycleIntelligence.estimated_savings_brl.
 SAVINGS_UNAVAILABLE_TARIFF_NOT_REGISTERED = "TARIFF_NOT_AVAILABLE"
 SAVINGS_UNAVAILABLE_NO_CONSUMPTION_DATA = "NO_CONSUMPTION_DATA"
+# Ciclo sem nenhum dia de produção do inversor: sem produção não há como
+# saber quanto foi consumido direto do telhado, e a conta daria só a parte
+# compensada pela rede — um valor menor que o real, com cara de medido.
+SAVINGS_UNAVAILABLE_NO_PRODUCTION_DATA = "NO_PRODUCTION_DATA"
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +129,12 @@ def analyze_energy_cycle(
     if bill.tariff_with_taxes_brl_kwh is None:
         estimated_savings_brl = None
         savings_unavailable_reason = SAVINGS_UNAVAILABLE_TARIFF_NOT_REGISTERED
+    elif missing_days >= bill.billed_days:
+        # Fatura antiga importada antes de haver telemetria daquele período.
+        # Fica indisponível (e reprocessável quando a produção chegar, ADR-080)
+        # em vez de gravar para sempre uma economia subestimada.
+        estimated_savings_brl = None
+        savings_unavailable_reason = SAVINGS_UNAVAILABLE_NO_PRODUCTION_DATA
     elif reconciliation.estimated_total_consumption_kwh <= 0:
         # Consumo total zero normalmente significa "ainda sem dado do ciclo",
         # não "usina não consumiu nada". Sem isso, a fórmula abaixo devolveria

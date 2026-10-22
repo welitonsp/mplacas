@@ -90,22 +90,53 @@ _SCEE_READING_DATES_RE = re.compile(
 # Por isso o resultado é conferido (preço × quantidade = base do ICMS; datas ×
 # dias) e, se não fechar, a fatura é RECUSADA — nunca cai nos padrões
 # genéricos, que leriam "0,787589221" como consumo.
-_GLUED_LAYOUT_MARKER_RE = re.compile(r"consumo scee kwh -?\d+,\d{6}\d")
+# Rótulos das linhas de energia. Além do SCEE atual, a Equatorial já usou:
+#   - até nov/2024 (antes da transição da Lei 14.300): "ENERGIA ATIVA
+#     FORNECIDA" e "ENERGIA INJETADA", com as mesmas colunas coladas;
+#   - dez/2024 a fev/2025: "INJEÇÃO SCEE" sem as colunas de imposto
+#     (preço, quantidade, PIS/COFINS, tarifa s/ tributos colada no valor).
+# Colunas de imposto podem vir com uma casa só ("8,8", "13,6"): a fatura corta
+# o zero final, ou vir sem decimais ("2" para R$ 2,00). Preços e tarifas
+# sempre têm 6 casas; quantidades sempre 2.
+_GLUED_CONSUMPTION_LABEL = r"(?:consumo scee|energia ativa fornecida) kwh"
+_GLUED_INJECTION_LABEL = r"(?:inje[cç][aã]o scee[^k]{0,40}|energia injetada) kwh"
+_TAX = r"-?[\d\.]+(?:,\d{1,2})?"
+_GLUED_LAYOUT_MARKER_RE = re.compile(_GLUED_CONSUMPTION_LABEL + r" -?\d+,\d{6}\d")
 _GLUED_DATES_RE = re.compile(
     r"(\d{2}/\d{2}/\d{4}) (\d{2}/\d{2}/\d{4}) ([a-z]{3}/\d{4})"
 )
 _GLUED_DAYS_RE = re.compile(r"\d{2}/\d{2}/\d{4}(\d{1,3}) fornecimento")
-_GLUED_CONSUMPTION_RE = re.compile(
-    r"consumo scee kwh (\d+,\d{6})([\d\.]+,\d{2}) -?[\d\.]+,\d{2} ([\d\.]+,\d{2}) "
-    r"\d+% -?[\d\.]+,\d{2} (\d+,\d{6})([\d\.]+,\d{2})(?![\d,])"
-)
-# Injeção: preço, quantidade e base (negativa) — a base é conferida como no consumo.
+
+
+def _glued_energy_line(label: str) -> re.Pattern[str]:
+    # <preço c/ tributos><qtd> <PIS/COFINS> <base ICMS> <alíq>% <ICMS> <tarifa s/ tributos><valor>
+    return re.compile(
+        label + r" (\d+,\d{6})([\d\.]+,\d{2}) " + _TAX + r" ([\d\.]+(?:,\d{1,2})?) "
+        r"\d+% " + _TAX + r" (\d+,\d{6})([\d\.]+,\d{1,2})(?![\d,])"
+    )
+
+
+_GLUED_CONSUMPTION_RE = _glued_energy_line(_GLUED_CONSUMPTION_LABEL)
+# Energia que não foi coberta por crédito, cobrada à tarifa cheia. Soma no
+# consumo da rede: sem ela, o consumo ficaria subestimado.
+_GLUED_UNCOMPENSATED_RE = _glued_energy_line(r"consumo n[aã]o compensado kwh")
+_GLUED_UNCOMPENSATED_LINE_RE = re.compile(r"consumo n[aã]o compensado kwh")
+# Injeção completa: preço, quantidade, PIS/COFINS e base (negativa).
 _GLUED_INJECTION_RE = re.compile(
-    r"inje[cç][aã]o scee[^k]*kwh (\d+,\d{6})([\d\.]+,\d{2}) -?[\d\.]+,\d{2} "
-    r"-([\d\.]+,\d{2}) "
+    _GLUED_INJECTION_LABEL + r" (\d+,\d{6})([\d\.]+,\d{2}) " + _TAX + r" "
+    r"-([\d\.]+,\d{1,2}) "
 )
-_GLUED_INJECTION_LINE_RE = re.compile(r"inje[cç][aã]o scee[^k]{0,40}kwh")
-_GLUED_CONSUMPTION_LINE_RE = re.compile(r"consumo scee kwh")
+# Injeção curta (dez/2024 a fev/2025): preço, quantidade, PIS/COFINS e a
+# tarifa s/ tributos colada no valor negativo da linha.
+_GLUED_INJECTION_SHORT_RE = re.compile(
+    _GLUED_INJECTION_LABEL + r" (\d+,\d{6})([\d\.]+,\d{2}) " + _TAX + r" "
+    r"\d+,\d{6}-([\d\.]+,\d{2})(?![\d,])"
+)
+_GLUED_INJECTION_LINE_RE = re.compile(_GLUED_INJECTION_LABEL)
+_GLUED_CONSUMPTION_LINE_RE = re.compile(_GLUED_CONSUMPTION_LABEL)
+# Medidor de consumo: leitura atual, consumo do ciclo colado ao nº do medidor,
+# leitura anterior. Confere o consumo lido nas linhas de energia.
+_METER_READING_RE = re.compile(r"energia ativa - kwh (\d{4,6}) (\d+)\S* (\d{4,6})")
 # Fio B: tarifa, quantidade, tarifa repetida e valor da linha (= tarifa × qtd).
 _GLUED_WIRE_B_RE = re.compile(
     r"parc injet s/ ?desc[^k]{0,40}kwh (\d+,\d{6})([\d\.]+,\d{2}) "
@@ -115,6 +146,9 @@ _GLUED_WIRE_B_LINE_RE = re.compile(r"parc injet s/ ?desc[^k]{0,40}kwh")
 # Tolerância do produto preço × quantidade contra a base impressa: arredondamento
 # de centavos da própria fatura.
 _GLUED_PRODUCT_TOLERANCE_BRL = Decimal("0.02")
+# Diferença máxima entre o consumo das linhas de energia e o do medidor: o
+# medidor imprime kWh inteiros; as linhas, com centavos de kWh.
+_METER_TOLERANCE_KWH = Decimal("1")
 _GLUED_LAYOUT_FIELDS = frozenset(
     {
         "reference_month",
@@ -123,6 +157,7 @@ _GLUED_LAYOUT_FIELDS = frozenset(
         "billed_days",
         "imported_kwh",
         "injected_kwh",
+        "compensated_kwh",
         "tariff_with_taxes_brl_kwh",
         "tariff_without_taxes_brl_kwh",
         "wire_b_tariff_brl_kwh",
@@ -240,13 +275,19 @@ def _extract_glued_layout(normalized: str) -> dict[str, str]:
         raise BillParseError("second-copy layout must have exactly one consumption line")
     if len(_GLUED_INJECTION_LINE_RE.findall(normalized)) != 1:
         raise BillParseError("second-copy layout must have exactly one injection line")
+    if len(_GLUED_UNCOMPENSATED_LINE_RE.findall(normalized)) > 1:
+        raise BillParseError("second-copy layout has more than one uncompensated line")
 
     dates = _GLUED_DATES_RE.search(normalized)
     days = _GLUED_DAYS_RE.search(normalized)
     consumption = _GLUED_CONSUMPTION_RE.search(normalized)
-    injection = _GLUED_INJECTION_RE.search(normalized)
+    injection = _GLUED_INJECTION_RE.search(normalized) or _GLUED_INJECTION_SHORT_RE.search(
+        normalized
+    )
     if not (dates and days and consumption and injection):
         raise BillParseError("second-copy layout detected but mandatory columns not found")
+
+    meter = _read_meter(normalized)
 
     try:
         start = datetime.strptime(dates.group(1), "%d/%m/%Y").date()
@@ -255,7 +296,12 @@ def _extract_glued_layout(normalized: str) -> dict[str, str]:
         raise BillParseError("second-copy layout has invalid reading dates") from exc
     billed_days = int(days.group(1))
     if (reading_date - start).days != billed_days:
-        raise BillParseError("second-copy layout reading dates do not match billed days")
+        # Única exceção: primeiro ciclo de um medidor novo (leitura anterior
+        # zerada). A distribuidora conta os dias desde a instalação, que pode
+        # cair fora do período impresso; as datas impressas continuam valendo.
+        if meter is None or meter[1] != 0:
+            raise BillParseError("second-copy layout reading dates do not match billed days")
+        billed_days = (reading_date - start).days
     cycle_end = reading_date - timedelta(days=1)
 
     # O mês de referência impresso precisa ser o do fim do ciclo ou o da
@@ -265,12 +311,7 @@ def _extract_glued_layout(normalized: str) -> dict[str, str]:
     if reference_month not in allowed_months:
         raise BillParseError("second-copy layout reference month does not match reading dates")
 
-    price = _parse_decimal(consumption.group(1))
-    quantity = _parse_decimal(consumption.group(2))
-    icms_base = _parse_decimal(consumption.group(3))
-    line_value = _parse_decimal(consumption.group(5))
-    if abs(price * quantity - icms_base) > _GLUED_PRODUCT_TOLERANCE_BRL or line_value != icms_base:
-        raise BillParseError("second-copy layout consumption columns are inconsistent")
+    compensated_quantity = _checked_energy_line(consumption, "consumption")
 
     injection_price = _parse_decimal(injection.group(1))
     injection_quantity = _parse_decimal(injection.group(2))
@@ -278,13 +319,29 @@ def _extract_glued_layout(normalized: str) -> dict[str, str]:
     if abs(injection_price * injection_quantity - injection_base) > _GLUED_PRODUCT_TOLERANCE_BRL:
         raise BillParseError("second-copy layout injection columns are inconsistent")
 
+    imported = compensated_quantity
+    if _GLUED_UNCOMPENSATED_LINE_RE.search(normalized):
+        uncompensated = _GLUED_UNCOMPENSATED_RE.search(normalized)
+        if not uncompensated:
+            raise BillParseError("second-copy layout uncompensated line could not be read safely")
+        imported += _checked_energy_line(uncompensated, "uncompensated")
+
+    # O medidor imprime o consumo do ciclo: as linhas de energia têm de somar
+    # o mesmo. Se não somarem, falta (ou sobra) alguma linha de consumo.
+    if meter is not None and abs(imported - meter[0]) > _METER_TOLERANCE_KWH:
+        raise BillParseError("second-copy layout energy lines do not match the meter reading")
+
     values = {
         "reference_month": dates.group(3),
         "cycle_start": start.isoformat(),
         "cycle_end": cycle_end.isoformat(),
         "billed_days": str(billed_days),
-        "imported_kwh": consumption.group(2),
+        "imported_kwh": f"{imported:.2f}".replace(".", ","),
         "injected_kwh": injection.group(2),
+        # Crédito efetivamente usado no ciclo = quantidade da linha de injeção
+        # (no SCEE, igual à do consumo compensado; até nov/2024, menor que o
+        # consumo fornecido, que inclui o custo de disponibilidade).
+        "compensated_kwh": injection.group(2),
         "tariff_with_taxes_brl_kwh": consumption.group(1),
         "tariff_without_taxes_brl_kwh": consumption.group(4),
     }
@@ -302,6 +359,33 @@ def _extract_glued_layout(normalized: str) -> dict[str, str]:
             raise BillParseError("second-copy layout wire B columns are inconsistent")
         values["wire_b_tariff_brl_kwh"] = wire_b.group(1)
     return values
+
+
+def _checked_energy_line(match: re.Match[str], name: str) -> Decimal:
+    """Quantidade da linha, conferida: preço × quantidade = base = valor."""
+    price = _parse_decimal(match.group(1))
+    quantity = _parse_decimal(match.group(2))
+    icms_base = _parse_decimal(match.group(3))
+    line_value = _parse_decimal(match.group(5))
+    if abs(price * quantity - icms_base) > _GLUED_PRODUCT_TOLERANCE_BRL or line_value != icms_base:
+        raise BillParseError(f"second-copy layout {name} columns are inconsistent")
+    return quantity
+
+
+def _read_meter(normalized: str) -> tuple[Decimal, int] | None:
+    """(consumo do ciclo, leitura anterior) do medidor de consumo, se impresso.
+
+    O consumo vem colado ao número do medidor ("14913580245-8"), então ele é
+    calculado pelas leituras e só aceito se o texto colado começar por ele.
+    """
+    found = _METER_READING_RE.search(normalized)
+    if not found:
+        return None
+    current, previous = int(found.group(1)), int(found.group(3))
+    consumed = current - previous
+    if consumed < 0 or not found.group(2).startswith(str(consumed)):
+        raise BillParseError("second-copy layout meter reading could not be read safely")
+    return Decimal(consumed), previous
 
 
 def _extract_scee_reading_dates(normalized: str) -> tuple[date, date, int] | None:

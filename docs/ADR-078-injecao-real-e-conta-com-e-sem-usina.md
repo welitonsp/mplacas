@@ -75,3 +75,40 @@ fatura de set/2026, são cerca de R$ 11 a mais por ciclo.
 - **Reescrever os snapshots 0.2.0.** Descartada porque viola o ADR-038 (imutabilidade).
 - **Continuar usando a linha SCEE como injeção.** Descartada porque contradiz a fatura e
   infla a economia.
+
+## Adendo (2026-10-22) — faturas antigas e versão 0.3.1
+
+Com as faturas reais de set/2024 a set/2026 da usina de referência, o leitor passou a
+aceitar os layouts anteriores da Equatorial. As 25 faturas lidas batem, em consumo e valor,
+com o histórico exportado do portal da distribuidora.
+
+- **Até nov/2024 (antes da transição da Lei 14.300).** As linhas são "ENERGIA ATIVA
+  FORNECIDA" e "ENERGIA INJETADA", sem Fio B. O consumo fornecido inclui o custo de
+  disponibilidade (30 kWh no monofásico). Por isso, nesses meses, `compensated_kwh` é menor
+  que `imported_kwh`.
+- **Dez/2024 a fev/2025.** A linha "INJEÇÃO SCEE" vem sem as colunas de imposto.
+- **"CONSUMO NÃO COMPENSADO".** Passa a somar no consumo da rede. Antes ficava de fora e
+  subestimava `imported_kwh` (ex.: set/2025, 81 kWh em vez de 99 kWh).
+- **Conferência pelo medidor.** A soma das linhas de energia tem de bater com a leitura do
+  medidor impressa na fatura, com tolerância de 1 kWh. Se não bater, a fatura é recusada.
+  - Exceção única: o primeiro ciclo de um medidor novo (leitura anterior zerada). A
+    distribuidora conta os dias desde a instalação, mas o período impresso continua valendo.
+- **Economia sem produção (0.3.1).** Um ciclo sem nenhum dia de produção do inversor passa a
+  ter economia indisponível (`NO_PRODUCTION_DATA`). Sem produção, a conta ignoraria o
+  consumo direto do telhado e gravaria para sempre, no snapshot imutável, uma economia menor
+  que a real.
+
+**Pendência aberta: tarifa usada para calcular a conta "sem a usina".** O motor usa o preço
+da linha "CONSUMO SCEE". Esse preço é menor que a tarifa cheia cobrada de quem não tem
+usina:
+
+| Referência | Preço c/ tributos (R$/kWh) |
+|---|---|
+| "Consumo não compensado", set/2025 | 0,964 |
+| "Energia ativa fornecida", set/2024 | 0,912 |
+| Faturas sem usina de 2023/2024 (valor ÷ kWh) | ~0,94 |
+| Linha "CONSUMO SCEE", 2025 | 0,64 |
+| Linha "CONSUMO SCEE", 2026 | 0,79 |
+
+Por isso a economia pode estar subestimada em 20% a 35%. A correção será uma decisão
+própria.
