@@ -635,3 +635,22 @@ def test_meter_reading_that_does_not_match_its_glued_consumption_fails_closed() 
 
     with pytest.raises(BillParseError, match="meter reading"):
         parse_equatorial_bill_text(tampered)
+
+
+def test_second_copy_layout_without_meter_reading_fails_closed() -> None:
+    # Sem o medidor não há como saber se alguma linha de consumo ficou de fora.
+    without_meter = "\n".join(
+        line
+        for line in TRANSITION_SHORT_INJECTION_TEXT.splitlines()
+        if not line.startswith("ENERGIA ATIVA - KWH")
+    )
+
+    with pytest.raises(BillParseError, match="meter reading not found"):
+        parse_equatorial_bill_text(without_meter)
+
+
+def test_new_meter_exception_is_limited_to_a_few_extra_days() -> None:
+    far_off = PRE_TRANSITION_FIRST_CYCLE_TEXT.replace("16/10/202432", "16/10/202445")
+
+    with pytest.raises(BillParseError, match="billed days"):
+        parse_equatorial_bill_text(far_off)

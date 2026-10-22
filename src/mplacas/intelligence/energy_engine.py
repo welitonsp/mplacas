@@ -87,9 +87,10 @@ def analyze_energy_cycle(
     expected_production_kwh: Decimal | None = None,
     missing_days: int = 0,
     provisional_days: int = 0,
+    production_days: int | None = None,
 ) -> EnergyCycleIntelligence:
     """Calcula indicadores e diagnósticos auditáveis sem uso de IA generativa."""
-    if missing_days < 0 or provisional_days < 0:
+    if missing_days < 0 or provisional_days < 0 or (production_days or 0) < 0:
         raise ValueError("data quality counters cannot be negative")
     if expected_production_kwh is not None and expected_production_kwh < 0:
         raise ValueError("expected production cannot be negative")
@@ -129,10 +130,12 @@ def analyze_energy_cycle(
     if bill.tariff_with_taxes_brl_kwh is None:
         estimated_savings_brl = None
         savings_unavailable_reason = SAVINGS_UNAVAILABLE_TARIFF_NOT_REGISTERED
-    elif missing_days >= bill.billed_days:
-        # Fatura antiga importada antes de haver telemetria daquele período.
-        # Fica indisponível (e reprocessável quando a produção chegar, ADR-080)
-        # em vez de gravar para sempre uma economia subestimada.
+    elif production_days == 0:
+        # Nenhum dia do ciclo com produção do inversor (fatura antiga importada
+        # antes de haver telemetria daquele período). Fica indisponível em vez
+        # de gravar no snapshot imutável uma economia subestimada. Enquanto não
+        # houver reprocessamento de snapshots, esse mês fica fora do ROI e do
+        # painel do investidor (cobertura menor, explícita).
         estimated_savings_brl = None
         savings_unavailable_reason = SAVINGS_UNAVAILABLE_NO_PRODUCTION_DATA
     elif reconciliation.estimated_total_consumption_kwh <= 0:

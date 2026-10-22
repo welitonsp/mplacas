@@ -149,6 +149,9 @@ _GLUED_PRODUCT_TOLERANCE_BRL = Decimal("0.02")
 # Diferença máxima entre o consumo das linhas de energia e o do medidor: o
 # medidor imprime kWh inteiros; as linhas, com centavos de kWh.
 _METER_TOLERANCE_KWH = Decimal("1")
+# Medidor novo: a fatura pode contar alguns dias a mais que o período impresso
+# (dias desde a instalação). Mais que isso indica data mal lida.
+_NEW_METER_MAX_EXTRA_DAYS = 3
 _GLUED_LAYOUT_FIELDS = frozenset(
     {
         "reference_month",
@@ -287,7 +290,11 @@ def _extract_glued_layout(normalized: str) -> dict[str, str]:
     if not (dates and days and consumption and injection):
         raise BillParseError("second-copy layout detected but mandatory columns not found")
 
+    # O medidor é obrigatório: é ele que garante que nenhuma linha de consumo
+    # (ex.: "CONSUMO NÃO COMPENSADO") ficou de fora do texto extraído.
     meter = _read_meter(normalized)
+    if meter is None:
+        raise BillParseError("second-copy layout meter reading not found")
 
     try:
         start = datetime.strptime(dates.group(1), "%d/%m/%Y").date()
@@ -299,7 +306,8 @@ def _extract_glued_layout(normalized: str) -> dict[str, str]:
         # Única exceção: primeiro ciclo de um medidor novo (leitura anterior
         # zerada). A distribuidora conta os dias desde a instalação, que pode
         # cair fora do período impresso; as datas impressas continuam valendo.
-        if meter is None or meter[1] != 0:
+        divergence = billed_days - (reading_date - start).days
+        if meter[1] != 0 or not 0 < divergence <= _NEW_METER_MAX_EXTRA_DAYS:
             raise BillParseError("second-copy layout reading dates do not match billed days")
         billed_days = (reading_date - start).days
     cycle_end = reading_date - timedelta(days=1)
@@ -328,8 +336,10 @@ def _extract_glued_layout(normalized: str) -> dict[str, str]:
 
     # O medidor imprime o consumo do ciclo: as linhas de energia têm de somar
     # o mesmo. Se não somarem, falta (ou sobra) alguma linha de consumo.
-    if meter is not None and abs(imported - meter[0]) > _METER_TOLERANCE_KWH:
+    if abs(imported - meter[0]) > _METER_TOLERANCE_KWH:
         raise BillParseError("second-copy layout energy lines do not match the meter reading")
+    if _parse_decimal(injection.group(2)) > imported:
+        raise BillParseError("second-copy layout compensated energy exceeds consumption")
 
     values = {
         "reference_month": dates.group(3),

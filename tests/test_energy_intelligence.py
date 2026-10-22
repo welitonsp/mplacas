@@ -323,11 +323,19 @@ def test_cycle_without_any_production_day_leaves_savings_unavailable() -> None:
         tariff_with_taxes_brl_kwh=Decimal("0.626570"),
     )
 
-    without = analyze_energy_cycle(bill=bill, cycle_production_kwh=Decimal("0"), missing_days=30)
-    partial = analyze_energy_cycle(bill=bill, cycle_production_kwh=Decimal("300"), missing_days=29)
+    without = analyze_energy_cycle(
+        bill=bill, cycle_production_kwh=Decimal("0"), missing_days=30, production_days=0
+    )
+    # Muitos dias incompletos (contados até em dobro) não tornam o ciclo "sem
+    # produção": basta um dia com leitura utilizável.
+    partial = analyze_energy_cycle(
+        bill=bill, cycle_production_kwh=Decimal("300"), missing_days=45, production_days=1
+    )
+    # Chamadores que não informam os dias com produção mantêm o comportamento antigo.
+    legacy = analyze_energy_cycle(bill=bill, cycle_production_kwh=Decimal("0"), missing_days=30)
 
     assert without.estimated_savings_brl is None
     assert without.savings_unavailable_reason == SAVINGS_UNAVAILABLE_NO_PRODUCTION_DATA
     assert without.bill_without_solar_brl is None
-    # Com ao menos um dia de produção, a economia sai (com o aviso de dados parciais).
     assert partial.estimated_savings_brl is not None
+    assert legacy.estimated_savings_brl is not None

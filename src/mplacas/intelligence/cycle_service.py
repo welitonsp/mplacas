@@ -90,6 +90,9 @@ async def analyze_confirmed_cycle(
     incomplete_days = 0
     unavailable_days = 0
     production = Decimal("0")
+    # Dias com ao menos uma leitura utilizável (não UNAVAILABLE). Contado por
+    # dia, sem somar status de dispositivos diferentes duas vezes.
+    production_days = 0
 
     for day_rows in by_date.values():
         statuses = {row.status for row in day_rows}
@@ -99,6 +102,8 @@ async def analyze_confirmed_cycle(
             incomplete_days += 1
         if DataStatus.UNAVAILABLE in statuses:
             unavailable_days += 1
+        if statuses - {DataStatus.UNAVAILABLE}:
+            production_days += 1
         production += sum((row.energy_kwh for row in day_rows), Decimal("0"))
 
     quality = CycleDataQuality(
@@ -113,6 +118,7 @@ async def analyze_confirmed_cycle(
         expected_production_kwh=expected_production_kwh,
         missing_days=missing_days + incomplete_days + unavailable_days,
         provisional_days=provisional_days,
+        production_days=production_days,
     )
     return PersistedCycleIntelligence(
         bill_id=confirmed_bill.id,
