@@ -16,8 +16,9 @@ dependencies = [
   "alembic>=1.14,<2",
   "asyncpg>=0.30,<1",
   "aiosqlite>=0.21,<1",
-  # Piso 6.19.0: corrige PYSEC-2026-4153..4160 (pypdf processa faturas recebidas).
-  "pypdf>=6.19.0,<7",
+  # Piso 6.21.2: corrige CVE-2026-115572/115580/115585 (pypdf processa faturas
+  # recebidas de clientes; antes, 6.19.0 para PYSEC-2026-4153..4160).
+  "pypdf>=6.21.2,<7",
   "reportlab>=4.4,<6",
   "xlsxwriter>=3.2,<4",
   # Piso 2.15: corrige PYSEC-2026-4140..4152 e 4183 (assina os tokens de acesso).
@@ -55,6 +56,10 @@ packages = ["src/mplacas"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+# Só a suíte do projeto. Sem isto, `pytest` na raiz recolheria qualquer
+# `test_*.py` do repositório — inclusive código de terceiros em
+# `.claude/skills/` (skills instaladas, ver PR #211).
+testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
   "postgres_integration: requires MPLACAS_TEST_POSTGRES_URL and a migrated PostgreSQL database",
@@ -63,6 +68,10 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Skills de terceiros instaladas em `.claude/skills/` (ex.: ui-ux-pro-max,
+# MIT) trazem scripts próprios, que não são código do projeto nem seguem o
+# estilo dele. Ficam fora do lint em vez de serem reescritos.
+extend-exclude = [".claude"]
 
 [tool.ruff.lint]
 # `E` = pycodestyle (estilo). `F` = Pyflakes, que pega defeito de verdade:
