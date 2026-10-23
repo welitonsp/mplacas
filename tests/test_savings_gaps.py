@@ -339,10 +339,10 @@ async def test_bill_completed_from_pdf_becomes_recalculable(session: AsyncSessio
     assert gaps[0].savings_unavailable_reason == "TARIFF_NOT_AVAILABLE"
 
     repository = UtilityBillRepository(session)
-    found = await repository.find_confirmed_for_month(
+    (found,) = await repository.find_confirmed_for_month(
         plant_id=plant.id, distributor="EQUATORIAL_GO", reference_month="2026-06"
     )
-    assert found is not None and found.id == record.id
+    assert found.id == record.id
     pdf = UtilityBill(
         distributor="EQUATORIAL_GO",
         reference_month="2026-06",

@@ -53,7 +53,10 @@ class FakeUtilityBillRepository:
         return type(self).existing_record
 
     async def find_confirmed_for_month(self, *, plant_id, distributor, reference_month):
-        return type(self).confirmed_record
+        record = type(self).confirmed_record
+        if record is None:
+            return ()
+        return record if isinstance(record, tuple) else (record,)
 
     async def create_pending(self, bill, *, plant_id, source_text):
         return SimpleNamespace(
@@ -598,4 +601,19 @@ def test_intake_pdf_never_overwrites_a_filled_field_with_a_different_value(monke
     assert response.status_code == 409
     assert confirmed.tariff_with_taxes_brl_kwh == Decimal("0.700000")
     assert confirmed.wire_b_tariff_brl_kwh is None
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_refuses_when_month_has_more_than_one_confirmed_bill(monkeypatch) -> None:
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+    first = _confirmed_without_tariff()
+    second = _confirmed_without_tariff(id=uuid.UUID("00000000-0000-0000-0000-000000000300"))
+    monkeypatch.setattr(FakeUtilityBillRepository, "confirmed_record", (first, second))
+    _forbid_create(monkeypatch)
+
+    response = _post_pdf(_PDF_BYTES)
+
+    assert response.status_code == 409
+    assert first.tariff_with_taxes_brl_kwh is None and second.tariff_with_taxes_brl_kwh is None
     get_settings.cache_clear()

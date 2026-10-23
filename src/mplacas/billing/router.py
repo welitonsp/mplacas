@@ -197,8 +197,8 @@ async def intake_bill_pdf(
         existing = await repository.find_by_source_text(
             plant_id=scoped.plant_id, source_text=source_text
         )
-        confirmed = (
-            None
+        same_month = (
+            ()
             if existing is not None
             else await repository.find_confirmed_for_month(
                 plant_id=scoped.plant_id,
@@ -206,6 +206,15 @@ async def intake_bill_pdf(
                 reference_month=bill.reference_month,
             )
         )
+        if len(same_month) > 1:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Há mais de uma fatura confirmada deste mês. Nada foi alterado; "
+                    "revise as faturas do mês antes de importar."
+                ),
+            )
+        confirmed = same_month[0] if same_month else None
         if confirmed is not None:
             # Mês já confirmado: o PDF só pode completar campos vazios da MESMA
             # fatura (ex.: tarifa que o texto do Telegram não trazia). Nunca
