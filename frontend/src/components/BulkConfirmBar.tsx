@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { confirmBill } from '../lib/api'
 import type { UtilityBill } from '../lib/dashboard/bill-contracts'
 import { LoadingAnnouncement } from './LoadingAnnouncement'
@@ -16,38 +16,65 @@ const SECONDARY_BUTTON =
 
 export interface BulkConfirmResult {
   confirmed: number
-  failed: string[] // meses que não foram confirmados
+  failed: string[] // meses que não foram confirmados por erro
+  alreadyReviewed: string[] // meses que outra pessoa/aba já revisou (409)
+  forbidden: boolean // perfil sem permissão: o lote parou na primeira recusa
 }
 
 export function BulkConfirmBar({
   bills,
   label,
+  disabled = false,
+  onBusyChange,
   onDone,
 }: {
   bills: UtilityBill[]
   label: (bill: UtilityBill) => string
+  // Upload em curso: a lista ainda vai mudar, então não confirma agora.
+  disabled?: boolean
+  onBusyChange?: (busy: boolean) => void
   onDone: (result: BulkConfirmResult) => void
 }) {
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState<{ done: number; total: number } | null>(null)
+  const yesRef = useRef<HTMLButtonElement>(null)
+  const startRef = useRef<HTMLButtonElement>(null)
+  const wasAsking = useRef(false)
+
+  // Foco acompanha a troca de botões (teclado e leitor de tela).
+  useEffect(() => {
+    if (asking) yesRef.current?.focus()
+    else if (wasAsking.current) startRef.current?.focus()
+    wasAsking.current = asking
+  }, [asking])
 
   async function confirmAll() {
-    setBusy({ done: 0, total: bills.length })
+    // A lista é fixada no clique: confirma exatamente as faturas exibidas.
+    const snapshot = [...bills]
+    setBusy({ done: 0, total: snapshot.length })
+    onBusyChange?.(true)
     let confirmed = 0
     const failed: string[] = []
-    for (const [index, bill] of bills.entries()) {
+    const alreadyReviewed: string[] = []
+    let forbidden = false
+    for (const [index, bill] of snapshot.entries()) {
       try {
         const response = await confirmBill(bill.id)
         if (response.ok) confirmed += 1
+        else if (response.status === 403) {
+          forbidden = true
+          break
+        } else if (response.status === 409) alreadyReviewed.push(label(bill))
         else failed.push(label(bill))
       } catch {
         failed.push(label(bill))
       }
-      setBusy({ done: index + 1, total: bills.length })
+      setBusy({ done: index + 1, total: snapshot.length })
     }
     setBusy(null)
     setAsking(false)
-    onDone({ confirmed, failed })
+    onBusyChange?.(false)
+    onDone({ confirmed, failed, alreadyReviewed, forbidden })
   }
 
   return (
@@ -60,9 +87,10 @@ export function BulkConfirmBar({
           </p>
           <div className="mt-3 flex flex-wrap gap-3">
             <button
+              ref={yesRef}
               type="button"
               className={PRIMARY_BUTTON}
-              disabled={busy !== null}
+              disabled={busy !== null || disabled}
               aria-busy={busy !== null}
               onClick={confirmAll}
             >
@@ -79,7 +107,13 @@ export function BulkConfirmBar({
           <p className="text-sm text-[var(--color-text-primary)]">
             {bills.length} faturas aguardando conferência.
           </p>
-          <button type="button" className={SECONDARY_BUTTON} onClick={() => setAsking(true)}>
+          <button
+            ref={startRef}
+            type="button"
+            className={SECONDARY_BUTTON}
+            disabled={disabled}
+            onClick={() => setAsking(true)}
+          >
             Confirmar todas
           </button>
         </div>

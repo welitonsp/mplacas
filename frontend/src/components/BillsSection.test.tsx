@@ -317,4 +317,69 @@ describe('BillsSection — importar e conferir faturas', () => {
     expect(confirm).toHaveBeenCalledWith('b2')
     expect(onConfirmed).toHaveBeenCalled()
   })
+
+  const twoPending = {
+    count: 2,
+    items: [
+      { ...pendingBill, id: 'b1', reference_month: '2024-09' },
+      { ...pendingBill, id: 'b2', reference_month: '2024-10' },
+    ],
+  }
+
+  it('confirmar todas para no primeiro 403 e diz que o perfil não tem permissão', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json(twoPending))
+    const confirm = vi.spyOn(api, 'confirmBill').mockResolvedValue(json({ detail: 'forbidden' }, 403))
+
+    render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar todas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar 2 faturas' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Seu perfil não tem permissão para confirmar faturas.')
+    expect(confirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('confirmar todas separa as já revisadas das que falharam', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json(twoPending))
+    vi.spyOn(api, 'confirmBill')
+      .mockResolvedValueOnce(json({ detail: 'already' }, 409))
+      .mockResolvedValueOnce(json({ detail: 'boom' }, 500))
+
+    render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar todas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar 2 faturas' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('0 faturas confirmadas.')
+    expect(alert).toHaveTextContent('Já tinham sido revisadas: set/2024.')
+    expect(alert).toHaveTextContent('Não foi possível confirmar: out/2024.')
+  })
+
+  it('cancelar a segunda confirmação não confirma nada e devolve o foco', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json(twoPending))
+    const confirm = vi.spyOn(api, 'confirmBill')
+
+    render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar todas' }))
+    expect(screen.getByRole('button', { name: 'Sim, confirmar 2 faturas' })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar todas' })).toHaveFocus())
+    expect(confirm).not.toHaveBeenCalled()
+  })
+
+  it('durante o confirmar todas, importar e os botões de cada fatura ficam travados', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json(twoPending))
+    let release: (value: Response) => void = () => {}
+    vi.spyOn(api, 'confirmBill').mockImplementation(
+      () => new Promise<Response>((resolve) => { release = resolve }),
+    )
+
+    render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar todas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar 2 faturas' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Importar faturas (PDF)' })).toBeDisabled())
+    for (const button of screen.getAllByRole('button', { name: 'Confirmar fatura' })) expect(button).toBeDisabled()
+    release(json({ status: 'confirmed', bill: pendingBill }))
+  })
 })

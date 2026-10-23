@@ -1,5 +1,5 @@
-import { ChangeEvent, useCallback, useRef, useState } from 'react'
-import { confirmBill, fetchPendingBills, rejectBill, uploadBillPdf } from '../lib/api'
+import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { PENDING_BILLS_LIMIT, confirmBill, fetchPendingBills, rejectBill, uploadBillPdf } from '../lib/api'
 import {
   parseBillEnvelope,
   parsePendingBills,
@@ -76,6 +76,25 @@ function monthLabel(bill: UtilityBill): string {
   return short.includes('/') ? `${short.split('/')[0]}/${year}` : short
 }
 
+function bulkFeedback({
+  confirmed,
+  failed,
+  alreadyReviewed,
+  forbidden,
+}: {
+  confirmed: number
+  failed: string[]
+  alreadyReviewed: string[]
+  forbidden: boolean
+}): Feedback {
+  if (forbidden) return { tone: 'error', message: 'Seu perfil não tem permissão para confirmar faturas.' }
+  const parts = [`${confirmed} ${confirmed === 1 ? 'fatura confirmada' : 'faturas confirmadas'}.`]
+  if (alreadyReviewed.length) parts.push(`Já tinham sido revisadas: ${alreadyReviewed.join(', ')}.`)
+  if (failed.length) parts.push(`Não foi possível confirmar: ${failed.join(', ')}. Tente essas de novo.`)
+  else parts.push('Economia e retorno do investimento atualizados.')
+  return { tone: failed.length ? 'error' : 'success', message: parts.join(' ') }
+}
+
 async function readErrorDetail(response: Response): Promise<string | null> {
   try {
     const body: unknown = await response.json()
@@ -135,11 +154,14 @@ function BillField({ label, value, emphasis = false }: { label: string; value: s
 function PendingBillReview({
   bill,
   highlighted,
+  locked = false,
   onConfirmed,
   onRejected,
 }: {
   bill: UtilityBill
   highlighted: boolean
+  // "Confirmar todas" em andamento: os botões individuais ficam travados.
+  locked?: boolean
   onConfirmed: (bill: UtilityBill) => void
   onRejected: (bill: UtilityBill) => void
 }) {
@@ -237,7 +259,7 @@ function PendingBillReview({
             <button
               type="button"
               className={DANGER_BUTTON}
-              disabled={busy !== null}
+              disabled={busy !== null || locked}
               aria-busy={busy === 'reject'}
               onClick={() => run('reject')}
             >
@@ -246,7 +268,7 @@ function PendingBillReview({
             <button
               type="button"
               className={SECONDARY_BUTTON}
-              disabled={busy !== null}
+              disabled={busy !== null || locked}
               onClick={() => setAskingReject(false)}
             >
               Cancelar
@@ -257,7 +279,7 @@ function PendingBillReview({
             <button
               type="button"
               className={PRIMARY_BUTTON}
-              disabled={busy !== null}
+              disabled={busy !== null || locked}
               aria-busy={busy === 'confirm'}
               onClick={() => run('confirm')}
             >
@@ -266,7 +288,7 @@ function PendingBillReview({
             <button
               type="button"
               className={SECONDARY_BUTTON}
-              disabled={busy !== null}
+              disabled={busy !== null || locked}
               onClick={() => setAskingReject(true)}
             >
               Rejeitar
@@ -296,6 +318,16 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
   const [gapsReload, setGapsReload] = useState(0)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [batch, setBatch] = useState<BatchItem[] | null>(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const feedbackRef = useRef<HTMLDivElement>(null)
+  // O lote pode terminar depois de a tela sair (troca de usina, navegação).
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   // Lê UM arquivo e devolve o que aconteceu, sem mexer na tela. Usado tanto
   // na importação de um arquivo quanto na importação em lote.
@@ -365,13 +397,17 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
       try {
         // Uma de cada vez: a leitura do PDF roda isolada e limitada no servidor.
         for (const [index, file] of files.entries()) {
+          if (!mounted.current) return
           results.push({ fileName: file.name, ...(await importOne(file)) })
-          setProgress({ done: index + 1, total: files.length })
+          if (mounted.current) setProgress({ done: index + 1, total: files.length })
         }
       } finally {
-        setUploading(false)
-        setProgress(null)
+        if (mounted.current) {
+          setUploading(false)
+          setProgress(null)
+        }
       }
+      if (!mounted.current) return
 
       const last = [...results].reverse().find((item) => item.billId)
       if (last?.billId) setHighlightedId(last.billId)
@@ -423,7 +459,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
             <button
               type="button"
               className={PRIMARY_BUTTON}
-              disabled={uploading}
+              disabled={uploading || bulkBusy}
               aria-busy={uploading}
               onClick={() => inputRef.current?.click()}
             >
@@ -445,16 +481,18 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
 
         {feedback && (
           <div
+            ref={feedbackRef}
+            tabIndex={-1}
             role={feedback.tone === 'error' ? 'alert' : 'status'}
-            className={`mt-4 rounded-lg border px-3 py-2 text-sm ${FEEDBACK_CLASS[feedback.tone]}`}
+            className={`mt-4 rounded-lg border px-3 py-2 text-sm focus:outline-none ${FEEDBACK_CLASS[feedback.tone]}`}
           >
             {feedback.message}
           </div>
         )}
 
         {batch && (
-          <div role="status" className="mt-4 rounded-lg border border-[var(--color-border)] px-3 py-3 text-sm">
-            <p className="font-semibold text-[var(--color-text-primary)]">
+          <div className="mt-4 rounded-lg border border-[var(--color-border)] px-3 py-3 text-sm">
+            <p role="status" className="font-semibold text-[var(--color-text-primary)]">
               {batch.length} arquivos lidos: {batch.filter((item) => item.billId).length} para conferir
               {batch.some((item) => item.tone === 'error')
                 ? `, ${batch.filter((item) => item.tone === 'error').length} com problema`
@@ -487,26 +525,28 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
             <p className="text-[13px] text-[var(--color-text-secondary)]">Nenhuma fatura aguardando conferência.</p>
           ) : (
             <>
+            {items.length >= PENDING_BILLS_LIMIT && (
+              <p className="text-[13px] text-[var(--color-text-secondary)]">
+                Mostrando as {items.length} faturas mais recentes aguardando conferência; pode haver mais. Confirme
+                estas para ver as demais.
+              </p>
+            )}
             {items.length > 1 && (
               <BulkConfirmBar
                 bills={items}
                 label={monthLabel}
-                onDone={({ confirmed, failed }) => {
+                disabled={uploading}
+                onBusyChange={setBulkBusy}
+                onDone={({ confirmed, failed, alreadyReviewed, forbidden }) => {
+                  if (!mounted.current) return
                   setBatch(null)
-                  setFeedback(
-                    failed.length === 0
-                      ? {
-                          tone: 'success',
-                          message: `${confirmed} faturas confirmadas. Economia e retorno do investimento atualizados.`,
-                        }
-                      : {
-                          tone: 'error',
-                          message: `${confirmed} faturas confirmadas. Não foi possível confirmar: ${failed.join(', ')}. Tente essas de novo.`,
-                        },
-                  )
+                  setFeedback(bulkFeedback({ confirmed, failed, alreadyReviewed, forbidden }))
+                  requestAnimationFrame(() => feedbackRef.current?.focus())
                   pending.refetch()
-                  setGapsReload((value) => value + 1)
-                  onConfirmed()
+                  if (confirmed > 0) {
+                    setGapsReload((value) => value + 1)
+                    onConfirmed()
+                  }
                 }}
               />
             )}
@@ -515,6 +555,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
                 key={bill.id}
                 bill={bill}
                 highlighted={bill.id === highlightedId}
+                locked={bulkBusy}
                 onConfirmed={(updated) => {
                   setFeedback({
                     tone: 'success',
