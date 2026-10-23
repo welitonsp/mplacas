@@ -280,3 +280,27 @@ def test_routes_are_tenant_scoped_and_reprocess_requires_admin(monkeypatch) -> N
     assert done.status_code == 200
     assert done.json()["items"][0]["stored_revision"] == 1
     assert "reports.reprocess_savings" in actions
+
+
+async def test_outdated_month_never_loses_its_savings(session: AsyncSession) -> None:
+    # A telemetria de jul/2026 sumiu (ex.: retenção). O recálculo de hoje daria
+    # "sem produção"; a revisão antiga, com economia, tem de continuar valendo.
+    from sqlalchemy import delete
+
+    bills = await _scenario(session)
+    plant_id = bills["current"].plant_id
+    july = date(2026, 7, 10)
+    await session.execute(delete(DailyEnergy).where(DailyEnergy.production_date == july))
+    await session.commit()
+
+    reprocessed = await reprocess_savings_gaps(session, plant_id=plant_id)
+    await session.commit()
+    results = {r.reference_month: r for r in reprocessed}
+
+    assert results["2026-07"].stored_revision is None
+    latest = await MonthlyReportSnapshotRepository(session).by_bill_id(
+        bills["outdated"].id, plant_id=plant_id
+    )
+    assert latest is not None and latest.revision == 1
+    savings = next(m.value for m in latest.report.metrics if m.key == "estimated_savings_brl")
+    assert savings == "5.00"

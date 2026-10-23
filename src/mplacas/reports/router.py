@@ -31,6 +31,7 @@ from mplacas.reports.serialization import (
     serialize_monthly_report,
 )
 from mplacas.reports.savings_gaps import (
+    ReprocessOutcome,
     ReprocessResult,
     SavingsGap,
     list_savings_gaps,
@@ -300,6 +301,9 @@ async def reprocess_monthly_savings_gaps(
                         "revision": result.stored_revision,
                         "snapshot_id": str(result.snapshot_id),
                         "outcome": result.outcome.value,
+                        "previous_cause": result.previous_cause.value,
+                        "previous_savings_brl": result.previous_savings_brl,
+                        "estimated_savings_brl": result.estimated_savings_brl,
                     }
                     for result in stored
                 ],
@@ -309,7 +313,7 @@ async def reprocess_monthly_savings_gaps(
     response.headers["Cache-Control"] = "no-store"
     return {
         "count": len(results),
-        "recalculated": sum(1 for r in results if r.outcome.value == "RECALCULATED"),
+        "recalculated": sum(1 for r in results if r.outcome is ReprocessOutcome.RECALCULATED),
         "items": [_serialize_reprocess(result) for result in results],
     }
 

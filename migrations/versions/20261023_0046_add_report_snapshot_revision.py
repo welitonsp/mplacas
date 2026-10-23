@@ -34,10 +34,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Volta a uma linha por fatura: as revisões > 1 são descartadas. Só é
-    # seguro antes de qualquer reprocessamento — depois dele, o downgrade
-    # perde as revisões novas (a revisão 1 original continua intacta).
-    op.execute("DELETE FROM monthly_report_snapshots WHERE revision > 1")
+    # Relatório mensal é imutável (ADR-038): o downgrade NUNCA apaga revisões.
+    # Se já houve reprocessamento, ele falha e pede decisão humana.
+    revisions = op.get_bind().execute(
+        sa.text("SELECT COUNT(*) FROM monthly_report_snapshots WHERE revision > 1")
+    ).scalar_one()
+    if revisions:
+        raise RuntimeError(
+            f"{revisions} revisão(ões) de relatório mensal existem; o downgrade "
+            "apagaria dado financeiro auditado (ADR-038/ADR-081). Decida e "
+            "remova manualmente antes de voltar a migration."
+        )
     with op.batch_alter_table("monthly_report_snapshots") as batch:
         batch.drop_constraint("uq_monthly_report_snapshots_bill_revision", type_="unique")
         batch.create_unique_constraint("uq_monthly_report_snapshots_bill", ["bill_id"])

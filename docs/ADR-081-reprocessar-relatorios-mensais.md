@@ -46,8 +46,13 @@ R$ 612,16. Mai, jun e jul/2026 não entram na soma.
 
    Clicar de novo não acumula revisões idênticas. A concorrência é decidida pela unicidade
    `(bill_id, revision)`.
+   - **Um mês que já tinha economia nunca a perde.** Se o recálculo de hoje não consegue
+     calcular (ex.: telemetria antiga podada pela retenção do ADR-048), nada é gravado e a
+     revisão anterior continua valendo.
 4. **Auditoria.** O evento `reports.reprocess_savings` registra cada revisão criada: mês,
-   fatura, número da revisão, id do snapshot e resultado.
+   fatura, número da revisão, id do snapshot, causa e economia antes e depois.
+   - O recálculo roda numa transação só: um erro em qualquer fatura desfaz tudo, inclusive
+     o evento.
 5. **Interface.** No card "Faturas de energia" do Financeiro, o painel "Meses a recalcular"
    aparece só quando há meses.
    - Mostra o motivo de cada mês e, depois do recálculo, o antes e o depois ("economia
@@ -58,8 +63,11 @@ R$ 612,16. Mai, jun e jul/2026 não entram na soma.
 
 - O cliente vê e decide quando os números mudam. O histórico da versão anterior fica no
   banco para auditoria.
-- **Downgrade da migration.** O downgrade descarta as revisões > 1. A revisão 1 original
-  continua intacta.
+- **Downgrade da migration.** O downgrade **falha** se existir revisão > 1. Ele não apaga
+  dado financeiro auditado, e voltar exige decisão humana.
+- **Botão para perfil sem permissão.** O frontend ainda não conhece o perfil do usuário,
+  então um usuário só de leitura vê o botão "Recalcular" e recebe a mensagem de falta de
+  permissão. É a mesma limitação da importação de faturas.
 - **Meses sem produção do inversor** continuam indisponíveis até a telemetria do período
   existir. O recálculo diz isso e não grava nada.
 - **PDF/XLSX** usam o relatório mais recente da fatura mais recente, que é a revisão mais

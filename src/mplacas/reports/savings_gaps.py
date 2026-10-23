@@ -199,8 +199,9 @@ async def reprocess_savings_gaps(
       continue indisponível: o motivo passa a ficar registrado;
     - métrica vazia → só grava revisão nova se agora houver economia (ex.: a
       telemetria do ciclo chegou depois);
-    - cálculo desatualizado → só grava revisão nova se a economia ou a origem
-      da tarifa mudarem (ex.: a vigência do período foi cadastrada).
+    - cálculo desatualizado → só grava revisão nova se o recálculo produzir
+      economia e ela (ou a origem da tarifa) mudar. Nunca troca uma economia
+      existente por "indisponível".
     Se nada mudou, não grava nada, para não acumular revisões idênticas a
     cada clique.
     """
@@ -223,9 +224,15 @@ async def reprocess_savings_gaps(
         if gap.cause is SavingsGapCause.SAVINGS_UNAVAILABLE and not has_savings_now:
             results.append(_result(gap, previous, stored=False))
             continue
-        if gap.cause is SavingsGapCause.OUTDATED_CALCULATION and all(
-            _metric_value(report, key) == _metric_value(previous.report, key)
-            for key in (SAVINGS_METRIC_KEY, SAVINGS_TARIFF_SOURCE_METRIC_KEY)
+        # Mês que já tinha economia nunca perde o número: se o recálculo de
+        # hoje não consegue calcular (ex.: telemetria antiga podada pela
+        # retenção), a revisão antiga continua valendo.
+        if gap.cause is SavingsGapCause.OUTDATED_CALCULATION and (
+            not has_savings_now
+            or all(
+                _metric_value(report, key) == _metric_value(previous.report, key)
+                for key in (SAVINGS_METRIC_KEY, SAVINGS_TARIFF_SOURCE_METRIC_KEY)
+            )
         ):
             results.append(_result(gap, previous, stored=False))
             continue

@@ -594,8 +594,10 @@ def test_report_snapshot_revision_migration_matches_orm() -> None:
     assert 'server_default="1"' in source
     assert 'drop_constraint("uq_monthly_report_snapshots_bill"' in source
     assert "uq_monthly_report_snapshots_bill_revision" in source
-    # O downgrade só volta ao esquema antigo depois de descartar revisões > 1.
-    assert "DELETE FROM monthly_report_snapshots WHERE revision > 1" in source
+    # O downgrade nunca apaga revisões: falha se houver alguma > 1.
+    assert "DELETE FROM" not in source
+    assert "WHERE revision > 1" in source
+    assert "raise RuntimeError" in source
     assert table.c.revision.nullable is False
     assert ("bill_id", "revision") in unique_sets
     assert ("bill_id",) not in unique_sets
