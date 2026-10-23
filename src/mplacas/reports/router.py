@@ -238,6 +238,7 @@ def _serialize_gap(gap: SavingsGap) -> dict[str, object]:
         "reference_month": gap.reference_month,
         "cause": gap.cause.value,
         "savings_unavailable_reason": gap.savings_unavailable_reason,
+        "previous_savings_brl": gap.previous_savings_brl,
     }
 
 
@@ -246,6 +247,7 @@ def _serialize_reprocess(result: ReprocessResult) -> dict[str, object]:
         "bill_id": str(result.bill_id),
         "reference_month": result.reference_month,
         "previous_cause": result.previous_cause.value,
+        "previous_savings_brl": result.previous_savings_brl,
         "outcome": result.outcome.value,
         "estimated_savings_brl": result.estimated_savings_brl,
         "savings_unavailable_reason": result.savings_unavailable_reason,

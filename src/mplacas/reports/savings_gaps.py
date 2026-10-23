@@ -1,4 +1,4 @@
-"""Meses com fatura confirmada que ficaram sem economia calculada (ADR-081).
+"""Meses com fatura confirmada sem economia ou com economia desatualizada (ADR-081).
 
 O relatório mensal de cada fatura é imutável (ADR-038) e é dele que o retorno
 do investimento (ADR-067) e o painel do investidor (ADR-079) somam a economia.
@@ -8,12 +8,15 @@ Uma fatura confirmada pode ficar fora dessa soma para sempre quando:
 - ``REPORT_PREDATES_SAVINGS`` — o relatório é anterior ao cálculo de economia
   e não tem a métrica ``estimated_savings_brl``;
 - ``SAVINGS_UNAVAILABLE`` — o relatório tem a métrica, mas vazia, com o motivo
-  gravado (tarifa não lida na fatura, ou sem consumo/telemetria no ciclo).
+  gravado (tarifa não lida na fatura, ou sem consumo/telemetria no ciclo);
+- ``OUTDATED_CALCULATION`` — a economia existe, mas foi calculada antes da
+  correção da fórmula (versão < 0.4.0: conta "sem a usina" pela tarifa SCEE,
+  ADR-080) ou sem a tarifa cheia do período (``BILL_TARIFF``). É um piso.
 
-Este módulo lista essas lacunas e, sob pedido explícito de um ADMIN, refaz o
+Este módulo lista esses meses e, sob pedido explícito de um ADMIN, refaz o
 relatório. O relatório antigo nunca é alterado nem apagado: o novo entra como
-revisão seguinte da mesma fatura. Um mês que já tem economia nunca é
-reprocessado — número que o usuário já viu não muda por aqui.
+revisão seguinte da mesma fatura, e a auditoria registra qual revisão nasceu.
+Um mês com economia calculada pela fórmula corrigida nunca é reprocessado.
 """
 
 from __future__ import annotations
@@ -26,8 +29,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.read_repository import ConfirmedBillReadRepository
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
+from mplacas.intelligence.energy_engine import SAVINGS_TARIFF_BILL
+from mplacas.intelligence.investor_service import (
+    CORRECTED_CALCULATION_VERSION,
+    calculation_version_tuple,
+)
 from mplacas.reports.contract import MonthlyEnergyReport
 from mplacas.reports.projection import build_monthly_report_for_bill
+from mplacas.reports.snapshot_revisions import create_snapshot_revision
 from mplacas.reports.snapshot import (
     MonthlyReportSnapshot,
     MonthlyReportSnapshotRepository,
@@ -35,12 +44,14 @@ from mplacas.reports.snapshot import (
 
 SAVINGS_METRIC_KEY = "estimated_savings_brl"
 SAVINGS_REASON_METRIC_KEY = "savings_unavailable_reason"
+SAVINGS_TARIFF_SOURCE_METRIC_KEY = "savings_tariff_source"
 
 
 class SavingsGapCause(str, enum.Enum):
     REPORT_MISSING = "REPORT_MISSING"
     REPORT_PREDATES_SAVINGS = "REPORT_PREDATES_SAVINGS"
     SAVINGS_UNAVAILABLE = "SAVINGS_UNAVAILABLE"
+    OUTDATED_CALCULATION = "OUTDATED_CALCULATION"
 
 
 class ReprocessOutcome(str, enum.Enum):
@@ -56,6 +67,8 @@ class SavingsGap:
     # Só preenchido em SAVINGS_UNAVAILABLE: o motivo que o motor gravou.
     savings_unavailable_reason: str | None
     current_revision: int | None
+    # Economia gravada hoje (só em OUTDATED_CALCULATION), para mostrar o antes.
+    previous_savings_brl: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +76,7 @@ class ReprocessResult:
     bill_id: uuid.UUID
     reference_month: str
     previous_cause: SavingsGapCause
+    previous_savings_brl: str | None
     outcome: ReprocessOutcome
     estimated_savings_brl: str | None
     savings_unavailable_reason: str | None
@@ -102,6 +116,20 @@ def _gap_for(
             reason,
             snapshot.revision,
         )
+    outdated = calculation_version_tuple(
+        snapshot.report.calculation_version
+    ) < CORRECTED_CALCULATION_VERSION or (
+        _metric_value(snapshot.report, SAVINGS_TARIFF_SOURCE_METRIC_KEY) == SAVINGS_TARIFF_BILL
+    )
+    if outdated:
+        return SavingsGap(
+            bill_id,
+            reference_month,
+            SavingsGapCause.OUTDATED_CALCULATION,
+            None,
+            snapshot.revision,
+            previous_savings_brl=savings,
+        )
     return None
 
 
@@ -139,6 +167,7 @@ def _result(
         bill_id=gap.bill_id,
         reference_month=gap.reference_month,
         previous_cause=gap.cause,
+        previous_savings_brl=gap.previous_savings_brl,
         outcome=(
             ReprocessOutcome.RECALCULATED
             if savings is not None
@@ -169,8 +198,11 @@ async def reprocess_savings_gaps(
     - relatório sem a métrica → grava a revisão seguinte, mesmo que a economia
       continue indisponível: o motivo passa a ficar registrado;
     - métrica vazia → só grava revisão nova se agora houver economia (ex.: a
-      telemetria do ciclo chegou depois). Se nada mudou, não grava nada, para
-      não acumular revisões idênticas a cada clique.
+      telemetria do ciclo chegou depois);
+    - cálculo desatualizado → só grava revisão nova se a economia ou a origem
+      da tarifa mudarem (ex.: a vigência do período foi cadastrada).
+    Se nada mudou, não grava nada, para não acumular revisões idênticas a
+    cada clique.
     """
     repository = MonthlyReportSnapshotRepository(session, plant_scope=plant_scope)
     results: list[ReprocessResult] = []
@@ -191,7 +223,15 @@ async def reprocess_savings_gaps(
         if gap.cause is SavingsGapCause.SAVINGS_UNAVAILABLE and not has_savings_now:
             results.append(_result(gap, previous, stored=False))
             continue
-        revision = await repository.create_revision(report, previous=previous)
+        if gap.cause is SavingsGapCause.OUTDATED_CALCULATION and all(
+            _metric_value(report, key) == _metric_value(previous.report, key)
+            for key in (SAVINGS_METRIC_KEY, SAVINGS_TARIFF_SOURCE_METRIC_KEY)
+        ):
+            results.append(_result(gap, previous, stored=False))
+            continue
+        revision = await create_snapshot_revision(
+            session, report, previous=previous, plant_scope=plant_scope
+        )
         if revision is None:
             # Outra requisição gravou a mesma revisão ao mesmo tempo: vale a dela.
             current = await repository.by_bill_id(gap.bill_id, plant_id=plant_id)

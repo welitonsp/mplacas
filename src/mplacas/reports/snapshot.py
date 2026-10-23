@@ -250,45 +250,6 @@ class MonthlyReportSnapshotRepository:
         await self._session.refresh(record)
         return _to_snapshot(record)
 
-    async def create_revision(
-        self,
-        report: MonthlyEnergyReport,
-        *,
-        previous: MonthlyReportSnapshot,
-    ) -> MonthlyReportSnapshot | None:
-        """Grava a revisão seguinte a ``previous`` para a mesma fatura (ADR-081).
-
-        Nunca altera ``previous``. Devolve ``None`` quando outra requisição
-        gravou a mesma revisão ao mesmo tempo (a unicidade
-        ``(bill_id, revision)`` decide quem fica) — o chamador relê.
-        """
-        if not self._plant_scope.allows(report.plant_id):
-            raise PermissionError("plant is outside the report snapshot scope")
-        if (
-            report.bill_id != previous.report.bill_id
-            or report.plant_id != previous.report.plant_id
-        ):
-            raise ValueError("revision must belong to the same bill and plant")
-        payload_json = _canonical_payload(report)
-        record = MonthlyReportSnapshotRecord(
-            plant_id=report.plant_id,
-            bill_id=report.bill_id,
-            reference_month=report.reference_month,
-            revision=previous.revision + 1,
-            schema_version=report.schema_version,
-            calculation_version=report.calculation_version,
-            payload_json=payload_json,
-            payload_sha256=_payload_sha256(payload_json),
-        )
-        try:
-            async with self._session.begin_nested():
-                self._session.add(record)
-                await self._session.flush()
-        except IntegrityError:
-            return None
-        await self._session.refresh(record)
-        return _to_snapshot(record)
-
 
 async def materialize_monthly_report_snapshot(
     session: AsyncSession,

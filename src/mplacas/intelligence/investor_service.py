@@ -71,7 +71,7 @@ class InvestorPanel:
     premises: InvestorPremises | None
 
 
-def _version_tuple(version: str) -> tuple[int, ...]:
+def calculation_version_tuple(version: str) -> tuple[int, ...]:
     parts: list[int] = []
     for part in version.split("."):
         digits = "".join(ch for ch in part if ch.isdigit())
@@ -127,9 +127,9 @@ async def get_investor_panel(
         )
         if tariff_source and tariff_source != "DISTRIBUTOR_FULL_TARIFF":
             bill_tariff_cycles += 1
-    sorted_versions = tuple(sorted(versions, key=_version_tuple))
+    sorted_versions = tuple(sorted(versions, key=calculation_version_tuple))
     pre_correction = bill_tariff_cycles > 0 or any(
-        _version_tuple(v) < CORRECTED_CALCULATION_VERSION for v in sorted_versions
+        calculation_version_tuple(v) < CORRECTED_CALCULATION_VERSION for v in sorted_versions
     )
 
     investment = plant.investment_amount_brl

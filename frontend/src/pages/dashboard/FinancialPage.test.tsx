@@ -34,6 +34,7 @@ interface ApiMockOverrides {
   updateFinancialConfiguration?: (...args: unknown[]) => Promise<Response>
   fetchPendingBills?: (plantId: string) => Promise<Response>
   fetchInvestorPanel?: (plantId: string) => Promise<Response>
+  fetchSavingsGaps?: (plantId: string) => Promise<Response>
 }
 
 function installApiMock(overrides: ApiMockOverrides = {}) {
@@ -52,6 +53,9 @@ function installApiMock(overrides: ApiMockOverrides = {}) {
     uploadBillPdf: vi.fn(async () => jsonResponse({})),
     confirmBill: vi.fn(async () => jsonResponse({})),
     rejectBill: vi.fn(async () => jsonResponse({})),
+    // Meses a recalcular (ADR-081), dentro do card de faturas.
+    fetchSavingsGaps: overrides.fetchSavingsGaps ?? vi.fn(async () => jsonResponse({ count: 0, items: [] })),
+    reprocessSavingsGaps: vi.fn(async () => jsonResponse({ count: 0, items: [] })),
     configureApi: vi.fn(),
   }))
 }
@@ -64,17 +68,19 @@ async function renderFinancialPage() {
 }
 
 describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
-  it('dispara exatamente 4 requisições de dados — executivo, retorno, faturas pendentes e painel do investidor, nenhuma outra', async () => {
+  it('dispara exatamente 5 requisições de dados — executivo, retorno, faturas pendentes, meses a recalcular e painel do investidor, nenhuma outra', async () => {
     vi.resetModules()
     const fetchExecutiveMock = vi.fn(async () => jsonResponse(executivePayload))
     const fetchFinancialReturnMock = vi.fn(async () => jsonResponse(financialReturnUnavailablePayload))
     const fetchPendingBillsMock = vi.fn(async () => jsonResponse({ count: 0, items: [] }))
     const fetchInvestorMock = vi.fn(async () => jsonResponse(investorUnavailablePayload))
+    const fetchSavingsGapsMock = vi.fn(async () => jsonResponse({ count: 0, items: [] }))
     installApiMock({
       fetchExecutiveDashboard: fetchExecutiveMock,
       fetchFinancialReturn: fetchFinancialReturnMock,
       fetchPendingBills: fetchPendingBillsMock,
       fetchInvestorPanel: fetchInvestorMock,
+      fetchSavingsGaps: fetchSavingsGapsMock,
     })
 
     await renderFinancialPage()
@@ -93,8 +99,10 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
       expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(1)
       expect(fetchPendingBillsMock).toHaveBeenCalledTimes(1)
       expect(fetchInvestorMock).toHaveBeenCalledTimes(1)
+      expect(fetchSavingsGapsMock).toHaveBeenCalledTimes(1)
     })
     expect(fetchInvestorMock).toHaveBeenCalledWith(singlePlant.id)
+    expect(fetchSavingsGapsMock).toHaveBeenCalledWith(singlePlant.id)
     expect(fetchExecutiveMock).toHaveBeenCalledWith(singlePlant.id)
     expect(fetchFinancialReturnMock).toHaveBeenCalledWith(singlePlant.id)
     expect(fetchPendingBillsMock).toHaveBeenCalledWith(singlePlant.id)

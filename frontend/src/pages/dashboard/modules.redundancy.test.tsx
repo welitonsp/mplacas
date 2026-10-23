@@ -39,6 +39,8 @@ function installApiMock() {
     uploadBillPdf: vi.fn(async () => jsonResponse({})),
     confirmBill: vi.fn(async () => jsonResponse({})),
     rejectBill: vi.fn(async () => jsonResponse({})),
+    fetchSavingsGaps: vi.fn(async () => jsonResponse({ count: 0, items: [] })),
+    reprocessSavingsGaps: vi.fn(async () => jsonResponse({ count: 0, items: [] })),
     configureApi: vi.fn(),
   }))
 }

@@ -11,6 +11,7 @@ import { Card } from './Card'
 import { LoadingAnnouncement } from './LoadingAnnouncement'
 import { RetryableError } from './RetryableError'
 import { SectionTitle } from './SectionTitle'
+import { SavingsGapsPanel } from './SavingsGapsPanel'
 
 // Importar e conferir faturas de energia pelo site (fase 2 do plano de
 // inteligência financeira). Fluxo:
@@ -422,6 +423,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
             ))
           )}
         </div>
+        <SavingsGapsPanel plantId={plantId} onReprocessed={onConfirmed} />
       </Card>
     </section>
   )

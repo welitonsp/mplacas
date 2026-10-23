@@ -44,6 +44,8 @@ function chooseFile(container: HTMLElement, file: File) {
 describe('BillsSection — importar e conferir faturas', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    // Painel "Meses a recalcular" (ADR-081) fica vazio nestes cenários.
+    vi.spyOn(api, 'fetchSavingsGaps').mockResolvedValue(json({ count: 0, items: [] }))
   })
 
   afterEach(() => {
