@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { AnomalyDailyPoint, Diagnostic } from './contracts'
 import type { PlantSetup } from './plant-setup-contracts'
-import { STALE_TELEMETRY_DAYS, buildCalmNote, buildHomeStatus, buildHomeTodos } from './home'
+import {
+  STALE_TELEMETRY_DAYS,
+  buildCalmNote,
+  buildHomeStatus,
+  buildHomeTodos,
+  buildUnavailableHomeStatus,
+  buildWeekWindow,
+} from './home'
 
 function day(date: string, actual: number | null, expected: number | null = null): AnomalyDailyPoint {
   return {
@@ -100,9 +107,13 @@ describe('buildHomeTodos (ADR-083)', () => {
     expect(todos[1].title).toBe('Conferir 1 fatura importada')
   })
 
-  it('só diagnóstico CRÍTICO vira tarefa, com a ação recomendada do motor', () => {
+  it('só diagnóstico CRÍTICO vira tarefa, e abre a lista de diagnósticos do Início', () => {
     const todos = buildHomeTodos({ setup: null, diagnostics: [diagnostic('WARNING'), diagnostic('CRITICAL', 'X1')] })
-    expect(todos).toEqual([{ key: 'diagnostic-X1', title: 'msg X1', detail: 'ação X1', target: 'energy' }])
+    expect(todos).toEqual([{ key: 'diagnostic-X1', title: 'msg X1', detail: 'ação X1', target: 'diagnostics' }])
+  })
+
+  it('lacuna de telemetria (MISSING_DAILY_DATA), mesmo CRÍTICA, não vira tarefa do dono', () => {
+    expect(buildHomeTodos({ setup: setup(), diagnostics: [diagnostic('CRITICAL', 'MISSING_DAILY_DATA')] })).toEqual([])
   })
 })
 
@@ -113,15 +124,72 @@ describe('buildCalmNote (ADR-083)', () => {
     expect(buildCalmNote(clean, 'set/26')).toBeNull()
   })
 
-  it('dia sem leitura: explica uma vez, sem pedir ação', () => {
+  it('dia sem leitura: diz que produção e economia podem estar abaixo do real, sem pedir ação', () => {
     expect(buildCalmNote({ ...clean, missing_days: 1 }, 'set/26')).toBe(
-      '1 dia do ciclo set/26 ficou sem leitura do inversor. Isso não muda a economia, que vem da fatura, e não precisa fazer nada.',
+      '1 dia do ciclo set/26 ficou sem leitura do inversor, então a produção e a economia desse ciclo podem estar um pouco abaixo do real. Não é algo que você precise resolver.',
     )
   })
 
   it('dias sem leitura e em consolidação, no plural', () => {
     expect(buildCalmNote({ ...clean, missing_days: 1, unavailable_days: 1, provisional_days: 2 }, 'out/26')).toBe(
-      '2 dias do ciclo out/26 ficaram sem leitura do inversor. 2 dias ainda estão sendo consolidados pelo provedor. Isso não muda a economia, que vem da fatura, e não precisa fazer nada.',
+      '2 dias do ciclo out/26 ficaram sem leitura do inversor, então a produção e a economia desse ciclo podem estar abaixo do real. 2 dias ainda estão sendo consolidados pelo provedor; os números podem mudar um pouco. Não é algo que você precise resolver.',
     )
+  })
+
+  it('nunca afirma que a lacuna não afeta a economia', () => {
+    expect(buildCalmNote({ ...clean, missing_days: 2 }, 'set/26')).not.toMatch(/não muda a economia/)
+  })
+})
+
+describe('buildUnavailableHomeStatus (ADR-083)', () => {
+  it('404 (nenhuma produção em 90 dias): aviso explícito, nunca silêncio', () => {
+    expect(buildUnavailableHomeStatus('NOT_FOUND')).toMatchObject({
+      tone: 'warning',
+      title: 'Nenhuma leitura da usina nos últimos 90 dias',
+    })
+  })
+
+  it('erro de servidor: diz que não conseguiu ler, sem afirmar estado da usina', () => {
+    expect(buildUnavailableHomeStatus('SERVER_ERROR')).toMatchObject({
+      tone: 'neutral',
+      title: 'Não foi possível ler a produção da usina agora',
+    })
+  })
+})
+
+describe('buildWeekWindow (ADR-083)', () => {
+  // Contrato real do backend: dia sem leitura NÃO vem na série (sem `null`).
+  const withGap = [day('2026-10-14', 20), day('2026-10-16', 22), day('2026-10-19', 25), day('2026-10-22', 24.4)]
+
+  it('7 dias de calendário até a última leitura, com os dias ausentes como null', () => {
+    expect(buildWeekWindow(withGap, '2026-10-22')).toEqual([
+      { date: '2026-10-16', kwh: 22 },
+      { date: '2026-10-17', kwh: null },
+      { date: '2026-10-18', kwh: null },
+      { date: '2026-10-19', kwh: 25 },
+      { date: '2026-10-20', kwh: null },
+      { date: '2026-10-21', kwh: null },
+      { date: '2026-10-22', kwh: 24.4 },
+    ])
+  })
+
+  it('não puxa leitura de fora da janela (14/10 fica de fora)', () => {
+    expect(buildWeekWindow(withGap, '2026-10-22').map((item) => item.date)).not.toContain('2026-10-14')
+  })
+
+  it('atravessa virada de mês', () => {
+    expect(buildWeekWindow([day('2026-11-02', 10)], '2026-11-02').map((item) => item.date)).toEqual([
+      '2026-10-27',
+      '2026-10-28',
+      '2026-10-29',
+      '2026-10-30',
+      '2026-10-31',
+      '2026-11-01',
+      '2026-11-02',
+    ])
+  })
+
+  it('sem leitura nenhuma: janela vazia', () => {
+    expect(buildWeekWindow([], null)).toEqual([])
   })
 })

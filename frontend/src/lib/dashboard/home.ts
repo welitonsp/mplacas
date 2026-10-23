@@ -86,7 +86,60 @@ export function buildHomeStatus({
   return { tone: 'neutral', title: 'Sua usina está gerando', detail: latestText }
 }
 
-export type HomeTodoTarget = 'setup' | 'bills' | 'energy'
+// Histórico diário indisponível: nunca some em silêncio. 404 do backend =
+// nenhuma produção nos últimos 90 dias (usina nova OU telemetria parada há
+// muito tempo — as duas pedem o mesmo cuidado do dono).
+export function buildUnavailableHomeStatus(error: 'NOT_FOUND' | 'SERVER_ERROR'): HomeStatus {
+  if (error === 'NOT_FOUND') {
+    return {
+      tone: 'warning',
+      title: 'Nenhuma leitura da usina nos últimos 90 dias',
+      detail:
+        'Se a usina já está ligada, confira a internet do equipamento e a conexão com o provedor do inversor.',
+    }
+  }
+  return {
+    tone: 'neutral',
+    title: 'Não foi possível ler a produção da usina agora',
+    detail: 'Use Atualizar para tentar de novo em instantes.',
+  }
+}
+
+export interface WeekDay {
+  date: string
+  kwh: number | null
+}
+
+function shiftIsoDate(iso: string, deltaDays: number): string {
+  const [year, month, day] = iso.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day + deltaDays))
+  return date.toISOString().slice(0, 10)
+}
+
+// Os 7 dias de CALENDÁRIO que terminam no último dia com leitura. O backend
+// omite da série os dias sem leitura (não devolve `null`), então pegar as 7
+// últimas entradas podia cobrir 10 dias e somar como se fossem 7. Aqui cada
+// dia do calendário tem seu lugar; o que não veio fica `null` ("sem dado").
+export function buildWeekWindow(
+  daily: readonly AnomalyDailyPoint[],
+  latestDataDate: string | null,
+  days = 7,
+): WeekDay[] {
+  if (latestDataDate == null) return []
+  const byDate = new Map(daily.map((point) => [point.date, toNumber(point.actual_production_kwh)]))
+  return Array.from({ length: days }, (_, index) => {
+    const date = shiftIsoDate(latestDataDate, index - (days - 1))
+    return { date, kwh: byDate.get(date) ?? null }
+  })
+}
+
+// Diagnósticos de lacuna de telemetria não viram tarefa: o dono não tem o que
+// fazer num ciclo fechado ("executar backfill" é tarefa de operação), e a
+// lacuna já é explicada uma vez em `buildCalmNote`. Telemetria parada AGORA é
+// tratada pela frase de situação (`buildHomeStatus`).
+const DATA_GAP_DIAGNOSTIC_CODES: ReadonlySet<string> = new Set(['MISSING_DAILY_DATA'])
+
+export type HomeTodoTarget = 'setup' | 'bills' | 'diagnostics'
 
 export interface HomeTodo {
   key: string
@@ -135,20 +188,24 @@ export function buildHomeTodos({
   // continuam na lista completa do ciclo, sem virar tarefa.
   for (const diagnostic of diagnostics) {
     if (diagnostic.severity !== 'CRITICAL') continue
+    if (DATA_GAP_DIAGNOSTIC_CODES.has(diagnostic.code)) continue
     todos.push({
       key: `diagnostic-${diagnostic.code}`,
       title: diagnostic.message,
       detail: diagnostic.recommended_action,
-      target: 'energy',
+      // A lista completa de diagnósticos mora no próprio Início (recolhida).
+      target: 'diagnostics',
     })
   }
 
   return todos
 }
 
-// Explica, uma vez e sem alarme, o que não exige ação no ciclo: dias sem
-// leitura do inversor (a economia vem da fatura, não da telemetria) e dias
-// ainda em consolidação no provedor.
+// Explica, uma vez e sem alarme, o que não pede ação do dono — mas sem
+// esconder o efeito: a economia do ciclo usa a produção do inversor
+// (autoconsumo = produção − injetado, `energy_engine.py`), então um dia sem
+// leitura deixa produção e economia ABAIXO do real. Dias em consolidação podem
+// mudar os números do ciclo.
 export function buildCalmNote(
   quality: { missing_days: number; unavailable_days: number; provisional_days: number; incomplete_days: number },
   cycleLabel: string,
@@ -159,17 +216,17 @@ export function buildCalmNote(
   if (gaps > 0) {
     parts.push(
       gaps === 1
-        ? `1 dia do ciclo ${cycleLabel} ficou sem leitura do inversor.`
-        : `${gaps} dias do ciclo ${cycleLabel} ficaram sem leitura do inversor.`,
+        ? `1 dia do ciclo ${cycleLabel} ficou sem leitura do inversor, então a produção e a economia desse ciclo podem estar um pouco abaixo do real.`
+        : `${gaps} dias do ciclo ${cycleLabel} ficaram sem leitura do inversor, então a produção e a economia desse ciclo podem estar abaixo do real.`,
     )
   }
   if (pending > 0) {
     parts.push(
       pending === 1
-        ? '1 dia ainda está sendo consolidado pelo provedor.'
-        : `${pending} dias ainda estão sendo consolidados pelo provedor.`,
+        ? '1 dia ainda está sendo consolidado pelo provedor; os números podem mudar um pouco.'
+        : `${pending} dias ainda estão sendo consolidados pelo provedor; os números podem mudar um pouco.`,
     )
   }
   if (parts.length === 0) return null
-  return `${parts.join(' ')} Isso não muda a economia, que vem da fatura, e não precisa fazer nada.`
+  return `${parts.join(' ')} Não é algo que você precise resolver.`
 }

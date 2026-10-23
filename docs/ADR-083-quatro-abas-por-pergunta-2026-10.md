@@ -51,8 +51,20 @@ alarme sem lastro.
    - "Precisa de você" lista só:
      - cadastro incompleto;
      - faturas aguardando conferência;
-     - diagnóstico que o motor classificou como `CRITICAL`.
-   - Lacuna num ciclo fechado é explicada uma vez (`buildCalmNote`), sem pedir ação.
+     - diagnóstico que o motor classificou como `CRITICAL`, exceto lacuna de telemetria
+       (`MISSING_DAILY_DATA`, cuja ação "executar backfill" é de operação, não do dono).
+       A tarefa abre a lista completa de diagnósticos, recolhida no próprio Início.
+   - Lacuna num ciclo fechado é explicada uma vez (`buildCalmNote`), sem pedir ação e
+     **sem esconder o efeito**: a economia usa a produção do inversor (autoconsumo =
+     produção − injetado, `energy_engine.py`), então dia sem leitura deixa produção e
+     economia abaixo do real. O selo do cartão vira "Estimado · ciclo parcial".
+   - "Nada pendente." só quando o cadastro foi lido; falha ao ler diz que não conseguiu
+     conferir (indisponível nunca é zero).
+   - Histórico diário com erro ou 404 (nenhuma produção em 90 dias) vira frase de
+     situação explícita, nunca some.
+   - O cartão de 7 dias usa dias de **calendário** até a última leitura: o backend omite
+     da série os dias sem leitura, então dia ausente aparece como lacuna e o total diz
+     quantos dias somou.
 5. **Fluxo de energia vai para a aba Energia** (`EnergyDestinationSection`), com uma frase
    que só repete os percentuais do motor.
 6. **Saem** `HeroCard`, `AttentionSummary`, `QualityBanner`, `DataConfidenceStrip`,
@@ -71,6 +83,13 @@ alarme sem lastro.
 - O módulo Energia faz uma leitura a mais (executivo). O chunk ficou em 14,56 kB de
   15 kB; a etapa 3 precisa reduzir ou dividir.
 - Nenhuma mudança em dados, cálculos, contratos de API, autenticação ou permissões.
+- Dívida conhecida, para a etapa 3: `productionAlertSignal` (compartilhado com Energia)
+  compara as 7 últimas ENTRADAS com as 7 anteriores, não 7 dias de calendário. Com lacunas,
+  a janela fica mais longa que 7 dias. Não inverte o sinal, mas precisa ser alinhado ao
+  contrato real.
+- Aceitos como estão (P4 da revisão): `daysBetween` usa o dia local do navegador (sem
+  efeito para usuários no Brasil); `aria-current="page"` em Energia também na subpágina
+  técnica.
 - Validação:
   - testes de regra (`home.test.ts`), de página (`OverviewPage.test.tsx`), de navegação
     e de redirecionamento;

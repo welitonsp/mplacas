@@ -1,29 +1,23 @@
 import { Link } from 'react-router'
-import type { AnomalyDailyPoint } from '../../lib/dashboard/contracts'
-import {
-  DEFAULT_PRODUCTION_PERIOD_DAYS,
-  averageActualProduction,
-  latestProductionDays,
-} from '../../lib/dashboard/production-alerts'
-import { formatNumber, formatShortDate, toNumber } from '../../lib/format'
+import type { WeekDay } from '../../lib/dashboard/home'
+import { formatNumber, formatShortDate } from '../../lib/format'
 import { DASHBOARD_PRODUCTION_PATH } from '../../routes'
 
-// Produção dos últimos 7 dias no Início (ADR-083). Só o medido: o desvio
-// contra o esperado, a irradiância e o rendimento ficam na aba Energia.
-// Dia sem leitura aparece como coluna vazia rotulada "sem dado", nunca zero.
-export function HomeWeekCard({ daily }: { daily: readonly AnomalyDailyPoint[] }) {
-  const recent = latestProductionDays(daily, DEFAULT_PRODUCTION_PERIOD_DAYS)
-  const values = recent.map((day) => toNumber(day.actual_production_kwh))
-  const measured = values.filter((value): value is number => value != null)
-  const total = measured.reduce((sum, value) => sum + value, 0)
-  const average = averageActualProduction(recent)
-  const max = Math.max(...measured, 1)
+// Produção dos 7 dias de calendário até a última leitura, no Início (ADR-083).
+// Só o medido: desvio contra o esperado, irradiância e rendimento ficam na aba
+// Energia. Dia sem leitura aparece como coluna vazia "sem dado" e o total diz
+// quantos dias somou — nunca soma 5 dias como se fossem 7.
+export function HomeWeekCard({ week }: { week: readonly WeekDay[] }) {
+  const measured = week.filter((day): day is WeekDay & { kwh: number } => day.kwh != null)
+  const total = measured.reduce((sum, day) => sum + day.kwh, 0)
+  const average = measured.length > 0 ? total / measured.length : null
+  const max = Math.max(...measured.map((day) => day.kwh), 1)
+  const missing = week.length - measured.length
+  const first = week[0]?.date
+  const last = week[week.length - 1]?.date
 
-  const summary = recent
-    .map((day, index) => {
-      const value = values[index]
-      return `${formatShortDate(day.date)}: ${value == null ? 'sem dado' : `${formatNumber(value, 1)} kWh`}`
-    })
+  const summary = week
+    .map((day) => `${formatShortDate(day.date)}: ${day.kwh == null ? 'sem dado' : `${formatNumber(day.kwh, 1)} kWh`}`)
     .join('; ')
 
   return (
@@ -33,7 +27,7 @@ export function HomeWeekCard({ daily }: { daily: readonly AnomalyDailyPoint[] })
     >
       <div className="flex items-baseline justify-between gap-3">
         <h2 id="home-week-heading" className="text-[14px] font-medium text-[var(--color-text-secondary)]">
-          Gerou nos últimos {recent.length} dias
+          {first && last ? `Gerou de ${formatShortDate(first)} a ${formatShortDate(last)}` : 'Produção recente'}
         </h2>
         <span className="shrink-0 rounded-full bg-[var(--color-gray-100)] px-2 py-0.5 text-xs font-semibold text-[var(--color-chart-reference)]">
           Medido
@@ -41,46 +35,58 @@ export function HomeWeekCard({ daily }: { daily: readonly AnomalyDailyPoint[] })
       </div>
 
       {measured.length === 0 ? (
-        <p className="text-[15px] leading-6 text-[var(--color-text-secondary)]">
-          Ainda sem produção diária registrada nestes dias.
-        </p>
+        <p className="text-[15px] leading-6 text-[var(--color-text-secondary)]">Ainda sem produção diária registrada nestes dias.</p>
       ) : (
         <>
-          <p className="flex flex-wrap items-baseline gap-x-2">
-            <span className="font-display text-[32px] font-semibold leading-none tabular-nums text-[var(--color-text-primary)]">
-              {formatNumber(total, 0)}
-            </span>
-            <span className="text-[15px] text-[var(--color-text-secondary)]">
-              {average.average == null ? 'kWh' : `kWh · média ${formatNumber(average.average, 1)} por dia`}
-            </span>
-          </p>
+          <div className="flex flex-col gap-1">
+            <p className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-display text-[32px] font-semibold leading-none tabular-nums text-[var(--color-text-primary)]">
+                {formatNumber(total, 0)}
+              </span>
+              <span className="text-[15px] text-[var(--color-text-secondary)]">
+                {average == null ? 'kWh' : `kWh · média ${formatNumber(average, 1)} por dia`}
+              </span>
+            </p>
+            {missing > 0 && (
+              <p className="text-[13px] text-[var(--color-text-secondary)]">
+                {missing === 1
+                  ? `Soma de ${measured.length} dias: 1 dia ficou sem leitura.`
+                  : `Soma de ${measured.length} dias: ${missing} dias ficaram sem leitura.`}
+              </p>
+            )}
+          </div>
           <div role="img" aria-label={`Produção diária: ${summary}`}>
             <div className="flex h-24 items-end gap-2" aria-hidden="true">
-              {recent.map((day, index) => {
-                const value = values[index]
-                const height = value == null ? 0 : Math.max(6, Math.round((value / max) * 100))
-                return (
-                  <div key={day.date} className="flex h-full min-w-0 flex-1 items-end justify-center">
-                    {value == null ? (
-                      <span className="h-1.5 w-full max-w-8 rounded-full border border-dashed border-[var(--color-gray-400)]" />
-                    ) : (
-                      <span
-                        data-testid="home-week-bar"
-                        className="w-full max-w-8 rounded-t-md bg-[var(--color-energy-solar)]"
-                        style={{ height: `${height}%` }}
-                      />
-                    )}
-                  </div>
-                )
-              })}
+              {week.map((day) => (
+                <div key={day.date} className="flex h-full min-w-0 flex-1 items-end justify-center">
+                  {day.kwh == null ? (
+                    <span
+                      data-testid="home-week-gap"
+                      className="h-1.5 w-full max-w-8 rounded-full border border-dashed border-[var(--color-gray-400)]"
+                    />
+                  ) : (
+                    <span
+                      data-testid="home-week-bar"
+                      className="w-full max-w-8 rounded-t-md bg-[var(--color-energy-solar)]"
+                      style={{ height: `${Math.max(6, Math.round((day.kwh / max) * 100))}%` }}
+                    />
+                  )}
+                </div>
+              ))}
             </div>
             <div className="mt-1.5 flex gap-2" aria-hidden="true">
-              {recent.map((day) => (
+              {week.map((day) => (
                 <span key={day.date} className="min-w-0 flex-1 text-center text-[11px] tabular-nums text-[var(--color-text-secondary)]">
                   {formatShortDate(day.date)}
                 </span>
               ))}
             </div>
+            {missing > 0 && (
+              <p className="mt-2 flex items-center gap-2 text-xs text-[var(--color-text-secondary)]" aria-hidden="true">
+                <span className="h-1.5 w-4 rounded-full border border-dashed border-[var(--color-gray-400)]" />
+                Sem leitura do inversor
+              </p>
+            )}
           </div>
         </>
       )}

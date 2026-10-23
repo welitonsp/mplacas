@@ -118,7 +118,7 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Início' })).toBeInTheDocument()
     const status = await screen.findByTestId('home-status')
     const savings = await screen.findByRole('region', { name: 'Você economizou em set/26' })
-    const week = await screen.findByRole('region', { name: /Gerou nos últimos 2 dias/ })
+    const week = await screen.findByRole('region', { name: 'Gerou de 24/07 a 30/07' })
     const todo = screen.getByRole('region', { name: 'Precisa de você' })
 
     const order = [status, savings, week, todo]
@@ -156,7 +156,7 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
 
     const savings = await screen.findByRole('region', { name: 'Você economizou em set/26' })
     expect(within(savings).getByText('R$ 612,16')).toBeInTheDocument()
-    expect(within(savings).getByText('Estimado pela fatura')).toBeInTheDocument()
+    expect(within(savings).getByText('Estimado', { exact: true })).toBeInTheDocument()
     expect(within(savings).getByText('R$ 682,38')).toBeInTheDocument()
     expect(within(savings).getByText('R$ 70,22')).toBeInTheDocument()
     expect(await within(savings).findByText('Investimento já recuperado')).toBeInTheDocument()
@@ -174,14 +174,22 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
     expect(within(savings).queryByRole('img')).not.toBeInTheDocument()
   })
 
-  it('7 dias: total, média e link para a aba Energia', async () => {
+  it('7 dias de calendário: dias sem leitura aparecem como lacuna e o total diz quantos dias somou', async () => {
     freezeToday()
     await renderHome()
 
-    const week = await screen.findByRole('region', { name: /Gerou nos últimos 2 dias/ })
+    // O fixture só tem 29/07 e 30/07: o backend omite os dias sem leitura.
+    const week = await screen.findByRole('region', { name: 'Gerou de 24/07 a 30/07' })
     expect(within(week).getByText('78')).toBeInTheDocument()
     expect(within(week).getByText('kWh · média 39 por dia')).toBeInTheDocument()
-    expect(within(week).getByRole('img', { name: 'Produção diária: 29/07: 38 kWh; 30/07: 40 kWh' })).toBeInTheDocument()
+    expect(within(week).getByText('Soma de 2 dias: 5 dias ficaram sem leitura.')).toBeInTheDocument()
+    expect(within(week).getAllByTestId('home-week-bar')).toHaveLength(2)
+    expect(within(week).getAllByTestId('home-week-gap')).toHaveLength(5)
+    expect(
+      within(week).getByRole('img', {
+        name: 'Produção diária: 24/07: sem dado; 25/07: sem dado; 26/07: sem dado; 27/07: sem dado; 28/07: sem dado; 29/07: 38 kWh; 30/07: 40 kWh',
+      }),
+    ).toBeInTheDocument()
     expect(within(week).getByRole('link', { name: /Ver minha energia/ })).toHaveAttribute('href', '/dashboard/energia')
   })
 
@@ -206,16 +214,45 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
     })
 
     const todo = await screen.findByRole('region', { name: 'Precisa de você' })
-    expect(within(todo).getByText('Nada pendente.')).toBeInTheDocument()
+    expect(await within(todo).findByText('Nada pendente.')).toBeInTheDocument()
     expect(
       within(todo).getByText(
-        '1 dia do ciclo set/26 ficou sem leitura do inversor. Isso não muda a economia, que vem da fatura, e não precisa fazer nada.',
+        '1 dia do ciclo set/26 ficou sem leitura do inversor, então a produção e a economia desse ciclo podem estar um pouco abaixo do real. Não é algo que você precise resolver.',
       ),
     ).toBeInTheDocument()
     expect(within(todo).queryByText(/backfill/)).not.toBeInTheDocument()
+    // A economia desse ciclo é parcial, e o selo diz isso.
+    const savings = screen.getByRole('region', { name: 'Você economizou em set/26' })
+    expect(within(savings).getByText('Estimado · ciclo parcial')).toBeInTheDocument()
   })
 
-  it('precisa de você: cadastro incompleto, faturas pendentes e diagnóstico crítico viram links', async () => {
+  it('precisa de você: lacuna CRÍTICA de telemetria (3+ dias) não vira tarefa de "backfill"', async () => {
+    freezeToday()
+    await renderHome({
+      executivePayload: {
+        ...executivePayload,
+        current_cycle: {
+          ...executivePayload.current_cycle,
+          quality: { missing_days: 3, provisional_days: 0, incomplete_days: 0, unavailable_days: 0 },
+          diagnostics: [
+            {
+              code: 'MISSING_DAILY_DATA',
+              severity: 'CRITICAL',
+              message: 'O ciclo possui 3 dia(s) sem produção consolidada.',
+              recommended_action: 'Executar backfill e validar a comunicação dos microinversores.',
+            },
+          ],
+        },
+      },
+    })
+
+    const todo = await screen.findByRole('region', { name: 'Precisa de você' })
+    expect(await within(todo).findByText('Nada pendente.')).toBeInTheDocument()
+    expect(within(todo).queryByText(/backfill/)).not.toBeInTheDocument()
+    expect(within(todo).getByText(/3 dias do ciclo jul\/26 ficaram sem leitura do inversor/)).toBeInTheDocument()
+  })
+
+  it('precisa de você: cadastro incompleto, faturas pendentes e diagnóstico crítico viram ações', async () => {
     freezeToday()
     await renderHome({
       setupPayload: { ...plantSetupCompletePayload, completed: 5, pending_bills: 2 },
@@ -241,17 +278,46 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
       '/dashboard/minha-usina',
     )
     expect(within(todo).getByRole('link', { name: /Conferir 2 faturas importadas/ })).toHaveAttribute('href', '/dashboard/dinheiro')
-    expect(within(todo).getByRole('link', { name: /Um inversor parou de produzir/ })).toHaveAttribute('href', '/dashboard/energia')
     expect(within(todo).queryByText('Nada pendente.')).not.toBeInTheDocument()
+
+    // Diagnóstico crítico abre a lista completa, recolhida no próprio Início.
+    const details = document.querySelector('details') as HTMLDetailsElement
+    expect(details.open).toBe(false)
+    fireEvent.click(within(todo).getByRole('button', { name: /Um inversor parou de produzir/ }))
+    expect(details.open).toBe(true)
+    expect(within(details).getByText('Um inversor parou de produzir.')).toBeInTheDocument()
   })
 
-  it('falha ao ler o cadastro não derruba a tela: só omite as tarefas dele', async () => {
+  it('falha ao ler o cadastro: diz que não conseguiu conferir, nunca "Nada pendente."', async () => {
     freezeToday()
     await renderHome({ fetchPlantSetup: vi.fn(async () => jsonResponse({ detail: 'erro' }, 500)) })
 
-    expect(await screen.findByRole('region', { name: 'Precisa de você' })).toBeInTheDocument()
+    const todo = await screen.findByRole('region', { name: 'Precisa de você' })
+    expect(
+      await within(todo).findByText(
+        'Não foi possível conferir o cadastro e as faturas pendentes agora. Use Atualizar para tentar de novo.',
+      ),
+    ).toBeInTheDocument()
+    expect(within(todo).queryByText('Nada pendente.')).not.toBeInTheDocument()
     expect(screen.getByTestId('home-status')).toBeInTheDocument()
-    expect(screen.queryByText('Erro ao buscar o cadastro da usina.')).not.toBeInTheDocument()
+  })
+
+  it('histórico diário 404 (nada em 90 dias): a situação avisa, não some', async () => {
+    freezeToday()
+    await renderHome({ fetchAnomalyHistory: vi.fn(async () => jsonResponse({ detail: 'not found' }, 404)) })
+
+    const status = await screen.findByTestId('home-status')
+    expect(status).toHaveAttribute('data-tone', 'warning')
+    expect(within(status).getByText('Nenhuma leitura da usina nos últimos 90 dias')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: /^Gerou de/ })).not.toBeInTheDocument()
+  })
+
+  it('histórico diário com erro de servidor: diz que não conseguiu ler', async () => {
+    freezeToday()
+    await renderHome({ fetchAnomalyHistory: vi.fn(async () => jsonResponse({ detail: 'erro' }, 500)) })
+
+    const status = await screen.findByTestId('home-status')
+    expect(within(status).getByText('Não foi possível ler a produção da usina agora')).toBeInTheDocument()
   })
 
   it('diagnósticos e evolução ficam recolhidos no fim, com a lista completa', async () => {

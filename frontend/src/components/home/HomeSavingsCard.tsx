@@ -51,14 +51,21 @@ function ReturnProgress({ result }: { result: FinancialReturnResponse | null }) 
 // Cartão de dinheiro do Início (ADR-083): economia do último ciclo com fatura,
 // a conta com e sem a usina e quanto do investimento já voltou. Os detalhes
 // (tarifa, créditos, CDI) moram na aba Dinheiro.
+//
+// Selo "Estimado": a economia combina a fatura com a produção do inversor
+// (autoconsumo), então não é "pela fatura". Ciclo com dia sem leitura ou em
+// consolidação vira "Estimado · ciclo parcial" — o valor pode estar abaixo do
+// real (ver `buildCalmNote`).
 export function HomeSavingsCard({
   indicators,
   referenceMonth,
   financialReturn,
+  partial,
 }: {
   indicators: ExecutiveIndicators
   referenceMonth: string
   financialReturn: FinancialReturnResponse | null
+  partial: boolean
 }) {
   const savings = toNumber(indicators.estimated_savings_brl)
   const withoutSolar = toNumber(indicators.bill_without_solar_brl ?? null)
@@ -75,7 +82,7 @@ export function HomeSavingsCard({
           Você economizou em {cycle}
         </h2>
         <span className="shrink-0 rounded-full bg-[var(--color-gray-100)] px-2 py-0.5 text-xs font-semibold text-[var(--color-chart-reference)]">
-          Estimado pela fatura
+          {partial ? 'Estimado · ciclo parcial' : 'Estimado'}
         </span>
       </div>
 

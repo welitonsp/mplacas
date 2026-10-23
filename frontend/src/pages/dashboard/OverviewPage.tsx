@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { fetchAnomalyHistory, fetchExecutiveDashboard, fetchFinancialReturn, fetchPlantSetup } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
@@ -12,11 +12,18 @@ import {
 } from '../../lib/dashboard/contracts'
 import { parseFinancialReturn } from '../../lib/dashboard/financial-return-contracts'
 import { parsePlantSetup } from '../../lib/dashboard/plant-setup-contracts'
-import { buildCalmNote, buildHomeStatus, buildHomeTodos } from '../../lib/dashboard/home'
+import {
+  buildCalmNote,
+  buildHomeStatus,
+  buildHomeTodos,
+  buildUnavailableHomeStatus,
+  buildWeekWindow,
+} from '../../lib/dashboard/home'
 import { formatCycleLabel } from '../../lib/format'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
 import { SectionTitle } from '../../components/SectionTitle'
 import { TrendCard } from '../../components/TrendCard'
+import { hasIncompleteDailyProduction } from '../../components/EnergyProductionSection'
 import { DiagnosticsCard } from '../../components/DiagnosticsCard'
 import { EmptyState } from '../../components/EmptyState'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
@@ -85,8 +92,26 @@ export function OverviewPage() {
   const daily = anomalies.data?.daily ?? null
   const latestDataDate = daily ? latestNonNullProductionDate(daily) : null
   const diagnostics = useMemo(() => (data ? combineDiagnostics(data) : []), [data])
-  const status = daily ? buildHomeStatus({ daily, latestDataDate, today: new Date() }) : null
+  // Histórico diário com erro (inclusive 404: nenhuma produção em 90 dias)
+  // vira uma frase de situação explícita — nunca some em silêncio.
+  const status = daily
+    ? buildHomeStatus({ daily, latestDataDate, today: new Date() })
+    : anomalies.error
+      ? buildUnavailableHomeStatus(anomalies.error)
+      : null
+  const week = daily ? buildWeekWindow(daily, latestDataDate) : []
   const todos = buildHomeTodos({ setup: setup.data, diagnostics })
+  const setupStatus = setup.data ? 'ready' : setup.error ? 'error' : 'loading'
+
+  // A tarefa de diagnóstico crítico abre a lista completa, recolhida no fim.
+  const diagnosticsRef = useRef<HTMLDetailsElement>(null)
+  const openDiagnostics = () => {
+    const details = diagnosticsRef.current
+    if (!details) return
+    details.open = true
+    details.scrollIntoView?.({ block: 'start' })
+    details.querySelector('summary')?.focus()
+  }
 
   if (plantsLoading) {
     return <MetricCardSkeletonGrid />
@@ -138,20 +163,23 @@ export function OverviewPage() {
               indicators={data.current_cycle.indicators}
               referenceMonth={data.current_cycle.reference_month}
               financialReturn={financialReturn.data}
+              partial={hasIncompleteDailyProduction(data.current_cycle.quality)}
             />
           )}
-          {daily && <HomeWeekCard daily={daily} />}
+          {daily && week.length > 0 && <HomeWeekCard week={week} />}
         </div>
 
         {(data || setup.data) && (
           <HomeTodoList
             todos={todos}
+            setupStatus={setupStatus}
+            onOpenDiagnostics={openDiagnostics}
             calmNote={data && cycleLabel ? buildCalmNote(data.current_cycle.quality, cycleLabel) : null}
           />
         )}
 
         {data && (
-          <details className="group rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+          <details ref={diagnosticsRef} className="group rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
             <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-card)] px-5 text-[15px] font-semibold text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] [&::-webkit-details-marker]:hidden">
               {`Diagnósticos e evolução do ciclo ${cycleLabel}`}
               <span aria-hidden="true" className="text-[var(--color-gray-400)] transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none">
