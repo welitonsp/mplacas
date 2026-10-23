@@ -55,6 +55,10 @@ packages = ["src/mplacas"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+# Só a suíte do projeto. Sem isto, `pytest` na raiz recolheria qualquer
+# `test_*.py` do repositório — inclusive código de terceiros em
+# `.claude/skills/` (skills instaladas, ver PR #211).
+testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
   "postgres_integration: requires MPLACAS_TEST_POSTGRES_URL and a migrated PostgreSQL database",
@@ -63,6 +67,10 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Skills de terceiros instaladas em `.claude/skills/` (ex.: ui-ux-pro-max,
+# MIT) trazem scripts próprios, que não são código do projeto nem seguem o
+# estilo dele. Ficam fora do lint em vez de serem reescritos.
+extend-exclude = [".claude"]
 
 [tool.ruff.lint]
 # `E` = pycodestyle (estilo). `F` = Pyflakes, que pega defeito de verdade:
