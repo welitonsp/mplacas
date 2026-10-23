@@ -12,10 +12,15 @@ import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 import { PageHeader } from '../../components/PageHeader'
-import { BillsSection } from '../../components/BillsSection'
 
 // Painel do investidor sob demanda: chunk próprio (gráfico de patrimônio +
 // premissas), para não estourar o teto de 15 kB do módulo Financeiro.
+// Faturas (importação em lote, confirmação, meses a recalcular) também em
+// chunk próprio: o módulo já estava no teto de 15 kB.
+const BillsSection = lazy(() =>
+  import('../../components/BillsSection').then((module) => ({ default: module.BillsSection })),
+)
+
 const InvestorPanelSection = lazy(() =>
   import('../../components/InvestorPanelSection').then((module) => ({
     default: module.InvestorPanelSection,
@@ -131,7 +136,11 @@ export function FinancialPage() {
           economia nem retorno — é a porta de entrada dos dados financeiros.
           Fica fora do bloco do recurso executivo para continuar disponível
           mesmo quando ele falha ou ainda não tem ciclo nenhum. */}
-      <BillsSection plantId={plantId} onConfirmed={refreshAll} />
+      <Suspense
+        fallback={<div className="mb-6 h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)]" aria-hidden="true" />}
+      >
+        <BillsSection plantId={plantId} onConfirmed={refreshAll} />
+      </Suspense>
       {executive.error && (
         <RetryableError
           message={executive.error}

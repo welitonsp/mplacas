@@ -37,8 +37,12 @@ function pdfFile(size = 1024): File {
 }
 
 function chooseFile(container: HTMLElement, file: File) {
+  chooseFiles(container, [file])
+}
+
+function chooseFiles(container: HTMLElement, files: File[]) {
   const input = container.querySelector('#bill-pdf-input') as HTMLInputElement
-  fireEvent.change(input, { target: { files: [file] } })
+  fireEvent.change(input, { target: { files } })
 }
 
 describe('BillsSection — importar e conferir faturas', () => {
@@ -256,5 +260,126 @@ describe('BillsSection — importar e conferir faturas', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Confirmar fatura' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('não tem permissão')
+  })
+
+  it('importa várias faturas de uma vez, uma de cada vez, e resume o resultado', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json({ count: 0, items: [] }))
+    const upload = vi
+      .spyOn(api, 'uploadBillPdf')
+      .mockResolvedValueOnce(json({ status: 'pending_review', bill: { ...pendingBill, id: 'b1', reference_month: '2024-09' } }, 202))
+      .mockResolvedValueOnce(
+        json({ detail: 'O PDF foi lido, mas não parece uma fatura da Equatorial Goiás com os campos esperados.' }, 422),
+      )
+      .mockResolvedValueOnce(json({ status: 'pending_review', bill: { ...pendingBill, id: 'b3', reference_month: '2024-11' } }, 202))
+
+    const { container } = render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    const input = container.querySelector('#bill-pdf-input') as HTMLInputElement
+    expect(input.multiple).toBe(true)
+    chooseFiles(container, [pdfFile(), pdfFile(), pdfFile()])
+
+    const summary = await screen.findByText(/3 arquivos lidos: 2 para conferir, 1 com problema/)
+    expect(summary).toBeInTheDocument()
+    expect(upload).toHaveBeenCalledTimes(3)
+    expect(screen.getByText(/Fatura de set\/2024 lida/)).toBeInTheDocument()
+    expect(screen.getByText(/não parece uma fatura da Equatorial/)).toBeInTheDocument()
+  })
+
+  it('recusa mais de 18 arquivos de uma vez sem enviar nada', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json({ count: 0, items: [] }))
+    const upload = vi.spyOn(api, 'uploadBillPdf')
+
+    const { container } = render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    chooseFiles(container, Array.from({ length: 19 }, () => pdfFile()))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('até 18 faturas')
+    expect(upload).not.toHaveBeenCalled()
+  })
+
+  it('confirmar todas pede uma segunda confirmação e confirma cada fatura', async () => {
+    const two = {
+      count: 2,
+      items: [
+        { ...pendingBill, id: 'b1', reference_month: '2024-09' },
+        { ...pendingBill, id: 'b2', reference_month: '2024-10' },
+      ],
+    }
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValueOnce(json(two)).mockResolvedValue(json({ count: 0, items: [] }))
+    const confirm = vi.spyOn(api, 'confirmBill').mockResolvedValue(json({ status: 'confirmed', bill: pendingBill }))
+    const onConfirmed = vi.fn()
+
+    render(<BillsSection plantId="plant-1" onConfirmed={onConfirmed} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar todas' }))
+    expect(confirm).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar 2 faturas' }))
+
+    expect(await screen.findByText('2 faturas confirmadas. Economia e retorno do investimento atualizados.')).toBeInTheDocument()
+    expect(confirm).toHaveBeenCalledWith('b1')
+    expect(confirm).toHaveBeenCalledWith('b2')
+    expect(onConfirmed).toHaveBeenCalled()
+  })
+
+  const twoPending = {
+    count: 2,
+    items: [
+      { ...pendingBill, id: 'b1', reference_month: '2024-09' },
+      { ...pendingBill, id: 'b2', reference_month: '2024-10' },
+    ],
+  }
+
+  it('confirmar todas para no primeiro 403 e diz que o perfil não tem permissão', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json(twoPending))
+    const confirm = vi.spyOn(api, 'confirmBill').mockResolvedValue(json({ detail: 'forbidden' }, 403))
+
+    render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar todas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar 2 faturas' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Seu perfil não tem permissão para confirmar faturas.')
+    expect(confirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('confirmar todas separa as já revisadas das que falharam', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json(twoPending))
+    vi.spyOn(api, 'confirmBill')
+      .mockResolvedValueOnce(json({ detail: 'already' }, 409))
+      .mockResolvedValueOnce(json({ detail: 'boom' }, 500))
+
+    render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar todas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar 2 faturas' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('0 faturas confirmadas.')
+    expect(alert).toHaveTextContent('Já tinham sido revisadas: set/2024.')
+    expect(alert).toHaveTextContent('Não foi possível confirmar: out/2024.')
+  })
+
+  it('cancelar a segunda confirmação não confirma nada e devolve o foco', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json(twoPending))
+    const confirm = vi.spyOn(api, 'confirmBill')
+
+    render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar todas' }))
+    expect(screen.getByRole('button', { name: 'Sim, confirmar 2 faturas' })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar todas' })).toHaveFocus())
+    expect(confirm).not.toHaveBeenCalled()
+  })
+
+  it('durante o confirmar todas, importar e os botões de cada fatura ficam travados', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json(twoPending))
+    let release: (value: Response) => void = () => {}
+    vi.spyOn(api, 'confirmBill').mockImplementation(
+      () => new Promise<Response>((resolve) => { release = resolve }),
+    )
+
+    render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar todas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar 2 faturas' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Importar faturas (PDF)' })).toBeDisabled())
+    for (const button of screen.getAllByRole('button', { name: 'Confirmar fatura' })) expect(button).toBeDisabled()
+    release(json({ status: 'confirmed', bill: pendingBill }))
   })
 })

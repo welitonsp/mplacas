@@ -398,8 +398,11 @@ export async function uploadBillPdf(plantId: string, file: Blob): Promise<Respon
   })
 }
 
+// Até 50: cobre uma importação em lote inteira (o backend aceita até 100).
+export const PENDING_BILLS_LIMIT = 50
+
 export async function fetchPendingBills(plantId: string): Promise<Response> {
-  return apiFetch(`/billing/pending?plant_id=${encodeURIComponent(plantId)}`)
+  return apiFetch(`/billing/pending?plant_id=${encodeURIComponent(plantId)}&limit=${PENDING_BILLS_LIMIT}`)
 }
 
 export async function confirmBill(billId: string): Promise<Response> {
