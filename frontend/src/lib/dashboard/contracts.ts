@@ -44,8 +44,8 @@ export interface ExecutiveIndicators {
 
 // Vocabulário compartilhado com o backend (ver
 // intelligence/energy_engine.py::SAVINGS_UNAVAILABLE_TARIFF_NOT_REGISTERED)
-// — hoje o único motivo possível é a fatura do ciclo não ter tarifa com
-// impostos registrada. Nunca renderizar R$ 0,00 quando este campo vem
+// — fatura sem tarifa com impostos, ciclo sem consumo ou ciclo sem nenhum dia
+// de produção do inversor (fatura antiga importada). Nunca renderizar R$ 0,00 quando este campo vem
 // preenchido; mostrar a mensagem explícita abaixo no lugar do valor.
 export function savingsUnavailableMessage(reason: string): string {
   switch (reason) {
@@ -53,6 +53,8 @@ export function savingsUnavailableMessage(reason: string): string {
       return 'Economia estimada ainda não disponível — a fatura deste ciclo não tem a tarifa com impostos registrada.'
     case 'NO_CONSUMPTION_DATA':
       return 'Economia estimada ainda não disponível — ainda não há dado de consumo para este ciclo.'
+    case 'NO_PRODUCTION_DATA':
+      return 'Economia estimada ainda não disponível — não há produção do inversor registrada neste ciclo.'
     default:
       return 'Economia estimada ainda não disponível para este ciclo.'
   }

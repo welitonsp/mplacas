@@ -36,6 +36,10 @@ class EnergyDiagnostic:
 # nunca mostrar R$ 0,00 nesses casos, ver EnergyCycleIntelligence.estimated_savings_brl.
 SAVINGS_UNAVAILABLE_TARIFF_NOT_REGISTERED = "TARIFF_NOT_AVAILABLE"
 SAVINGS_UNAVAILABLE_NO_CONSUMPTION_DATA = "NO_CONSUMPTION_DATA"
+# Ciclo sem nenhum dia de produção do inversor: sem produção não há como
+# saber quanto foi consumido direto do telhado, e a conta daria só a parte
+# compensada pela rede — um valor menor que o real, com cara de medido.
+SAVINGS_UNAVAILABLE_NO_PRODUCTION_DATA = "NO_PRODUCTION_DATA"
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,9 +87,10 @@ def analyze_energy_cycle(
     expected_production_kwh: Decimal | None = None,
     missing_days: int = 0,
     provisional_days: int = 0,
+    production_days: int | None = None,
 ) -> EnergyCycleIntelligence:
     """Calcula indicadores e diagnósticos auditáveis sem uso de IA generativa."""
-    if missing_days < 0 or provisional_days < 0:
+    if missing_days < 0 or provisional_days < 0 or (production_days or 0) < 0:
         raise ValueError("data quality counters cannot be negative")
     if expected_production_kwh is not None and expected_production_kwh < 0:
         raise ValueError("expected production cannot be negative")
@@ -125,6 +130,14 @@ def analyze_energy_cycle(
     if bill.tariff_with_taxes_brl_kwh is None:
         estimated_savings_brl = None
         savings_unavailable_reason = SAVINGS_UNAVAILABLE_TARIFF_NOT_REGISTERED
+    elif production_days == 0:
+        # Nenhum dia do ciclo com produção do inversor (fatura antiga importada
+        # antes de haver telemetria daquele período). Fica indisponível em vez
+        # de gravar no snapshot imutável uma economia subestimada. Enquanto não
+        # houver reprocessamento de snapshots, esse mês fica fora do ROI e do
+        # painel do investidor (cobertura menor, explícita).
+        estimated_savings_brl = None
+        savings_unavailable_reason = SAVINGS_UNAVAILABLE_NO_PRODUCTION_DATA
     elif reconciliation.estimated_total_consumption_kwh <= 0:
         # Consumo total zero normalmente significa "ainda sem dado do ciclo",
         # não "usina não consumiu nada". Sem isso, a fórmula abaixo devolveria

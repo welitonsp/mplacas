@@ -411,6 +411,12 @@ def test_second_copy_layout_handles_thousands_separator_in_quantity() -> None:
         "PARC INJET S/DESC",
         "PARC INJET S/DESC - 28,57% - GD II 2 kWh 0,1751261.221,00 0,175126213,83",
     )
+    # O medidor precisa contar o mesmo consumo (02234 − 01013 = 1.221).
+    big = _replace_line(
+        big,
+        "ENERGIA ATIVA - KWH",
+        "ENERGIA ATIVA - KWH 02234 1221XXXXXXXX 01013 1,000000ÚNICO",
+    )
 
     bill = parse_equatorial_bill_text(big)
 
@@ -433,3 +439,218 @@ def test_old_layout_does_not_trigger_second_copy_extractor() -> None:
     assert bill.reference_month == "2026-07"
     assert bill.imported_kwh == Decimal("278.00")
     assert bill.tariff_with_taxes_brl_kwh == Decimal("0.814841")
+
+
+# --- Layouts antigos da Equatorial (faturas reais de 2024 a 2026, anonimizadas) ---
+# Só as linhas que o leitor usa; nome, CPF, endereço, UC, nº do medidor e PIX
+# foram removidos.
+
+
+def _old_bill(*, days_line: str, energy: str, total: str, dates: str, ref: str,
+              scee: str, meter: str, lighting: str = "21,32") -> str:
+    return "\n".join(
+        [
+            days_line,
+            "FORNECIMENTO",
+            energy.strip(),
+            f"CONTRIB. ILUM. PÚBLICA - MUNICIPAL {lighting}",
+            "ITENS FINANCEIROS",
+            f"R$**********{total} 10/10/2024",
+            dates,
+            ref,
+            scee,
+            meter,
+            "EQUATORIAL GOIAS DISTRIBUIDORA DE ENERGIA S/A",
+        ]
+    )
+
+
+# Set/2024: antes da transição da Lei 14.300 ("ENERGIA ATIVA FORNECIDA" /
+# "ENERGIA INJETADA", sem Fio B) e primeiro ciclo do medidor novo: a fatura
+# imprime 32 dias para o período 16/08–16/09 (31 dias).
+PRE_TRANSITION_FIRST_CYCLE_TEXT = _old_bill(
+    days_line="16/10/202432",
+    energy="""
+AD. BAND. VERMELHA EN. ATIVA FORN. kWh 0,02865130,00 0,02 0,86 19% 0,16 0,0223150,86
+ENERGIA ATIVA FORNECIDA kWh 0,912400149,00 4,23 135,95 19% 25,83 0,710630135,95
+ENERGIA INJETADA kWh 0,912400119,00 -3,38 -108,58 19% -20,63 0,710630-108,58
+""",
+    total="49,55",
+    dates="16/08/2024 16/09/2024",
+    ref="SET/2024",
+    scee=(
+        "INFORMAÇÕES DO SCEE: GERAÇÃO CICLO (9/2024) KWH: UC XXXXXXXXXXX : 352,00, "
+        "EXCEDENTE RECEBIDO KWH: UC XXXXXXXXXXX : 233,00, CRÉDITO RECEBIDO KWH 119,00, "
+        "SALDO KWH: 233,00, SALDO A EXPIRAR EM 30 DIAS KWH: 0,00,"
+    ),
+    meter="ENERGIA ATIVA - KWH 00149 149XXXXXXXX-8 00000 1,000000ÚNICO",
+)
+
+
+def test_pre_transition_layout_reads_supplied_and_compensated_energy() -> None:
+    bill = parse_equatorial_bill_text(PRE_TRANSITION_FIRST_CYCLE_TEXT)
+
+    assert bill.reference_month == "2024-09"
+    assert bill.cycle_start.isoformat() == "2024-08-16"
+    assert bill.cycle_end.isoformat() == "2024-09-15"
+    # Medidor novo: vale o período impresso, não os 32 dias contados desde a instalação.
+    assert bill.billed_days == 31
+    assert bill.imported_kwh == Decimal("149.00")
+    # 30 kWh de custo de disponibilidade não são compensados.
+    assert bill.compensated_kwh == Decimal("119.00")
+    assert bill.injected_kwh == Decimal("119.00")
+    assert bill.generation_cycle_kwh == Decimal("352.00")
+    assert bill.tariff_with_taxes_brl_kwh == Decimal("0.912400")
+    assert bill.tariff_without_taxes_brl_kwh == Decimal("0.710630")
+    assert bill.wire_b_tariff_brl_kwh is None
+    assert bill.total_amount_brl == Decimal("49.55")
+
+
+def test_days_mismatch_is_still_rejected_when_meter_is_not_new() -> None:
+    not_new = PRE_TRANSITION_FIRST_CYCLE_TEXT.replace(
+        "ENERGIA ATIVA - KWH 00149 149XXXXXXXX-8 00000",
+        "ENERGIA ATIVA - KWH 01149 149XXXXXXXX-8 01000",
+    )
+
+    with pytest.raises(BillParseError, match="billed days"):
+        parse_equatorial_bill_text(not_new)
+
+
+# Jan/2025: transição, injeção sem colunas de imposto e consumo não compensado.
+TRANSITION_SHORT_INJECTION_TEXT = _old_bill(
+    days_line="15/02/202530",
+    energy="""
+CONSUMO NÃO COMPENSADO kWh 0,9382839,75 0,13 9,15 19% 1,74 0,7459309,15
+CONSUMO SCEE kWh 0,626570144,25 1,35 90,38 19% 17,17 0,49812090,38
+INJEÇÃO SCEE - GD II 2 kWh 0,507522144,25 -1,35 0,498120-73,21
+BENEFÍCIO TARIFÁRIO BRUTO SCEE 56,75
+PARC INJET S/DESC - 21,02% - GD II 2 kWh 0,104716144,25 0,10471615,11
+PARC INJET S/ DESC RET 1/22 1,31
+BONUS ITAIPU ART.21 LEI 10438/02(-) -30,38
+""",
+    total="46,02",
+    dates="18/12/2024 17/01/2025",
+    ref="JAN/2025",
+    scee=(
+        "INFORMAÇÕES DO SCEE: GERAÇÃO CICLO (1/2025) KWH: UC XXXXXXXXXXX : 168,00, "
+        "CRÉDITO RECEBIDO KWH 144,25, SALDO KWH: 551,73,"
+    ),
+    meter="ENERGIA ATIVA - KWH 00768 154XXXXXXXX-8 00614 1,000000ÚNICO",
+    lighting="31,98",
+)
+
+
+def test_transition_layout_sums_uncompensated_consumption() -> None:
+    bill = parse_equatorial_bill_text(TRANSITION_SHORT_INJECTION_TEXT)
+
+    assert bill.reference_month == "2025-01"
+    # 144,25 compensados + 9,75 não compensados = 154 do medidor.
+    assert bill.imported_kwh == Decimal("154.00")
+    assert bill.compensated_kwh == Decimal("144.25")
+    assert bill.injected_kwh == Decimal("144.25")
+    assert bill.tariff_with_taxes_brl_kwh == Decimal("0.626570")
+    assert bill.wire_b_tariff_brl_kwh == Decimal("0.104716")
+    assert bill.total_amount_brl == Decimal("46.02")
+    assert bill.public_lighting_brl == Decimal("31.98")
+
+
+def test_missing_uncompensated_line_is_caught_by_the_meter() -> None:
+    without = "\n".join(
+        line
+        for line in TRANSITION_SHORT_INJECTION_TEXT.splitlines()
+        if not line.startswith("CONSUMO NÃO COMPENSADO")
+    )
+
+    with pytest.raises(BillParseError, match="meter reading"):
+        parse_equatorial_bill_text(without)
+
+
+def test_unreadable_uncompensated_line_fails_closed() -> None:
+    tampered = TRANSITION_SHORT_INJECTION_TEXT.replace(
+        "0,9382839,75 0,13 9,15", "0,9382839,75 0,13 19,15"
+    )
+
+    with pytest.raises(BillParseError, match="uncompensated"):
+        parse_equatorial_bill_text(tampered)
+
+
+def test_short_injection_must_close_price_times_quantity() -> None:
+    tampered = TRANSITION_SHORT_INJECTION_TEXT.replace(
+        "0,498120-73,21", "0,498120-83,21"
+    )
+
+    with pytest.raises(BillParseError, match="injection"):
+        parse_equatorial_bill_text(tampered)
+
+
+def test_tax_columns_with_one_or_zero_decimals_are_accepted() -> None:
+    # Fev/2025: a base do não compensado vem como "2" (R$ 2,00) e o PIS/COFINS
+    # da linha SCEE como "1,7"; ago/2026 imprimiu a base como "194,6".
+    text = _old_bill(
+        days_line="18/03/202529",
+        energy="""
+CONSUMO NÃO COMPENSADO kWh 0,9394672,13 0,04 2 19% 0,38 0,7459302,00
+CONSUMO SCEE kWh 0,627360169,87 1,7 106,57 19% 20,25 0,498120106,57
+INJEÇÃO SCEE - GD II 2 kWh 0,627360169,87 -1,7 -106,57 19% -20,25 0,498120-106,57
+PARC INJET S/DESC - 24,57% - GD II 2 kWh 0,122387169,87 0,12238720,79
+""",
+        total="49,70",
+        dates="17/01/2025 15/02/2025",
+        ref="FEV/2025",
+        scee="INFORMAÇÕES DO SCEE: GERAÇÃO CICLO (2/2025) KWH: UC XXXXXXXXXXX : 124,00, "
+        "SALDO KWH: 505,86,",
+        meter="ENERGIA ATIVA - KWH 00940 172XXXXXXXX-8 00768 1,000000ÚNICO",
+    )
+    bill = parse_equatorial_bill_text(text)
+    assert bill.imported_kwh == Decimal("172.00")
+    assert bill.compensated_kwh == Decimal("169.87")
+
+    august = _replace_line(
+        SECOND_COPY_BILL_TEXT,
+        "CONSUMO SCEE",
+        "CONSUMO SCEE kWh 0,807464241,00 9,89 194,6 19% 36,97 0,613030194,60",
+    )
+    august = _replace_line(
+        august,
+        "INJEÇÃO SCEE",
+        "INJEÇÃO SCEE - GD II 2 kWh 0,807464241,00 -9,89 -194,6 19% -36,97 0,613030-194,60",
+    )
+    august = _replace_line(
+        august,
+        "PARC INJET S/DESC",
+        "PARC INJET S/DESC - 28,57% - GD II 2 kWh 0,175126241,00 0,17512642,21",
+    )
+    august = _replace_line(
+        august, "ENERGIA ATIVA - KWH", "ENERGIA ATIVA - KWH 01254 241XXXXXXXX 01013 1,000000ÚNICO"
+    )
+    assert parse_equatorial_bill_text(august).imported_kwh == Decimal("241.00")
+
+
+def test_meter_reading_that_does_not_match_its_glued_consumption_fails_closed() -> None:
+    tampered = _replace_line(
+        SECOND_COPY_BILL_TEXT,
+        "ENERGIA ATIVA - KWH",
+        "ENERGIA ATIVA - KWH 01234 999XXXXXXXX 01013 1,000000ÚNICO",
+    )
+
+    with pytest.raises(BillParseError, match="meter reading"):
+        parse_equatorial_bill_text(tampered)
+
+
+def test_second_copy_layout_without_meter_reading_fails_closed() -> None:
+    # Sem o medidor não há como saber se alguma linha de consumo ficou de fora.
+    without_meter = "\n".join(
+        line
+        for line in TRANSITION_SHORT_INJECTION_TEXT.splitlines()
+        if not line.startswith("ENERGIA ATIVA - KWH")
+    )
+
+    with pytest.raises(BillParseError, match="meter reading not found"):
+        parse_equatorial_bill_text(without_meter)
+
+
+def test_new_meter_exception_is_limited_to_a_few_extra_days() -> None:
+    far_off = PRE_TRANSITION_FIRST_CYCLE_TEXT.replace("16/10/202432", "16/10/202445")
+
+    with pytest.raises(BillParseError, match="billed days"):
+        parse_equatorial_bill_text(far_off)

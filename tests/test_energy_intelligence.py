@@ -296,3 +296,46 @@ def test_no_imported_energy_leaves_bill_check_unavailable_instead_of_inventing_a
     result = analyze_energy_cycle(bill=bill, cycle_production_kwh=Decimal("400"))
     assert result.modeled_bill_brl is None
     assert result.bill_model_difference_brl is None
+
+
+def test_cycle_without_any_production_day_leaves_savings_unavailable() -> None:
+    # Fatura antiga importada sem telemetria do período: sem produção, a conta
+    # ignoraria o consumo direto do telhado e subestimaria a economia.
+    from mplacas.billing.models import UtilityBill
+    from mplacas.intelligence.energy_engine import (
+        SAVINGS_UNAVAILABLE_NO_PRODUCTION_DATA,
+        analyze_energy_cycle,
+    )
+
+    bill = UtilityBill(
+        distributor="EQUATORIAL_GO",
+        reference_month="2025-01",
+        cycle_start=date(2024, 12, 18),
+        cycle_end=date(2025, 1, 16),
+        billed_days=30,
+        imported_kwh=Decimal("154"),
+        injected_kwh=Decimal("144.25"),
+        compensated_kwh=Decimal("144.25"),
+        credit_balance_kwh=Decimal("551.73"),
+        total_amount_brl=Decimal("46.02"),
+        public_lighting_brl=Decimal("31.98"),
+        generation_cycle_kwh=Decimal("168"),
+        tariff_with_taxes_brl_kwh=Decimal("0.626570"),
+    )
+
+    without = analyze_energy_cycle(
+        bill=bill, cycle_production_kwh=Decimal("0"), missing_days=30, production_days=0
+    )
+    # Muitos dias incompletos (contados até em dobro) não tornam o ciclo "sem
+    # produção": basta um dia com leitura utilizável.
+    partial = analyze_energy_cycle(
+        bill=bill, cycle_production_kwh=Decimal("300"), missing_days=45, production_days=1
+    )
+    # Chamadores que não informam os dias com produção mantêm o comportamento antigo.
+    legacy = analyze_energy_cycle(bill=bill, cycle_production_kwh=Decimal("0"), missing_days=30)
+
+    assert without.estimated_savings_brl is None
+    assert without.savings_unavailable_reason == SAVINGS_UNAVAILABLE_NO_PRODUCTION_DATA
+    assert without.bill_without_solar_brl is None
+    assert partial.estimated_savings_brl is not None
+    assert legacy.estimated_savings_brl is not None
