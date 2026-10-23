@@ -108,8 +108,10 @@ describe('buildHomeTodos (ADR-083)', () => {
   })
 
   it('só diagnóstico CRÍTICO vira tarefa, e abre a lista de diagnósticos do Início', () => {
-    const todos = buildHomeTodos({ setup: null, diagnostics: [diagnostic('WARNING'), diagnostic('CRITICAL', 'X1')] })
-    expect(todos).toEqual([{ key: 'diagnostic-X1', title: 'msg X1', detail: 'ação X1', target: 'diagnostics' }])
+    const todos = buildHomeTodos({ setup: null, diagnostics: [diagnostic('WARNING'), diagnostic('CRITICAL', 'INVERSOR')] })
+    expect(todos).toHaveLength(1)
+    expect(todos[0]).toMatchObject({ title: 'msg INVERSOR', detail: 'ação INVERSOR', target: 'diagnostics' })
+    expect(todos[0].key).toBe(['diagnostic', 'INVERSOR'].join('-'))
   })
 
   it('lacuna de telemetria (MISSING_DAILY_DATA), mesmo CRÍTICA, não vira tarefa do dono', () => {
