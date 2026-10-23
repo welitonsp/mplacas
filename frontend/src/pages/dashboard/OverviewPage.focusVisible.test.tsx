@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
-import { anomalyPayload, executivePayload, jsonResponse, singlePlant } from '../../test/dashboardFixtures'
+import {
+  anomalyPayload,
+  executivePayload,
+  financialReturnUnavailablePayload,
+  jsonResponse,
+  plantSetupCompletePayload,
+  singlePlant,
+} from '../../test/dashboardFixtures'
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
 // módulo — não há `.env.local` no ambiente de teste (ver `LoginPage.test.tsx`,
@@ -33,6 +40,8 @@ function installApiMock() {
   vi.doMock('../../lib/api', () => ({
     fetchExecutiveDashboard: vi.fn(async () => jsonResponse(executivePayload)),
     fetchAnomalyHistory: vi.fn(async () => jsonResponse(anomalyPayload)),
+    fetchFinancialReturn: vi.fn(async () => jsonResponse(financialReturnUnavailablePayload)),
+    fetchPlantSetup: vi.fn(async () => jsonResponse(plantSetupCompletePayload)),
     fetchPlants: vi.fn(async () => [singlePlant]),
     configureApi: vi.fn(),
   }))

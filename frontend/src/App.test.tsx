@@ -90,6 +90,9 @@ vi.mock('./lib/api', () => ({
   fetchPendingBills: vi.fn(async () => {
     throw new Error('mock: sem rede em App.test.tsx')
   }),
+  fetchPlantSetup: vi.fn(async () => {
+    throw new Error('mock: sem rede em App.test.tsx')
+  }),
   uploadBillPdf: vi.fn(),
   confirmBill: vi.fn(),
   rejectBill: vi.fn(),
@@ -123,7 +126,7 @@ beforeEach(() => {
 })
 
 describe('App — redirect de /dashboard preserva a query string (ADR-072, Decisão 1)', () => {
-  it('/dashboard?plant=X → /dashboard/visao-geral?plant=X', async () => {
+  it('/dashboard?plant=X → /dashboard/inicio?plant=X', async () => {
     await renderApp(`${DASHBOARD_ROOT_PATH}?plant=xpto-123`)
 
     await waitFor(() => {
@@ -151,15 +154,15 @@ describe('App — redirect de /dashboard preserva a query string (ADR-072, Decis
 })
 
 describe('App — PlantProvider não remonta ao navegar entre módulos', () => {
-  it('fetchPlants é chamado exatamente 1 vez depois de navegar pelos 4 módulos em sequência', async () => {
+  it('fetchPlants é chamado exatamente 1 vez depois de navegar pelas 4 abas em sequência', async () => {
     const { fetchPlants } = await renderApp(DASHBOARD_DEFAULT_PATH)
 
     await waitFor(() => expect(fetchPlants).toHaveBeenCalledTimes(1))
 
-    fireEvent.click(screen.getByRole('link', { name: 'Produção' }))
-    fireEvent.click(screen.getByRole('link', { name: 'Financeiro' }))
-    fireEvent.click(screen.getByRole('link', { name: 'Técnico' }))
-    fireEvent.click(screen.getByRole('link', { name: 'Visão Geral' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Energia' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Dinheiro' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Minha usina' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Início' }))
 
     await waitFor(() => expect(window.location.pathname).toBe(DASHBOARD_DEFAULT_PATH))
     expect(fetchPlants).toHaveBeenCalledTimes(1)
@@ -167,7 +170,7 @@ describe('App — PlantProvider não remonta ao navegar entre módulos', () => {
 })
 
 describe('App — troca de usina preserva a rota atual', () => {
-  it('trocar de usina em /dashboard/producao mantém o pathname, só muda ?plant=', async () => {
+  it('trocar de usina em /dashboard/energia mantém o pathname, só muda ?plant=', async () => {
     await renderApp(DASHBOARD_PRODUCTION_PATH, { plants: [P1, P2] })
 
     const select = await screen.findByRole('combobox', { name: /usina ativa/i })
@@ -187,5 +190,19 @@ describe('App — usuário deslogado é barrado nos 4 módulos', () => {
     await renderApp(path, { authenticated: false })
 
     await waitFor(() => expect(window.location.pathname).toBe('/login'))
+  })
+})
+
+describe('App — URLs da organização anterior redirecionam para a aba nova (ADR-083)', () => {
+  it.each([
+    ['visao-geral', DASHBOARD_DEFAULT_PATH],
+    ['producao', DASHBOARD_PRODUCTION_PATH],
+    ['financeiro', DASHBOARD_FINANCIAL_PATH],
+    ['tecnico', DASHBOARD_TECHNICAL_PATH],
+  ])('/dashboard/%s?plant=X → %s?plant=X', async (segment, target) => {
+    await renderApp(`${DASHBOARD_ROOT_PATH}/${segment}?plant=${P1.id}`)
+
+    await waitFor(() => expect(window.location.pathname).toBe(target))
+    expect(window.location.search).toBe(`?plant=${P1.id}`)
   })
 })

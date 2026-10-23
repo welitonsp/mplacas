@@ -93,7 +93,7 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     // reproduzido em `main` antes de qualquer mudança; mesmo padrão de
     // `OverviewPage.test.tsx`/`ProductionPage.test.tsx`, que já usam
     // `waitFor` para a asserção equivalente).
-    await screen.findByText('Financeiro')
+    await screen.findByText('Dinheiro')
     await waitFor(() => {
       expect(fetchExecutiveMock).toHaveBeenCalledTimes(1)
       expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(1)
@@ -124,7 +124,7 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     // texto "Financeiro" antes desta etapa, quando só vinha de dentro de
     // `FinancialSection`). O conteúdo real (gated por `data && indicators`)
     // continua esperando `/energy/executive/latest`.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Financeiro' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dinheiro' })).toBeInTheDocument()
     expect(
       screen.queryByRole('heading', { level: 2, name: 'Retorno do investimento' })
     ).not.toBeInTheDocument()

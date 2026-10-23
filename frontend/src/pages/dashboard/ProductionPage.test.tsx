@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import {
   anomalyPayload,
+  executivePayload,
   fallbackPhotovoltaicSummaryPayload,
   jsonResponse,
   monthlyHistoryPayload,
@@ -16,16 +17,17 @@ vi.mock('../../env', () => ({
   API_URL: 'https://api.example.test',
 }))
 
-// `ProductionPage` (e, transitivamente, `PlantProvider`/`AuthProvider` usados
-// por `renderModule`) depende de 4 exports de `../../lib/api`: os três
-// recursos do módulo (`fetchAnomalyHistory`, `fetchPhotovoltaicSummary`,
+// `ProductionPage` (aba Energia, ADR-083 — e, transitivamente,
+// `PlantProvider`/`AuthProvider` usados por `renderModule`) depende de 6
+// exports de `../../lib/api`: os quatro recursos do módulo
+// (`fetchExecutiveDashboard`, para "para onde foi a energia",
+// `fetchAnomalyHistory`, `fetchPhotovoltaicSummary`,
 // `fetchMonthlyProductionHistory`), mais `fetchPlants` (`PlantContext`) e
-// `configureApi` (`AuthContext`). Nenhum dos outros fetchers de
-// `../../lib/api` (`fetchExecutiveDashboard`, `fetchFinancialReturn`) é
-// importado por este módulo — se algum teste abaixo os disparasse, o mock
-// (que não os declara) já provaria a fronteira de fetch por módulo (ADR-072,
-// Decisão 3).
+// `configureApi` (`AuthContext`). `fetchFinancialReturn` não é importado por
+// este módulo — se algum teste o disparasse, o mock (que não o declara) já
+// provaria a fronteira de fetch por módulo (ADR-072, Decisão 3).
 interface ApiMockOverrides {
+  fetchExecutiveDashboard?: (plantId: string) => Promise<Response>
   fetchAnomalyHistory?: (plantId: string, days?: number) => Promise<Response>
   fetchPhotovoltaicSummary?: (plantId: string) => Promise<Response>
   fetchMonthlyProductionHistory?: (plantId: string, limit?: number) => Promise<Response>
@@ -34,6 +36,8 @@ interface ApiMockOverrides {
 
 function installApiMock(overrides: ApiMockOverrides = {}) {
   vi.doMock('../../lib/api', () => ({
+    fetchExecutiveDashboard:
+      overrides.fetchExecutiveDashboard ?? vi.fn(async () => jsonResponse(executivePayload)),
     fetchAnomalyHistory:
       overrides.fetchAnomalyHistory ?? vi.fn(async () => jsonResponse(anomalyPayload)),
     fetchPhotovoltaicSummary:
@@ -53,12 +57,14 @@ async function renderProductionPage() {
 }
 
 describe('ProductionPage — módulo Produção (ADR-072, Etapa 4)', () => {
-  it('dispara exatamente 3 requisições de dados — /energy/anomalies/latest, /photovoltaic/summary e /reports/monthly/history, nenhuma outra', async () => {
+  it('dispara exatamente 4 requisições de dados — /energy/executive/latest, /energy/anomalies/latest, /photovoltaic/summary e /reports/monthly/history, nenhuma outra', async () => {
     vi.resetModules()
+    const fetchExecutiveDashboardMock = vi.fn(async () => jsonResponse(executivePayload))
     const fetchAnomalyHistoryMock = vi.fn(async () => jsonResponse(anomalyPayload))
     const fetchPhotovoltaicSummaryMock = vi.fn(async () => jsonResponse(photovoltaicSummaryPayload))
     const fetchMonthlyProductionHistoryMock = vi.fn(async () => jsonResponse(monthlyHistoryPayload))
     installApiMock({
+      fetchExecutiveDashboard: fetchExecutiveDashboardMock,
       fetchAnomalyHistory: fetchAnomalyHistoryMock,
       fetchPhotovoltaicSummary: fetchPhotovoltaicSummaryMock,
       fetchMonthlyProductionHistory: fetchMonthlyProductionHistoryMock,
@@ -71,6 +77,7 @@ describe('ProductionPage — módulo Produção (ADR-072, Etapa 4)', () => {
     // `sr-only` que repete os mesmos rótulos/valores de propósito.
     await screen.findByTestId('column-series-visual')
     await waitFor(() => {
+      expect(fetchExecutiveDashboardMock).toHaveBeenCalledTimes(1)
       expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(1)
       expect(fetchPhotovoltaicSummaryMock).toHaveBeenCalledTimes(1)
       expect(fetchMonthlyProductionHistoryMock).toHaveBeenCalledTimes(1)

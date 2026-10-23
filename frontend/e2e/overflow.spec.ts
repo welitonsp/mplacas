@@ -26,7 +26,7 @@ import {
 } from '../src/test/dashboardFixtures'
 import { investorAvailablePayload } from '../src/test/investorFixtures'
 
-const MODULOS = ['Visão Geral', 'Produção', 'Financeiro', 'Técnico', 'Minha usina'] as const
+const MODULOS = ['Início', 'Energia', 'Dinheiro', 'Minha usina'] as const
 
 test.describe('layout não rola de lado', () => {
   test.skip(({ isMobile }) => !isMobile, 'específico de viewport estreita')
@@ -115,5 +115,17 @@ test.describe('layout não rola de lado', () => {
           'Item de grid/flex precisa de min-w-0 para encolher — ver AppShell.tsx.'
       ).toBeLessThanOrEqual(medida.viewport)
     }
+
+    // Detalhes técnicos (subpágina de Energia, ADR-083): mesma guarda.
+    await page.getByRole('navigation', { name: 'Seções do painel' }).getByRole('link', { name: 'Energia', exact: true }).click({ force: true })
+    const detalhes = page.getByRole('main').getByRole('link', { name: /Detalhes técnicos/ })
+    await detalhes.scrollIntoViewIfNeeded()
+    await detalhes.click({ force: true })
+    await expect(page.getByRole('heading', { level: 1, name: 'Detalhes técnicos' })).toBeVisible()
+    const larguras = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      documento: document.documentElement.scrollWidth,
+    }))
+    expect(larguras.documento, 'Detalhes técnicos: rolagem lateral').toBeLessThanOrEqual(larguras.viewport)
   })
 })

@@ -18,7 +18,7 @@ import {
   singlePlant,
 } from '../src/test/dashboardFixtures'
 
-const MODULOS = ['Visão Geral', 'Produção', 'Financeiro', 'Técnico'] as const
+const MODULOS = ['Início', 'Energia', 'Dinheiro'] as const
 
 test('medir seções por módulo', async ({ page }) => {
   test.setTimeout(120_000)

@@ -9,6 +9,7 @@ import {
   jsonResponse,
   monthlyHistoryPayload,
   photovoltaicSummaryPayload,
+  plantSetupCompletePayload,
   singlePlant,
 } from '../../test/dashboardFixtures'
 
@@ -36,6 +37,7 @@ function installApiMock() {
     updateFinancialConfiguration: vi.fn(async () => jsonResponse({})),
     fetchInvestorPanel: vi.fn(async () => jsonResponse(investorUnavailablePayload)),
     fetchPendingBills: vi.fn(async () => jsonResponse({ count: 0, items: [] })),
+    fetchPlantSetup: vi.fn(async () => jsonResponse(plantSetupCompletePayload)),
     uploadBillPdf: vi.fn(async () => jsonResponse({})),
     confirmBill: vi.fn(async () => jsonResponse({})),
     rejectBill: vi.fn(async () => jsonResponse({})),
@@ -60,7 +62,7 @@ function installApiMock() {
 const STREAK_PHRASE = /2 dias seguidos com produção abaixo do esperado\./
 
 describe('Módulos do painel — sem redundância cross-módulo (ADR-072, Etapa 6)', () => {
-  it('a frase de streak de dias consecutivos aparece só no módulo Produção, não nos outros 3', async () => {
+  it('a frase de streak de dias consecutivos aparece só na aba Energia, em nenhum outro módulo', async () => {
     vi.resetModules()
     installApiMock()
 
@@ -76,10 +78,10 @@ describe('Módulos do painel — sem redundância cross-módulo (ADR-072, Etapa 
     const { FinancialPage } = await import('./FinancialPage')
     const { TechnicalPage } = await import('./TechnicalPage')
 
-    // Visão Geral: busca o mesmo `anomalyPayload`, mas só para
-    // `latestDataDate` — a frase de streak não deve aparecer aqui.
+    // Início: busca o mesmo `anomalyPayload` (situação e 7 dias) — a frase
+    // de streak não deve aparecer aqui.
     renderModule(<OverviewPage />, DASHBOARD_OVERVIEW_PATH)
-    await screen.findByRole('group', { name: 'Origem do consumo — ciclo 2026-07' })
+    await screen.findByRole('heading', { level: 2, name: 'Precisa de você' })
     expect(screen.queryAllByText(STREAK_PHRASE)).toHaveLength(0)
     cleanup()
 

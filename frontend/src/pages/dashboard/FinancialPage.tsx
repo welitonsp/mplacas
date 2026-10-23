@@ -43,7 +43,7 @@ export function FinancialPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
   // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
-  const headingRef = useModuleTitle('Financeiro')
+  const headingRef = useModuleTitle('Dinheiro')
 
   const executive = usePlantResource({
     plantId,
@@ -126,9 +126,9 @@ export function FinancialPage() {
           em `OverviewPage.tsx`. Sempre visível (inclusive durante erro/
           carregamento do recurso executivo), igual aos outros 3 módulos. */}
       <PageHeader
-        eyebrow="Painel financeiro"
-        title="Financeiro"
-        description="Leitura do ciclo, créditos de energia e retorno do investimento em uma visão preparada para decisão."
+        eyebrow="Sua usina"
+        title="Dinheiro"
+        description="Quanto a usina já devolveu e quanto rende."
         headingRef={headingRef}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
       />

@@ -1,9 +1,15 @@
-import { fetchAnomalyHistory, fetchMonthlyProductionHistory, fetchPhotovoltaicSummary } from '../../lib/api'
+import { Link } from 'react-router'
+import { fetchAnomalyHistory, fetchExecutiveDashboard, fetchMonthlyProductionHistory, fetchPhotovoltaicSummary } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
 import type { AnomalyDashboardResponse, AnomalyFetchError, AnomalyFetchState, Severity } from '../../lib/dashboard/contracts'
-import { classifyAnomalyErrorStatus, latestNonNullProductionDate, parseAnomalyDashboard } from '../../lib/dashboard/contracts'
+import {
+  classifyAnomalyErrorStatus,
+  latestNonNullProductionDate,
+  parseAnomalyDashboard,
+  parseExecutiveDashboard,
+} from '../../lib/dashboard/contracts'
 import { parseMonthlyProductionHistory } from '../../lib/dashboard/monthly-history-contracts'
 import type { PhotovoltaicSummaryResponse } from '../../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary } from '../../lib/dashboard/photovoltaic-contracts'
@@ -21,6 +27,8 @@ import { PageHeader } from '../../components/PageHeader'
 import { SummaryTile } from '../../components/SummaryTile'
 import { ProductionDiagnosticPanel } from '../../components/ProductionDiagnosticPanel'
 import { EpisodeTimelineSection } from '../../components/EpisodeTimelineSection'
+import { EnergyDestinationSection } from '../../components/EnergyDestinationSection'
+import { DASHBOARD_TECHNICAL_PATH } from '../../routes'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
 // 401): garante um `expectedProduction.available: false` explícito para
@@ -78,7 +86,7 @@ export function ProductionPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
   // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
-  const headingRef = useModuleTitle('Produção')
+  const headingRef = useModuleTitle('Energia')
   // Um período (7/30/90 dias) para o gráfico do topo e para a leitura do
   // período mais abaixo — os dois mostram sempre o mesmo recorte.
   const [periodDays, setPeriodDays] = useProductionPeriodPreference()
@@ -96,6 +104,14 @@ export function ProductionPage() {
   // está sendo deslogado, não há nada a comunicar aqui). Falha de rede/
   // contrato (`kind !== 'http'`) cai no mesmo `'SERVER_ERROR'`, mesma
   // categoria de "algo quebrou" que um 5xx no comportamento anterior.
+  // Ciclo da última fatura: para onde foi a energia (casa × rede). Veio da
+  // antiga Visão Geral (ADR-083): é pergunta de energia, não de situação.
+  const executive = usePlantResource({
+    plantId,
+    fetcher: fetchExecutiveDashboard,
+    parse: parseExecutiveDashboard,
+    errorMessage: 'Erro ao buscar o ciclo da fatura.',
+  })
   const anomalies = usePlantResource<AnomalyDashboardResponse, AnomalyFetchError>({
     plantId,
     fetcher: fetchAnomalyHistory,
@@ -139,6 +155,7 @@ export function ProductionPage() {
   // seção (ver `monthlyHistory.error`/`RetryableError` de anomalias abaixo) —
   // este botão só força uma nova tentativa dos 3 ao mesmo tempo.
   const refreshAll = () => {
+    executive.refetch()
     anomalies.refetch()
     pvSummaryResource.refetch()
     monthlyHistory.refetch()
@@ -146,6 +163,7 @@ export function ProductionPage() {
   // Combinado dos 3 recursos — usado pelo `disabled`/texto "Atualizando..."
   // do `RefreshBar`.
   const loading =
+    executive.status === 'loading' ||
     anomalies.status === 'loading' ||
     pvSummaryResource.status === 'loading' ||
     monthlyHistory.status === 'loading'
@@ -207,12 +225,19 @@ export function ProductionPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Painel de produção"
-        title="Produção"
-        description="Acompanhe ciclos fechados, geração diária e desvios contra o esperado para priorizar a investigação certa."
+        eyebrow="Sua usina"
+        title="Energia"
+        description="Quanto a usina gerou e para onde foi."
         headingRef={headingRef}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
       />
+      {executive.data && (
+        <EnergyDestinationSection
+          indicators={executive.data.current_cycle.indicators}
+          quality={executive.data.current_cycle.quality}
+          referenceMonth={executive.data.current_cycle.reference_month}
+        />
+      )}
       <section className="mb-6">
         <SectionTitle as="h2">Resumo operacional</SectionTitle>
         {/* "Produção do último dia vs. esperada" mora ao lado de "Última
@@ -330,6 +355,17 @@ export function ProductionPage() {
           />
         </section>
       </div>
+
+      <Link
+        to={DASHBOARD_TECHNICAL_PATH}
+        className="mt-6 flex min-h-[56px] items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4 shadow-[var(--shadow-card)] transition-colors duration-150 hover:border-[var(--color-gray-300)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none"
+      >
+        <span className="flex flex-col gap-0.5">
+          <span className="text-[15px] font-semibold text-[var(--color-text-primary)]">Detalhes técnicos</span>
+          <span className="text-[13px] text-[var(--color-text-secondary)]">Performance (PR), perdas, calor e inversores</span>
+        </span>
+        <span aria-hidden="true" className="text-[var(--color-gray-400)]">›</span>
+      </Link>
     </>
   )
 }
