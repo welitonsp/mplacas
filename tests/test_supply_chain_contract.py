@@ -159,7 +159,13 @@ def test_gitleaks_exceptions_are_exact_fingerprints() -> None:
         line for line in (ROOT / ".gitleaksignore").read_text(encoding="utf-8").splitlines() if line
     ]
 
-    assert len(entries) == 9
+    # 9 entradas históricas (fixtures sintéticas, commit 25d2663) + 2 do PR #212:
+    # o literal de teste `diagnostic-X1` em frontend/src/lib/dashboard/home.test.ts
+    # passava do limiar de entropia da regra generic-api-key. O teste foi reescrito
+    # sem o literal; as duas ocorrências já gravadas nos commits do PR ficam aqui.
+    # Nova exceção exige mudar este número de propósito, com o motivo.
+    assert len(entries) == 11
+    assert sum("frontend/src/lib/dashboard/home.test.ts" in entry for entry in entries) == 2
     assert all(
         re.fullmatch(
             r"[0-9a-f]{40}:[^:]+:generic-api-key:[0-9]+",
