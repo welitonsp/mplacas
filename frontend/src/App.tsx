@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { AuthProvider } from './contexts/AuthContext'
 import { PlantProvider } from './contexts/PlantContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
-import { DASHBOARD_MODULE_SEGMENTS, DASHBOARD_ROOT_PATH } from './routes'
+import { DASHBOARD_MODULE_SEGMENTS, DASHBOARD_ROOT_PATH, LEGACY_MODULE_REDIRECTS } from './routes'
 
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })))
 const PublicHomePage = lazy(() => import('./pages/PublicHomePage').then((module) => ({ default: module.default })))
@@ -13,6 +13,11 @@ const DashboardLayout = lazy(() =>
 const DashboardIndexRedirect = lazy(() =>
   import('./pages/dashboard/DashboardIndexRedirect').then((module) => ({
     default: module.DashboardIndexRedirect,
+  }))
+)
+const LegacyModuleRedirect = lazy(() =>
+  import('./pages/dashboard/DashboardIndexRedirect').then((module) => ({
+    default: module.LegacyModuleRedirect,
   }))
 )
 const OverviewPage = lazy(() =>
@@ -71,15 +76,17 @@ export function App() {
               }
             >
               <Route index element={<DashboardIndexRedirect />} />
-              {/* Os 4 módulos migraram para rota própria (ADR-072): Técnico
-                  (Etapa 2), Financeiro (Etapa 3), Produção (Etapa 4) e Visão
-                  Geral (Etapa 5, `OverviewPage` — última migração de
-                  conteúdo, `DashboardPage.tsx` removido). */}
+              {/* Quatro abas, uma pergunta cada (ADR-083): Início, Energia
+                  (com os detalhes técnicos dentro), Dinheiro e Minha usina. */}
               <Route path={DASHBOARD_MODULE_SEGMENTS.overview} element={<OverviewPage />} />
               <Route path={DASHBOARD_MODULE_SEGMENTS.production} element={<ProductionPage />} />
-              <Route path={DASHBOARD_MODULE_SEGMENTS.financial} element={<FinancialPage />} />
               <Route path={DASHBOARD_MODULE_SEGMENTS.technical} element={<TechnicalPage />} />
+              <Route path={DASHBOARD_MODULE_SEGMENTS.financial} element={<FinancialPage />} />
               <Route path={DASHBOARD_MODULE_SEGMENTS.setup} element={<PlantSetupPage />} />
+              {/* URLs da organização anterior: redirecionam, nunca 404. */}
+              {LEGACY_MODULE_REDIRECTS.map(({ segment, to }) => (
+                <Route key={segment} path={segment} element={<LegacyModuleRedirect to={to} />} />
+              ))}
               <Route path="*" element={<DashboardIndexRedirect />} />
             </Route>
             {/* Default: redirect to dashboard (ProtectedRoute will redirect to /login if unauthenticated) */}

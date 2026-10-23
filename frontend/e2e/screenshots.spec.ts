@@ -26,13 +26,16 @@ import { investorAvailablePayload } from '../src/test/investorFixtures'
 // descarta e o app volta para o login — a primeira versão desta captura fazia
 // `goto` e gravou quatro vezes a tela de "Sua sessão foi encerrada", com os
 // testes passando. Captura errada com teste verde é pior que teste vermelho.
-const MODULOS = [
-  { rotulo: 'Visão Geral', nome: 'visao-geral' },
-  { rotulo: 'Produção', nome: 'producao' },
-  { rotulo: 'Financeiro', nome: 'financeiro' },
-  { rotulo: 'Técnico', nome: 'tecnico' },
+//
+// `abrir`: subpágina alcançada por um link dentro da aba (ADR-083 — os detalhes
+// técnicos moram dentro de Energia, sem item próprio no menu).
+const MODULOS: ReadonlyArray<{ rotulo: string; nome: string; abrir?: RegExp }> = [
+  { rotulo: 'Início', nome: 'inicio' },
+  { rotulo: 'Energia', nome: 'energia' },
+  { rotulo: 'Energia', nome: 'tecnico', abrir: /Detalhes técnicos/ },
+  { rotulo: 'Dinheiro', nome: 'dinheiro' },
   { rotulo: 'Minha usina', nome: 'minha-usina' },
-] as const
+]
 
 /** Responde a cada endpoint que o painel consome, sem tocar em rede real. */
 async function interceptarApi(page: import('@playwright/test').Page) {
@@ -270,6 +273,11 @@ test.describe('captura das telas', () => {
       // fato aconteceu são as asserções ABAIXO — URL e `aria-current` —, e elas
       // falham de verdade se o clique não surtir efeito.
       await link.click({ force: true })
+      if (modulo.abrir) {
+        const sub = page.getByRole('main').getByRole('link', { name: modulo.abrir })
+        await sub.scrollIntoViewIfNeeded()
+        await sub.click({ force: true })
+      }
       await page.evaluate(() => document.fonts.ready)
 
       // Guarda contra a captura silenciosamente errada: se a sessão cair, o app
@@ -290,7 +298,7 @@ test.describe('captura das telas', () => {
       await expect(page.getByText(/Não foi possível carregar/)).toHaveCount(0)
       await expect(page.getByRole('main')).toBeVisible()
       await expect(page.getByText(/carregando/i)).toHaveCount(0, { timeout: 15_000 })
-      if (modulo.nome === 'financeiro') {
+      if (modulo.nome === 'dinheiro') {
         // O painel do investidor é carregado sob demanda (React.lazy): sem
         // esperar o gráfico, a captura sairia sem a seção "Usina × CDI".
         await expect(page.getByRole('img', { name: /Patrimônio em 25 anos/ })).toBeVisible({ timeout: 15_000 })

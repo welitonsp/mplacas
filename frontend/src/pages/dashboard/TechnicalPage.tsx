@@ -2,6 +2,7 @@ import { fetchDeviceDailyStatus, fetchPhotovoltaicSummary } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
+import { DASHBOARD_PRODUCTION_PATH } from '../../routes'
 import { parseDeviceDailyStatus } from '../../lib/dashboard/device-contracts'
 import type { PhotovoltaicLossItem, PhotovoltaicSummaryResponse } from '../../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary, ratioToPercent } from '../../lib/dashboard/photovoltaic-contracts'
@@ -86,7 +87,7 @@ export function TechnicalPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
   // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
-  const headingRef = useModuleTitle('Técnico')
+  const headingRef = useModuleTitle('Detalhes técnicos')
 
   const pvSummaryResource = usePlantResource({
     plantId,
@@ -176,9 +177,10 @@ export function TechnicalPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Diagnóstico técnico"
-        title="Técnico"
-        description="Entenda se a usina está performando bem, se os dados são confiáveis e qual causa técnica merece investigação primeiro."
+        eyebrow="Energia"
+        title="Detalhes técnicos"
+        description="Performance, perdas e inversores, para quem quer ir a fundo."
+        backLink={{ to: DASHBOARD_PRODUCTION_PATH, label: 'Voltar para Energia' }}
         headingRef={headingRef}
         actions={<RefreshBar onRefresh={refreshAll} loading={anyLoading} className="mb-0 lg:justify-self-end" />}
       />

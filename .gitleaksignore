@@ -7,3 +7,5 @@
 25d26636dd49379406a48f04b0d280a1c31bb1e8:tests/test_operational_users.py:generic-api-key:292
 25d26636dd49379406a48f04b0d280a1c31bb1e8:tests/test_auth_sessions.py:generic-api-key:39
 25d26636dd49379406a48f04b0d280a1c31bb1e8:tests/test_jwt.py:generic-api-key:74
+1d311c7d236867a4d141730392314dea9b3ccf4e:frontend/src/lib/dashboard/home.test.ts:generic-api-key:105
+ffc82d054a11d653d5fc23291de6223cfb9c4b5e:frontend/src/lib/dashboard/home.test.ts:generic-api-key:112

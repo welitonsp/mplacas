@@ -315,3 +315,31 @@ export const investorUnavailablePayload = {
   projection: null,
   premises: null,
 }
+
+// Cadastro da usina no formato de REDE (`GET /plants/{id}/setup`), completo e
+// sem fatura pendente — a aba Início (ADR-083) o usa só para "Precisa de você".
+// Testes de tarefa pendente sobrescrevem `completed`/`pending_bills`.
+export const plantSetupCompletePayload = {
+  plant_id: singlePlant.id,
+  name: singlePlant.name,
+  technical: {
+    plant_id: singlePlant.id,
+    dc_capacity_kwp: '4.680',
+    ac_capacity_kw: '4.000',
+    array_tilt_degrees: '25.00',
+    array_azimuth_degrees: '270.00',
+    module_technology: 'MONOCRYSTALLINE_SILICON',
+    commissioned_on: '2024-08-01',
+    devices: [{ device_id: 'd1', serial_number: 'INV-1', dc_capacity_kwp: null, ac_capacity_kw: null }],
+  },
+  latitude: '-17.740000',
+  longitude: '-48.620000',
+  financial: { plant_id: singlePlant.id, investment_amount_brl: '11200.00', investment_recorded_on: null },
+  confirmed_bills: 25,
+  pending_bills: 0,
+  items: ['LOCATION', 'DC_CAPACITY', 'COMMISSIONED_ON', 'ORIENTATION', 'MODULE_TECHNOLOGY', 'INVESTMENT', 'CONFIRMED_BILL'].map(
+    (key) => ({ key, done: true }),
+  ),
+  completed: 7,
+  total: 7,
+}

@@ -4,15 +4,18 @@ import {
   DASHBOARD_OVERVIEW_PATH,
   DASHBOARD_PRODUCTION_PATH,
   DASHBOARD_SETUP_PATH,
-  DASHBOARD_TECHNICAL_PATH,
 } from '../routes'
 
-import { Activity, House, LayoutGrid, Wallet, Zap, type LucideIcon } from 'lucide-react'
+import { House, Settings2, Wallet, Zap, type LucideIcon } from 'lucide-react'
 
-type NavKey = 'overview' | 'production' | 'financial' | 'technical' | 'setup'
+type NavKey = 'overview' | 'production' | 'financial' | 'setup'
 
+// Quatro abas, uma pergunta cada (ADR-083). "Energia" fica ativa também em
+// `/dashboard/energia/tecnico` (os detalhes técnicos moram dentro dela): o
+// `NavLink` sem `end` casa as rotas descendentes.
+//
 // `shortLabel`: rótulo da barra do celular quando o completo quebraria em duas
-// linhas (5 itens em 360 px). O nome acessível continua sendo o `label`.
+// linhas. O nome acessível continua sendo o `label`.
 const NAV_ITEMS: ReadonlyArray<{
   key: NavKey
   to: string
@@ -20,20 +23,19 @@ const NAV_ITEMS: ReadonlyArray<{
   shortLabel?: string
   icon: LucideIcon
 }> = [
-  { key: 'overview', to: DASHBOARD_OVERVIEW_PATH, label: 'Visão Geral', icon: LayoutGrid },
-  { key: 'production', to: DASHBOARD_PRODUCTION_PATH, label: 'Produção', icon: Zap },
-  { key: 'financial', to: DASHBOARD_FINANCIAL_PATH, label: 'Financeiro', icon: Wallet },
-  { key: 'technical', to: DASHBOARD_TECHNICAL_PATH, label: 'Técnico', icon: Activity },
+  { key: 'overview', to: DASHBOARD_OVERVIEW_PATH, label: 'Início', icon: House },
+  { key: 'production', to: DASHBOARD_PRODUCTION_PATH, label: 'Energia', icon: Zap },
+  { key: 'financial', to: DASHBOARD_FINANCIAL_PATH, label: 'Dinheiro', icon: Wallet },
   // Cadastro feito pelo próprio cliente (o sistema será vendido a outros
   // donos de usina) — por último, porque é consultado menos que os módulos.
-  { key: 'setup', to: DASHBOARD_SETUP_PATH, label: 'Minha usina', shortLabel: 'Usina', icon: House },
+  { key: 'setup', to: DASHBOARD_SETUP_PATH, label: 'Minha usina', shortLabel: 'Usina', icon: Settings2 },
 ]
 
 // Navegação dos módulos (ADR-072; visual ADR-077, etapa 2).
 //
 // UM único <nav>, dois arranjos por CSS: no celular/tablet é uma barra fixa no
 // rodapé com ícone sobre o rótulo (padrão Material/iOS — o polegar alcança, e
-// os 4 módulos ficam sempre visíveis); a partir de `lg` vira a lista lateral.
+// as 4 abas ficam sempre visíveis); a partir de `lg` vira a lista lateral.
 // Um só conjunto de links evita leitor de tela ouvir a navegação duas vezes.
 //
 // Saiu o "roteiro executivo" (pergunta-chave, foco, entregável, rotina de
@@ -45,7 +47,7 @@ export function DashboardNav() {
       aria-label="Seções do painel"
       className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)] pb-[env(safe-area-inset-bottom)] lg:static lg:border-0 lg:bg-transparent lg:pb-0"
     >
-      <ul className="mx-auto grid max-w-xl grid-cols-5 gap-1 px-2 py-1.5 lg:max-w-none lg:grid-cols-1 lg:gap-1 lg:p-0">
+      <ul className="mx-auto grid max-w-xl grid-cols-4 gap-1 px-2 py-1.5 lg:max-w-none lg:grid-cols-1 lg:gap-1 lg:p-0">
         {NAV_ITEMS.map(({ key, to, label, shortLabel, icon: Icon }) => (
           <li key={key}>
             <NavLink
