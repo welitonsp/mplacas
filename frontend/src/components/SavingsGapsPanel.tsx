@@ -48,6 +48,10 @@ function gapText(gap: SavingsGap): string {
       return 'Relatório anterior ao cálculo de economia.'
     case 'SAVINGS_UNAVAILABLE':
       return `Economia indisponível: ${unavailableReason(gap.savingsUnavailableReason)}.`
+    case 'PARTIAL_PRODUCTION':
+      return gap.previousSavingsBrl == null
+        ? 'Dias sem leitura do inversor: a produção agora pode ser estimada pelo sol.'
+        : `Economia de ${formatCurrency(gap.previousSavingsBrl)} com dias sem leitura do inversor: pode estar subestimada. A produção desses dias agora é estimada pelo sol.`
     case 'OUTDATED_CALCULATION':
       return gap.previousSavingsBrl == null
         ? 'Economia calculada pela fórmula antiga: pode estar subestimada.'

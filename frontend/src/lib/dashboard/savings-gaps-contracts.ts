@@ -8,6 +8,7 @@ export type SavingsGapCause =
   | 'REPORT_PREDATES_SAVINGS'
   | 'SAVINGS_UNAVAILABLE'
   | 'OUTDATED_CALCULATION'
+  | 'PARTIAL_PRODUCTION'
 
 export interface SavingsGap {
   billId: string
@@ -33,6 +34,7 @@ const CAUSES: readonly SavingsGapCause[] = [
   'REPORT_PREDATES_SAVINGS',
   'SAVINGS_UNAVAILABLE',
   'OUTDATED_CALCULATION',
+  'PARTIAL_PRODUCTION',
 ]
 
 function isRecord(value: unknown): value is Record<string, unknown> {

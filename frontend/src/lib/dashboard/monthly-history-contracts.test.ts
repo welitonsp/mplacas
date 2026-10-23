@@ -45,6 +45,8 @@ describe('parseMonthlyProductionHistory', () => {
             provisionalDays: 1,
             incompleteDays: 0,
             unavailableDays: 0,
+            // Snapshot anterior ao ADR-082: sem a chave de dias estimados.
+            estimatedDays: null,
           },
         },
       ],

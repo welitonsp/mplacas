@@ -27,6 +27,7 @@ _QUALITY_KEYS = (
     "provisional_days",
     "incomplete_days",
     "unavailable_days",
+    "estimated_production_days",
 )
 
 

@@ -67,4 +67,19 @@ describe('SavingsGapsPanel', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Seu perfil não tem permissão para recalcular.')
   })
+
+  it('explica o mês com dias sem leitura que agora pode ser estimado', async () => {
+    vi.spyOn(api, 'fetchSavingsGaps').mockResolvedValue(
+      json({
+        count: 1,
+        items: [
+          { bill_id: 'b25', reference_month: '2025-09', cause: 'PARTIAL_PRODUCTION', savings_unavailable_reason: null, previous_savings_brl: '120.00' },
+        ],
+      }),
+    )
+    render(<SavingsGapsPanel plantId="p1" onReprocessed={() => {}} />)
+
+    expect(await screen.findByText(/R\$\s?120,00 com dias sem leitura do inversor/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Recalcular 1 mês' })).toBeInTheDocument()
+  })
 })

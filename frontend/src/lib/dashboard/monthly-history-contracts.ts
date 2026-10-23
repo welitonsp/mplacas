@@ -15,6 +15,8 @@ export interface MonthlyProductionCycleQuality {
   provisionalDays: number | null
   incompleteDays: number | null
   unavailableDays: number | null
+  // Dias sem leitura estimados pelo sol (ADR-082); `null` em snapshot antigo.
+  estimatedDays?: number | null
 }
 
 export interface MonthlyProductionCycle {
@@ -86,6 +88,7 @@ function parseQuality(value: unknown): MonthlyProductionCycleQuality | null {
     provisionalDays: nullableInt(value, 'provisional_days'),
     incompleteDays: nullableInt(value, 'incomplete_days'),
     unavailableDays: nullableInt(value, 'unavailable_days'),
+    estimatedDays: nullableInt(value, 'estimated_production_days'),
   }
 }
 

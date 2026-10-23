@@ -110,6 +110,7 @@ _NATURE_LABELS: Final = {
     "QUALITY_COUNT": "Contagem de qualidade",
     "UNAVAILABILITY_REASON": "Motivo de indisponibilidade",
     "ASSUMPTION": "Premissa do cálculo",
+    "ESTIMATED": "Estimado",
 }
 
 _SOURCE_LABELS: Final = {

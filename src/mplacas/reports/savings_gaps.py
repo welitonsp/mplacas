@@ -11,7 +11,9 @@ Uma fatura confirmada pode ficar fora dessa soma para sempre quando:
   gravado (tarifa não lida na fatura, ou sem consumo/telemetria no ciclo);
 - ``OUTDATED_CALCULATION`` — a economia existe, mas foi calculada antes da
   correção da fórmula (versão < 0.4.0: conta "sem a usina" pela tarifa SCEE,
-  ADR-080) ou sem a tarifa cheia do período (``BILL_TARIFF``). É um piso.
+  ADR-080) ou sem a tarifa cheia do período (``BILL_TARIFF``). É um piso;
+- ``PARTIAL_PRODUCTION`` — o ciclo tinha dias sem leitura do inversor e foi
+  calculado antes da estimativa desses dias pelo sol (ADR-082). Também é piso.
 
 Este módulo lista esses meses e, sob pedido explícito de um ADMIN, refaz o
 relatório. O relatório antigo nunca é alterado nem apagado: o novo entra como
@@ -52,6 +54,7 @@ class SavingsGapCause(str, enum.Enum):
     REPORT_PREDATES_SAVINGS = "REPORT_PREDATES_SAVINGS"
     SAVINGS_UNAVAILABLE = "SAVINGS_UNAVAILABLE"
     OUTDATED_CALCULATION = "OUTDATED_CALCULATION"
+    PARTIAL_PRODUCTION = "PARTIAL_PRODUCTION"
 
 
 class ReprocessOutcome(str, enum.Enum):
@@ -91,6 +94,34 @@ def _metric_value(report: MonthlyEnergyReport, key: str) -> str | None:
     return None if metric is None else metric.value
 
 
+def _had_gaps_without_estimate(report: MonthlyEnergyReport) -> bool:
+    """Ciclo com dias sem leitura, calculado antes da estimativa (ADR-082)."""
+    quality = {metric.key: metric.value for metric in report.quality}
+    if "estimated_production_days" in quality:
+        return False
+    gap_days = 0
+    for key in ("missing_days", "unavailable_days"):
+        try:
+            gap_days += int(quality.get(key) or 0)
+        except ValueError:
+            continue
+    return gap_days > 0
+
+
+def _estimate_resolved(report: MonthlyEnergyReport) -> bool:
+    """O recálculo estimou os dias sem leitura, ou não há mais buraco."""
+    quality = {metric.key: metric.value for metric in report.quality}
+
+    def as_int(key: str) -> int:
+        try:
+            return int(quality.get(key) or 0)
+        except ValueError:
+            return 0
+
+    gaps = as_int("missing_days") + as_int("unavailable_days")
+    return gaps == 0 or as_int("estimated_production_days") > 0
+
+
 def _gap_for(
     bill_id: uuid.UUID,
     reference_month: str,
@@ -121,6 +152,15 @@ def _gap_for(
     ) < CORRECTED_CALCULATION_VERSION or (
         _metric_value(snapshot.report, SAVINGS_TARIFF_SOURCE_METRIC_KEY) == SAVINGS_TARIFF_BILL
     )
+    if not outdated and _had_gaps_without_estimate(snapshot.report):
+        return SavingsGap(
+            bill_id,
+            reference_month,
+            SavingsGapCause.PARTIAL_PRODUCTION,
+            None,
+            snapshot.revision,
+            previous_savings_brl=savings,
+        )
     if outdated:
         return SavingsGap(
             bill_id,
@@ -199,6 +239,9 @@ async def reprocess_savings_gaps(
       continue indisponível: o motivo passa a ficar registrado;
     - métrica vazia → só grava revisão nova se agora houver economia (ex.: a
       telemetria do ciclo chegou depois);
+    - produção parcial → grava a revisão com a estimativa dos dias sem
+      leitura (mesmo que a economia não mude, a revisão registra que a
+      estimativa foi tentada), desde que o recálculo tenha economia;
     - cálculo desatualizado → só grava revisão nova se o recálculo produzir
       economia e ela (ou a origem da tarifa) mudar. Nunca troca uma economia
       existente por "indisponível".
@@ -227,6 +270,14 @@ async def reprocess_savings_gaps(
         # Mês que já tinha economia nunca perde o número: se o recálculo de
         # hoje não consegue calcular (ex.: telemetria antiga podada pela
         # retenção), a revisão antiga continua valendo.
+        # Produção parcial só vira revisão quando a estimativa de fato
+        # aconteceu (há clima e referência) ou o buraco foi preenchido. Sem
+        # isso, gravar "estimados: 0" tiraria o mês da lista para sempre.
+        if gap.cause is SavingsGapCause.PARTIAL_PRODUCTION and (
+            not has_savings_now or not _estimate_resolved(report)
+        ):
+            results.append(_result(gap, previous, stored=False))
+            continue
         if gap.cause is SavingsGapCause.OUTDATED_CALCULATION and (
             not has_savings_now
             or all(

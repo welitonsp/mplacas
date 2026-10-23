@@ -191,3 +191,25 @@ def test_telegram_token_reaches_every_step_that_needs_it() -> None:
                     f"'{step.get('name', '?')}' roda cloud_jobs sem "
                     "MPLACAS_TELEGRAM_BOT_TOKEN no env do passo"
                 )
+
+
+def test_climate_history_workflow_is_guarded_and_alert_free() -> None:
+    workflow = (ROOT / ".github/workflows/climate-history.yml").read_text(encoding="utf-8")
+
+    assert "workflow_dispatch" in workflow
+    assert 'Digite exatamente CLIMA' in workflow
+    assert "group: operational-jobs" in workflow
+    assert "collect-climate" in workflow
+    # Sem análise nem alerta: nenhum segredo de Telegram ou do provedor solar.
+    assert "TELEGRAM" not in workflow
+    assert "NEP_PASSWORD" not in workflow
+
+
+def test_cloud_jobs_exposes_collect_climate_command() -> None:
+    from mplacas.cloud_jobs import _build_parser
+
+    args = _build_parser().parse_args(
+        ["collect-climate", "--start-date", "2024-08-15", "--end-date", "2026-05-17"]
+    )
+    assert args.start_date == "2024-08-15"
+    assert args.handler.__name__ == "_handle_collect_climate"

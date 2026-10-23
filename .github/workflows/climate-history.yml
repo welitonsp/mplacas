@@ -1,0 +1,81 @@
+# Histórico de sol (irradiação diária) para estimar a produção dos dias sem
+# leitura do inversor (ADR-082).
+#
+# O ciclo diário só busca o clima do dia anterior. Quando a usina passou dias
+# sem internet no passado, o sistema precisa do sol daqueles dias para estimar
+# a produção. Este workflow busca o arquivo histórico do Open-Meteo (gratuito,
+# um pedido por bloco de até 366 dias por usina) e grava pelo mesmo caminho
+# idempotente do ciclo diário. Não roda análise nem gera alerta.
+name: climate-history
+
+on:
+  workflow_dispatch:
+    inputs:
+      data_inicial:
+        description: "Primeiro dia (YYYY-MM-DD)"
+        required: true
+      data_final:
+        description: "Último dia (YYYY-MM-DD, inclusive)"
+        required: true
+      confirmacao:
+        description: "Digite CLIMA para confirmar a execução contra produção"
+        required: true
+        default: ""
+
+concurrency:
+  # Mesmo grupo do ciclo diário e do backfill: escrevem nas mesmas tabelas.
+  group: operational-jobs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  clima:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MPLACAS_ENVIRONMENT: production
+      MPLACAS_TIMEZONE: America/Sao_Paulo
+      PYTHONPATH: ${{ github.workspace }}/src
+      DATA_INICIAL: ${{ inputs.data_inicial }}
+      DATA_FINAL: ${{ inputs.data_final }}
+      CONFIRMACAO: ${{ inputs.confirmacao }}
+      # Teto de segurança: ~3 anos. O provedor é gratuito, mas um ano digitado
+      # errado não deve virar dezenas de pedidos.
+      MAXIMO_DIAS: "1100"
+    steps:
+      - name: Validar intervalo
+        run: |
+          if [ "$CONFIRMACAO" != "CLIMA" ]; then
+            echo "Confirmação ausente ou incorreta. Digite exatamente CLIMA." >&2
+            exit 1
+          fi
+          for d in "$DATA_INICIAL" "$DATA_FINAL"; do
+            if ! [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "Data inválida: '${d}'. Use YYYY-MM-DD." >&2
+              exit 1
+            fi
+            date -u -d "$d" >/dev/null 2>&1 || { echo "Data inexistente: '${d}'." >&2; exit 1; }
+          done
+          inicio=$(date -u -d "$DATA_INICIAL" +%s)
+          fim=$(date -u -d "$DATA_FINAL" +%s)
+          hoje=$(date -u -d "$(date -u +%F)" +%s)
+          [ "$fim" -ge "$inicio" ] || { echo "Data final anterior à inicial." >&2; exit 1; }
+          [ "$fim" -lt "$hoje" ] || { echo "Data final precisa ser anterior a hoje." >&2; exit 1; }
+          dias=$(( (fim - inicio) / 86400 + 1 ))
+          [ "$dias" -le "$MAXIMO_DIAS" ] || { echo "Intervalo de ${dias} dias excede ${MAXIMO_DIAS}." >&2; exit 1; }
+          echo "Buscando ${dias} dia(s) de clima: ${DATA_INICIAL} .. ${DATA_FINAL}"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Buscar e gravar o clima
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+        run: python -m mplacas.cloud_jobs collect-climate --start-date "$DATA_INICIAL" --end-date "$DATA_FINAL"
