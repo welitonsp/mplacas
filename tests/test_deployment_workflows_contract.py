@@ -200,6 +200,8 @@ def test_climate_history_workflow_is_guarded_and_alert_free() -> None:
     assert 'Digite exatamente CLIMA' in workflow
     assert "group: operational-jobs" in workflow
     assert "collect-climate" in workflow
+    # Settings recusa subir em produção sem a chave de operações.
+    assert "MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}" in workflow
     # Sem análise nem alerta: nenhum segredo de Telegram ou do provedor solar.
     assert "TELEGRAM" not in workflow
     assert "NEP_PASSWORD" not in workflow

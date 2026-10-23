@@ -78,4 +78,7 @@ jobs:
       - name: Buscar e gravar o clima
         env:
           MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          # Exigida pela validação de configuração em produção (Settings),
+          # mesmo que este comando não chame a API.
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
         run: python -m mplacas.cloud_jobs collect-climate --start-date "$DATA_INICIAL" --end-date "$DATA_FINAL"
