@@ -7,9 +7,10 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import desc, select
+from sqlalchemy import ColumnElement, desc, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from mplacas.billing.read_repository import ConfirmedBillReadRepository
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
@@ -36,6 +37,7 @@ class MonthlyReportSnapshot:
     report: MonthlyEnergyReport
     payload_sha256: str
     created_at: datetime
+    revision: int = 1
 
 
 def _canonical_payload(report: MonthlyEnergyReport) -> str:
@@ -107,6 +109,21 @@ def _to_snapshot(record: MonthlyReportSnapshotRecord) -> MonthlyReportSnapshot:
         report=report,
         payload_sha256=record.payload_sha256,
         created_at=record.created_at,
+        revision=record.revision,
+    )
+
+
+def _is_latest_revision() -> ColumnElement[bool]:
+    """Filtro "maior revisão desta fatura" (ADR-081).
+
+    Revisões antigas continuam gravadas para auditoria, mas nenhum leitor as
+    soma: cada fatura conta uma vez, pela revisão mais recente.
+    """
+    newer = aliased(MonthlyReportSnapshotRecord)
+    return MonthlyReportSnapshotRecord.revision == (
+        select(func.max(newer.revision))
+        .where(newer.bill_id == MonthlyReportSnapshotRecord.bill_id)
+        .scalar_subquery()
     )
 
 
@@ -129,10 +146,13 @@ class MonthlyReportSnapshotRepository:
         if not self._plant_scope.allows(plant_id):
             return None
         record = await self._session.scalar(
-            select(MonthlyReportSnapshotRecord).where(
+            select(MonthlyReportSnapshotRecord)
+            .where(
                 MonthlyReportSnapshotRecord.bill_id == bill_id,
                 MonthlyReportSnapshotRecord.plant_id == plant_id,
             )
+            .order_by(desc(MonthlyReportSnapshotRecord.revision))
+            .limit(1)
         )
         return _to_snapshot(record) if record is not None else None
 
@@ -141,7 +161,7 @@ class MonthlyReportSnapshotRepository:
             return None
         record = await self._session.scalar(
             select(MonthlyReportSnapshotRecord)
-            .where(MonthlyReportSnapshotRecord.plant_id == plant_id)
+            .where(MonthlyReportSnapshotRecord.plant_id == plant_id, _is_latest_revision())
             .order_by(
                 desc(MonthlyReportSnapshotRecord.reference_month),
                 desc(MonthlyReportSnapshotRecord.created_at),
@@ -165,7 +185,7 @@ class MonthlyReportSnapshotRepository:
         records = (
             await self._session.scalars(
                 select(MonthlyReportSnapshotRecord)
-                .where(MonthlyReportSnapshotRecord.plant_id == plant_id)
+                .where(MonthlyReportSnapshotRecord.plant_id == plant_id, _is_latest_revision())
                 .order_by(
                     MonthlyReportSnapshotRecord.reference_month,
                     MonthlyReportSnapshotRecord.created_at,
@@ -191,7 +211,7 @@ class MonthlyReportSnapshotRepository:
         records = (
             await self._session.scalars(
                 select(MonthlyReportSnapshotRecord)
-                .where(MonthlyReportSnapshotRecord.plant_id == plant_id)
+                .where(MonthlyReportSnapshotRecord.plant_id == plant_id, _is_latest_revision())
                 .order_by(
                     desc(MonthlyReportSnapshotRecord.reference_month),
                     desc(MonthlyReportSnapshotRecord.created_at),

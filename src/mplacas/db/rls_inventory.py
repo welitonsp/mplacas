@@ -54,7 +54,9 @@ def application_rls_tables() -> frozenset[str]:
 # IPCA do Banco Central, ADR-079). Ficam FORA do RLS de propósito: precisam ser
 # lidas por qualquer sessão de organização, e "plataforma" as bloquearia.
 # Toda tabela da aplicação está em exatamente um dos dois conjuntos.
-PUBLIC_REFERENCE_TABLES: frozenset[str] = frozenset({"market_index_monthly"})
+PUBLIC_REFERENCE_TABLES: frozenset[str] = frozenset(
+    {"market_index_monthly", "distributor_tariffs"}
+)
 
 
 def classified_application_tables() -> frozenset[str]:

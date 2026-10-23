@@ -5,6 +5,7 @@ from decimal import Decimal
 from mplacas import __version__
 from mplacas.intelligence.executive_service import ExecutiveEnergyDashboard
 from mplacas.intelligence.trends import MetricTrend
+from mplacas.reports.tariff_metrics import savings_tariff_metrics
 from mplacas.reports.contract import (
     REPORT_SCHEMA_VERSION,
     MonthlyEnergyReport,
@@ -28,9 +29,8 @@ def _metric(
     nature: str,
     source: str,
 ) -> ReportMetric:
-    # `None` projeta como `value=""`, nunca omitida — necessário para
-    # `estimated_savings_brl`/`savings_unavailable_reason` (ADR-067, Etapa A):
-    # vazio distingue "indisponível" de "conceito ausente em snapshot antigo".
+    # `None` projeta como `value=""`, nunca omitida (ADR-067, Etapa A): vazio
+    # distingue "indisponível" de "conceito ausente em snapshot antigo".
     return ReportMetric(
         key=key,
         label=label,
@@ -158,6 +158,7 @@ def _project_metrics(dashboard: ExecutiveEnergyDashboard) -> tuple[ReportMetric,
             nature="CALCULATED",
             source=ENGINE_SOURCE,
         ),
+        *savings_tariff_metrics(intelligence),
         _metric(
             "savings_unavailable_reason",
             "Motivo de indisponibilidade da economia",

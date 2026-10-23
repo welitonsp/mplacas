@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mplacas.billing.read_repository import ConfirmedBill, ConfirmedBillReadRepository
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.db.models import DailyEnergy, DataStatus, Device
+from mplacas.tariffs.service import full_tariff_without_taxes
 from mplacas.intelligence.energy_engine import EnergyCycleIntelligence, analyze_energy_cycle
 
 
@@ -119,6 +120,12 @@ async def analyze_confirmed_cycle(
         missing_days=missing_days + incomplete_days + unavailable_days,
         provisional_days=provisional_days,
         production_days=production_days,
+        full_tariff_without_taxes=await full_tariff_without_taxes(
+            session,
+            distributor=bill.distributor,
+            cycle_start=bill.cycle_start,
+            cycle_end=bill.cycle_end,
+        ),
     )
     return PersistedCycleIntelligence(
         bill_id=confirmed_bill.id,

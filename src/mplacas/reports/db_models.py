@@ -3,7 +3,16 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,7 +22,13 @@ from mplacas.db.base import Base
 class MonthlyReportSnapshotRecord(Base):
     __tablename__ = "monthly_report_snapshots"
     __table_args__ = (
-        UniqueConstraint("bill_id", name="uq_monthly_report_snapshots_bill"),
+        # Uma fatura pode ter mais de uma revisão do relatório (ADR-081): a
+        # revisão 1 é a da confirmação; as seguintes só nascem do
+        # reprocessamento explícito de meses sem economia. Nenhuma revisão é
+        # alterada ou apagada — leitores usam sempre a maior.
+        UniqueConstraint(
+            "bill_id", "revision", name="uq_monthly_report_snapshots_bill_revision"
+        ),
         Index(
             "ix_monthly_report_snapshots_plant_reference",
             "plant_id",
@@ -32,6 +47,9 @@ class MonthlyReportSnapshotRecord(Base):
         nullable=False,
     )
     reference_month: Mapped[str] = mapped_column(String(7), nullable=False)
+    revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
     schema_version: Mapped[str] = mapped_column(String(20), nullable=False)
     calculation_version: Mapped[str] = mapped_column(String(40), nullable=False)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)

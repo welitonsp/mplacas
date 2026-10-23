@@ -88,6 +88,12 @@ def _serialize(result) -> dict[str, object]:
                 if intelligence.tariff_without_taxes_brl_kwh is not None
                 else None
             ),
+            "savings_tariff_brl_kwh": (
+                str(intelligence.savings_tariff_brl_kwh)
+                if intelligence.savings_tariff_brl_kwh is not None
+                else None
+            ),
+            "savings_tariff_source": intelligence.savings_tariff_source,
             "credit_balance_kwh": str(intelligence.credit_balance_kwh),
             "estimated_savings_brl": (
                 str(intelligence.estimated_savings_brl)

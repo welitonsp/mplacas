@@ -35,8 +35,10 @@ from mplacas.reports.snapshot import MonthlyReportSnapshotRepository
 _SAVINGS_METRIC_KEY = "estimated_savings_brl"
 # Abaixo disto a média mensal ainda não cobre as estações do ano.
 MINIMUM_CYCLES_FOR_CONFIDENT_BASELINE = 12
-# Fórmula da economia corrigida (injeção pelo medidor, ADR-078).
-CORRECTED_CALCULATION_VERSION = (0, 3, 0)
+# Fórmula da economia corrigida: injeção pelo medidor (ADR-078, 0.3.0) e
+# conta "sem a usina" pela tarifa cheia homologada (ADR-080, 0.4.0). Ciclos
+# calculados antes disso subestimam a economia e marcam a estimativa.
+CORRECTED_CALCULATION_VERSION = (0, 4, 0)
 
 
 class InvestorUnavailableReason(str, enum.Enum):
@@ -69,7 +71,7 @@ class InvestorPanel:
     premises: InvestorPremises | None
 
 
-def _version_tuple(version: str) -> tuple[int, ...]:
+def calculation_version_tuple(version: str) -> tuple[int, ...]:
     parts: list[int] = []
     for part in version.split("."):
         digits = "".join(ch for ch in part if ch.isdigit())
@@ -104,6 +106,7 @@ async def get_investor_panel(
     ).list_for_plant(plant_id=plant_id)
     savings: dict[str, Decimal] = {}
     versions: set[str] = set()
+    bill_tariff_cycles = 0
     for snapshot in snapshots:
         report = snapshot.report
         metric = next((m for m in report.metrics if m.key == _SAVINGS_METRIC_KEY), None)
@@ -117,8 +120,17 @@ async def get_investor_panel(
             continue
         savings[report.reference_month] = value
         versions.add(report.calculation_version)
-    sorted_versions = tuple(sorted(versions, key=_version_tuple))
-    pre_correction = any(_version_tuple(v) < CORRECTED_CALCULATION_VERSION for v in sorted_versions)
+        # Ciclo 0.4.0+ calculado sem a tarifa cheia (vigência não cadastrada,
+        # ADR-080): a economia é um piso, então a estimativa fica marcada.
+        tariff_source = next(
+            (m.value for m in report.metrics if m.key == "savings_tariff_source"), None
+        )
+        if tariff_source and tariff_source != "DISTRIBUTOR_FULL_TARIFF":
+            bill_tariff_cycles += 1
+    sorted_versions = tuple(sorted(versions, key=calculation_version_tuple))
+    pre_correction = bill_tariff_cycles > 0 or any(
+        calculation_version_tuple(v) < CORRECTED_CALCULATION_VERSION for v in sorted_versions
+    )
 
     investment = plant.investment_amount_brl
     commissioned_on = plant.commissioned_on

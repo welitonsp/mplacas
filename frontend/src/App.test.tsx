@@ -93,6 +93,8 @@ vi.mock('./lib/api', () => ({
   uploadBillPdf: vi.fn(),
   confirmBill: vi.fn(),
   rejectBill: vi.fn(),
+  fetchSavingsGaps: vi.fn(async () => new Response(JSON.stringify({ count: 0, items: [] }), { status: 200 })),
+  reprocessSavingsGaps: vi.fn(),
   fetchPlants: () => apiMock.fetchPlants(),
   configureApi: vi.fn(),
 }))

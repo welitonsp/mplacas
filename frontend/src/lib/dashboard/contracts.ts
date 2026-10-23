@@ -40,6 +40,11 @@ export interface ExecutiveIndicators {
   credit_balance_value_brl?: MetricValue
   modeled_bill_brl?: MetricValue
   bill_model_difference_brl?: MetricValue
+  // Tarifa (com impostos) da conta "sem a usina" e sua origem (ADR-080):
+  // 'DISTRIBUTOR_FULL_TARIFF' = tarifa cheia homologada; 'BILL_TARIFF' =
+  // preço da fatura, usado só na falta da cheia (subestima em faturas SCEE).
+  savings_tariff_brl_kwh?: MetricValue
+  savings_tariff_source?: string | null
 }
 
 // Vocabulário compartilhado com o backend (ver
@@ -615,6 +620,8 @@ export function parseExecutiveDashboard(payload: unknown): ExecutiveDashboardRes
         credit_balance_value_brl: metricValueOrMissing(indicators, 'credit_balance_value_brl'),
         modeled_bill_brl: metricValueOrMissing(indicators, 'modeled_bill_brl'),
         bill_model_difference_brl: metricValueOrMissing(indicators, 'bill_model_difference_brl'),
+        savings_tariff_brl_kwh: metricValueOrMissing(indicators, 'savings_tariff_brl_kwh'),
+        savings_tariff_source: optionalStringOrMissing(indicators, 'savings_tariff_source'),
       },
       diagnostics: parseDiagnostics(currentCycle),
     },

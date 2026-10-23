@@ -60,6 +60,8 @@ def _dashboard(
                 bill_energy_component_brl=Decimal("45.20"),
                 estimated_savings_brl=estimated_savings_brl,
                 savings_unavailable_reason=savings_unavailable_reason,
+                savings_tariff_brl_kwh=Decimal("1.145750"),
+                savings_tariff_source="DISTRIBUTOR_FULL_TARIFF",
                 health_score=97,
                 diagnostics=(),
             ),

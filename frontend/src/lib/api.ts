@@ -410,6 +410,17 @@ export async function rejectBill(billId: string): Promise<Response> {
   return apiFetch(`/billing/${encodeURIComponent(billId)}/reject`, { method: 'POST' })
 }
 
+// Meses com fatura confirmada sem economia ou com cálculo antigo (ADR-081).
+export async function fetchSavingsGaps(plantId: string): Promise<Response> {
+  return apiFetch(`/reports/monthly/savings-gaps?plant_id=${encodeURIComponent(plantId)}`)
+}
+
+export async function reprocessSavingsGaps(plantId: string): Promise<Response> {
+  return apiFetch(`/reports/monthly/savings-gaps/reprocess?plant_id=${encodeURIComponent(plantId)}`, {
+    method: 'POST',
+  })
+}
+
 // Formatos servidos pelo caminho síncrono de exportação (T2, plano de
 // auditoria 2026-08-12). O pipeline assíncrono (`POST /monthly/exports` +
 // polling de `exports/{task_id}`) fica fora de escopo — ver
