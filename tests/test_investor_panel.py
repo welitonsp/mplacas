@@ -229,3 +229,31 @@ def test_route_is_tenant_scoped_and_serializes_unavailable_state(monkeypatch) ->
     assert body["projection"] is None
     assert body["indices"]["source"].startswith("Banco Central")
     assert foreign.status_code == 404
+
+
+def test_cycle_computed_without_full_tariff_marks_the_estimate(monkeypatch) -> None:
+    # 0.4.0, mas a vigência do ciclo não estava cadastrada (ADR-080): a
+    # economia é um piso e o painel não pode tratá-la como corrigida.
+    snapshot = _snapshot("2026-11", "300.00", "0.4.0")
+    snapshot.report.metrics = snapshot.report.metrics + (
+        SimpleNamespace(key="savings_tariff_source", value="BILL_TARIFF"),
+    )
+    panel = _panel(
+        monkeypatch,
+        (snapshot,),
+        investment_amount_brl=Decimal("11200.00"),
+        commissioned_on=date(2025, 9, 1),
+    )
+    assert panel.includes_pre_correction_cycles is True
+
+    full = _snapshot("2026-09", "612.16", "0.4.0")
+    full.report.metrics = full.report.metrics + (
+        SimpleNamespace(key="savings_tariff_source", value="DISTRIBUTOR_FULL_TARIFF"),
+    )
+    panel = _panel(
+        monkeypatch,
+        (full,),
+        investment_amount_brl=Decimal("11200.00"),
+        commissioned_on=date(2025, 9, 1),
+    )
+    assert panel.includes_pre_correction_cycles is False

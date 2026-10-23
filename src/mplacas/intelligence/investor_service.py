@@ -106,6 +106,7 @@ async def get_investor_panel(
     ).list_for_plant(plant_id=plant_id)
     savings: dict[str, Decimal] = {}
     versions: set[str] = set()
+    bill_tariff_cycles = 0
     for snapshot in snapshots:
         report = snapshot.report
         metric = next((m for m in report.metrics if m.key == _SAVINGS_METRIC_KEY), None)
@@ -119,8 +120,17 @@ async def get_investor_panel(
             continue
         savings[report.reference_month] = value
         versions.add(report.calculation_version)
+        # Ciclo 0.4.0+ calculado sem a tarifa cheia (vigência não cadastrada,
+        # ADR-080): a economia é um piso, então a estimativa fica marcada.
+        tariff_source = next(
+            (m.value for m in report.metrics if m.key == "savings_tariff_source"), None
+        )
+        if tariff_source and tariff_source != "DISTRIBUTOR_FULL_TARIFF":
+            bill_tariff_cycles += 1
     sorted_versions = tuple(sorted(versions, key=_version_tuple))
-    pre_correction = any(_version_tuple(v) < CORRECTED_CALCULATION_VERSION for v in sorted_versions)
+    pre_correction = bill_tariff_cycles > 0 or any(
+        _version_tuple(v) < CORRECTED_CALCULATION_VERSION for v in sorted_versions
+    )
 
     investment = plant.investment_amount_brl
     commissioned_on = plant.commissioned_on

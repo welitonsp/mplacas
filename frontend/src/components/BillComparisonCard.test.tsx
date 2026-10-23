@@ -47,6 +47,11 @@ describe('BillComparisonCard', () => {
     expect(screen.getByText('Com a tarifa cheia da distribuidora: R$ 1,146/kWh com impostos')).toBeInTheDocument()
   })
 
+  it('sem a origem da tarifa (backend antigo), não afirma nada sobre ela', () => {
+    render(<BillComparisonCard indicators={base} referenceMonth="2026-09" />)
+    expect(screen.queryByText(/tarifa/i)).not.toBeInTheDocument()
+  })
+
   it('avisa quando a tarifa cheia faltou e a economia pode estar subestimada', () => {
     render(
       <BillComparisonCard

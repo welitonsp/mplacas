@@ -168,3 +168,102 @@ def test_full_tariff_never_goes_below_the_bills_own_price() -> None:
     )
 
     assert result.savings_tariff_brl_kwh == Decimal("0.787589")
+
+
+async def test_gap_between_periods_returns_none(session: AsyncSession) -> None:
+    # Lacuna no meio: some a vigência de 2024–2025 e um ciclo dentro dela fica sem tarifa.
+    from sqlalchemy import delete
+
+    await session.execute(
+        delete(DistributorTariffRecord).where(
+            DistributorTariffRecord.valid_from == date(2024, 10, 22)
+        )
+    )
+    await session.flush()
+    assert await _full(session, date(2025, 3, 18), date(2025, 4, 14)) is None
+
+
+def test_full_tariff_below_bill_price_is_labeled_as_bill_tariff() -> None:
+    # Cadastro errado (ou classe errada): não rotula como tarifa cheia.
+    result = analyze_energy_cycle(
+        bill=_september_2026(),
+        cycle_production_kwh=Decimal("583.21"),
+        full_tariff_without_taxes=Decimal("0.500000"),
+    )
+
+    assert result.savings_tariff_source == SAVINGS_TARIFF_BILL
+    assert result.savings_tariff_brl_kwh == Decimal("0.787589")
+
+
+def test_credit_balance_is_valued_at_full_tariff_minus_wire_b() -> None:
+    result = analyze_energy_cycle(
+        bill=_september_2026(),
+        cycle_production_kwh=Decimal("583.21"),
+        full_tariff_without_taxes=Decimal("0.891810"),
+    )
+    # 17,98 kWh × (1,145751 − 0,175126)
+    assert result.credit_balance_value_brl == Decimal("17.45")
+
+
+def test_uncompensated_energy_is_modeled_at_full_tariff() -> None:
+    # Set/2025: 81,02 compensados + 17,98 não compensados.
+    bill = _september_2026(
+        reference_month="2025-09",
+        cycle_start=date(2025, 8, 15),
+        cycle_end=date(2025, 9, 14),
+        billed_days=31,
+        imported_kwh=Decimal("99.00"),
+        injected_kwh=Decimal("81.02"),
+        compensated_kwh=Decimal("81.02"),
+        total_amount_brl=Decimal("60.61"),
+        tariff_with_taxes_brl_kwh=Decimal("0.643844"),
+        tariff_without_taxes_brl_kwh=Decimal("0.498120"),
+        wire_b_tariff_brl_kwh=Decimal("0.122387"),
+    )
+    result = analyze_energy_cycle(
+        bill=bill,
+        cycle_production_kwh=Decimal("500"),
+        full_tariff_without_taxes=Decimal("0.745930"),
+    )
+    # 17,98 × 0,964150 + 81,02 × 0,122387 + 30,21 = 57,46. A fatura real deu
+    # 60,61: a diferença de 3,15 é a bandeira vermelha (1,83) mais o
+    # retroativo do Fio B (1,31), itens que o modelo não cobre.
+    assert result.modeled_bill_brl == Decimal("57.46")
+    assert result.bill_model_difference_brl == Decimal("3.15")
+
+
+async def test_confirmed_cycle_looks_up_the_full_tariff_from_the_database(
+    session: AsyncSession,
+) -> None:
+    import uuid as _uuid
+
+    from mplacas.billing.read_repository import ConfirmedBill
+    from mplacas.db.models import DailyEnergy, DataStatus, Device, Plant
+    from mplacas.intelligence.cycle_service import analyze_confirmed_cycle
+
+    plant = Plant(name="Usina tarifa")
+    session.add(plant)
+    await session.flush()
+    device = Device(plant_id=plant.id, serial_number="TARIFA-001")
+    session.add(device)
+    await session.flush()
+    bill = _september_2026()
+    days = (bill.cycle_end - bill.cycle_start).days + 1
+    for offset in range(days):
+        session.add(
+            DailyEnergy(
+                device_id=device.id,
+                production_date=date.fromordinal(bill.cycle_start.toordinal() + offset),
+                energy_kwh=Decimal("20.110") if offset else Decimal("20.130"),
+                status=DataStatus.CONSOLIDATED,
+            )
+        )
+    await session.flush()
+
+    result = await analyze_confirmed_cycle(
+        session,
+        confirmed_bill=ConfirmedBill(id=_uuid.uuid4(), plant_id=plant.id, bill=bill),
+    )
+
+    assert result.intelligence.savings_tariff_source == SAVINGS_TARIFF_DISTRIBUTOR_FULL
+    assert result.intelligence.savings_tariff_brl_kwh == Decimal("1.145751")

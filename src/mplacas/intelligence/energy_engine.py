@@ -49,6 +49,7 @@ SAVINGS_UNAVAILABLE_NO_PRODUCTION_DATA = "NO_PRODUCTION_DATA"
 #   sai subestimada. Só é usada quando falta a tarifa cheia do período.
 SAVINGS_TARIFF_DISTRIBUTOR_FULL = "DISTRIBUTOR_FULL_TARIFF"
 SAVINGS_TARIFF_BILL = "BILL_TARIFF"
+_TARIFF_ROUNDING_TOLERANCE = Decimal("0.00001")
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,8 +111,12 @@ def _savings_tariff(
         tariff = (full_tariff_without_taxes * factor).quantize(
             Decimal("0.000001"), rounding=ROUND_HALF_UP
         )
-        # Nunca abaixo do preço da própria fatura: a tarifa cheia é o teto
-        # do que a energia compensada evitou pagar.
+        # Tarifa cheia abaixo do preço da própria fatura indica cadastro ou
+        # classe tarifária errados: usa o preço da fatura e diz isso, em vez
+        # de rotular como tarifa cheia. Tolerância de arredondamento para o
+        # layout pré-transição, em que a linha já é a tarifa cheia.
+        if tariff < with_taxes - _TARIFF_ROUNDING_TOLERANCE:
+            return with_taxes, SAVINGS_TARIFF_BILL
         return max(tariff, with_taxes), SAVINGS_TARIFF_DISTRIBUTOR_FULL
     return with_taxes, SAVINGS_TARIFF_BILL
 
@@ -203,12 +208,15 @@ def analyze_energy_cycle(
     # Um kWh de crédito, quando usado, evita a tarifa cheia mas ainda paga o
     # Fio B da parcela compensada (Lei 14.300). Valor líquido = tarifa − Fio B
     # quando a fatura traz o Fio B; sem ele, a tarifa cheia (teto).
+    # A referência é a mesma tarifa da conta "sem a usina" (ADR-080): quando o
+    # crédito acaba, o kWh volta a ser comprado à tarifa cheia.
+    credit_reference = savings_tariff if savings_tariff is not None else tariff
     credit_unit_value = (
-        tariff - bill.wire_b_tariff_brl_kwh
-        if tariff is not None
+        credit_reference - bill.wire_b_tariff_brl_kwh
+        if credit_reference is not None
         and bill.wire_b_tariff_brl_kwh is not None
-        and bill.wire_b_tariff_brl_kwh < tariff
-        else tariff
+        and bill.wire_b_tariff_brl_kwh < credit_reference
+        else credit_reference
     )
     credit_balance_value_brl = (
         (bill.credit_balance_kwh * credit_unit_value).quantize(cents, rounding=ROUND_HALF_UP)
@@ -224,7 +232,7 @@ def analyze_energy_cycle(
     # importado). Não inclui o custo de disponibilidade nem retroativos: a
     # diferença que sobra é mostrada como tal, sem presumir a causa.
     if (
-        tariff is not None
+        savings_tariff is not None
         and bill.wire_b_tariff_brl_kwh is not None
         and bill.imported_kwh > 0
     ):
@@ -232,7 +240,7 @@ def analyze_energy_cycle(
         uncompensated = bill.imported_kwh - compensated_used
         # Energia não compensada é cobrada à tarifa cheia.
         modeled_bill_brl = (
-            uncompensated * (savings_tariff or tariff)
+            uncompensated * savings_tariff
             + compensated_used * bill.wire_b_tariff_brl_kwh
             + bill.public_lighting_brl
         ).quantize(cents, rounding=ROUND_HALF_UP)

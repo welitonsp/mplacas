@@ -46,18 +46,24 @@ A economia ficava subestimada em cerca de 33%, e o ROI e a TIR também.
    preço sem tributos da linha de consumo).
    - PIS/COFINS mudam todo mês e o ICMS é o da linha, então o fator certo é o da própria
      fatura.
-   - Nunca fica abaixo do preço da própria fatura. Isso cobre o layout pré-transição, em
-     que a linha já é a tarifa cheia.
+   - Se a tarifa cheia calculada ficar abaixo do preço da própria fatura, o que indica
+     cadastro ou classe errados, a conta usa o preço da fatura e rotula `BILL_TARIFF`.
+   - Há tolerância de arredondamento para o layout pré-transição, em que a linha já é a
+     tarifa cheia.
 4. **Sem vigência cadastrada, não há palpite.**
    - Se algum dia do ciclo não tiver vigência cadastrada, a conta usa o preço da fatura,
      como antes, e diz isso: `savings_tariff_source = BILL_TARIFF`.
    - O card mostra "pode subestimar a economia".
    - Com vigência, o card mostra "tarifa cheia da distribuidora: R$ x/kWh com impostos".
-5. **Rastreabilidade.** `savings_tariff_brl_kwh` e `savings_tariff_source` entram em
+5. **Crédito acumulado** vale a mesma tarifa da conta "sem a usina" menos o Fio B. Quando o
+   crédito acaba, o kWh volta a ser comprado à tarifa cheia.
+6. **Rastreabilidade.** `savings_tariff_brl_kwh` e `savings_tariff_source` entram em
    `/energy/*` e no snapshot do relatório mensal. A energia não compensada do modelo de
    conferência da fatura também passa a usar a tarifa cheia.
-6. **Versão de cálculo 0.4.0.** `CORRECTED_CALCULATION_VERSION` passa a (0, 4, 0). Ciclos
-   antigos aparecem no painel do investidor como estimativa a corrigir.
+7. **Versão de cálculo 0.4.0.** `CORRECTED_CALCULATION_VERSION` passa a (0, 4, 0). No
+   painel do investidor, aparecem como estimativa a corrigir:
+   - os ciclos antigos;
+   - os ciclos 0.4.0 calculados com `BILL_TARIFF`, cuja economia é só um piso.
 
 ## Consequências
 
@@ -66,14 +72,20 @@ A economia ficava subestimada em cerca de 33%, e o ROI e a TIR também.
 - **Os snapshots antigos continuam com a economia subestimada.** O ROI e o painel do
   investidor somam snapshots, então eles só se corrigem com o reprocessamento de snapshots
   (em desenho). Até lá, o painel marca a estimativa como pré-correção.
-- **Reajuste de 22/10/2026 ainda não cadastrado.** A ANEEL aprovou +7,36% para o B1 da
-  Equatorial GO, mas os valores por componente ainda não estão na base. Ciclos que
+- **Reajuste de 22/10/2026 ainda não cadastrado.** A ANEEL aprovou a REH 3.613/2026, com
+  +7,36% para o B1 da Equatorial GO. Os valores por componente ainda não estão na base
+  pública. Ciclos que
   passarem por essa data caem no preço da fatura, com aviso, até a nova linha ser incluída.
   - A inclusão é feita por migration ou importação de arquivo: o portal da ANEEL recusa IPs
     de nuvem.
-- **Só existe a classe B1 residencial convencional da Equatorial GO.** Outras distribuidoras
-  e classes (tarifa branca, baixa renda) precisam de carga de dados antes da venda
-  comercial.
+- **Classe tarifária fixa: B1 residencial convencional.** A fatura lida ainda não guarda a
+  classe do cliente. Por isso, um cliente da Equatorial GO em outra classe (tarifa branca,
+  baixa renda, comercial) receberia a tarifa cheia do B1 convencional, e a economia sairia
+  **superestimada**, rotulada como tarifa cheia. Hoje há um único cliente, que é B1
+  convencional.
+  - **Antes da venda comercial é obrigatório:** ler a "Classificação" da fatura e só aplicar
+    a tarifa cheia quando a classe tiver vigência cadastrada.
+  - Outras distribuidoras não têm vigência e caem em `BILL_TARIFF`, com aviso.
 - **Bandeiras tarifárias** ("AD. BAND.") não entram na conta "sem a usina". Isso a deixa
   conservadora nos meses de bandeira amarela ou vermelha.
 

@@ -76,12 +76,16 @@ export function BillComparisonCard({
 
   const max = Math.max(withoutSolar, paid)
   const savingsTariff = toNumber(indicators.savings_tariff_brl_kwh ?? null)
+  const source = indicators.savings_tariff_source ?? null
+  // Sem o campo (backend anterior ao ADR-080), nada é afirmado sobre a tarifa.
   const tariffLabel =
-    indicators.savings_tariff_source === 'DISTRIBUTOR_FULL_TARIFF'
+    source === 'DISTRIBUTOR_FULL_TARIFF'
       ? savingsTariff == null
         ? 'Com a tarifa cheia da distribuidora'
         : `Com a tarifa cheia da distribuidora: R$ ${formatNumber(savingsTariff, 3)}/kWh com impostos`
-      : 'Com a tarifa da própria fatura: pode subestimar a economia'
+      : source === 'BILL_TARIFF'
+        ? 'Com a tarifa da própria fatura: pode subestimar a economia'
+        : null
   const excess = toNumber(indicators.excess_credit_kwh ?? null)
   const creditValue = toNumber(indicators.credit_balance_value_brl ?? null)
   const difference = toNumber(indicators.bill_model_difference_brl ?? null)
@@ -117,9 +121,11 @@ export function BillComparisonCard({
               {formatCurrency(savings)}
             </p>
           </div>
-          <span className="inline-flex rounded-md bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
-            {tariffLabel}
-          </span>
+          {tariffLabel && (
+            <span className="inline-flex rounded-md bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
+              {tariffLabel}
+            </span>
+          )}
         </div>
 
         <div className="mt-5 space-y-4">
