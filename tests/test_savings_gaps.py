@@ -410,7 +410,51 @@ async def test_month_with_gaps_computed_before_estimates_is_recalculable(
     (gap,) = await list_savings_gaps(session, plant_id=plant.id)
     assert gap.cause is SavingsGapCause.PARTIAL_PRODUCTION
 
+    # O ciclo de 1 dia está completo agora (leitura existe): buraco resolvido.
     (result,) = await reprocess_savings_gaps(session, plant_id=plant.id)
     await session.commit()
     assert result.stored_revision == 2
     assert await list_savings_gaps(session, plant_id=plant.id) == ()
+
+
+async def test_partial_month_without_climate_stays_listed(session: AsyncSession) -> None:
+    # Sem clima carregado não há estimativa: o mês NÃO pode sair da lista.
+    plant = Plant(name="Usina sem clima")
+    session.add(plant)
+    await session.flush()
+    device = Device(plant_id=plant.id, serial_number="SEMCLIMA-1")
+    session.add(device)
+    await session.flush()
+    start = date(2026, 9, 1)
+    record = _bill(plant.id, "2026-09", start, 11)
+    record.cycle_end = date(2026, 9, 2)
+    record.billed_days = 2
+    session.add(record)
+    session.add(
+        DailyEnergy(
+            device_id=device.id,
+            production_date=start,
+            energy_kwh=Decimal("20"),
+            status=DataStatus.CONSOLIDATED,
+        )
+    )
+    await session.commit()
+    report = await build_monthly_report_for_bill(session, bill_id=record.id, plant_id=plant.id)
+    await MonthlyReportSnapshotRepository(session).create(
+        dataclasses.replace(
+            report,
+            quality=tuple(
+                m
+                for m in report.quality
+                if not m.key.startswith("estimated_") and m.key != "meter_floor_kwh"
+            ),
+        )
+    )
+    await session.commit()
+
+    (result,) = await reprocess_savings_gaps(session, plant_id=plant.id)
+    await session.commit()
+
+    assert result.stored_revision is None
+    (gap,) = await list_savings_gaps(session, plant_id=plant.id)
+    assert gap.cause is SavingsGapCause.PARTIAL_PRODUCTION

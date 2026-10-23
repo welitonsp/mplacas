@@ -40,13 +40,14 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/src
       DATA_INICIAL: ${{ inputs.data_inicial }}
       DATA_FINAL: ${{ inputs.data_final }}
+      CONFIRMACAO: ${{ inputs.confirmacao }}
       # Teto de segurança: ~3 anos. O provedor é gratuito, mas um ano digitado
       # errado não deve virar dezenas de pedidos.
       MAXIMO_DIAS: "1100"
     steps:
       - name: Validar intervalo
         run: |
-          if [ "${{ inputs.confirmacao }}" != "CLIMA" ]; then
+          if [ "$CONFIRMACAO" != "CLIMA" ]; then
             echo "Confirmação ausente ou incorreta. Digite exatamente CLIMA." >&2
             exit 1
           fi
@@ -77,5 +78,4 @@ jobs:
       - name: Buscar e gravar o clima
         env:
           MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
-          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
         run: python -m mplacas.cloud_jobs collect-climate --start-date "$DATA_INICIAL" --end-date "$DATA_FINAL"

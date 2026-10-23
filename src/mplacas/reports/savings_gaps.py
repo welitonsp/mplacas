@@ -108,6 +108,20 @@ def _had_gaps_without_estimate(report: MonthlyEnergyReport) -> bool:
     return gap_days > 0
 
 
+def _estimate_resolved(report: MonthlyEnergyReport) -> bool:
+    """O recálculo estimou os dias sem leitura, ou não há mais buraco."""
+    quality = {metric.key: metric.value for metric in report.quality}
+
+    def as_int(key: str) -> int:
+        try:
+            return int(quality.get(key) or 0)
+        except ValueError:
+            return 0
+
+    gaps = as_int("missing_days") + as_int("unavailable_days")
+    return gaps == 0 or as_int("estimated_production_days") > 0
+
+
 def _gap_for(
     bill_id: uuid.UUID,
     reference_month: str,
@@ -256,7 +270,12 @@ async def reprocess_savings_gaps(
         # Mês que já tinha economia nunca perde o número: se o recálculo de
         # hoje não consegue calcular (ex.: telemetria antiga podada pela
         # retenção), a revisão antiga continua valendo.
-        if gap.cause is SavingsGapCause.PARTIAL_PRODUCTION and not has_savings_now:
+        # Produção parcial só vira revisão quando a estimativa de fato
+        # aconteceu (há clima e referência) ou o buraco foi preenchido. Sem
+        # isso, gravar "estimados: 0" tiraria o mês da lista para sempre.
+        if gap.cause is SavingsGapCause.PARTIAL_PRODUCTION and (
+            not has_savings_now or not _estimate_resolved(report)
+        ):
             results.append(_result(gap, previous, stored=False))
             continue
         if gap.cause is SavingsGapCause.OUTDATED_CALCULATION and (

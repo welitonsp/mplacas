@@ -36,6 +36,21 @@ def _usable_energy_by_day(rows: Sequence[DailyEnergy]) -> dict[date, Decimal]:
     }
 
 
+def _consolidated_energy_by_day(rows: Sequence[DailyEnergy]) -> dict[date, Decimal]:
+    """Só dias inteiramente CONSOLIDATED: referência do rendimento (ADR-082).
+
+    Dias provisórios ou incompletos (parciais) puxariam o rendimento para baixo.
+    """
+    by_day: dict[date, list[DailyEnergy]] = {}
+    for row in rows:
+        by_day.setdefault(row.production_date, []).append(row)
+    return {
+        day: sum((r.energy_kwh for r in day_rows), Decimal("0"))
+        for day, day_rows in by_day.items()
+        if {r.status for r in day_rows} == {DataStatus.CONSOLIDATED}
+    }
+
+
 async def _irradiation_by_day(
     session: AsyncSession, *, plant_id: uuid.UUID, start: date, end: date
 ) -> dict[date, Decimal]:
@@ -165,7 +180,7 @@ async def analyze_confirmed_cycle(
         irradiation=await _irradiation_by_day(
             session, plant_id=confirmed_bill.plant_id, start=window_start, end=window_end
         ),
-        reference_measured=_usable_energy_by_day(window_rows),
+        reference_measured=_consolidated_energy_by_day(window_rows),
         meter_generation_kwh=bill.generation_cycle_kwh,
     )
     production = estimate.total_kwh

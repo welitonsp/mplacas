@@ -196,3 +196,34 @@ async def test_confirmed_cycle_uses_estimated_production(session: AsyncSession) 
     assert result.intelligence.reconciliation.cycle_production_kwh == Decimal("200.000")
     assert result.intelligence.reconciliation.estimated_self_consumption_kwh == Decimal("100.000")
     assert result.intelligence.estimated_savings_brl is not None
+
+
+def test_complete_cycle_below_meter_is_shown_not_hidden_by_the_floor() -> None:
+    # Ciclo sem buraco com inversor abaixo do medidor: divergência, sem piso.
+    cycle = _days(5)
+    measured = {day: Decimal("10") for day in cycle}
+    estimate = estimate_cycle_production(
+        cycle_days=cycle,
+        measured=measured,
+        irradiation={},
+        reference_measured=measured,
+        meter_generation_kwh=Decimal("80"),
+    )
+    assert estimate.meter_floor_kwh == Decimal("0")
+    assert estimate.total_kwh == Decimal("50")
+
+
+def test_zero_sun_day_is_not_counted_as_estimated() -> None:
+    cycle = _days(8)
+    measured = {day: Decimal("20") for day in cycle[:6]}
+    sun = {day: Decimal("5") for day in cycle[:6]}
+    sun |= {cycle[6]: Decimal("0"), cycle[7]: Decimal("4")}
+    estimate = estimate_cycle_production(
+        cycle_days=cycle,
+        measured=measured,
+        irradiation=sun,
+        reference_measured=measured,
+        meter_generation_kwh=None,
+    )
+    assert estimate.estimated_days == 1
+    assert estimate.unestimated_days == 1

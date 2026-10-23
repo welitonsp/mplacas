@@ -29,11 +29,14 @@ o autoconsumo virava zero.
    produção estimada = irradiação diária (Open-Meteo) × mediana do rendimento
    (kWh ÷ kWh/m²) dos dias medidos no ciclo e 30 dias de cada lado.
 
-   - São necessários pelo menos 5 dias de referência.
-   - Dia sem sol conhecido não é estimado.
+   - São necessários pelo menos 5 dias de referência, só de dias inteiramente
+     consolidados. Dias provisórios ou incompletos puxariam o rendimento para baixo.
+   - Dia sem sol conhecido, ou com sol zero, não é estimado.
    - A própria usina se mede: sujeira, sombra e perdas já estão no rendimento.
-2. **Piso pelo medidor.** A produção do ciclo nunca fica abaixo do `generation_cycle_kwh`
-   da fatura, porque o que foi injetado foi produzido. O piso sozinho não conta como "dia
+2. **Piso pelo medidor, só em ciclo com dia sem leitura.** A produção do ciclo nunca fica
+   abaixo do `generation_cycle_kwh` da fatura, porque o que foi injetado foi produzido.
+   - Num ciclo completo, produção abaixo do medidor é divergência a mostrar (inversor
+     subnotificando, recorte de datas), não algo a esconder. O piso sozinho não conta como "dia
    com produção": sem nenhum dia medido ou estimado, a economia continua indisponível
    (`NO_PRODUCTION_DATA`).
 3. **Transparência.**
@@ -42,8 +45,10 @@ o autoconsumo virava zero.
    - A tela de Produção mostra "N dias sem dado, estimados pelo sol".
    - Nenhum valor estimado aparece como medido.
 4. **Recálculo.** O "Meses a recalcular" ganha a causa `PARTIAL_PRODUCTION`: um ciclo com
-   dias sem leitura, calculado antes desta decisão. A nova revisão é gravada se o recálculo
-   tiver economia (ADR-081).
+   dias sem leitura, calculado antes desta decisão.
+   - A nova revisão só é gravada quando o recálculo tem economia **e** a estimativa de fato
+     aconteceu, ou o buraco foi preenchido.
+   - Sem clima carregado, o mês continua na lista, em vez de sair dela com "estimados: 0".
 5. **Histórico de sol.** O comando `collect-climate` e o workflow `climate-history`, com
    confirmação `CLIMA`, buscam a irradiação diária do Open-Meteo em blocos de até 366 dias
    por usina. Nenhum dos dois gera alerta.
@@ -56,5 +61,11 @@ o autoconsumo virava zero.
   `climate-history` para o período.
 - A janela de referência é de 30 dias: num mês inteiro sem leitura, o rendimento vem dos
   meses vizinhos, o que funciona para variação sazonal suave.
+- **Dia parcial não é estimado.** Num dia em que só um dos microinversores reportou, a
+  produção medida soma só os que reportaram. É uma subestimação que não aparece em
+  `estimated_*`. Fica como limitação conhecida.
+- **Desempenho contra o esperado.** O desempenho contra o esperado (ADR-057/060) passa a
+  ver a produção com estimativa e piso. Um ciclo ruim com buracos pode parecer melhor do
+  que foi. A qualidade do ciclo continua mostrando os dias sem leitura.
 - **Descartado: estimar pela média dos outros dias do mês.** Ignora que dia nublado gera
   menos. O sol do próprio dia é o melhor preditor disponível.

@@ -10,9 +10,9 @@ Estimativa, nesta ordem de preferência:
    irradiação conhecida, produção = irradiação do dia × mediana do rendimento
    (kWh produzidos ÷ kWh/m² de sol) dos dias medidos vizinhos. É a própria
    usina medindo a si mesma: sujeira, sombra e perdas já estão no rendimento.
-2. **Piso pelo medidor da distribuidora.** O total do ciclo nunca fica abaixo
-   da energia que o medidor registrou saindo para a rede: o que foi injetado
-   foi, necessariamente, produzido.
+2. **Piso pelo medidor da distribuidora**, só em ciclo com dia sem leitura: o
+   total nunca fica abaixo da energia que o medidor registrou saindo para a
+   rede, porque o que foi injetado foi, necessariamente, produzido.
 
 Tudo é marcado como estimado; nada vira "medido".
 """
@@ -87,14 +87,22 @@ def estimate_cycle_production(
     estimated_days = 0
     for day in missing:
         sun = irradiation.get(day)
-        if ratio is None or sun is None or sun < 0:
+        # Sol zero ou desconhecido não vira "dia estimado": não há base física.
+        if ratio is None or sun is None or sun <= 0:
             continue
         estimated += sun * ratio
         estimated_days += 1
     estimated = estimated.quantize(_KWH, rounding=ROUND_HALF_UP)
 
     floor = Decimal("0")
-    if meter_generation_kwh is not None and measured_kwh + estimated < meter_generation_kwh:
+    # Só em ciclo com dia sem leitura: num ciclo completo, produção abaixo do
+    # medidor é divergência a mostrar (inversor subnotificando, recorte de
+    # datas), não algo a esconder com o piso.
+    if (
+        missing
+        and meter_generation_kwh is not None
+        and measured_kwh + estimated < meter_generation_kwh
+    ):
         floor = (meter_generation_kwh - measured_kwh - estimated).quantize(
             _KWH, rounding=ROUND_HALF_UP
         )
