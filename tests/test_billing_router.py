@@ -565,7 +565,10 @@ def test_intake_pdf_with_divergent_values_for_confirmed_month_changes_nothing(
     assert response.status_code == 409
     assert "Nada foi alterado" in response.json()["detail"]
     assert confirmed.tariff_with_taxes_brl_kwh is None
-    assert FakeAuditEventRepository.events == []
+    # A tentativa recusada fica na trilha, sem valores do documento.
+    event = FakeAuditEventRepository.events[-1]
+    assert event["outcome"] == "FAILED"
+    assert event["details"]["conflict"] is True
     get_settings.cache_clear()
 
 
@@ -616,4 +619,48 @@ def test_intake_pdf_refuses_when_month_has_more_than_one_confirmed_bill(monkeypa
 
     assert response.status_code == 409
     assert first.tariff_with_taxes_brl_kwh is None and second.tariff_with_taxes_brl_kwh is None
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_completion_rejects_implausible_values(monkeypatch) -> None:
+    # Tarifa absurda (coluna deslocada) nunca entra numa fatura confirmada.
+    _configure(monkeypatch)
+    calls = _install_pdf_fakes(monkeypatch)
+
+    def implausible(text: str) -> UtilityBill:
+        calls["parsed_text"] = text
+        import dataclasses
+
+        return dataclasses.replace(
+            _synthetic_bill(), tariff_with_taxes_brl_kwh=Decimal("787.589")
+        )
+
+    monkeypatch.setattr(billing_router, "parse_equatorial_bill_text", implausible)
+    confirmed = _confirmed_without_tariff()
+    monkeypatch.setattr(FakeUtilityBillRepository, "confirmed_record", confirmed)
+    _forbid_create(monkeypatch)
+
+    response = _post_pdf(_PDF_BYTES)
+
+    assert response.status_code == 409
+    assert confirmed.tariff_with_taxes_brl_kwh is None
+    assert FakeAuditEventRepository.events[-1]["details"]["conflict"] is False
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_same_cycle_as_other_bill_returns_409_not_500(monkeypatch) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+
+    async def cycle_taken(self, bill, *, plant_id, source_text):
+        raise IntegrityError("insert", {}, Exception("uq_utility_bills_plant_cycle"))
+
+    monkeypatch.setattr(FakeUtilityBillRepository, "create_pending", cycle_taken)
+
+    response = _post_pdf(_PDF_BYTES)
+
+    assert response.status_code == 409
+    assert "aguardando conferência" in response.json()["detail"]
     get_settings.cache_clear()

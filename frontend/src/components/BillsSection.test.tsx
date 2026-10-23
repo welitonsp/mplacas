@@ -179,7 +179,7 @@ describe('BillsSection — importar e conferir faturas', () => {
     await waitFor(() => expect(gapsSpy).toHaveBeenCalledTimes(1))
     chooseFile(container, pdfFile())
 
-    expect(await screen.findByRole('status')).toHaveTextContent('completamos a tarifa que faltava')
+    expect(await screen.findByRole('status')).toHaveTextContent('completamos os dados que faltavam')
     expect(onConfirmed).toHaveBeenCalled()
     await waitFor(() => expect(gapsSpy).toHaveBeenCalledTimes(2))
   })

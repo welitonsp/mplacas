@@ -7,8 +7,8 @@ criar outra fatura (duplicaria o mês nas somas) nem reescrever o que já foi
 conferido pelo cliente.
 
 Regra: o PDF só completa campos que estão VAZIOS na fatura confirmada, e só
-se tudo o que já existe bater exatamente (datas do ciclo, consumo, crédito e
-valor total). Qualquer divergência recusa a operação.
+se tudo o que já existe bater exatamente (datas e dias do ciclo, consumo,
+injeção, compensação, crédito e valor total). Qualquer divergência recusa a operação.
 """
 
 from __future__ import annotations
@@ -22,7 +22,10 @@ from mplacas.billing.models import UtilityBill
 _IDENTITY_FIELDS = (
     "cycle_start",
     "cycle_end",
+    "billed_days",
     "imported_kwh",
+    "injected_kwh",
+    "compensated_kwh",
     "credit_balance_kwh",
     "total_amount_brl",
 )

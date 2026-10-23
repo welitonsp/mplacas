@@ -318,7 +318,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
         if (outcome === 'completed_missing_fields') {
           setFeedback({
             tone: 'success',
-            message: `A fatura de ${monthLabel(bill)} já estava confirmada: completamos a tarifa que faltava. Use "Meses a recalcular" para atualizar a economia.`,
+            message: `A fatura de ${monthLabel(bill)} já estava confirmada: completamos os dados que faltavam (como a tarifa). Use "Meses a recalcular" para atualizar a economia.`,
           })
           setGapsReload((value) => value + 1)
           onConfirmed()

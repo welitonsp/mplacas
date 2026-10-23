@@ -87,14 +87,21 @@ divergissem, poderia até nascer uma segunda fatura do mês.
 mesma usina, distribuidora e mês, o PDF **só completa campos vazios**: tarifas, Fio B e
 registro de geração. Para isso, tudo o que já existe tem de bater exatamente:
 
-- datas do ciclo;
-- consumo;
+- datas e dias do ciclo;
+- consumo, injeção e compensação;
 - saldo de créditos;
 - valor total;
 - campos já preenchidos.
 
-Qualquer divergência dá 409, com uma mensagem fixa, e nada é alterado. Nunca se cria uma
-segunda fatura do mês.
+Os valores lidos passam pela mesma validação de plausibilidade da importação normal
+(ADR-056). Qualquer divergência dá 409, com uma mensagem fixa, e nada é alterado. Nunca se
+cria uma segunda fatura do mês.
+
+- Se o mês tem mais de uma fatura confirmada, o PDF é recusado, em vez de o sistema escolher
+  uma delas no palpite.
+- Se outra fatura do mesmo ciclo está pendente ou foi rejeitada, o PDF dá 409 com uma
+  mensagem clara. Antes, dava erro 500.
+- A tentativa recusada também é auditada, com `outcome=FAILED` e sem valores do documento.
 
 A operação é auditada como `billing.complete_from_pdf`, com os nomes dos campos preenchidos.
 Depois dela, o mês aparece em "Meses a recalcular" e o recálculo gera a nova revisão.

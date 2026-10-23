@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field
 
 from mplacas.audit.repository import AuditEventRepository
@@ -220,8 +221,25 @@ async def intake_bill_pdf(
             # fatura (ex.: tarifa que o texto do Telegram não trazia). Nunca
             # cria outra fatura do mês nem reescreve o que foi conferido.
             try:
+                # Mesma validação de plausibilidade da importação normal
+                # (ADR-056): tarifa fora da faixa nunca entra numa fatura
+                # confirmada, onde viraria economia fabricada no recálculo.
+                bill.validate()
                 filled = complete_missing_fields(confirmed, bill)
-            except BillCompletionConflict as exc:
+            except ValueError as exc:  # inclui BillCompletionConflict
+                await AuditEventRepository(session).record(
+                    request,
+                    action="billing.complete_from_pdf",
+                    resource_type="utility_bill",
+                    resource_id=str(confirmed.id),
+                    outcome="FAILED",
+                    details={
+                        "plant_id": str(confirmed.plant_id),
+                        "reference_month": confirmed.reference_month,
+                        "conflict": isinstance(exc, BillCompletionConflict),
+                    },
+                )
+                await session.commit()
                 raise HTTPException(
                     status_code=409,
                     detail=(
@@ -264,6 +282,16 @@ async def intake_bill_pdf(
                 raise HTTPException(
                     status_code=409,
                     detail="Os valores lidos desta fatura não passaram na validação.",
+                ) from exc
+            except IntegrityError as exc:
+                # Outra fatura do MESMO ciclo (pendente ou rejeitada, com texto
+                # diferente) já existe: antes virava erro 500.
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Já existe uma fatura deste ciclo aguardando conferência ou "
+                        "rejeitada. Confira a lista de faturas pendentes."
+                    ),
                 ) from exc
         duplicate = existing is not None
         await AuditEventRepository(session).record(
