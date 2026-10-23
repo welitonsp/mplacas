@@ -12,6 +12,7 @@ import { LoadingAnnouncement } from './LoadingAnnouncement'
 import { RetryableError } from './RetryableError'
 import { SectionTitle } from './SectionTitle'
 import { SavingsGapsPanel } from './SavingsGapsPanel'
+import { BulkConfirmBar } from './BulkConfirmBar'
 
 // Importar e conferir faturas de energia pelo site (fase 2 do plano de
 // inteligência financeira). Fluxo:
@@ -39,6 +40,13 @@ const DANGER_BUTTON =
   'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-[var(--color-danger-text)] px-4 py-2 text-sm font-semibold text-[var(--color-surface)] transition-colors duration-200 hover:bg-[var(--color-danger)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none'
 
 type Feedback = { tone: 'success' | 'info' | 'error'; message: string }
+// Resultado da leitura de um arquivo; `billId` quando ficou uma pendência.
+type ImportOutcome = Feedback & { month?: string; billId?: string; completed?: boolean }
+type BatchItem = ImportOutcome & { fileName: string }
+
+// Um ano e meio de contas por vez: cobre "mandar o ano inteiro" com folga e
+// mantém a leitura sequencial (PDF isolado no servidor) num tempo razoável.
+const MAX_BATCH_FILES = 18
 
 const FEEDBACK_CLASS: Record<Feedback['tone'], string> = {
   success:
@@ -286,76 +294,100 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [gapsReload, setGapsReload] = useState(0)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [batch, setBatch] = useState<BatchItem[] | null>(null)
 
-  const handleFile = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0]
-      // Limpa o input para permitir escolher o mesmo arquivo de novo depois.
-      event.target.value = ''
-      if (!file) return
-      setFeedback(null)
-
+  // Lê UM arquivo e devolve o que aconteceu, sem mexer na tela. Usado tanto
+  // na importação de um arquivo quanto na importação em lote.
+  const importOne = useCallback(
+    async (file: File): Promise<ImportOutcome> => {
       if (file.size > MAX_PDF_BYTES) {
-        setFeedback({ tone: 'error', message: 'O arquivo passa de 10 MB. Envie o PDF original da fatura.' })
-        return
+        return { tone: 'error', message: 'O arquivo passa de 10 MB. Envie o PDF original da fatura.' }
       }
-
-      setUploading(true)
       try {
         const response = await uploadBillPdf(plantId, file)
-        if (!response.ok) {
-          setFeedback({ tone: 'error', message: await uploadErrorMessage(response) })
-          return
-        }
+        if (!response.ok) return { tone: 'error', message: await uploadErrorMessage(response) }
         const payload: unknown = await response.json()
         const bill = parseBillEnvelope(payload)
         const outcome =
           typeof payload === 'object' && payload !== null && 'status' in payload
             ? (payload as { status: unknown }).status
             : null
+        const month = monthLabel(bill)
         // PDF de um mês já confirmado que só completou campos vazios (ex.:
         // tarifa que o texto do Telegram não trazia) — ADR-081.
         if (outcome === 'completed_missing_fields') {
-          setFeedback({
+          return {
             tone: 'success',
-            message: `A fatura de ${monthLabel(bill)} já estava confirmada: completamos os dados que faltavam (como a tarifa). Use "Meses a recalcular" para atualizar a economia.`,
-          })
-          setGapsReload((value) => value + 1)
-          onConfirmed()
-          return
+            month,
+            completed: true,
+            message: `A fatura de ${month} já estava confirmada: completamos os dados que faltavam (como a tarifa). Use "Meses a recalcular" para atualizar a economia.`,
+          }
         }
         // O backend é idempotente por conteúdo: a mesma fatura enviada de novo
         // devolve o registro que já existe, em qualquer estado.
         if (bill.status === 'CONFIRMED') {
-          setFeedback({ tone: 'info', message: `A fatura de ${monthLabel(bill)} já tinha sido importada e confirmada.` })
-        } else if (bill.status === 'REJECTED') {
-          setFeedback({
-            tone: 'info',
-            message: `A fatura de ${monthLabel(bill)} já tinha sido importada e foi rejeitada.`,
-          })
-        } else {
-          setHighlightedId(bill.id)
-          // 200 = reenvio de uma fatura que já estava pendente; 202 = nova.
-          setFeedback(
-            response.status === 200
-              ? {
-                  tone: 'info',
-                  message: `A fatura de ${monthLabel(bill)} já tinha sido importada e aguarda sua conferência.`,
-                }
-              : {
-                  tone: 'success',
-                  message: `Fatura de ${monthLabel(bill)} lida. Confira os valores abaixo e confirme.`,
-                },
-          )
+          return { tone: 'info', month, message: `A fatura de ${month} já tinha sido importada e confirmada.` }
         }
-        pending.refetch()
+        if (bill.status === 'REJECTED') {
+          return { tone: 'info', month, message: `A fatura de ${month} já tinha sido importada e foi rejeitada.` }
+        }
+        // 200 = reenvio de uma fatura que já estava pendente; 202 = nova.
+        return response.status === 200
+          ? { tone: 'info', month, billId: bill.id, message: `A fatura de ${month} já tinha sido importada e aguarda sua conferência.` }
+          : { tone: 'success', month, billId: bill.id, message: `Fatura de ${month} lida. Confira os valores abaixo e confirme.` }
       } catch {
-        setFeedback({ tone: 'error', message: 'Não foi possível importar a fatura agora. Tente novamente.' })
-      } finally {
-        setUploading(false)
+        return { tone: 'error', message: 'Não foi possível importar a fatura agora. Tente novamente.' }
       }
     },
-    [plantId, pending, onConfirmed],
+    [plantId],
+  )
+
+  const handleFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? [])
+      // Limpa o input para permitir escolher os mesmos arquivos de novo depois.
+      event.target.value = ''
+      if (files.length === 0) return
+      setFeedback(null)
+      setBatch(null)
+      if (files.length > MAX_BATCH_FILES) {
+        setFeedback({
+          tone: 'error',
+          message: `Escolha até ${MAX_BATCH_FILES} faturas por vez (um ano e meio de contas).`,
+        })
+        return
+      }
+
+      setUploading(true)
+      setProgress({ done: 0, total: files.length })
+      const results: BatchItem[] = []
+      try {
+        // Uma de cada vez: a leitura do PDF roda isolada e limitada no servidor.
+        for (const [index, file] of files.entries()) {
+          results.push({ fileName: file.name, ...(await importOne(file)) })
+          setProgress({ done: index + 1, total: files.length })
+        }
+      } finally {
+        setUploading(false)
+        setProgress(null)
+      }
+
+      const last = [...results].reverse().find((item) => item.billId)
+      if (last?.billId) setHighlightedId(last.billId)
+      if (results.length === 1) {
+        const [only] = results
+        setFeedback({ tone: only.tone, message: only.message })
+      } else {
+        setBatch(results)
+      }
+      pending.refetch()
+      if (results.some((item) => item.completed)) {
+        setGapsReload((value) => value + 1)
+        onConfirmed()
+      }
+    },
+    [importOne, pending, onConfirmed],
   )
 
   const items = pending.data?.items ?? []
@@ -372,8 +404,8 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
               Importe a fatura da Equatorial em PDF
             </p>
             <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
-              O sistema lê a fatura e você confere cada valor antes de confirmar. O arquivo não fica guardado: só os
-              valores lidos.
+              O sistema lê a fatura e você confere cada valor antes de confirmar. Pode escolher várias de uma vez
+              (por exemplo, o ano inteiro). O arquivo não fica guardado: só os valores lidos.
             </p>
           </div>
           <div>
@@ -381,6 +413,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
               ref={inputRef}
               id="bill-pdf-input"
               type="file"
+              multiple
               accept="application/pdf,.pdf"
               className="sr-only"
               tabIndex={-1}
@@ -400,11 +433,15 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
                   className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/40 border-t-current"
                 />
               )}
-              {uploading ? 'Lendo a fatura...' : 'Importar fatura (PDF)'}
+              {uploading
+                ? progress && progress.total > 1
+                  ? `Lendo ${Math.min(progress.done + 1, progress.total)} de ${progress.total}...`
+                  : 'Lendo a fatura...'
+                : 'Importar faturas (PDF)'}
             </button>
           </div>
         </div>
-        <LoadingAnnouncement active={uploading} message="Lendo a fatura, aguarde." />
+        <LoadingAnnouncement active={uploading} message="Lendo as faturas, aguarde." />
 
         {feedback && (
           <div
@@ -412,6 +449,32 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
             className={`mt-4 rounded-lg border px-3 py-2 text-sm ${FEEDBACK_CLASS[feedback.tone]}`}
           >
             {feedback.message}
+          </div>
+        )}
+
+        {batch && (
+          <div role="status" className="mt-4 rounded-lg border border-[var(--color-border)] px-3 py-3 text-sm">
+            <p className="font-semibold text-[var(--color-text-primary)]">
+              {batch.length} arquivos lidos: {batch.filter((item) => item.billId).length} para conferir
+              {batch.some((item) => item.tone === 'error')
+                ? `, ${batch.filter((item) => item.tone === 'error').length} com problema`
+                : ''}
+              .
+            </p>
+            <ul className="mt-2 space-y-1">
+              {batch.map((item, index) => (
+                <li
+                  key={`${item.fileName}-${index}`}
+                  className={
+                    item.tone === 'error'
+                      ? 'text-[var(--color-danger-text)]'
+                      : 'text-[var(--color-text-secondary)]'
+                  }
+                >
+                  <span className="font-medium">{item.fileName}:</span> {item.message}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
@@ -423,7 +486,31 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
           ) : items.length === 0 ? (
             <p className="text-[13px] text-[var(--color-text-secondary)]">Nenhuma fatura aguardando conferência.</p>
           ) : (
-            items.map((bill) => (
+            <>
+            {items.length > 1 && (
+              <BulkConfirmBar
+                bills={items}
+                label={monthLabel}
+                onDone={({ confirmed, failed }) => {
+                  setBatch(null)
+                  setFeedback(
+                    failed.length === 0
+                      ? {
+                          tone: 'success',
+                          message: `${confirmed} faturas confirmadas. Economia e retorno do investimento atualizados.`,
+                        }
+                      : {
+                          tone: 'error',
+                          message: `${confirmed} faturas confirmadas. Não foi possível confirmar: ${failed.join(', ')}. Tente essas de novo.`,
+                        },
+                  )
+                  pending.refetch()
+                  setGapsReload((value) => value + 1)
+                  onConfirmed()
+                }}
+              />
+            )}
+            {items.map((bill) => (
               <PendingBillReview
                 key={bill.id}
                 bill={bill}
@@ -442,7 +529,8 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
                   pending.refetch()
                 }}
               />
-            ))
+            ))}
+            </>
           )}
         </div>
         <SavingsGapsPanel plantId={plantId} reloadToken={gapsReload} onReprocessed={onConfirmed} />

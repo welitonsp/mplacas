@@ -399,7 +399,8 @@ export async function uploadBillPdf(plantId: string, file: Blob): Promise<Respon
 }
 
 export async function fetchPendingBills(plantId: string): Promise<Response> {
-  return apiFetch(`/billing/pending?plant_id=${encodeURIComponent(plantId)}`)
+  // Até 50: cobre uma importação em lote inteira (o backend aceita até 100).
+  return apiFetch(`/billing/pending?plant_id=${encodeURIComponent(plantId)}&limit=50`)
 }
 
 export async function confirmBill(billId: string): Promise<Response> {
