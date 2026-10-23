@@ -163,6 +163,45 @@ describe('BillsSection — importar e conferir faturas', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('não parece uma fatura da Equatorial')
   })
 
+  it('PDF de mês já confirmado completa a tarifa que faltava e relê os meses a recalcular', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json({ count: 0, items: [] }))
+    const gapsSpy = vi.spyOn(api, 'fetchSavingsGaps').mockResolvedValue(json({ count: 0, items: [] }))
+    vi.spyOn(api, 'uploadBillPdf').mockResolvedValue(
+      json({
+        status: 'completed_missing_fields',
+        filled_fields: ['tariff_with_taxes_brl_kwh'],
+        bill: { ...pendingBill, status: 'CONFIRMED' },
+      }),
+    )
+    const onConfirmed = vi.fn()
+
+    const { container } = render(<BillsSection plantId="plant-1" onConfirmed={onConfirmed} />)
+    await waitFor(() => expect(gapsSpy).toHaveBeenCalledTimes(1))
+    chooseFile(container, pdfFile())
+
+    expect(await screen.findByRole('status')).toHaveTextContent('completamos a tarifa que faltava')
+    expect(onConfirmed).toHaveBeenCalled()
+    await waitFor(() => expect(gapsSpy).toHaveBeenCalledTimes(2))
+  })
+
+  it('mês já confirmado com valores diferentes mostra a mensagem do servidor (409)', async () => {
+    vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json({ count: 0, items: [] }))
+    vi.spyOn(api, 'uploadBillPdf').mockResolvedValue(
+      json(
+        {
+          detail:
+            'Já existe uma fatura confirmada deste mês com valores diferentes dos lidos neste PDF. Nada foi alterado.',
+        },
+        409,
+      ),
+    )
+
+    const { container } = render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    chooseFile(container, pdfFile())
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nada foi alterado')
+  })
+
   it('fatura já confirmada enviada de novo vira aviso, não pendência', async () => {
     vi.spyOn(api, 'fetchPendingBills').mockResolvedValue(json({ count: 0, items: [] }))
     vi.spyOn(api, 'uploadBillPdf').mockResolvedValue(

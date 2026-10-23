@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from mplacas.audit.repository import AuditEventRepository
+from mplacas.billing.completion import BillCompletionConflict, complete_missing_fields
 from mplacas.billing.parser import BillParseError, parse_equatorial_bill_text
 from mplacas.billing.repository import UtilityBillRepository
 from mplacas.core.config import get_settings
@@ -196,6 +197,49 @@ async def intake_bill_pdf(
         existing = await repository.find_by_source_text(
             plant_id=scoped.plant_id, source_text=source_text
         )
+        confirmed = (
+            None
+            if existing is not None
+            else await repository.find_confirmed_for_month(
+                plant_id=scoped.plant_id,
+                distributor=bill.distributor,
+                reference_month=bill.reference_month,
+            )
+        )
+        if confirmed is not None:
+            # Mês já confirmado: o PDF só pode completar campos vazios da MESMA
+            # fatura (ex.: tarifa que o texto do Telegram não trazia). Nunca
+            # cria outra fatura do mês nem reescreve o que foi conferido.
+            try:
+                filled = complete_missing_fields(confirmed, bill)
+            except BillCompletionConflict as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Já existe uma fatura confirmada deste mês com valores "
+                        "diferentes dos lidos neste PDF. Nada foi alterado."
+                    ),
+                ) from exc
+            await AuditEventRepository(session).record(
+                request,
+                action="billing.complete_from_pdf",
+                resource_type="utility_bill",
+                resource_id=str(confirmed.id),
+                outcome="SUCCEEDED",
+                details={
+                    "plant_id": str(confirmed.plant_id),
+                    "reference_month": confirmed.reference_month,
+                    "filled_fields": list(filled),
+                },
+            )
+            await session.commit()
+            await session.refresh(confirmed)
+            response.status_code = status.HTTP_200_OK
+            return {
+                "status": "completed_missing_fields" if filled else "already_imported",
+                "filled_fields": list(filled),
+                "bill": _serialize(confirmed),
+            }
         if existing is not None:
             record = existing
         else:

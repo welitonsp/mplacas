@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchSavingsGaps, reprocessSavingsGaps } from '../lib/api'
 import {
   parseReprocessResults,
@@ -66,13 +66,28 @@ function resultText(result: ReprocessResult): string {
     : `economia passou de ${formatCurrency(result.previousSavingsBrl)} para ${now}.`
 }
 
-export function SavingsGapsPanel({ plantId, onReprocessed }: { plantId: string; onReprocessed: () => void }) {
+export function SavingsGapsPanel({
+  plantId,
+  onReprocessed,
+  reloadToken = 0,
+}: {
+  plantId: string
+  onReprocessed: () => void
+  // Muda quando uma fatura é confirmada ou completada: a lista é relida.
+  reloadToken?: number
+}) {
   const gaps = usePlantResource({
     plantId,
     fetcher: fetchSavingsGaps,
     parse: parseSavingsGaps,
     errorMessage: 'Erro ao buscar meses a recalcular.',
   })
+  const refetchGaps = useRef(gaps.refetch)
+  refetchGaps.current = gaps.refetch
+  const firstToken = useRef(reloadToken)
+  useEffect(() => {
+    if (reloadToken !== firstToken.current) refetchGaps.current()
+  }, [reloadToken])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<ReprocessResult[] | null>(null)

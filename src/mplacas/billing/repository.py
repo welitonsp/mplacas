@@ -33,6 +33,23 @@ class UtilityBillRepository:
             )
         )
 
+    async def find_confirmed_for_month(
+        self,
+        *,
+        plant_id: uuid.UUID,
+        distributor: str,
+        reference_month: str,
+    ) -> UtilityBillRecord | None:
+        """Fatura já confirmada da mesma usina, distribuidora e mês."""
+        return await self._session.scalar(
+            select(UtilityBillRecord).where(
+                UtilityBillRecord.plant_id == plant_id,
+                UtilityBillRecord.distributor == distributor,
+                UtilityBillRecord.reference_month == reference_month,
+                UtilityBillRecord.status == BillStatus.CONFIRMED,
+            )
+        )
+
     async def create_pending(
         self,
         bill: UtilityBill,

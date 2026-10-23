@@ -47,9 +47,13 @@ class FakeUtilityBillRepository:
         self.session = session
 
     existing_record = None
+    confirmed_record = None
 
     async def find_by_source_text(self, *, plant_id, source_text):
         return type(self).existing_record
+
+    async def find_confirmed_for_month(self, *, plant_id, distributor, reference_month):
+        return type(self).confirmed_record
 
     async def create_pending(self, bill, *, plant_id, source_text):
         return SimpleNamespace(
@@ -251,6 +255,7 @@ def _install_pdf_fakes(monkeypatch, *, extracted_text: str = "texto extraido da 
     monkeypatch.setattr(billing_router, "parse_equatorial_bill_text", fake_parse)
     monkeypatch.setattr(billing_router, "UtilityBillRepository", FakeUtilityBillRepository)
     monkeypatch.setattr(FakeUtilityBillRepository, "existing_record", None)
+    monkeypatch.setattr(FakeUtilityBillRepository, "confirmed_record", None)
     FakeAuditEventRepository.events = []
     monkeypatch.setattr(billing_router, "AuditEventRepository", FakeAuditEventRepository)
     return calls
@@ -476,4 +481,121 @@ def test_intake_pdf_size_limit_holds_without_content_length(monkeypatch) -> None
 
     assert response.status_code == 413
     assert "content" not in calls
+    get_settings.cache_clear()
+
+
+def _confirmed_without_tariff(**overrides) -> SimpleNamespace:
+    values = dict(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000299"),
+        plant_id=_PDF_PLANT_ID,
+        distributor="EQUATORIAL_GO",
+        reference_month="2026-09",
+        cycle_start=date(2026, 8, 17),
+        cycle_end=date(2026, 9, 14),
+        billed_days=29,
+        imported_kwh=Decimal("221"),
+        injected_kwh=Decimal("221"),
+        compensated_kwh=Decimal("221"),
+        credit_balance_kwh=Decimal("17.98"),
+        total_amount_brl=Decimal("70.22"),
+        public_lighting_brl=Decimal("30.21"),
+        generation_cycle_kwh=None,
+        tariff_with_taxes_brl_kwh=None,
+        tariff_without_taxes_brl_kwh=None,
+        wire_b_tariff_brl_kwh=None,
+        status=BillStatus.CONFIRMED,
+        created_at=None,
+        reviewed_at=None,
+    )
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def _forbid_create(monkeypatch) -> None:
+    async def must_not_create(self, bill, *, plant_id, source_text):  # pragma: no cover
+        raise AssertionError("a confirmed month must never get a second bill")
+
+    monkeypatch.setattr(FakeUtilityBillRepository, "create_pending", must_not_create)
+
+
+def test_intake_pdf_completes_missing_fields_of_confirmed_month(monkeypatch) -> None:
+    # Fatura de set/2026 entrou pelo Telegram sem tarifa; o PDF da MESMA
+    # fatura completa só o que estava vazio.
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+    confirmed = _confirmed_without_tariff()
+    monkeypatch.setattr(FakeUtilityBillRepository, "confirmed_record", confirmed)
+    _forbid_create(monkeypatch)
+
+    response = _post_pdf(_PDF_BYTES)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed_missing_fields"
+    assert body["filled_fields"] == [
+        "tariff_with_taxes_brl_kwh",
+        "tariff_without_taxes_brl_kwh",
+        "wire_b_tariff_brl_kwh",
+        "generation_cycle_kwh",
+    ]
+    assert body["bill"]["tariff_with_taxes_brl_kwh"] == "0.787589"
+    assert body["bill"]["status"] == "CONFIRMED"
+    # O que já estava conferido não muda.
+    assert confirmed.total_amount_brl == Decimal("70.22")
+    event = FakeAuditEventRepository.events[-1]
+    assert event["action"] == "billing.complete_from_pdf"
+    assert event["details"]["filled_fields"] == body["filled_fields"]
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_with_divergent_values_for_confirmed_month_changes_nothing(
+    monkeypatch,
+) -> None:
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+    confirmed = _confirmed_without_tariff(total_amount_brl=Decimal("99.99"))
+    monkeypatch.setattr(FakeUtilityBillRepository, "confirmed_record", confirmed)
+    _forbid_create(monkeypatch)
+
+    response = _post_pdf(_PDF_BYTES)
+
+    assert response.status_code == 409
+    assert "Nada foi alterado" in response.json()["detail"]
+    assert confirmed.tariff_with_taxes_brl_kwh is None
+    assert FakeAuditEventRepository.events == []
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_for_complete_confirmed_month_reports_already_imported(monkeypatch) -> None:
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+    confirmed = _confirmed_without_tariff(
+        generation_cycle_kwh=Decimal("235.00"),
+        tariff_with_taxes_brl_kwh=Decimal("0.787589"),
+        tariff_without_taxes_brl_kwh=Decimal("0.613030"),
+        wire_b_tariff_brl_kwh=Decimal("0.175126"),
+    )
+    monkeypatch.setattr(FakeUtilityBillRepository, "confirmed_record", confirmed)
+    _forbid_create(monkeypatch)
+
+    response = _post_pdf(_PDF_BYTES)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "already_imported"
+    assert response.json()["filled_fields"] == []
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_never_overwrites_a_filled_field_with_a_different_value(monkeypatch) -> None:
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+    confirmed = _confirmed_without_tariff(tariff_with_taxes_brl_kwh=Decimal("0.700000"))
+    monkeypatch.setattr(FakeUtilityBillRepository, "confirmed_record", confirmed)
+    _forbid_create(monkeypatch)
+
+    response = _post_pdf(_PDF_BYTES)
+
+    assert response.status_code == 409
+    assert confirmed.tariff_with_taxes_brl_kwh == Decimal("0.700000")
+    assert confirmed.wire_b_tariff_brl_kwh is None
     get_settings.cache_clear()
