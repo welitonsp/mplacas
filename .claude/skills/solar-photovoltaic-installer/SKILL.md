@@ -35,6 +35,8 @@ diagnóstico ou documento:
 - No Mplacas, o uso típico é **consultivo**: ajudar o `solar-domain-specialist` a entender
   por que um arranjo pode ter limitação (ex.: clipping, tensão a frio, sombreamento) ao
   interpretar telemetria — o produto monitora e audita, não projeta instalações.
+- Para o detalhamento brasileiro (mapa normativo e fórmula de string pela NBR 16690), use a
+  skill `solar-pv-brazil-overlay`, que é a camada de conformidade desta.
 - Os arquivos `references/playbook.md`, `references/red-flags.md` e
   `references/vocabulary.md` citados abaixo **não vieram com o pacote**; ignore esses links.
 
