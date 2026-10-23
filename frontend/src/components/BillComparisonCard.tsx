@@ -5,7 +5,8 @@ import { SectionTitle } from './SectionTitle'
 
 // "Sua conta com e sem a usina" — a pergunta que o dono da usina mais faz.
 // Todos os números vêm prontos do backend (`intelligence/energy_engine.py`,
-// versão de cálculo 0.3.0); aqui só se apresenta. O padrão segue o das
+// versão de cálculo 0.4.0); aqui só se apresenta. A conta sem a usina usa a
+// tarifa cheia homologada (ADR-080), informada no selo do card. O padrão segue o das
 // plataformas de mercado (Arcadia/Genability): a fatura SEM solar é o mesmo
 // ciclo recalculado com todo o consumo comprado da rede, e o modelo é
 // conferido contra a fatura real antes de se confiar na economia.
@@ -74,6 +75,13 @@ export function BillComparisonCard({
   if (withoutSolar == null || paid == null || savings == null) return null
 
   const max = Math.max(withoutSolar, paid)
+  const savingsTariff = toNumber(indicators.savings_tariff_brl_kwh ?? null)
+  const tariffLabel =
+    indicators.savings_tariff_source === 'DISTRIBUTOR_FULL_TARIFF'
+      ? savingsTariff == null
+        ? 'Com a tarifa cheia da distribuidora'
+        : `Com a tarifa cheia da distribuidora: R$ ${formatNumber(savingsTariff, 3)}/kWh com impostos`
+      : 'Com a tarifa da própria fatura: pode subestimar a economia'
   const excess = toNumber(indicators.excess_credit_kwh ?? null)
   const creditValue = toNumber(indicators.credit_balance_value_brl ?? null)
   const difference = toNumber(indicators.bill_model_difference_brl ?? null)
@@ -110,7 +118,7 @@ export function BillComparisonCard({
             </p>
           </div>
           <span className="inline-flex rounded-md bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-semibold text-[var(--color-text-secondary)]">
-            Estimado com a tarifa da própria fatura
+            {tariffLabel}
           </span>
         </div>
 

@@ -35,8 +35,10 @@ from mplacas.reports.snapshot import MonthlyReportSnapshotRepository
 _SAVINGS_METRIC_KEY = "estimated_savings_brl"
 # Abaixo disto a média mensal ainda não cobre as estações do ano.
 MINIMUM_CYCLES_FOR_CONFIDENT_BASELINE = 12
-# Fórmula da economia corrigida (injeção pelo medidor, ADR-078).
-CORRECTED_CALCULATION_VERSION = (0, 3, 0)
+# Fórmula da economia corrigida: injeção pelo medidor (ADR-078, 0.3.0) e
+# conta "sem a usina" pela tarifa cheia homologada (ADR-080, 0.4.0). Ciclos
+# calculados antes disso subestimam a economia e marcam a estimativa.
+CORRECTED_CALCULATION_VERSION = (0, 4, 0)
 
 
 class InvestorUnavailableReason(str, enum.Enum):

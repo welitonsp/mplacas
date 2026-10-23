@@ -76,6 +76,8 @@ def _dashboard(plant_id: uuid.UUID) -> SimpleNamespace:
                 bill_energy_component_brl=Decimal("45.20"),
                 estimated_savings_brl=Decimal("18.75"),
                 savings_unavailable_reason=None,
+                savings_tariff_brl_kwh=Decimal("1.145750"),
+                savings_tariff_source="DISTRIBUTOR_FULL_TARIFF",
                 health_score=97,
                 diagnostics=(
                     SimpleNamespace(
@@ -176,7 +178,7 @@ def _snapshot(report: MonthlyEnergyReport) -> MonthlyReportSnapshot:
 
 def test_package_version_matches_pyproject() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-    assert __version__ == pyproject["project"]["version"] == "0.3.1"
+    assert __version__ == pyproject["project"]["version"] == "0.4.0"
 
 
 @pytest.mark.asyncio
@@ -203,7 +205,7 @@ async def test_monthly_report_projects_the_existing_deterministic_dashboard(monk
         "stable_tolerance_percent": Decimal("3.0"),
         "plant_scope": UNRESTRICTED_PLANT_SCOPE,
     }
-    assert report.calculation_version == "0.3.1"
+    assert report.calculation_version == "0.4.0"
     assert report.reference_month == "2026-06"
     assert report.metrics[0].nature == "MEASURED_AGGREGATE"
     assert report.metrics[0].source == "DAILY_ENERGY_AGGREGATE"

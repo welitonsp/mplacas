@@ -192,7 +192,7 @@ def test_only_the_commissioning_month_bill_is_not_enough(monkeypatch) -> None:
 def test_short_version_string_is_not_flagged_as_pre_correction(monkeypatch) -> None:
     panel = _panel(
         monkeypatch,
-        (_snapshot("2026-09", "264.00", "0.3"),),
+        (_snapshot("2026-09", "264.00", "0.4"),),
         investment_amount_brl=Decimal("11200.00"),
         commissioned_on=date(2025, 9, 1),
     )

@@ -109,6 +109,7 @@ _NATURE_LABELS: Final = {
     "CALCULATED_SCORE": "Pontuação calculada",
     "QUALITY_COUNT": "Contagem de qualidade",
     "UNAVAILABILITY_REASON": "Motivo de indisponibilidade",
+    "ASSUMPTION": "Premissa do cálculo",
 }
 
 _SOURCE_LABELS: Final = {

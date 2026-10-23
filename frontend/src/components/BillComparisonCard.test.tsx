@@ -37,6 +37,26 @@ function detail(label: string) {
 }
 
 describe('BillComparisonCard', () => {
+  it('diz que a conta sem a usina usa a tarifa cheia da distribuidora, com o valor', () => {
+    render(
+      <BillComparisonCard
+        indicators={{ ...base, savings_tariff_brl_kwh: '1.145751', savings_tariff_source: 'DISTRIBUTOR_FULL_TARIFF' }}
+        referenceMonth="2026-09"
+      />,
+    )
+    expect(screen.getByText('Com a tarifa cheia da distribuidora: R$ 1,146/kWh com impostos')).toBeInTheDocument()
+  })
+
+  it('avisa quando a tarifa cheia faltou e a economia pode estar subestimada', () => {
+    render(
+      <BillComparisonCard
+        indicators={{ ...base, savings_tariff_brl_kwh: '0.787589', savings_tariff_source: 'BILL_TARIFF' }}
+        referenceMonth="2026-09"
+      />,
+    )
+    expect(screen.getByText('Com a tarifa da própria fatura: pode subestimar a economia')).toBeInTheDocument()
+  })
+
   it('mostra quanto pagaria sem a usina, quanto pagou e a economia, com os números do backend', () => {
     render(<BillComparisonCard indicators={base} referenceMonth="2026-09" />)
 

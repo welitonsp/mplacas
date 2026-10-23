@@ -554,3 +554,22 @@ def test_market_index_monthly_migration_matches_orm() -> None:
     assert columns.rate_percent.type.precision == 12
     assert columns.rate_percent.type.scale == 6
     assert columns.reference_month.type.length == 7
+
+
+def test_distributor_tariffs_migration_matches_orm() -> None:
+    from mplacas.tariffs.db_models import DistributorTariffRecord
+
+    source = (
+        ROOT / "migrations" / "versions" / "20261022_0045_add_distributor_tariffs.py"
+    ).read_text(encoding="utf-8")
+    columns = DistributorTariffRecord.__table__.c
+
+    assert 'revision = "20261022_0045"' in source
+    assert 'down_revision = "20261019_0044"' in source
+    assert 'op.drop_table("distributor_tariffs")' in source
+    assert 'sa.UniqueConstraint("distributor", "tariff_class", "valid_from")' in source
+    # Dado público e global: sem coluna de dono (fica fora do RLS, ADR-080).
+    assert not {"organization_id", "plant_id"} & set(columns.keys())
+    assert columns.full_brl_kwh.type.precision == 10
+    assert columns.full_brl_kwh.type.scale == 6
+    assert columns.scee_brl_kwh.nullable is True

@@ -105,17 +105,5 @@ com o histórico exportado do portal da distribuidora.
 - **Faturas já gravadas não são migradas.** Elas mantêm `compensated_kwh = imported_kwh`, o
   padrão anterior.
 
-**Pendência aberta: tarifa usada para calcular a conta "sem a usina".** O motor usa o preço
-da linha "CONSUMO SCEE". Esse preço é menor que a tarifa cheia cobrada de quem não tem
-usina:
-
-| Referência | Preço c/ tributos (R$/kWh) |
-|---|---|
-| "Consumo não compensado", set/2025 | 0,964 |
-| "Energia ativa fornecida", set/2024 | 0,912 |
-| Faturas sem usina de 2023/2024 (valor ÷ kWh) | ~0,94 |
-| Linha "CONSUMO SCEE", 2025 | 0,64 |
-| Linha "CONSUMO SCEE", 2026 | 0,79 |
-
-Por isso a economia pode estar subestimada em 20% a 35%. A correção será uma decisão
-própria.
+**Tarifa da conta "sem a usina":** a conta usava o preço da linha "CONSUMO SCEE", menor que a
+tarifa cheia. Isso foi corrigido no ADR-080 (versão 0.4.0).
