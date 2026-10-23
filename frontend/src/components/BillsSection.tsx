@@ -89,6 +89,10 @@ async function uploadErrorMessage(response: Response): Promise<string> {
       return 'Usina não encontrada.'
     case 413:
       return 'O arquivo passa de 10 MB. Envie o PDF original da fatura.'
+    case 409:
+      // Textos fixos do backend (mês já confirmado com valores diferentes, ou
+      // valores que não passaram na validação), sem trecho do documento.
+      return (await readErrorDetail(response)) ?? 'Esta fatura conflita com outra já registrada.'
     case 415:
       return 'O arquivo enviado não é um PDF.'
     case 422:
@@ -281,6 +285,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
   const [uploading, setUploading] = useState(false)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const [gapsReload, setGapsReload] = useState(0)
 
   const handleFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -302,7 +307,23 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
           setFeedback({ tone: 'error', message: await uploadErrorMessage(response) })
           return
         }
-        const bill = parseBillEnvelope(await response.json())
+        const payload: unknown = await response.json()
+        const bill = parseBillEnvelope(payload)
+        const outcome =
+          typeof payload === 'object' && payload !== null && 'status' in payload
+            ? (payload as { status: unknown }).status
+            : null
+        // PDF de um mês já confirmado que só completou campos vazios (ex.:
+        // tarifa que o texto do Telegram não trazia) — ADR-081.
+        if (outcome === 'completed_missing_fields') {
+          setFeedback({
+            tone: 'success',
+            message: `A fatura de ${monthLabel(bill)} já estava confirmada: completamos os dados que faltavam (como a tarifa). Use "Meses a recalcular" para atualizar a economia.`,
+          })
+          setGapsReload((value) => value + 1)
+          onConfirmed()
+          return
+        }
         // O backend é idempotente por conteúdo: a mesma fatura enviada de novo
         // devolve o registro que já existe, em qualquer estado.
         if (bill.status === 'CONFIRMED') {
@@ -334,7 +355,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
         setUploading(false)
       }
     },
-    [plantId, pending],
+    [plantId, pending, onConfirmed],
   )
 
   const items = pending.data?.items ?? []
@@ -413,6 +434,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
                     message: `Fatura de ${monthLabel(updated)} confirmada. Economia e retorno do investimento atualizados.`,
                   })
                   pending.refetch()
+                  setGapsReload((value) => value + 1)
                   onConfirmed()
                 }}
                 onRejected={(updated) => {
@@ -423,7 +445,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
             ))
           )}
         </div>
-        <SavingsGapsPanel plantId={plantId} onReprocessed={onConfirmed} />
+        <SavingsGapsPanel plantId={plantId} reloadToken={gapsReload} onReprocessed={onConfirmed} />
       </Card>
     </section>
   )

@@ -33,6 +33,28 @@ class UtilityBillRepository:
             )
         )
 
+    async def find_confirmed_for_month(
+        self,
+        *,
+        plant_id: uuid.UUID,
+        distributor: str,
+        reference_month: str,
+    ) -> tuple[UtilityBillRecord, ...]:
+        """Faturas já confirmadas da mesma usina, distribuidora e mês.
+
+        Normalmente zero ou uma; o chamador recusa quando há mais de uma, em
+        vez de escolher uma delas por palpite.
+        """
+        records = await self._session.scalars(
+            select(UtilityBillRecord).where(
+                UtilityBillRecord.plant_id == plant_id,
+                UtilityBillRecord.distributor == distributor,
+                UtilityBillRecord.reference_month == reference_month,
+                UtilityBillRecord.status == BillStatus.CONFIRMED,
+            )
+        )
+        return tuple(records.all())
+
     async def create_pending(
         self,
         bill: UtilityBill,

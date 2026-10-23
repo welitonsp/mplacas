@@ -72,3 +72,36 @@ R$ 612,16. Mai, jun e jul/2026 não entram na soma.
   existir. O recálculo diz isso e não grava nada.
 - **PDF/XLSX** usam o relatório mais recente da fatura mais recente, que é a revisão mais
   nova.
+
+## Adendo (2026-10-23) — completar uma fatura confirmada pelo PDF
+
+O recálculo em produção mostrou que mai, jun e jul/2026 continuam indisponíveis por
+`TARIFF_NOT_AVAILABLE`. Essas faturas entraram pelo texto do Telegram antes de o leitor
+saber ler a tarifa.
+
+Reimportar o PDF criava um problema: o leitor não achava o mesmo texto, tentava criar outra
+fatura do mesmo ciclo e esbarrava na unicidade, o que dava erro 500. Se as datas
+divergissem, poderia até nascer uma segunda fatura do mês.
+
+**Decisão:** em `POST /billing/intake-pdf`, quando já existe uma fatura **confirmada** da
+mesma usina, distribuidora e mês, o PDF **só completa campos vazios**: tarifas, Fio B e
+registro de geração. Para isso, tudo o que já existe tem de bater exatamente:
+
+- datas e dias do ciclo;
+- consumo, injeção e compensação;
+- saldo de créditos;
+- valor total;
+- campos já preenchidos.
+
+Os valores lidos passam pela mesma validação de plausibilidade da importação normal
+(ADR-056). Qualquer divergência dá 409, com uma mensagem fixa, e nada é alterado. Nunca se
+cria uma segunda fatura do mês.
+
+- Se o mês tem mais de uma fatura confirmada, o PDF é recusado, em vez de o sistema escolher
+  uma delas no palpite.
+- Se outra fatura do mesmo ciclo está pendente ou foi rejeitada, o PDF dá 409 com uma
+  mensagem clara. Antes, dava erro 500.
+- A tentativa recusada também é auditada, com `outcome=FAILED` e sem valores do documento.
+
+A operação é auditada como `billing.complete_from_pdf`, com os nomes dos campos preenchidos.
+Depois dela, o mês aparece em "Meses a recalcular" e o recálculo gera a nova revisão.

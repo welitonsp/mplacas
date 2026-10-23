@@ -304,3 +304,70 @@ async def test_outdated_month_never_loses_its_savings(session: AsyncSession) -> 
     assert latest is not None and latest.revision == 1
     savings = next(m.value for m in latest.report.metrics if m.key == "estimated_savings_brl")
     assert savings == "5.00"
+
+
+async def test_bill_completed_from_pdf_becomes_recalculable(session: AsyncSession) -> None:
+    # Fatura confirmada sem tarifa (veio pelo texto do Telegram): relatório
+    # sem economia. O PDF completa a tarifa e o recálculo passa a ter valor.
+    from mplacas.billing.completion import complete_missing_fields
+    from mplacas.billing.models import UtilityBill
+    from mplacas.billing.repository import UtilityBillRepository
+
+    plant = Plant(name="Usina Telegram")
+    session.add(plant)
+    await session.flush()
+    device = Device(plant_id=plant.id, serial_number="TG-001")
+    session.add(device)
+    await session.flush()
+    day = date(2026, 6, 10)
+    record = _bill(plant.id, "2026-06", day, 9)
+    record.tariff_with_taxes_brl_kwh = None
+    record.tariff_without_taxes_brl_kwh = None
+    session.add(record)
+    session.add(
+        DailyEnergy(
+            device_id=device.id,
+            production_date=day,
+            energy_kwh=Decimal("20"),
+            status=DataStatus.CONSOLIDATED,
+        )
+    )
+    await session.commit()
+    await materialize_monthly_report_snapshot(session, bill_id=record.id, plant_id=plant.id)
+    await session.commit()
+    gaps = await list_savings_gaps(session, plant_id=plant.id)
+    assert gaps[0].savings_unavailable_reason == "TARIFF_NOT_AVAILABLE"
+
+    repository = UtilityBillRepository(session)
+    (found,) = await repository.find_confirmed_for_month(
+        plant_id=plant.id, distributor="EQUATORIAL_GO", reference_month="2026-06"
+    )
+    assert found.id == record.id
+    pdf = UtilityBill(
+        distributor="EQUATORIAL_GO",
+        reference_month="2026-06",
+        cycle_start=day,
+        cycle_end=day,
+        billed_days=1,
+        imported_kwh=Decimal("8.00"),
+        injected_kwh=Decimal("8.00"),
+        compensated_kwh=Decimal("8.00"),
+        credit_balance_kwh=Decimal("10.00"),
+        total_amount_brl=Decimal("32.00"),
+        public_lighting_brl=Decimal("30.21"),
+        generation_cycle_kwh=Decimal("9"),
+        tariff_with_taxes_brl_kwh=Decimal("0.799059"),
+        tariff_without_taxes_brl_kwh=Decimal("0.613030"),
+    )
+    assert complete_missing_fields(found, pdf) == (
+        "tariff_with_taxes_brl_kwh",
+        "tariff_without_taxes_brl_kwh",
+    )
+    await session.commit()
+
+    results = await reprocess_savings_gaps(session, plant_id=plant.id)
+    await session.commit()
+
+    assert results[0].outcome is ReprocessOutcome.RECALCULATED
+    assert results[0].stored_revision == 2
+    assert results[0].estimated_savings_brl not in (None, "")
