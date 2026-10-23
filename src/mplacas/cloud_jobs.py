@@ -137,6 +137,14 @@ def _build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--target-date", default=None, help="YYYY-MM-DD; defaults to yesterday")
     collect.set_defaults(handler=_handle_collect)
 
+    climate = subparsers.add_parser(
+        "collect-climate",
+        help="fetch historical daily climate (sun) for every plant, no alerts (ADR-082)",
+    )
+    climate.add_argument("--start-date", required=True, help="YYYY-MM-DD")
+    climate.add_argument("--end-date", required=True, help="YYYY-MM-DD, inclusive")
+    climate.set_defaults(handler=_handle_collect_climate)
+
     drain = subparsers.add_parser(
         "drain-collection",
         help="reprocess deferred solar collection tasks",
@@ -193,6 +201,34 @@ def _handle_daily_pipeline(args: argparse.Namespace) -> int:
 
 def _handle_outbox_dispatch(_args: argparse.Namespace) -> int:
     asyncio.run(run_outbox_dispatch())
+    return 0
+
+
+def _handle_collect_climate(args: argparse.Namespace) -> int:
+    from mplacas.climate.history_job import run_climate_history
+
+    settings = get_settings()
+    start = date.fromisoformat(args.start_date)
+    end = date.fromisoformat(args.end_date)
+
+    async def _run() -> list[str]:
+        provider = OpenMeteoHistoricalProvider(
+            base_url=str(settings.climate_archive_base_url),
+            timeout_seconds=settings.request_timeout_seconds,
+        )
+        plants = await _list_organization_plants(DEFAULT_ORGANIZATION_ID)
+        return await run_climate_history(
+            start=start,
+            end=end,
+            plants=plants,
+            provider=provider,
+            maximum_days=settings.climate_maximum_backfill_days,
+        )
+
+    failures = asyncio.run(_run())
+    if failures:
+        logger.error("climate_history_failures", extra={"failures": failures})
+        return 1
     return 0
 
 

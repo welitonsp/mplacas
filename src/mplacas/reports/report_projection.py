@@ -5,6 +5,7 @@ from decimal import Decimal
 from mplacas import __version__
 from mplacas.intelligence.executive_service import ExecutiveEnergyDashboard
 from mplacas.intelligence.trends import MetricTrend
+from mplacas.reports.quality_metrics import project_quality
 from mplacas.reports.tariff_metrics import savings_tariff_metrics
 from mplacas.reports.contract import (
     REPORT_SCHEMA_VERSION,
@@ -178,44 +179,6 @@ def _project_metrics(dashboard: ExecutiveEnergyDashboard) -> tuple[ReportMetric,
     )
 
 
-def _project_quality(dashboard: ExecutiveEnergyDashboard) -> tuple[ReportMetric, ...]:
-    quality = dashboard.current_cycle.quality
-    return (
-        _metric(
-            "missing_days",
-            "Dias ausentes",
-            quality.missing_days,
-            unit="days",
-            nature="QUALITY_COUNT",
-            source=ENGINE_SOURCE,
-        ),
-        _metric(
-            "provisional_days",
-            "Dias provisórios",
-            quality.provisional_days,
-            unit="days",
-            nature="QUALITY_COUNT",
-            source=ENGINE_SOURCE,
-        ),
-        _metric(
-            "incomplete_days",
-            "Dias incompletos",
-            quality.incomplete_days,
-            unit="days",
-            nature="QUALITY_COUNT",
-            source=ENGINE_SOURCE,
-        ),
-        _metric(
-            "unavailable_days",
-            "Dias indisponíveis",
-            quality.unavailable_days,
-            unit="days",
-            nature="QUALITY_COUNT",
-            source=ENGINE_SOURCE,
-        ),
-    )
-
-
 def _project_diagnostics(
     dashboard: ExecutiveEnergyDashboard,
 ) -> tuple[ReportDiagnostic, ...]:
@@ -293,7 +256,7 @@ def project_executive_dashboard(
         status=dashboard.status.value,
         headline=dashboard.headline,
         metrics=_project_metrics(dashboard),
-        quality=_project_quality(dashboard),
+        quality=project_quality(dashboard.current_cycle.quality),
         diagnostics=_project_diagnostics(dashboard),
         priority_actions=dashboard.priority_actions,
         trend=_project_trend(dashboard),

@@ -97,6 +97,14 @@ function MonthlyExportControl({ plantId }: { plantId: string }) {
 // tratado fora daqui, isolado do resto da página, com `RetryableError` —
 // este componente só recebe o resultado já parseado (ou `null` enquanto
 // carrega).
+// Dias sem leitura que o sistema estimou pelo sol (ADR-082) aparecem como
+// tal — nunca somem nem viram "medido".
+function gapDescription(gapDays: number, estimatedDays: number): string {
+  const base = `${gapDays} ${gapDays === 1 ? 'dia' : 'dias'} sem dado`
+  if (estimatedDays <= 0) return base
+  return `${base}, ${estimatedDays === gapDays ? 'estimados' : `${estimatedDays} estimados`} pelo sol`
+}
+
 export function MonthlyProductionSection({
   history,
   plantId,
@@ -147,7 +155,7 @@ export function MonthlyProductionSection({
       ...(hasGap
         ? {
             badge: { label: 'dados parciais', tone: 'warning' as const },
-            description: `${gapDays} ${gapDays === 1 ? 'dia' : 'dias'} sem dado`,
+            description: gapDescription(gapDays, cycle.quality?.estimatedDays ?? 0),
           }
         : {}),
     }

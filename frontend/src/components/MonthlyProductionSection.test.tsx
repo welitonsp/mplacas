@@ -106,6 +106,22 @@ describe('MonthlyProductionSection', () => {
     expect(screen.getByText('3 dias sem dado')).toBeInTheDocument()
   })
 
+  it('diz quantos dias sem leitura foram estimados pelo sol (nunca como medido)', () => {
+    const history = buildHistory()
+    history.cycles[2] = {
+      ...history.cycles[2],
+      quality: { missingDays: 26, provisionalDays: 0, incompleteDays: 0, unavailableDays: 0, estimatedDays: 26 },
+    }
+    history.cycles[1] = {
+      ...history.cycles[1],
+      quality: { missingDays: 9, provisionalDays: 0, incompleteDays: 0, unavailableDays: 0, estimatedDays: 7 },
+    }
+    render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
+
+    expect(screen.getByText('26 dias sem dado, estimados pelo sol')).toBeInTheDocument()
+    expect(screen.getByText('9 dias sem dado, 7 estimados pelo sol')).toBeInTheDocument()
+  })
+
   it('exibe uma entrada de legenda explicando o selo "dados parciais" quando há ao menos um ciclo com lacuna', () => {
     render(<MonthlyProductionSection history={buildHistory()} plantId={PLANT_ID} />)
 
