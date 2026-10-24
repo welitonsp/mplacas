@@ -57,8 +57,8 @@ quanto a operadora registrou, para saber se está tendo prejuízo".
      - "Sem sinal de prejuízo": em verde e **só quando todos os ciclos foram conferidos**;
      - "Sem prejuízo nos N ciclos conferidos": neutro, com "N de M" quando a conferência é
        parcial;
-     - "X kWh de créditos sem explicação": com as três hipóteses (prejuízo, vencimento,
-       rateio);
+     - "X kWh de créditos sem explicação": em âmbar (não vermelho) até o rateio ser lido
+       da fatura, com as três hipóteses (prejuízo, vencimento, rateio);
      - "Registro impossível";
      - "Ciclo fora do padrão";
      - "Ainda sem conferência";

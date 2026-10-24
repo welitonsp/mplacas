@@ -113,7 +113,7 @@ describe('MonthlyProductionSection', () => {
     render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
 
     expect(screen.getByText('15,98 kWh de créditos sem explicação')).toBeInTheDocument()
-    expect(within(row(/mai\/26/)).getByText('Créditos faltando')).toBeInTheDocument()
+    expect(within(row(/mai\/26/)).getByText('Créditos sem explicação')).toBeInTheDocument()
     expect(within(row(/mai\/26/)).getByText(/não mostra 15,98 kWh nem como abatimento nem como saldo/)).toBeInTheDocument()
   })
 
@@ -160,7 +160,7 @@ describe('MonthlyProductionSection', () => {
     history.cycles[2] = { ...history.cycles[2], utilityCheck: okCheck({ verdict: 'UNVERIFIABLE', reasons: ['CREDITS_UNBALANCED'] }) }
     render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
 
-    expect(screen.getByText('Sem prejuízo nos 2 ciclos conferidos')).toBeInTheDocument()
+    expect(screen.getByText('Sem sinal de prejuízo nos 2 ciclos conferidos')).toBeInTheDocument()
     expect(screen.getByText(/2 de 3 ciclos conferidos/)).toBeInTheDocument()
     expect(within(row(/mai\/26/)).getByText(/passam do que havia/)).toBeInTheDocument()
   })

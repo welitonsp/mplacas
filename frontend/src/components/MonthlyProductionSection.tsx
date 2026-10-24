@@ -136,7 +136,8 @@ const VERDICT_META: Record<UtilityCheckVerdict, { label: string; tone: Tone; ico
   OK: { label: 'Sem sinal de prejuízo', tone: 'success', icon: Check },
   SUSPECT: { label: 'Fora do padrão', tone: 'warning', icon: TriangleAlert },
   IMPOSSIBLE: { label: 'Registro impossível', tone: 'danger', icon: OctagonAlert },
-  LOSS: { label: 'Créditos faltando', tone: 'danger', icon: OctagonAlert },
+  // Âmbar até o rateio ser lido da fatura (ADR-084): sem explicação, não prova.
+  LOSS: { label: 'Créditos sem explicação', tone: 'warning', icon: TriangleAlert },
   UNVERIFIABLE: { label: 'Sem conferência', tone: 'neutral', icon: CircleHelp },
 }
 
@@ -286,7 +287,7 @@ function Summary({ cycles }: { cycles: MonthlyProductionCycle[] }) {
   const unchecked = cycles.length - checked
   if (loss.length > 0) {
     const missing = loss.reduce((sum, cycle) => sum + (cycle.utilityCheck?.missingCreditsKwh ?? 0), 0)
-    tone = 'danger'
+    tone = 'warning'
     title = `${kwh(missing, 2)} de créditos sem explicação`
     detail = `Em ${loss.length} ${plural(loss.length)}, a fatura não mostra todo kWh registrado como abatimento ou saldo. Confira com a ${distributor}: pode ser prejuízo, crédito vencido ou crédito enviado a outra unidade do rateio.`
   } else if (impossible.length > 0) {
@@ -304,8 +305,8 @@ function Summary({ cycles }: { cycles: MonthlyProductionCycle[] }) {
   } else if (ok.length > 0) {
     // Parcial: verde só quando tudo foi conferido.
     tone = 'neutral'
-    title = `Sem prejuízo nos ${ok.length} ${plural(ok.length)} conferidos`
-    detail = `${ok.length} de ${cycles.length} ciclos conferidos: todo kWh registrado virou crédito. ${unchecked} ${unchecked === 1 ? 'ficou' : 'ficaram'} sem conferência, sem dados suficientes.`
+    title = `Sem sinal de prejuízo nos ${ok.length} ${plural(ok.length)} conferidos`
+    detail = `${ok.length} de ${cycles.length} ciclos conferidos: todo kWh registrado virou crédito. ${unchecked} não ${unchecked === 1 ? 'pôde' : 'puderam'} ser ${unchecked === 1 ? 'conferido' : 'conferidos'}.`
   } else {
     tone = 'neutral'
     title = 'Ainda sem conferência'
