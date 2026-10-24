@@ -61,71 +61,69 @@ function buildFinancialReturn(
 }
 
 describe('FinancialSection', () => {
-  it('agrupa os cards de dinheiro sob "Custo do ciclo" e os de energia sob "Créditos de energia" — tarifas/créditos compactados em tiras, sem perder nenhum card (ADR-072 Etapa 7; separação de grandeza, achado F3)', () => {
+  it('ordem da aba Dinheiro (ADR-083): retorno → conta com e sem a usina → detalhes da fatura, sem os blocos repetidos', () => {
     render(
       <FinancialSection
-        indicators={buildIndicators()}
+        indicators={buildIndicators({ bill_without_solar_brl: 540.11, compensated_kwh: 90 })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
         plantId="plant-1"
       />
     )
 
-    // `FinancialSection` não tem mais heading "Financeiro" isolado (ADR-072,
-    // Etapa 6 — o módulo que a hospeda já expõe esse texto como `<h1>` da
-    // rota, ver `FinancialSection.tsx`) — a primeira `<section>` (das duas
-    // que o componente devolve como irmãs) é a de "Custo do ciclo"/"Créditos
-    // de energia".
-    expect(
-      screen.getByRole('heading', { level: 2, name: 'Resumo financeiro' })
-    ).toBeInTheDocument()
-    expect(screen.getByText('Cobertura por créditos')).toBeInTheDocument()
-    expect(screen.getAllByText('ROI acumulado').length).toBeGreaterThanOrEqual(1)
-
-    const section = screen.getByRole('heading', { level: 2, name: 'Custo do ciclo' }).closest('section') as HTMLElement
-
-    // Ciclo de referência (achado F1) visível junto de "Custo do ciclo" —
-    // único bloco cujo dado é estritamente do ciclo corrente.
-    expect(within(section).getByText('Ciclo de referência: 2026-07')).toBeInTheDocument()
-
-    const custoGrid = within(section).getByText('Valor total da fatura').closest('.grid')
-    expect(custoGrid).not.toBeNull()
-    expect(custoGrid!.children).toHaveLength(2)
-
-    // Tarifas com/sem impostos: tira de 2 colunas dentro do bloco "Custo do
-    // ciclo" (dinheiro) — nenhum dos 2 rótulos/valores some, só o invólucro
-    // muda.
-    const tarifaLabel = within(section).getByText('Tarifa com impostos')
-    const tarifaStrip = tarifaLabel.closest('.grid') as HTMLElement
-    expect(tarifaStrip).not.toBeNull()
-    expect(tarifaStrip.children).toHaveLength(2)
-    expect(within(tarifaStrip).getByText('Tarifa sem impostos')).toBeInTheDocument()
-    // Saldo/cobertura de créditos não vivem mais na mesma tira que as
-    // tarifas (achado F3: kWh não é a mesma grandeza de R$/kWh).
-    expect(within(tarifaStrip).queryByText('Saldo de créditos')).not.toBeInTheDocument()
-    expect(within(tarifaStrip).queryByText('Cobertura de créditos')).not.toBeInTheDocument()
-
-    // Saldo/cobertura de créditos: tira própria de 2 colunas, fora do bloco
-    // "Custo do ciclo".
-    const creditoLabel = within(section).getByText('Saldo de créditos')
-    const creditoStrip = creditoLabel.closest('.grid') as HTMLElement
-    expect(creditoStrip).not.toBeNull()
-    expect(creditoStrip.children).toHaveLength(2)
-    expect(within(creditoStrip).getByText('Cobertura de créditos')).toBeInTheDocument()
-    expect(creditoStrip).not.toBe(tarifaStrip)
-
-    expect(within(section).getByText('Custo do ciclo')).toBeInTheDocument()
-    // "Créditos de energia" volta a ser um heading próprio (h2, irmão de
-    // "Custo do ciclo") — dado de energia não some sob um rótulo de dinheiro
-    // (achado F3, já antecipado por
-    // docs/UI_UX_AUDIT_2026-08-04.md P2-04 "Grandeza fora de lugar").
-    expect(
-      within(section).getByRole('heading', { level: 2, name: 'Créditos de energia' })
-    ).toBeInTheDocument()
-    expect(within(section).queryByText('Tarifas')).not.toBeInTheDocument()
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)
+    expect(headings).toEqual(['Retorno do investimento', 'Sua conta com e sem a usina'])
+    for (const removed of ['Resumo financeiro', 'Custo do ciclo', 'Créditos de energia', 'Cobertura por créditos']) {
+      expect(screen.queryByText(removed)).not.toBeInTheDocument()
+    }
+    expect(screen.queryByText(/Decisão financeira/)).not.toBeInTheDocument()
+    expect(screen.getByText('Detalhes da fatura de jul/26').closest('details')).not.toBeNull()
   })
 
-  it('renderiza todos os valores financeiros com a unidade correta quando a fatura tem tarifa registrada', () => {
+  it('"Pago com créditos": percentual do motor e kWh compensados de kWh da rede; abaixo de 100% avisa a tarifa cheia', () => {
+    render(
+      <FinancialSection
+        indicators={buildIndicators({
+          bill_without_solar_brl: 540.11,
+          credit_coverage_rate_percent: 75,
+          compensated_kwh: 90,
+          imported_kwh: 120,
+        })}
+        referenceMonth="2026-07"
+        financialReturn={buildFinancialReturn()}
+        plantId="plant-1"
+      />
+    )
+
+    expect(screen.getByText('Pago com créditos')).toBeInTheDocument()
+    expect(screen.getByText('75% da energia da rede')).toBeInTheDocument()
+    expect(screen.getByText('90 de 120 kWh. O resto foi cobrado pela tarifa cheia.')).toBeInTheDocument()
+  })
+
+  it('detalhes da fatura: decomposição do valor e a tarifa da energia compensada explicada, sem 6 casas decimais', () => {
+    render(
+      <FinancialSection
+        indicators={buildIndicators({ bill_without_solar_brl: 540.11, tariff_with_taxes_brl_kwh: 0.787589, tariff_without_taxes_brl_kwh: 0.61303 })}
+        referenceMonth="2026-07"
+        financialReturn={buildFinancialReturn()}
+        plantId="plant-1"
+      />
+    )
+
+    const details = screen.getByText('Detalhes da fatura de jul/26').closest('details') as HTMLElement
+    const billBar = within(details).getByRole('img', { name: /Total R\$\s*420,71/ })
+    expect(billBar.getAttribute('aria-label')).toMatch(/Energia R\$\s*390,50/)
+    expect(billBar.getAttribute('aria-label')).toMatch(/Iluminação pública R\$\s*30,21/)
+    expect(within(details).queryByText('Outros encargos')).not.toBeInTheDocument()
+
+    expect(within(details).getByText('Tarifa da energia compensada')).toBeInTheDocument()
+    expect(within(details).getByText('R$ 0,788/kWh com impostos')).toBeInTheDocument()
+    expect(within(details).getByText('R$ 0,613/kWh sem impostos')).toBeInTheDocument()
+    expect(within(details).getByText(/usa a tarifa cheia/)).toBeInTheDocument()
+    expect(within(details).queryByText(/0,787589/)).not.toBeInTheDocument()
+  })
+
+  it('backend sem a conta "sem a usina": mostra a economia estimada sozinha, sem sumir', () => {
     render(
       <FinancialSection
         indicators={buildIndicators()}
@@ -135,41 +133,10 @@ describe('FinancialSection', () => {
       />
     )
 
-    expect(screen.getByText('Valor total da fatura')).toBeInTheDocument()
-    expect(screen.getByText(/R\$\s*420,71/)).toBeInTheDocument()
-
-    expect(screen.getByText('Iluminação pública')).toBeInTheDocument()
-    expect(screen.getByText(/R\$\s*30,21/)).toBeInTheDocument()
-
-    // Decomposição da fatura: `StackedBar` com energia + iluminação pública,
-    // sem um terceiro segmento "Outros encargos" porque energia + iluminação
-    // já reconstrói o total exatamente (mesma garantia do backend real — ver
-    // `intelligence/energy_engine.py`).
-    expect(screen.getByText('Componente energia')).toBeInTheDocument()
-    expect(screen.getByText(/R\$\s*390,50/)).toBeInTheDocument()
-    expect(screen.queryByText('Outros encargos')).not.toBeInTheDocument()
-
-    const billBar = screen.getByRole('img', { name: /Total R\$\s*420,71/ })
-    expect(billBar.getAttribute('aria-label')).toMatch(/Componente energia R\$\s*390,50/)
-    expect(billBar.getAttribute('aria-label')).toMatch(/Iluminação pública R\$\s*30,21/)
-
-    const tariffWithTaxesLabel = screen.getByText('Tarifa com impostos')
-    const tariffWithTaxesCard = tariffWithTaxesLabel.closest('div') as HTMLElement
-    expect(within(tariffWithTaxesCard).getByText(/0,85/)).toBeInTheDocument()
-    expect(within(tariffWithTaxesCard).getByText('R$/kWh')).toBeInTheDocument()
-
-    const tariffWithoutTaxesLabel = screen.getByText('Tarifa sem impostos')
-    const tariffWithoutTaxesCard = tariffWithoutTaxesLabel.closest('div') as HTMLElement
-    expect(within(tariffWithoutTaxesCard).getByText(/^0,6$/)).toBeInTheDocument()
-    expect(within(tariffWithoutTaxesCard).getByText('R$/kWh')).toBeInTheDocument()
-
-    expect(screen.getByText('Saldo de créditos')).toBeInTheDocument()
-    expect(screen.getByText(/63,98/)).toBeInTheDocument()
-
-    expect(screen.getByText('Cobertura de créditos')).toBeInTheDocument()
-
-    expect(screen.getAllByText('Economia estimada')).toHaveLength(2)
-    expect(screen.getAllByText(/R\$\s*120,40/).length).toBeGreaterThanOrEqual(2)
+    const heading = screen.getByRole('heading', { level: 2, name: 'Economia em jul/26' })
+    const section = heading.closest('section') as HTMLElement
+    expect(within(section).getByText(/R\$\s*120,40/)).toBeInTheDocument()
+    expect(within(section).getByText('Estimado')).toBeInTheDocument()
   })
 
   it('nunca mostra R$ 0,00 de economia quando a fatura não tem tarifa registrada — mostra mensagem explícita', () => {

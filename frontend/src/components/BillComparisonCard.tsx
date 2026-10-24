@@ -1,5 +1,5 @@
 import type { ExecutiveIndicators } from '../lib/dashboard/contracts'
-import { formatCurrency, formatNumber, toNumber } from '../lib/format'
+import { formatCurrency, formatNumber, toNumber, formatCycleLabel } from '../lib/format'
 import { Card } from './Card'
 import { SectionTitle } from './SectionTitle'
 
@@ -12,7 +12,8 @@ import { SectionTitle } from './SectionTitle'
 // conferido contra a fatura real antes de se confiar na economia.
 //
 // Sem tarifa no ciclo os campos vêm `null` e o card não aparece — o
-// `EstimatedSavingsCard` já explica o motivo, sem R$ 0,00 fabricado.
+// `SavingsUnavailableCard` (`FinancialSection`) explica o motivo, sem R$ 0,00
+// fabricado.
 
 const BILL_MATCH_TOLERANCE_BRL = 0.05
 
@@ -89,6 +90,12 @@ export function BillComparisonCard({
   const excess = toNumber(indicators.excess_credit_kwh ?? null)
   const creditValue = toNumber(indicators.credit_balance_value_brl ?? null)
   const difference = toNumber(indicators.bill_model_difference_brl ?? null)
+  // Quanto da energia que veio da rede foi paga com créditos (percentual do
+  // motor, `credit_coverage_rate_percent`). Abaixo de 100%, o resto saiu pela
+  // tarifa cheia — o que mais encarece a conta (ex.: fatura de out/26).
+  const coverage = toNumber(indicators.credit_coverage_rate_percent)
+  const compensated = toNumber(indicators.compensated_kwh ?? null)
+  const imported = toNumber(indicators.imported_kwh)
 
   let matchText: string
   let matchNote: string | undefined
@@ -115,7 +122,7 @@ export function BillComparisonCard({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">
-              Economia no ciclo {referenceMonth}
+              Economia no ciclo {formatCycleLabel(referenceMonth)}
             </p>
             <p className="mt-1 font-display text-[32px] font-semibold leading-tight tabular-nums text-[var(--color-success-text)]">
               {formatCurrency(savings)}
@@ -133,7 +140,7 @@ export function BillComparisonCard({
           <BillBar label="Com a usina, você pagou" value={paid} max={max} tone="brand" />
         </div>
 
-        <dl className="mt-6 grid grid-cols-1 gap-x-6 gap-y-4 border-t border-[var(--color-border)] pt-5 sm:grid-cols-2 xl:grid-cols-4">
+        <dl className="mt-6 grid grid-cols-1 gap-x-6 gap-y-4 border-t border-[var(--color-border)] pt-5 sm:grid-cols-2 xl:grid-cols-3">
           <Detail
             label="Consumo da casa no ciclo"
             value={`${formatNumber(indicators.estimated_total_consumption_kwh, 0)} kWh`}
@@ -153,6 +160,21 @@ export function BillComparisonCard({
             value={`${formatNumber(indicators.credit_balance_kwh, 2)} kWh`}
             note={creditValue != null ? `Valem cerca de ${formatCurrency(creditValue)}, já descontado o Fio B.` : undefined}
           />
+          {coverage != null && (
+            <Detail
+              label="Pago com créditos"
+              value={`${formatNumber(coverage, 0)}% da energia da rede`}
+              note={
+                compensated != null && imported != null
+                  ? `${formatNumber(compensated, 0)} de ${formatNumber(imported, 0)} kWh.${
+                      coverage < 100 ? ' O resto foi cobrado pela tarifa cheia.' : ''
+                    }`
+                  : coverage < 100
+                    ? 'O resto foi cobrado pela tarifa cheia.'
+                    : undefined
+              }
+            />
+          )}
           <Detail label="Conferência com a fatura" value={matchText} note={matchNote} />
         </dl>
       </Card>

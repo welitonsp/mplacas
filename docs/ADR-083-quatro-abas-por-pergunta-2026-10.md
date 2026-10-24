@@ -76,6 +76,33 @@ alarme sem lastro.
    - nada de painel de decisão genérico;
    - texto técnico do motor nunca aparece em inglês para o cliente.
 
+## Etapa 2 — aba Dinheiro (2026-10-24)
+
+Ordem nova: **Retorno do investimento → Sua conta com e sem a usina → Detalhes da fatura
+(recolhido) → Usina × CDI → Faturas**.
+
+- **Saem**:
+  - a faixa "Resumo financeiro", que repetia economia, ROI, payback e cobertura;
+  - o painel genérico "Decisão financeira" (`FinancialDecisionPanel`);
+  - os blocos "Custo do ciclo" e "Créditos de energia" (`EstimatedSavingsCard`,
+    `MetricStrip`, `CurrencyCard`).
+- **"Pago com créditos"** entra na conta do ciclo: o percentual do motor
+  (`credit_coverage_rate_percent`) e os kWh compensados de kWh da rede. Abaixo de 100%,
+  avisa que o resto foi pela tarifa cheia. É o que explica uma fatura alta como a de
+  out/26: 338 kWh da rede, 256 compensados, 82 pela tarifa cheia.
+- **Detalhes da fatura**, recolhidos:
+  - a decomposição do valor;
+  - a tarifa da linha "Consumo SCEE", com 3 casas e dizendo o que é.
+  Antes, as duas tarifas da fatura apareciam com 6 casas ao lado da tarifa cheia usada
+  no "sem a usina", sem explicação, o que parecia erro. A conferência de fatura pendente
+  mantém as 6 casas, porque ali o valor precisa bater com o impresso.
+- **Economia sem conta "sem a usina"** (sem tarifa no ciclo, ou backend anterior ao
+  ADR-080) não some nem vira R$ 0,00: aparece a mensagem do motivo ou só o valor
+  estimado.
+- **Faturas no fim** quando já há ciclo com fatura. Usina nova, sem ciclo, continua com as
+  faturas no topo, porque importar é o primeiro passo. "Conferir faturas" no Início leva a
+  `/dashboard/dinheiro#faturas`.
+
 ## Consequências
 
 - A aba Início faz quatro leituras (executivo, produção diária, retorno, cadastro).

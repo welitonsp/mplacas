@@ -136,9 +136,8 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     ).toBeInTheDocument()
     expect(screen.getByText(/R\$\s*420,71/)).toBeInTheDocument()
     // Ciclo de referência (`current_cycle.reference_month`, achado F1 da
-    // auditoria financeira desta sessão) visível junto de "Custo do ciclo" —
-    // antes só aparecia em `HeroCard`, no módulo Visão Geral (outra rota).
-    expect(screen.getByText('Ciclo de referência: 2026-07')).toBeInTheDocument()
+    // auditoria financeira) continua rastreável: nomeia os detalhes da fatura.
+    expect(screen.getByText('Detalhes da fatura de jul/26')).toBeInTheDocument()
   })
 
   it('em erro de /energy/executive/latest, mostra RetryableError e refaz o fetch ao clicar em "Tentar novamente"', async () => {
@@ -189,5 +188,27 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
       })
     )
     await waitFor(() => expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(2))
+  })
+
+  it('com ciclo confirmado, as faturas ficam no fim da aba (ADR-083), com âncora #faturas', async () => {
+    vi.resetModules()
+    installApiMock()
+    const { container } = await renderFinancialPage()
+
+    const retorno = await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+    const faturas = container.querySelector('#faturas') as HTMLElement
+    expect(faturas).not.toBeNull()
+    expect(retorno.compareDocumentPosition(faturas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('sem ciclo com fatura (executivo indisponível), as faturas sobem para o topo', async () => {
+    vi.resetModules()
+    installApiMock({ fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: 'erro' }, 500)) })
+    const { container } = await renderFinancialPage()
+
+    const alert = await screen.findByRole('alert')
+    const faturas = container.querySelector('#faturas') as HTMLElement
+    expect(faturas).not.toBeNull()
+    expect(faturas.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

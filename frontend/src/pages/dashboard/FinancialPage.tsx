@@ -1,4 +1,5 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
+import { useLocation } from 'react-router'
 import { fetchExecutiveDashboard, fetchFinancialReturn, fetchInvestorPanel } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
@@ -84,6 +85,15 @@ export function FinancialPage() {
   const loading =
     executive.status === 'loading' || financialReturn.status === 'loading' || investor.status === 'loading'
 
+  // "Conferir faturas" no Início leva a `/dashboard/dinheiro#faturas`. O
+  // roteador não rola até a âncora sozinho; espera o executivo decidir onde as
+  // faturas ficam (topo ou fim) antes de rolar.
+  const location = useLocation()
+  useEffect(() => {
+    if (location.hash !== '#faturas' || executive.status === 'loading') return
+    document.getElementById('faturas')?.scrollIntoView?.({ block: 'start' })
+  }, [location.hash, executive.status])
+
   // Enquanto a lista de usinas (`PlantContext`) ainda carrega, nenhuma
   // requisição deste módulo foi disparada — mesmo esqueleto de carregamento
   // usado por `DashboardPage`/`TechnicalPage` para o mesmo estado.
@@ -119,6 +129,23 @@ export function FinancialPage() {
   const data = executive.data
   const indicators = data?.current_cycle.indicators
   const executiveLoading = executive.status === 'loading'
+  // Sem ciclo com fatura confirmada ainda (usina nova), importar a fatura é a
+  // primeira coisa a fazer: as faturas sobem para o topo. Com dado, ficam no
+  // fim (ADR-083) — o Início leva direto a elas quando há fatura a conferir.
+  const billsFirst = !data
+
+  // Faturas fora do bloco do recurso executivo: continuam disponíveis mesmo
+  // quando ele falha ou ainda não há ciclo nenhum. `id="faturas"` é o alvo do
+  // link "Conferir faturas" do Início.
+  const bills = (
+    <div id="faturas" className="scroll-mt-4">
+      <Suspense
+        fallback={<div className="mb-6 h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)]" aria-hidden="true" />}
+      >
+        <BillsSection plantId={plantId} onConfirmed={refreshAll} />
+      </Suspense>
+    </div>
+  )
 
   return (
     <>
@@ -132,15 +159,7 @@ export function FinancialPage() {
         headingRef={headingRef}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
       />
-      {/* Faturas primeiro: sem fatura confirmada não existe custo do ciclo,
-          economia nem retorno — é a porta de entrada dos dados financeiros.
-          Fica fora do bloco do recurso executivo para continuar disponível
-          mesmo quando ele falha ou ainda não tem ciclo nenhum. */}
-      <Suspense
-        fallback={<div className="mb-6 h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)]" aria-hidden="true" />}
-      >
-        <BillsSection plantId={plantId} onConfirmed={refreshAll} />
-      </Suspense>
+      {billsFirst && bills}
       {executive.error && (
         <RetryableError
           message={executive.error}
@@ -174,6 +193,8 @@ export function FinancialPage() {
           </Suspense>
         </div>
       )}
+
+      {!billsFirst && <div className="mt-6">{bills}</div>}
     </>
   )
 }

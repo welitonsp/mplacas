@@ -302,6 +302,8 @@ test.describe('captura das telas', () => {
         // O painel do investidor é carregado sob demanda (React.lazy): sem
         // esperar o gráfico, a captura sairia sem a seção "Usina × CDI".
         await expect(page.getByRole('img', { name: /Patrimônio em 25 anos/ })).toBeVisible({ timeout: 15_000 })
+        // Faturas também carregam sob demanda e ficam no fim da aba (ADR-083).
+        await expect(page.getByRole('heading', { name: 'Faturas de energia' })).toBeVisible({ timeout: 15_000 })
       }
 
       await page.screenshot({

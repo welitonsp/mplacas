@@ -1,30 +1,27 @@
 import type { ExecutiveIndicators } from '../lib/dashboard/contracts'
+import { savingsUnavailableMessage } from '../lib/dashboard/contracts'
 import type { FinancialReturnResponse } from '../lib/dashboard/financial-return-contracts'
 import type { PlantResource } from '../hooks/usePlantResource'
-import { formatCurrency, formatNumber, toNumber } from '../lib/format'
+import { formatCurrency, formatCycleLabel, formatNumber, toNumber } from '../lib/format'
 import { SectionTitle } from './SectionTitle'
-import { CurrencyCard } from './CurrencyCard'
 import { StackedBar } from './charts/StackedBar'
-import { EstimatedSavingsCard } from './EstimatedSavingsCard'
 import { BillComparisonCard } from './BillComparisonCard'
 import { FinancialReturnSection } from './FinancialReturnSection'
-import { MetricStrip } from './MetricStrip'
 import { RetryableError } from './RetryableError'
-import { FinancialDecisionPanel, buildFinancialDecision } from './FinancialDecisionPanel'
-import { SummaryTile } from './SummaryTile'
+import { Card } from './Card'
 
-// Bloco 3 — "Quanto custou? Qual o retorno?" (Etapa 7 da refatoração de
-// `DashboardPage`): dois blocos financeiros que sempre andam juntos (custo do
-// ciclo/tarifas/créditos + retorno do investimento), extraídos para um único
-// componente por serem os que mais cresceram em `DashboardPage.tsx` (~110
-// linhas de JSX) e por dependerem de um subconjunto pequeno e estável de
-// dados (`indicators` do ciclo corrente + o recurso `financialReturn`) — sem
-// nenhum entrelaçamento com o resto do estado da página. Devolve dois
-// `<section>` irmãos (não um só) para preservar exatamente o mesmo layout de
-// grade de `DashboardPage` (cada um ocupa uma linha cheia, `md:col-span-6
-// lg:col-span-12`) — um `Fragment` não introduz nenhum elemento intermediário
-// no DOM, então os dois continuam filhos diretos do grid do jeito que os
-// testes de estrutura de grade (`DashboardPage.test.tsx`) já esperam.
+// Aba Dinheiro (ADR-083, etapa 2) — "quanto ganhei?", do horizonte longo para
+// o detalhe:
+// 1. Retorno do investimento (quanto a usina já devolveu);
+// 2. A conta do último ciclo com e sem a usina (BillComparisonCard);
+// 3. Detalhes da fatura, recolhidos: decomposição do valor e as duas tarifas
+//    da fatura, com o que cada uma significa.
+// Usina × CDI e Faturas ficam em `FinancialPage`, depois deste bloco.
+//
+// Saíram (ADR-083, regra "cada número uma vez por tela"): a faixa "Resumo
+// financeiro" (repetia economia, ROI, payback e cobertura), o painel genérico
+// "Decisão financeira" e o bloco "Créditos de energia" (o saldo já está na
+// conta do ciclo, e a cobertura virou linha dela).
 export function FinancialSection({
   indicators,
   referenceMonth,
@@ -32,253 +29,12 @@ export function FinancialSection({
   plantId,
 }: {
   indicators: ExecutiveIndicators
-  // `current_cycle.reference_month` do payload executivo (achado F1 da
-  // auditoria financeira desta sessão) — exibido junto de "Custo do ciclo",
-  // o único bloco deste componente cujo dado é estritamente do ciclo
-  // corrente (tarifas variam ~5% entre ciclos, ver ADR-056). "Retorno do
-  // investimento" agrega histórico de vários ciclos, por isso não recebe
-  // este rótulo. Mesmo padrão textual de `HeroCard.tsx` ("Ciclo de
-  // referência: AAAA-MM"), não uma formatação nova.
   referenceMonth: string
   financialReturn: PlantResource<FinancialReturnResponse>
   plantId: string
 }) {
-  // Decomposição da fatura (Parte C): `bill_energy_component_brl` é definido
-  // no backend como `total_amount_brl - public_lighting_brl` (clamped em 0,
-  // ver intelligence/energy_engine.py::analyze_energy_cycle) — a soma dos
-  // dois sempre reconstrói o total, então "resto" existe só para cobrir um
-  // eventual encargo futuro não capturado por essas duas categorias, nunca
-  // para absorver uma inconsistência de parser. Se qualquer um dos três
-  // valores vier `null`, mantém os `CurrencyCard` separados.
-  const billTotalAmount = toNumber(indicators.total_amount_brl)
-  const billEnergyComponent = toNumber(indicators.bill_energy_component_brl)
-  const billPublicLighting = toNumber(indicators.public_lighting_brl)
-  const billOtherCharges =
-    billTotalAmount != null && billEnergyComponent != null && billPublicLighting != null
-      ? billTotalAmount - billEnergyComponent - billPublicLighting
-      : null
-  const estimatedSavings = toNumber(indicators.estimated_savings_brl)
-  const creditCoverage = toNumber(indicators.credit_coverage_rate_percent)
-  const roiPercent =
-    financialReturn.data?.unavailable_reason === null
-      ? toNumber(financialReturn.data.roi_percent)
-      : null
-  const roiSupportingText =
-    financialReturn.status === 'loading'
-      ? 'Carregando retorno'
-      : financialReturn.error
-        ? 'Retorno indisponível'
-        : financialReturn.data?.unavailable_reason === 'INVESTMENT_NOT_REGISTERED'
-          ? 'Cadastre o CAPEX'
-          : 'Acumulado sobre o investimento'
-
-  const decision = buildFinancialDecision({
-    indicators,
-    referenceMonth,
-    financialReturn: financialReturn.data,
-    financialReturnError: financialReturn.error,
-  })
-  const evidenceFor = (label: string) => decision.evidence.find((item) => item.label === label)
-
   return (
     <>
-      {/* Indicadores primeiro, decisão depois — mesma ordem da Visão Geral
-          (ADR-077). Os quatro números saíram da coluna lateral do painel de
-          decisão, que os repetia. */}
-      <section className="md:col-span-6 lg:col-span-12">
-        <SectionTitle as="h2">Resumo financeiro</SectionTitle>
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-          <SummaryTile
-            label="Economia estimada"
-            value={estimatedSavings == null ? 'R$ —' : formatCurrency(estimatedSavings)}
-            supportingText={estimatedSavings == null ? 'Tarifa do ciclo ausente' : `Estimado · ciclo ${referenceMonth}`}
-            tone={estimatedSavings == null ? 'warning' : 'neutral'}
-          />
-          <SummaryTile
-            label="Cobertura por créditos"
-            value={creditCoverage == null ? '—' : `${formatNumber(creditCoverage, 1)}%`}
-            supportingText="Do consumo coberto"
-            tone={evidenceFor('Cobertura créditos')?.tone ?? 'neutral'}
-          />
-          <SummaryTile
-            label="ROI acumulado"
-            value={roiPercent == null ? '—' : `${formatNumber(roiPercent, 1)}%`}
-            supportingText={roiSupportingText}
-            tone="neutral"
-          />
-          <SummaryTile
-            label="Payback"
-            value={evidenceFor('Payback')?.value ?? '—'}
-            supportingText={
-              evidenceFor('Payback')?.value === 'Recuperado'
-                ? 'Investimento recuperado'
-                : evidenceFor('Payback')?.value && evidenceFor('Payback')?.value !== '—'
-                  ? 'Projeção'
-                  : 'Indisponível'
-            }
-            tone={evidenceFor('Payback')?.tone ?? 'neutral'}
-          />
-        </div>
-      </section>
-
-      {/* A pergunta central do dono da usina — quanto pagaria sem ela —
-          logo depois dos quatro números do resumo. */}
-      <BillComparisonCard indicators={indicators} referenceMonth={referenceMonth} />
-
-      <section className="md:col-span-6 lg:col-span-12" aria-label="Decisão financeira do ciclo">
-        <FinancialDecisionPanel
-          indicators={indicators}
-          referenceMonth={referenceMonth}
-          financialReturn={financialReturn.data}
-          financialReturnError={financialReturn.error}
-        />
-      </section>
-
-      {/* Valores em R$ (total da fatura, componente de energia, iluminação
-          pública, economia estimada), tarifas em R$/kWh e saldo/cobertura de
-          créditos — cada card com unidade sempre visível, sem exceção para a
-          economia quando a tarifa não está registrada (ver
-          EstimatedSavingsCard). */}
-      <section className="md:col-span-6 lg:col-span-12">
-        {/* Sem heading "Financeiro" isolado aqui (ADR-072, Etapa 6): o módulo
-            que hospeda este componente (`pages/dashboard/FinancialPage.tsx`)
-            já expõe "Financeiro" como `<h1>` da rota — um segundo heading com
-            o mesmo texto logo abaixo seria redundante (mesmo raciocínio já
-            aplicado em `OverviewPage`) e ambíguo para `getByText`/leitor de
-            tela. As subseções abaixo passam a ser `h2`, direto sob o `h1` do
-            módulo (antes eram `h3`, sob o `h2` "Financeiro" removido). */}
-        {/* Os mesmos oito cards de antes, agora em dois blocos rotulados —
-            "Custo do ciclo" (dinheiro: fatura, tarifas, economia) e
-            "Créditos de energia" (energia: saldo/cobertura em kWh) — em vez
-            de um único heading "Custo do ciclo" para os oito (estado
-            intermediário desta mesma etapa). Achado F3 da auditoria
-            financeira desta sessão, já antecipado por
-            `docs/UI_UX_AUDIT_2026-08-04.md` (P2-04, "Grandeza fora de
-            lugar"): saldo de créditos é kWh, não custo — quem navega por
-            heading (leitor de tela) não pode ouvir "Custo do ciclo" e achar
-            um valor em kWh como se fosse item de dinheiro. Tarifas (R$/kWh)
-            continuam em "Custo do ciclo": são preço, não energia, mantendo o
-            mesmo peso visual discreto de linha de apoio de antes (só a
-            classificação créditos-vs-custo mudou). Cada bloco usa sua
-            própria tira (`MetricStrip`, 2 itens em vez de 4) em vez de voltar
-            a 4 `MetricCard` soltos — preserva a compactação visual que
-            motivou a tira original, só divide a única tira de 4 colunas em
-            duas de 2, uma por grandeza. */}
-        <div className="space-y-6">
-          <div>
-            <SectionTitle as="h2">Custo do ciclo</SectionTitle>
-            {/* Ciclo de referência do payload executivo (achado F1 da
-                auditoria financeira desta sessão) — sem isso, a tarifa de 6
-                casas decimais abaixo (que varia ~5% entre ciclos, ver
-                ADR-056) não é rastreável até a fatura confirmada que a
-                originou. Mesmo texto/estilo de `HeroCard.tsx`, único outro
-                lugar do app que já mostra este dado (lá, só no módulo Visão
-                Geral). */}
-            <p className="-mt-2 mb-4 text-[13px] font-medium text-[var(--color-text-secondary)]">
-              Ciclo de referência: {referenceMonth}
-            </p>
-            {/* Decomposição da fatura (energia + iluminação pública [+
-                outros encargos, quando a soma não fecha em cima dos dois
-                conhecidos]) — antes eram três `CurrencyCard` soltos sem
-                nenhuma indicação visual de que compunham o mesmo total.
-                Validado contra o parser real (`bill_energy_component_brl =
-                total_amount_brl - public_lighting_brl`, ver
-                `intelligence/energy_engine.py`) antes de decompor — ver
-                skill `financial-visualization`. */}
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] gap-4 items-stretch">
-              {billTotalAmount != null && billEnergyComponent != null && billPublicLighting != null ? (
-                <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)]">
-                  <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">
-                    Valor total da fatura
-                  </p>
-                  <p className="mt-1 mb-4 font-display text-[28px] font-semibold tabular-nums text-[var(--color-text-primary)]">
-                    {formatCurrency(billTotalAmount)}
-                  </p>
-                  <StackedBar
-                    segments={[
-                      { label: 'Componente energia', value: billEnergyComponent, tone: 'neutral' },
-                      { label: 'Iluminação pública', value: billPublicLighting, color: 'var(--color-energy-consumption)' },
-                      ...(billOtherCharges != null && billOtherCharges > 0.005
-                        ? [{ label: 'Outros encargos', value: billOtherCharges, tone: 'danger' as const }]
-                        : []),
-                    ]}
-                    total={billTotalAmount}
-                    valueFormatter={formatCurrency}
-                  />
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:col-span-2">
-                  <CurrencyCard label="Valor total da fatura" value={indicators.total_amount_brl} />
-                  <CurrencyCard
-                    label="Componente energia da fatura"
-                    value={indicators.bill_energy_component_brl}
-                  />
-                  <CurrencyCard label="Iluminação pública" value={indicators.public_lighting_brl} />
-                </div>
-              )}
-              <EstimatedSavingsCard
-                value={indicators.estimated_savings_brl}
-                unavailableReason={indicators.savings_unavailable_reason}
-              />
-            </div>
-
-            {/* Tarifas do ciclo (R$/kWh) — mesmos 2 valores de antes
-                (`tariff_with_taxes_brl_kwh`/`tariff_without_taxes_brl_kwh`
-                com 6 casas decimais, ver ADR-056), numa tira de 2 colunas
-                dentro do card de "Custo do ciclo" (linha de apoio da fatura
-                acima, não item de destaque próprio). Saldo/cobertura de
-                créditos saíram desta tira para o bloco "Créditos de
-                energia" abaixo — ver comentário no início desta seção
-                (achado F3). */}
-            <MetricStrip
-              className="mt-4"
-              items={[
-                {
-                  label: 'Tarifa com impostos',
-                  value: indicators.tariff_with_taxes_brl_kwh,
-                  unit: 'R$/kWh',
-                  maximumFractionDigits: 6,
-                },
-                {
-                  label: 'Tarifa sem impostos',
-                  value: indicators.tariff_without_taxes_brl_kwh,
-                  unit: 'R$/kWh',
-                  maximumFractionDigits: 6,
-                },
-              ]}
-            />
-          </div>
-
-          <div>
-            {/* Bloco próprio para os 2 itens de energia (kWh) que antes
-                viviam sob o heading de dinheiro "Custo do ciclo" (achado F3
-                da auditoria financeira desta sessão) — mesmos valores/
-                unidade/barra de progresso de antes (`credit_balance_kwh`,
-                `credit_coverage_rate_percent`), só com heading e
-                agrupamento próprios, para que um leitor de tela não ouça
-                "Custo do ciclo" e encontre um saldo em kWh como se fosse
-                item de dinheiro. */}
-            <SectionTitle as="h2">Créditos de energia</SectionTitle>
-            <MetricStrip
-              items={[
-                { label: 'Saldo de créditos', value: indicators.credit_balance_kwh, unit: 'kWh' },
-                {
-                  label: 'Cobertura de créditos',
-                  value: indicators.credit_coverage_rate_percent,
-                  unit: '%',
-                  barPercent: toNumber(indicators.credit_coverage_rate_percent),
-                },
-              ]}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* Retorno do investimento (ADR-067, Etapa E): CAPEX, ROI acumulado e
-          projeção de payback, logo depois do custo do ciclo — mesma
-          pergunta financeira, num horizonte mais longo. Card único, mais
-          estreito que o grid acima (o conteúdo é uma barra de progresso mais
-          dois blocos de texto, não uma grade de métricas). */}
       <section className="md:col-span-6 lg:col-span-12">
         <SectionTitle as="h2">Retorno do investimento</SectionTitle>
         {financialReturn.error ? (
@@ -293,6 +49,109 @@ export function FinancialSection({
           </div>
         )}
       </section>
+
+      <BillComparisonCard indicators={indicators} referenceMonth={referenceMonth} />
+      <SavingsUnavailableCard indicators={indicators} referenceMonth={referenceMonth} />
+
+      <BillDetails indicators={indicators} referenceMonth={referenceMonth} />
     </>
+  )
+}
+
+// Quando `BillComparisonCard` não aparece (economia sem cálculo, ou backend
+// anterior ao ADR-080 sem a conta "sem a usina"), a economia não pode sumir em
+// silêncio nem virar R$ 0,00: diz o motivo ou mostra só o valor.
+function SavingsUnavailableCard({ indicators, referenceMonth }: { indicators: ExecutiveIndicators; referenceMonth: string }) {
+  const savings = toNumber(indicators.estimated_savings_brl)
+  const withoutSolar = toNumber(indicators.bill_without_solar_brl ?? null)
+  const paid = toNumber(indicators.total_amount_brl)
+  if (savings != null && withoutSolar != null && paid != null) return null
+  const cycle = formatCycleLabel(referenceMonth)
+  return (
+    <section className="md:col-span-6 lg:col-span-12" aria-labelledby="savings-fallback-heading">
+      <SectionTitle as="h2" id="savings-fallback-heading">
+        {`Economia em ${cycle}`}
+      </SectionTitle>
+      <Card className="sm:p-6">
+        {savings == null ? (
+          <p className="text-[15px] leading-6 text-[var(--color-text-secondary)]">
+            {indicators.savings_unavailable_reason
+              ? savingsUnavailableMessage(indicators.savings_unavailable_reason)
+              : 'Economia ainda não disponível para este ciclo.'}
+          </p>
+        ) : (
+          <p className="font-display text-[32px] font-semibold tabular-nums text-[var(--color-success-text)]">
+            {formatCurrency(savings)}
+            <span className="ml-2 align-middle font-sans text-xs font-semibold text-[var(--color-chart-reference)]">Estimado</span>
+          </p>
+        )}
+      </Card>
+    </section>
+  )
+}
+
+// Decomposição do valor da fatura e as tarifas impressas nela. Recolhido: é
+// conferência, não leitura do dia a dia. As duas tarifas eram mostradas lado a
+// lado com a tarifa cheia do cálculo "sem a usina" sem explicação, o que parecia
+// erro (auditoria de 2026-10-23); aqui cada uma diz o que é.
+function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndicators; referenceMonth: string }) {
+  const total = toNumber(indicators.total_amount_brl)
+  const energy = toNumber(indicators.bill_energy_component_brl)
+  const lighting = toNumber(indicators.public_lighting_brl)
+  const other = total != null && energy != null && lighting != null ? total - energy - lighting : null
+  const sceeWithTaxes = toNumber(indicators.tariff_with_taxes_brl_kwh)
+  const sceeWithoutTaxes = toNumber(indicators.tariff_without_taxes_brl_kwh)
+  const cycle = formatCycleLabel(referenceMonth)
+
+  if (total == null && sceeWithTaxes == null) return null
+
+  return (
+    <section className="md:col-span-6 lg:col-span-12" aria-label={`Detalhes da fatura de ${cycle}`}>
+      <details className="group rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+        <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-card)] px-5 text-[15px] font-semibold text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] [&::-webkit-details-marker]:hidden">
+          {`Detalhes da fatura de ${cycle}`}
+          <span aria-hidden="true" className="text-[var(--color-gray-400)] transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none">
+            ›
+          </span>
+        </summary>
+        <div className="flex flex-col gap-5 border-t border-[var(--color-border)] p-5">
+          {total != null && energy != null && lighting != null && (
+            <div>
+              <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">Valor da fatura</p>
+              <p className="mt-1 mb-3 font-display text-[24px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+                {formatCurrency(total)}
+              </p>
+              <StackedBar
+                segments={[
+                  { label: 'Energia', value: energy, tone: 'neutral' },
+                  { label: 'Iluminação pública', value: lighting, color: 'var(--color-energy-consumption)' },
+                  ...(other != null && other > 0.005 ? [{ label: 'Outros encargos', value: other, tone: 'danger' as const }] : []),
+                ]}
+                total={total}
+                valueFormatter={formatCurrency}
+              />
+            </div>
+          )}
+          {sceeWithTaxes != null && (
+            <dl className="grid grid-cols-1 gap-4 border-t border-[var(--color-border)] pt-4 sm:grid-cols-2">
+              <div>
+                <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Tarifa da energia compensada</dt>
+                <dd className="mt-0.5 text-[16px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+                  {`R$ ${formatNumber(sceeWithTaxes, 3)}/kWh com impostos`}
+                </dd>
+                {sceeWithoutTaxes != null && (
+                  <dd className="text-xs text-[var(--color-text-secondary)]">{`R$ ${formatNumber(sceeWithoutTaxes, 3)}/kWh sem impostos`}</dd>
+                )}
+              </div>
+              <p className="text-[13px] leading-5 text-[var(--color-text-secondary)] sm:self-center">
+                É o preço da linha &ldquo;Consumo SCEE&rdquo; da fatura, a energia paga com os créditos da usina. A conta
+                &ldquo;sem a usina&rdquo; usa a tarifa cheia, mostrada no cartão acima, porque é o que você pagaria sem
+                créditos.
+              </p>
+            </dl>
+          )}
+        </div>
+      </details>
+    </section>
   )
 }
