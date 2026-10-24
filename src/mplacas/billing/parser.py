@@ -453,7 +453,9 @@ def _extract_single_share(normalized: str) -> Decimal | None:
     """Rateio desta fatura: exige UMA linha só. Com várias UCs no rateio não
     dá para saber qual percentual é desta unidade — `None`, nunca um palpite."""
     found = _SCEE_GENERATION_SHARE_RE.findall(normalized)
-    if len(found) != 1:
+    # Conta as linhas de rateio por um padrão frouxo: uma linha ilegível ao
+    # lado de outra legível também é "várias UCs".
+    if len(found) != 1 or normalized.count("cadastro rateio") != 1:
         return None
     try:
         return _parse_decimal(found[0])

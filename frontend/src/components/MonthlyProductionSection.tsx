@@ -174,7 +174,7 @@ export function verdictDetail(cycle: MonthlyProductionCycle, distributor: string
           ? ` Outros ${kwh(check.expiredCreditsKwh, 2)} venceram pelo prazo de 5 anos, como a fatura anterior avisava.`
           : ''
       if (check.lossConfirmed)
-        return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)} nem como abatimento nem como saldo, confirma que 100% da geração é desta unidade e não avisou vencimento desse saldo. É forte indício de prejuízo: leve a fatura à ouvidoria da ${distributor} e peça a explicação.${expired}`
+        return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)} nem como abatimento nem como saldo, confirma que 100% da geração é desta unidade e não avisou vencimento do restante. É forte indício de prejuízo: leve a fatura à ouvidoria da ${distributor} e peça a explicação.${expired}`
       return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)} nem como abatimento nem como saldo, e não confirma que 100% da geração é desta unidade. Confira com a ${distributor}: o crédito pode ter ido para outra unidade do rateio.${expired}`
     }
     case 'IMPOSSIBLE':
