@@ -65,7 +65,11 @@ async def session() -> AsyncIterator[AsyncSession]:
 
 async def _full(session: AsyncSession, start: date, end: date) -> Decimal | None:
     return await full_tariff_without_taxes(
-        session, distributor="EQUATORIAL_GO", cycle_start=start, cycle_end=end
+        session,
+        distributor="EQUATORIAL_GO",
+        cycle_start=start,
+        cycle_end=end,
+        tariff_class="B1_RESIDENCIAL_CONVENCIONAL",
     )
 
 
@@ -87,10 +91,26 @@ async def test_cycle_without_registered_period_returns_none(session: AsyncSessio
     assert await _full(session, date(2026, 10, 15), date(2026, 11, 16)) is None
     assert (
         await full_tariff_without_taxes(
-            session, distributor="OUTRA", cycle_start=date(2026, 8, 17), cycle_end=date(2026, 9, 14)
+            session,
+            distributor="OUTRA",
+            cycle_start=date(2026, 8, 17),
+            cycle_end=date(2026, 9, 14),
+            tariff_class="B1_RESIDENCIAL_CONVENCIONAL",
         )
         is None
     )
+    # Classe sem tarifa cadastrada ou desconhecida: nenhum palpite (ADR-087).
+    for klass in ("B1_RESIDENCIAL_BRANCA", None):
+        assert (
+            await full_tariff_without_taxes(
+                session,
+                distributor="EQUATORIAL_GO",
+                cycle_start=date(2026, 8, 17),
+                cycle_end=date(2026, 9, 14),
+                tariff_class=klass,
+            )
+            is None
+        )
 
 
 def _september_2026(**overrides: object) -> UtilityBill:

@@ -648,3 +648,20 @@ def test_bill_flag_and_credits_migration_matches_orm() -> None:
     assert columns.non_energy_credits_brl.type.scale == 2
     assert 'drop_column("flag_tariff_brl_kwh")' in source
     assert 'drop_column("non_energy_credits_brl")' in source
+
+
+def test_bill_tariff_class_migration_matches_orm() -> None:
+    from mplacas.billing.db_models import UtilityBillRecord
+
+    source = (
+        ROOT / "migrations" / "versions" / "20261024_0049_add_bill_tariff_class.py"
+    ).read_text(encoding="utf-8")
+    column = UtilityBillRecord.__table__.columns.tariff_class
+
+    assert 'revision = "20261024_0049"' in source
+    assert 'down_revision = "20261024_0048"' in source
+    assert column.nullable is True
+    assert column.type.length == 60
+    # Classe nunca é presumida no banco: sem backfill.
+    assert "UPDATE" not in source.upper().replace("UPDATED", "")
+    assert 'drop_column("tariff_class")' in source

@@ -181,6 +181,14 @@ _NON_ENERGY_CREDIT_RE = re.compile(
     r"(?:compensa[cç][aã]o de (?:dic|fic|dmic|dicri)\b.{0,30}?|bonus itaipu.{0,40}?)"
     r"\s(-[\d\.]+,\d{2})(?!\d)"
 )
+# "Classificação: B B1 RESIDENCIAL - RESIDENCIAL NORMAL CONVENCIONAL <nome>":
+# só os termos conhecidos são lidos — o nome do titular vem colado depois e
+# nunca é capturado.
+_TARIFF_CLASS_RE = re.compile(
+    r"classifica[cç][aã]o:\s*[ab]\s*(b1|b2|b3|a4|a3a|a3|a2|a1|as)\s+"
+    r"(residencial|rural|comercial|industrial|poder p[uú]blico|servi[cç]o p[uú]blico|"
+    r"ilumina[cç][aã]o p[uú]blica)\b(.{0,80})"
+)
 _SCEE_GENERATION_SHARE_RE = re.compile(
     r"cadastro rateio gera[cç][aã]o:\s*uc\s*[^\s=]+\s*=\s*(\d{1,3}(?:,\d{1,2})?)\s*%",
     re.IGNORECASE,
@@ -286,6 +294,7 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
         credits_expiring_30d_kwh=_extract_optional(_SCEE_EXPIRING_30D_RE, normalized),
         flag_tariff_brl_kwh=_sum_flag_tariffs(normalized),
         non_energy_credits_brl=_sum_non_energy_credits(normalized),
+        tariff_class=_extract_tariff_class(normalized),
     )
     bill.validate()
     return bill
@@ -459,6 +468,58 @@ def _extract_optional(pattern: re.Pattern[str], normalized: str) -> Decimal | No
         return _parse_decimal(m.group(1))
     except BillParseError:
         return None
+
+
+_CLASS_KEYS = {
+    "residencial": "RESIDENCIAL",
+    "rural": "RURAL",
+    "comercial": "COMERCIAL",
+    "industrial": "INDUSTRIAL",
+    "poder publico": "PODER_PUBLICO",
+    "poder público": "PODER_PUBLICO",
+    "servico publico": "SERVICO_PUBLICO",
+    "serviço público": "SERVICO_PUBLICO",
+    "servico público": "SERVICO_PUBLICO",
+    "serviço publico": "SERVICO_PUBLICO",
+    "iluminacao publica": "ILUMINACAO_PUBLICA",
+    "iluminação pública": "ILUMINACAO_PUBLICA",
+    "iluminação publica": "ILUMINACAO_PUBLICA",
+    "iluminacao pública": "ILUMINACAO_PUBLICA",
+}
+
+
+# Fatura lida depois do ADR-087 cuja classe não foi reconhecida. Diferente de
+# `None` (fatura gravada antes de existir a leitura): esta nunca recebe a
+# classe presumida.
+UNIDENTIFIED_TARIFF_CLASS = "NAO_IDENTIFICADA"
+
+
+def _extract_tariff_class(normalized: str) -> str:
+    """Chave da classe tarifária ("B1_RESIDENCIAL_CONVENCIONAL"), ou `None`.
+
+    A modalidade sai do trecho logo depois da classe: "branca" vira BRANCA;
+    baixa renda (tarifa social) vira BAIXA_RENDA, porque tem tarifa própria;
+    "convencional" vira CONVENCIONAL. Sem nenhum desses termos, `None` — a
+    economia cai na tarifa da própria fatura, com aviso, em vez de presumir.
+    Sem reconhecer, devolve ``UNIDENTIFIED_TARIFF_CLASS``.
+    """
+    m = _TARIFF_CLASS_RE.search(normalized)
+    if not m:
+        return UNIDENTIFIED_TARIFF_CLASS
+    subgroup = m.group(1).upper()
+    klass = _CLASS_KEYS.get(m.group(2))
+    if klass is None:
+        return UNIDENTIFIED_TARIFF_CLASS
+    rest = m.group(3)
+    if "baixa renda" in rest or "tarifa social" in rest:
+        modality = "BAIXA_RENDA"
+    elif "branca" in rest:
+        modality = "BRANCA"
+    elif "convencional" in rest:
+        modality = "CONVENCIONAL"
+    else:
+        return UNIDENTIFIED_TARIFF_CLASS
+    return f"{subgroup}_{klass}_{modality}"
 
 
 def _sum_flag_tariffs(normalized: str) -> Decimal | None:

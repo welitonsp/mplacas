@@ -78,6 +78,7 @@ class UtilityBillRecord(Base):
     )
     flag_tariff_brl_kwh: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     non_energy_credits_brl: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    tariff_class: Mapped[str | None] = mapped_column(String(60), nullable=True)
     tariff_with_taxes_brl_kwh: Mapped[Decimal | None] = mapped_column(
         Numeric(12, 6), nullable=True
     )

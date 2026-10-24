@@ -14,11 +14,29 @@ from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.climate.db_models import DailyClimateObservationRecord
 from mplacas.db.models import DailyEnergy, DataStatus, Device
 from mplacas.intelligence.production_estimate import estimate_cycle_production
-from mplacas.tariffs.service import full_tariff_without_taxes
+from mplacas.tariffs.service import RESIDENTIAL_B1_CONVENTIONAL, full_tariff_without_taxes
+from mplacas.billing.parser import UNIDENTIFIED_TARIFF_CLASS
 from mplacas.intelligence.energy_engine import EnergyCycleIntelligence, analyze_energy_cycle
 
 
 _REFERENCE_WINDOW_DAYS = 30
+
+
+def resolve_tariff_class(stored: str | None) -> tuple[str | None, bool]:
+    """Classe usada na tarifa cheia e se ela é presumida (ADR-087).
+
+    - ``None`` (fatura gravada antes da leitura da classe): mantém o cálculo
+      de sempre — residencial B1 convencional — marcado como presumido, até o
+      PDF completar o campo;
+    - ``NAO_IDENTIFICADA`` (fatura lida, classe não reconhecida): nenhuma
+      classe, então nenhuma tarifa cheia;
+    - qualquer outra: a classe lida da fatura.
+    """
+    if stored is None:
+        return RESIDENTIAL_B1_CONVENTIONAL, True
+    if stored == UNIDENTIFIED_TARIFF_CLASS:
+        return None, False
+    return stored, False
 
 
 def _usable_energy_by_day(rows: Sequence[DailyEnergy]) -> dict[date, Decimal]:
@@ -193,6 +211,7 @@ async def analyze_confirmed_cycle(
         estimated_production_kwh=estimate.estimated_kwh,
         meter_floor_kwh=estimate.meter_floor_kwh,
     )
+    tariff_class, tariff_class_presumed = resolve_tariff_class(bill.tariff_class)
     intelligence = analyze_energy_cycle(
         bill=bill,
         cycle_production_kwh=production,
@@ -207,7 +226,10 @@ async def analyze_confirmed_cycle(
             distributor=bill.distributor,
             cycle_start=bill.cycle_start,
             cycle_end=bill.cycle_end,
+            tariff_class=tariff_class,
         ),
+        tariff_class=tariff_class or bill.tariff_class,
+        tariff_class_presumed=tariff_class_presumed,
     )
     return PersistedCycleIntelligence(
         bill_id=confirmed_bill.id,

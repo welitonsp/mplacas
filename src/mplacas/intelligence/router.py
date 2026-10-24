@@ -112,6 +112,9 @@ def _serialize(result) -> dict[str, object]:
             # vêm das placas (fora da economia), como lidos na fatura.
             "flag_tariff_brl_kwh": _optional(intelligence.flag_tariff_brl_kwh),
             "non_energy_credits_brl": _optional(intelligence.non_energy_credits_brl),
+            # ADR-087: classe tarifária e se foi presumida (fatura antiga).
+            "tariff_class": intelligence.tariff_class,
+            "tariff_class_presumed": intelligence.tariff_class_presumed,
         },
         "diagnostics": [
             {

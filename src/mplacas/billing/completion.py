@@ -39,6 +39,7 @@ COMPLETABLE_FIELDS = (
     "credits_expiring_30d_kwh",
     "flag_tariff_brl_kwh",
     "non_energy_credits_brl",
+    "tariff_class",
 )
 
 

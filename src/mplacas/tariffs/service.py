@@ -26,8 +26,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.tariffs.db_models import DistributorTariffRecord
 
-# Única classe suportada hoje: residencial B1 convencional (a do cliente de
-# referência). Outras classes e distribuidoras entram por importação de dados.
+# Classe cadastrada hoje: residencial B1 convencional (a do cliente de
+# referência). A classe vem da fatura (ADR-087); outras classes e
+# distribuidoras entram por importação das tarifas homologadas.
 RESIDENTIAL_B1_CONVENTIONAL = "B1_RESIDENCIAL_CONVENCIONAL"
 
 
@@ -37,13 +38,16 @@ async def full_tariff_without_taxes(
     distributor: str,
     cycle_start: date,
     cycle_end: date,
-    tariff_class: str = RESIDENTIAL_B1_CONVENTIONAL,
+    tariff_class: str | None,
 ) -> Decimal | None:
     """Tarifa cheia sem tributos (R$/kWh) do ciclo, ponderada por dia.
 
-    ``None`` quando algum dia do ciclo não tem vigência cadastrada — nunca
-    completa com outra vigência nem com a tarifa SCEE da fatura.
+    ``None`` quando a classe tarifária da fatura é desconhecida (ADR-087) ou
+    algum dia do ciclo não tem vigência cadastrada para ela — nunca presume
+    a classe, nunca completa com outra vigência nem com a tarifa SCEE.
     """
+    if tariff_class is None:
+        return None
     if cycle_end < cycle_start:
         raise ValueError("cycle end cannot precede start")
     rows = (
