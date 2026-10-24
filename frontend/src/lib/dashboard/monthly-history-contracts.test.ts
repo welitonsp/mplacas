@@ -71,6 +71,8 @@ describe('parseMonthlyProductionHistory', () => {
             utility_check: {
               verdict: 'LOSS',
               missing_credits_kwh: '15.98',
+              loss_confirmed: true,
+              expired_credits_kwh: null,
               credits_available_kwh: '255.98',
               credits_used_kwh: '240',
               credit_balance_kwh: '0',
@@ -88,6 +90,8 @@ describe('parseMonthlyProductionHistory', () => {
     expect(result.cycles[0].utilityCheck).toMatchObject({
       verdict: 'LOSS',
       missingCreditsKwh: 15.98,
+      lossConfirmed: true,
+      expiredCreditsKwh: null,
       creditsAvailableKwh: 255.98,
       meterExportKwh: 238,
       previousBalanceKwh: 17.98,
@@ -96,6 +100,8 @@ describe('parseMonthlyProductionHistory', () => {
       reasons: ['CREDITS_MISSING'],
     })
     expect(result.cycles[1].utilityCheck?.verdict).toBe('UNVERIFIABLE')
+    // Sem `loss_confirmed: true` explícito, nunca confirma prejuízo.
+    expect(result.cycles[1].utilityCheck?.lossConfirmed).toBe(false)
   })
 
   it('lê datas do ciclo e o registro da distribuidora quando o backend envia', () => {

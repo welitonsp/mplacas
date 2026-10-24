@@ -19,6 +19,8 @@ def _bill(
     compensated: str = "255.98",
     balance: str = "0",
     imported: str = "338",
+    share: str | None = "100",
+    expiring: str | None = "0",
 ) -> UtilityBill:
     return UtilityBill(
         distributor="EQUATORIAL_GO",
@@ -32,6 +34,8 @@ def _bill(
         credit_balance_kwh=Decimal(balance),
         total_amount_brl=Decimal("171.32"),
         generation_cycle_kwh=None if generation is None else Decimal(generation),
+        generation_share_percent=None if share is None else Decimal(share),
+        credits_expiring_30d_kwh=None if expiring is None else Decimal(expiring),
     )
 
 
@@ -192,3 +196,49 @@ def test_proof_numbers_come_from_the_meter_and_previous_balance() -> None:
     )
     assert check.meter_export_kwh == Decimal("238")
     assert check.previous_balance_kwh == Decimal("17.98")
+
+
+def test_loss_is_confirmed_only_with_full_generation_share() -> None:
+    bill = _bill(compensated="240", balance="0", share="100")
+    check = check_cycle(
+        bill=bill, previous_bill=PREVIOUS, production_kwh=None, previous_export_shares=[]
+    )
+    assert check.verdict == VERDICT_LOSS
+    assert check.loss_confirmed is True
+
+
+def test_gap_without_confirmed_share_is_loss_not_confirmed() -> None:
+    for share in (None, "0", "60"):
+        bill = _bill(compensated="240", balance="0", share=share)
+        check = check_cycle(
+            bill=bill, previous_bill=PREVIOUS, production_kwh=None, previous_export_shares=[]
+        )
+        assert check.verdict == VERDICT_LOSS
+        assert check.loss_confirmed is False
+        assert "SHARE_NOT_CONFIRMED" in check.reasons
+
+
+def test_gap_announced_as_expiring_is_expiry_not_loss() -> None:
+    # A fatura anterior avisou 20 kWh a vencer; sumiram 15,98: venceram.
+    previous = _bill(
+        generation="235", compensated="221", balance="17.98", imported="221", expiring="20"
+    )
+    bill = _bill(compensated="240", balance="0")
+    check = check_cycle(
+        bill=bill, previous_bill=previous, production_kwh=None, previous_export_shares=[]
+    )
+    assert check.verdict == VERDICT_OK
+    assert check.expired_credits_kwh == Decimal("15.98")
+    assert "CREDITS_EXPIRED" in check.reasons
+    assert check.loss_confirmed is False
+
+
+def test_gap_larger_than_announced_expiry_is_still_loss() -> None:
+    previous = _bill(
+        generation="235", compensated="221", balance="17.98", imported="221", expiring="5"
+    )
+    bill = _bill(compensated="240", balance="0")
+    check = check_cycle(
+        bill=bill, previous_bill=previous, production_kwh=None, previous_export_shares=[]
+    )
+    assert check.verdict == VERDICT_LOSS

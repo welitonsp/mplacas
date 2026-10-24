@@ -35,6 +35,8 @@ COMPLETABLE_FIELDS = (
     "tariff_without_taxes_brl_kwh",
     "wire_b_tariff_brl_kwh",
     "generation_cycle_kwh",
+    "generation_share_percent",
+    "credits_expiring_30d_kwh",
 )
 
 

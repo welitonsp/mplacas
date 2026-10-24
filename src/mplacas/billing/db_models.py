@@ -72,6 +72,10 @@ class UtilityBillRecord(Base):
         Numeric(12, 2), default=Decimal("0")
     )
     generation_cycle_kwh: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), nullable=True)
+    generation_share_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    credits_expiring_30d_kwh: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 3), nullable=True
+    )
     tariff_with_taxes_brl_kwh: Mapped[Decimal | None] = mapped_column(
         Numeric(12, 6), nullable=True
     )

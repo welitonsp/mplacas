@@ -10,6 +10,8 @@ function okCheck(overrides: Partial<UtilityCheck> = {}): UtilityCheck {
   return {
     verdict: 'OK',
     missingCreditsKwh: 0,
+    lossConfirmed: false,
+    expiredCreditsKwh: null,
     creditsAvailableKwh: 255.98,
     creditsUsedKwh: 255.98,
     creditBalanceKwh: 0,
@@ -115,6 +117,28 @@ describe('MonthlyProductionSection', () => {
     expect(screen.getByText('15,98 kWh de créditos sem explicação')).toBeInTheDocument()
     expect(within(row(/mai\/26/)).getByText('Créditos sem explicação')).toBeInTheDocument()
     expect(within(row(/mai\/26/)).getByText(/não mostra 15,98 kWh nem como abatimento nem como saldo/)).toBeInTheDocument()
+  })
+
+  it('créditos faltando com rateio de 100% confirmado: prejuízo em vermelho, com a ouvidoria', () => {
+    const history = buildHistory()
+    history.cycles[2] = {
+      ...history.cycles[2],
+      utilityCheck: okCheck({ verdict: 'LOSS', missingCreditsKwh: 15.98, lossConfirmed: true, reasons: ['CREDITS_MISSING'] }),
+    }
+    render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
+
+    expect(screen.getByText('15,98 kWh de créditos faltando')).toBeInTheDocument()
+    expect(within(row(/mai\/26/)).getByText('Créditos faltando')).toBeInTheDocument()
+    expect(within(row(/mai\/26/)).getByText(/é prejuízo\. Leve a fatura à ouvidoria da Equatorial/)).toBeInTheDocument()
+  })
+
+  it('crédito vencido avisado na fatura anterior: sem prejuízo, mas a frase diz quanto venceu', () => {
+    const history = buildHistory()
+    history.cycles[2] = { ...history.cycles[2], utilityCheck: okCheck({ expiredCreditsKwh: 12.5, reasons: ['CREDITS_EXPIRED'] }) }
+    render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
+
+    expect(within(row(/mai\/26/)).getByText('Sem sinal de prejuízo')).toBeInTheDocument()
+    expect(within(row(/mai\/26/)).getByText(/12,5 kWh de crédito venceram \(prazo de 5 anos\)/)).toBeInTheDocument()
   })
 
   it('envio maior que a produção: registro impossível, com pedido de aferição', () => {

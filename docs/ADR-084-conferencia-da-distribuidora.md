@@ -100,3 +100,28 @@ quanto a operadora registrou, para saber se está tendo prejuízo".
 - Teste de integração em `tests/test_reports_monthly_history.py`.
 - Testes de contrato e de componente no frontend, além das capturas `e2e/screenshots.spec.ts`
   (celular e desktop) e da guarda de rolagem lateral.
+
+## Adendo — rateio e saldo a expirar (2026-10-24)
+
+- **O leitor da fatura passa a gravar** dois campos do bloco SCEE (migration `20261024_0047`,
+  colunas nullable, sem backfill):
+  - `generation_share_percent`, de "CADASTRO RATEIO GERAÇÃO: UC … = N%";
+  - `credits_expiring_30d_kwh`, de "SALDO A EXPIRAR EM 30 DIAS KWH".
+
+  Linha ausente ou percentual impossível vira `NULL` e nunca recusa a fatura.
+- **Prejuízo confirmado** (`loss_confirmed`) só quando a fatura do ciclo diz **exatamente
+  100%**.
+  - Nas faturas reais, 24 de 25 meses dizem 100%. A de set/2024 imprime "= 0%", mesmo com
+    toda a geração indo para a própria UC. Por isso nenhum outro valor é interpretado como
+    rateio: qualquer coisa diferente de 100% (ou ausente) mantém o "sem explicação" em
+    âmbar, com o motivo `SHARE_NOT_CONFIRMED`.
+  - Com 100% confirmado, a tela mostra "Créditos faltando" em vermelho e orienta levar a
+    fatura à ouvidoria.
+- **Vencimento:** se o gap cabe no "saldo a expirar em 30 dias" avisado na fatura
+  **anterior**, o ciclo é `OK` com `CREDITS_EXPIRED` e `expired_credits_kwh`. A frase diz
+  quanto venceu: é perda pelo prazo de 60 meses, não crédito sumido.
+- **Faturas já gravadas** ficam `NULL` até o PDF completar os campos vazios
+  (`billing/completion.py`, que agora inclui os dois). Até lá, a conferência continua
+  funcionando, mas não afirma prejuízo.
+- **Deploy:** rodar a migration (Actions → migrate) **antes** do deploy no Render. As colunas
+  são aditivas: o código atual convive com elas, e o código novo precisa delas.
