@@ -255,6 +255,9 @@ def _handle_import_tariffs(args: argparse.Namespace) -> int:
 
     async def _run() -> str:
         async with SessionFactory() as session:
+            # Tarifas são dado público global (fora do RLS por organização);
+            # o job roda como plataforma, como os demais jobs operacionais.
+            await set_platform_context(session)
             report = await upsert_periods(session, periods, dry_run=args.dry_run)
             if args.dry_run:
                 await session.rollback()
