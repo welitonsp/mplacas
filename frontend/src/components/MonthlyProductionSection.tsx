@@ -1,8 +1,14 @@
 import { useState } from 'react'
+import { Check, CircleHelp, OctagonAlert, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { Card } from './Card'
 import { EmptyState } from './EmptyState'
 import { LoadingAnnouncement } from './LoadingAnnouncement'
-import type { MonthlyProductionCycle, MonthlyProductionHistoryResponse } from '../lib/dashboard/monthly-history-contracts'
+import type {
+  MonthlyProductionCycle,
+  MonthlyProductionHistoryResponse,
+  UtilityCheck,
+  UtilityCheckVerdict,
+} from '../lib/dashboard/monthly-history-contracts'
 import type { MonthlyReportExportFormat } from '../lib/api'
 import { downloadMonthlyReportExport } from '../lib/api'
 import { formatCycleLabel, formatNumber, formatShortDate } from '../lib/format'
@@ -86,20 +92,16 @@ function MonthlyExportControl({ plantId }: { plantId: string }) {
   )
 }
 
-// Ciclo a ciclo da fatura: quanto as PLACAS geraram (inversor) ao lado do que a
-// distribuidora registrou no mesmo período (ADR-083, etapa 3 — "o mais
-// importante é saber quanto as placas geraram no período do ciclo × o período
-// da operadora"). A injeção só é chamada de "medidor" quando o backend afirma
-// (`gridInjectionBasis === 'METER'`, ADR-078); senão é a linha de injeção da
-// fatura, que no layout atual é a energia compensada. "Ficou na casa" é
-// estimativa do motor (placas − injeção) e aparece como tal. Dias sem leitura
-// estimados pelo sol (ADR-082) aparecem — nunca somem nem viram "medido".
+// Placas × distribuidora, ciclo a ciclo, com a conferência (ADR-083 etapa 3 e
+// ADR-084). Responde "estou tendo prejuízo?" sem enganar:
+// - o medidor da distribuidora só registra o que SAI para a rede; o que a casa
+//   consome na hora nunca passa por ele. Por isso a produção é mostrada
+//   dividida em "rede" (registrado) e "casa" (estimado), e não como perda;
+// - o veredito vem do backend (`utilityCheck`): créditos que sumiram
+//   (prejuízo comprovado), envio maior que a produção (impossível) ou fração
+//   enviada fora do padrão (suspeita). Sem dado, "sem conferência" — nunca OK.
+// A injeção só é "medidor" quando o backend afirma (`gridInjectionBasis`).
 // `history === null` = carregando.
-function gapDescription(gapDays: number, estimatedDays: number): string {
-  const base = `${gapDays} ${gapDays === 1 ? 'dia' : 'dias'} sem leitura do inversor`
-  if (estimatedDays <= 0) return base
-  return `${base}, ${estimatedDays === gapDays ? 'estimados' : `${estimatedDays} estimados`} pelo sol`
-}
 
 const VISIBLE_CYCLES = 6
 
@@ -113,8 +115,14 @@ export function distributorDisplayName(code: string | null | undefined): string 
   return (code && DISTRIBUTOR_NAMES[code]) || 'distribuidora'
 }
 
-function kwh(value: number): string {
-  return `${formatNumber(value, 0)} kWh`
+function kwh(value: number, digits = 0): string {
+  return `${formatNumber(value, digits)} kWh`
+}
+
+function gapDescription(gapDays: number, estimatedDays: number): string {
+  const base = `${gapDays} ${gapDays === 1 ? 'dia' : 'dias'} sem leitura do inversor`
+  if (estimatedDays <= 0) return base
+  return `${base}, ${estimatedDays === gapDays ? 'estimados' : `${estimatedDays} estimados`} pelo sol`
 }
 
 function cyclePeriod(cycle: MonthlyProductionCycle): string | null {
@@ -122,74 +130,187 @@ function cyclePeriod(cycle: MonthlyProductionCycle): string | null {
   return `${formatShortDate(cycle.cycleStart)} a ${formatShortDate(cycle.cycleEnd)}`
 }
 
-function Bar({ value, max, className }: { value: number | null; max: number; className: string }) {
-  // Zero desenha zero: só valor positivo ganha a largura mínima visível.
-  const width = value == null || value <= 0 || max <= 0 ? 0 : Math.max(2, Math.round((value / max) * 100))
+type Tone = 'success' | 'warning' | 'danger' | 'neutral'
+
+const VERDICT_META: Record<UtilityCheckVerdict, { label: string; tone: Tone; icon: LucideIcon }> = {
+  OK: { label: 'Sem sinal de prejuízo', tone: 'success', icon: Check },
+  SUSPECT: { label: 'Fora do padrão', tone: 'warning', icon: TriangleAlert },
+  IMPOSSIBLE: { label: 'Registro impossível', tone: 'danger', icon: OctagonAlert },
+  LOSS: { label: 'Créditos faltando', tone: 'danger', icon: OctagonAlert },
+  UNVERIFIABLE: { label: 'Sem conferência', tone: 'neutral', icon: CircleHelp },
+}
+
+const TONE_TEXT: Record<Tone, string> = {
+  success: 'text-[var(--color-success-text)]',
+  warning: 'text-[var(--color-warning-text)]',
+  danger: 'text-[var(--color-danger-text)]',
+  neutral: 'text-[var(--color-text-secondary)]',
+}
+
+const TONE_SURFACE: Record<Tone, string> = {
+  success: 'bg-[var(--color-success-light)] text-[var(--color-success-text)]',
+  warning: 'bg-[var(--color-warning-light)] text-[var(--color-warning-text)]',
+  danger: 'bg-[var(--color-danger-light)] text-[var(--color-danger-text)]',
+  neutral: 'bg-[var(--color-gray-100)] text-[var(--color-text-secondary)]',
+}
+
+const TONE_DOT: Record<Tone, string> = {
+  success: 'bg-[var(--color-success)]',
+  warning: 'bg-[var(--color-warning)]',
+  danger: 'bg-[var(--color-danger)]',
+  neutral: 'bg-[var(--color-gray-400)]',
+}
+
+// Frase única do veredito, com os números que o provam.
+export function verdictDetail(cycle: MonthlyProductionCycle, distributor: string): string {
+  const check = cycle.utilityCheck
+  if (!check) return 'Conferência ainda não disponível para este ciclo.'
+  switch (check.verdict) {
+    case 'LOSS':
+      return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)} nem como abatimento nem como saldo. Confira com a ${distributor}: crédito expira após 5 anos e pode ter ido para outra unidade do rateio.`
+    case 'IMPOSSIBLE':
+      return `A ${distributor} registrou ${kwh(cycle.gridInjectionKwh ?? 0)} enviados à rede, mais do que o inversor produziu${cycle.productionKwh != null ? ` (${kwh(cycle.productionKwh)})` : ''}. Um dos dois medidores está errado: vale pedir aferição.`
+    case 'SUSPECT':
+      return `Só ${formatNumber(check.exportSharePercent ?? 0, 0)}% da produção foi para a rede, contra ${formatNumber(check.exportShareBaselinePercent ?? 0, 0)}% no seu histórico. Pode ser o medidor ou mais consumo durante o dia.`
+    case 'OK':
+      return check.creditsAvailableKwh != null && check.creditsUsedKwh != null && check.creditBalanceKwh != null
+        ? `Todo kWh registrado virou crédito: ${kwh(check.creditsAvailableKwh, 2)} disponíveis, ${kwh(check.creditsUsedKwh, 2)} usados, saldo de ${kwh(check.creditBalanceKwh, 2)}.`
+        : 'Todo kWh registrado virou crédito.'
+    default:
+      if (check.reasons.includes('NO_METER_READING')) return 'A fatura deste ciclo não traz a leitura do medidor de geração.'
+      if (check.reasons.includes('NO_PREVIOUS_BILL')) return 'Falta a fatura do mês anterior para conferir o saldo de créditos.'
+      return 'Não há dados suficientes para conferir este ciclo.'
+  }
+}
+
+function VerdictBadge({ check }: { check: UtilityCheck | null }) {
+  const meta = VERDICT_META[check?.verdict ?? 'UNVERIFIABLE']
   return (
-    <span aria-hidden="true" className="block h-2.5 w-full overflow-hidden rounded-full bg-[var(--color-chart-track)]">
-      <span className={`block h-full rounded-full ${className}`} style={{ width: `${width}%` }} />
+    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${TONE_TEXT[meta.tone]}`}>
+      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${TONE_DOT[meta.tone]}`} />
+      {meta.label}
     </span>
   )
 }
 
-// Linha de uma `dl`: o `div` só agrupa `dt` + `dd` (modelo de conteúdo de
-// `dl`); a barra decorativa mora dentro do `dd`, junto do valor.
-function MeterLine({ label, value, max, barClassName }: { label: string; value: number | null; max: number; barClassName: string }) {
+// Composição da produção: o que foi para a rede (registrado) e o que ficou na
+// casa (estimado). Uma barra fina, 100% = produção do ciclo.
+function ProductionSplit({ cycle }: { cycle: MonthlyProductionCycle }) {
+  const production = cycle.productionKwh
+  const grid = cycle.gridInjectionKwh
+  if (production == null || production <= 0 || grid == null) return null
+  const gridShare = Math.min(100, Math.max(0, (grid / production) * 100))
   return (
-    <div className="grid grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)] items-center gap-3">
-      <dt className="text-[13px] text-[var(--color-text-secondary)]">{label}</dt>
-      <dd className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-        <Bar value={value} max={max} className={barClassName} />
-        <span className="text-right text-[14px] font-semibold tabular-nums text-[var(--color-text-primary)]">
-          {value == null ? 'sem registro' : kwh(value)}
-        </span>
+    <span aria-hidden="true" className="flex h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-energy-solar-light)]">
+      <span className="h-full bg-[var(--color-energy-grid)]" style={{ width: `${gridShare}%` }} />
+    </span>
+  )
+}
+
+function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-[var(--color-text-secondary)]">{label}</dt>
+      <dd className="mt-0.5">
+        <span className="block whitespace-nowrap text-[15px] font-semibold tabular-nums text-[var(--color-text-primary)]">{value}</span>
+        {hint && <span className="block text-xs text-[var(--color-text-secondary)]">{hint}</span>}
       </dd>
     </div>
   )
 }
 
-function CycleRow({ cycle, max }: { cycle: MonthlyProductionCycle; max: number }) {
+function CycleRow({ cycle }: { cycle: MonthlyProductionCycle }) {
   const gapDays = (cycle.quality?.missingDays ?? 0) + (cycle.quality?.unavailableDays ?? 0)
   const period = cyclePeriod(cycle)
-  const label = formatCycleLabel(cycle.referenceMonth)
   const distributor = distributorDisplayName(cycle.distributor)
   const metered = cycle.gridInjectionBasis === 'METER'
-  const injectionLabel = metered ? `Medidor da ${distributor}` : 'Injeção na fatura'
   return (
-    <li className="flex flex-col gap-2 border-t border-[var(--color-border)] py-4 first:border-t-0 first:pt-0">
+    <li className="flex flex-col gap-3 border-t border-[var(--color-border)] py-5 first:border-t-0 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">
-          {label}
+          {formatCycleLabel(cycle.referenceMonth)}
           {period && <span className="ml-2 text-[13px] font-normal text-[var(--color-text-secondary)]">{period}</span>}
         </h3>
-        {gapDays > 0 && (
-          <span className="rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold text-[var(--color-warning-text)]">
-            {gapDescription(gapDays, cycle.quality?.estimatedDays ?? 0)}
-          </span>
-        )}
+        <VerdictBadge check={cycle.utilityCheck} />
       </div>
-      <dl className="grid grid-cols-1 gap-2">
-        <MeterLine label="Placas geraram" value={cycle.productionKwh} max={max} barClassName="bg-[var(--color-energy-solar)]" />
-        <MeterLine label={injectionLabel} value={cycle.gridInjectionKwh} max={max} barClassName="bg-[var(--color-energy-grid)]" />
+      <ProductionSplit cycle={cycle} />
+      <dl className="grid grid-cols-3 gap-3">
+        <Stat
+          label="Produziu"
+          value={cycle.productionKwh == null ? 'sem registro' : kwh(cycle.productionKwh)}
+          hint={cycle.productionKwh == null ? undefined : 'inversor'}
+        />
+        <Stat
+          label="Rede"
+          value={cycle.gridInjectionKwh == null ? 'sem registro' : kwh(cycle.gridInjectionKwh)}
+          hint={cycle.gridInjectionKwh == null ? undefined : metered ? `medidor ${distributor}` : 'linha da fatura'}
+        />
+        <Stat
+          label="Casa"
+          value={cycle.selfConsumptionKwh == null ? 'sem registro' : kwh(cycle.selfConsumptionKwh)}
+          hint={cycle.selfConsumptionKwh == null ? undefined : 'estimado'}
+        />
       </dl>
-      {cycle.gridInjectionKwh != null && !metered && (
-        <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
-          Não é a leitura do medidor: é a linha de injeção da fatura, que pode ser só a energia compensada. Se for, o
-          enviado à rede foi maior e o que ficou na casa, menor que o estimado.
-        </p>
-      )}
-      {(cycle.selfConsumptionKwh != null || cycle.importedKwh != null) && (
-        <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
-          {cycle.selfConsumptionKwh != null && (
-            <>
-              Ficou na casa (estimado): <strong className="font-semibold text-[var(--color-text-primary)]">{kwh(cycle.selfConsumptionKwh)}</strong>
-            </>
-          )}
-          {cycle.selfConsumptionKwh != null && cycle.importedKwh != null && ' · '}
-          {cycle.importedKwh != null && <>Veio da rede: <strong className="font-semibold text-[var(--color-text-primary)]">{kwh(cycle.importedKwh)}</strong></>}
-        </p>
+      <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
+        {verdictDetail(cycle, distributor)}
+        {cycle.gridInjectionKwh != null && !metered &&
+          ' O número da rede não é a leitura do medidor: pode ser só a energia compensada, e aí a casa ficou com menos que o estimado.'}
+      </p>
+      {gapDays > 0 && (
+        <p className="text-xs font-medium text-[var(--color-warning-text)]">{gapDescription(gapDays, cycle.quality?.estimatedDays ?? 0)}</p>
       )}
     </li>
+  )
+}
+
+// Veredito da janela inteira, no topo: a resposta em uma linha.
+function Summary({ cycles }: { cycles: MonthlyProductionCycle[] }) {
+  const distributor = distributorDisplayName(cycles[cycles.length - 1]?.distributor)
+  const byVerdict = (verdict: UtilityCheckVerdict) => cycles.filter((cycle) => cycle.utilityCheck?.verdict === verdict)
+  const loss = byVerdict('LOSS')
+  const impossible = byVerdict('IMPOSSIBLE')
+  const suspect = byVerdict('SUSPECT')
+  const ok = byVerdict('OK')
+  const plural = (count: number) => (count === 1 ? 'ciclo' : 'ciclos')
+
+  let tone: Tone
+  let title: string
+  let detail: string
+  if (loss.length > 0) {
+    const missing = loss.reduce((sum, cycle) => sum + (cycle.utilityCheck?.missingCreditsKwh ?? 0), 0)
+    tone = 'danger'
+    title = `${kwh(missing, 2)} de créditos faltando`
+    detail = `Em ${loss.length} ${plural(loss.length)}, a fatura não mostra todo kWh registrado como abatimento ou saldo.`
+  } else if (impossible.length > 0) {
+    tone = 'danger'
+    title = 'Registro impossível'
+    detail = `Em ${impossible.length} ${plural(impossible.length)}, a ${distributor} registrou mais envio à rede do que o inversor produziu.`
+  } else if (suspect.length > 0) {
+    tone = 'warning'
+    title = 'Ciclo fora do padrão'
+    detail = `Em ${suspect.length} ${plural(suspect.length)}, a fração enviada à rede caiu muito em relação ao seu histórico.`
+  } else if (ok.length > 0) {
+    tone = 'success'
+    title = 'Sem sinal de prejuízo'
+    detail = `Conferimos ${ok.length} ${plural(ok.length)}: todo kWh que a ${distributor} registrou virou crédito.`
+  } else {
+    tone = 'neutral'
+    title = 'Ainda sem conferência'
+    detail = 'Assim que houver duas faturas seguidas com a leitura do medidor, a conferência aparece aqui.'
+  }
+  const Icon = VERDICT_META[tone === 'success' ? 'OK' : tone === 'warning' ? 'SUSPECT' : tone === 'danger' ? 'LOSS' : 'UNVERIFIABLE'].icon
+  return (
+    <div className="flex items-start gap-4">
+      <span aria-hidden="true" className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${TONE_SURFACE[tone]}`}>
+        <Icon size={20} strokeWidth={2.25} />
+      </span>
+      <div className="min-w-0">
+        <p className={`font-display text-[20px] font-semibold leading-7 ${tone === 'neutral' ? 'text-[var(--color-text-primary)]' : TONE_TEXT[tone]}`}>
+          {title}
+        </p>
+        <p className="mt-0.5 text-[14px] leading-5 text-[var(--color-text-secondary)]">{detail}</p>
+      </div>
+    </div>
   )
 }
 
@@ -227,21 +348,23 @@ export function MonthlyProductionSection({
   // Mais recente primeiro: é o ciclo da última fatura que o dono compara.
   const newestFirst = [...history.cycles].reverse()
   const visible = showAll ? newestFirst : newestFirst.slice(0, VISIBLE_CYCLES)
-  const max = Math.max(
-    1,
-    ...history.cycles.map((cycle) => cycle.productionKwh ?? 0),
-    ...history.cycles.map((cycle) => cycle.gridInjectionKwh ?? 0),
-  )
 
   return (
-    <Card>
-      <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
-        No período exato de cada fatura: o que as placas geraram (inversor) e o que a {distributorDisplayName(newestFirst[0]?.distributor)}{' '}
-        registrou como enviado à rede. O que ficou na casa é estimado pela diferença entre os dois.
-      </p>
-      <ul className="mt-4">
+    <Card className="sm:p-6">
+      <Summary cycles={history.cycles} />
+      <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--color-border)] pt-4 text-xs text-[var(--color-text-secondary)]">
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[var(--color-energy-grid)]" />
+          Rede: o que o medidor da distribuidora registra
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[var(--color-energy-solar-light)] ring-1 ring-[var(--color-energy-solar)]" />
+          Casa: consumido na hora, não passa pelo medidor
+        </span>
+      </div>
+      <ul className="mt-5">
         {visible.map((cycle) => (
-          <CycleRow key={cycle.billId} cycle={cycle} max={max} />
+          <CycleRow key={cycle.billId} cycle={cycle} />
         ))}
       </ul>
       {newestFirst.length > VISIBLE_CYCLES && (
@@ -249,7 +372,7 @@ export function MonthlyProductionSection({
           type="button"
           onClick={() => setShowAll((value) => !value)}
           aria-expanded={showAll}
-          className="mt-2 inline-flex min-h-[44px] items-center rounded text-sm font-semibold text-[var(--color-brand-primary)] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+          className="mt-3 inline-flex min-h-[44px] items-center rounded text-sm font-semibold text-[var(--color-brand-primary)] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
         >
           {showAll ? 'Mostrar só os mais recentes' : `Ver os ${newestFirst.length} ciclos`}
         </button>

@@ -21,6 +21,20 @@ export interface MonthlyProductionCycleQuality {
 
 export type GridInjectionBasis = 'METER' | 'BILL_LINE'
 
+// Conferência da distribuidora (ADR-084), calculada no backend.
+export type UtilityCheckVerdict = 'OK' | 'SUSPECT' | 'LOSS' | 'IMPOSSIBLE' | 'UNVERIFIABLE'
+
+export interface UtilityCheck {
+  verdict: UtilityCheckVerdict
+  missingCreditsKwh: number | null
+  creditsAvailableKwh: number | null
+  creditsUsedKwh: number | null
+  creditBalanceKwh: number | null
+  exportSharePercent: number | null
+  exportShareBaselinePercent: number | null
+  reasons: string[]
+}
+
 export interface MonthlyProductionCycle {
   referenceMonth: string
   billId: string
@@ -45,6 +59,8 @@ export interface MonthlyProductionCycle {
   // Autoconsumo calculado pelo motor (placas − enviado à rede), não pela tela.
   selfConsumptionKwh: number | null
   quality: MonthlyProductionCycleQuality | null
+  // `null` em backend anterior ao ADR-084: sem conferência, nunca "OK".
+  utilityCheck: UtilityCheck | null
 }
 
 export interface MonthlyProductionHistoryResponse {
@@ -132,6 +148,27 @@ function parseQuality(value: unknown): MonthlyProductionCycleQuality | null {
   }
 }
 
+const VERDICTS: readonly UtilityCheckVerdict[] = ['OK', 'SUSPECT', 'LOSS', 'IMPOSSIBLE', 'UNVERIFIABLE']
+
+// Veredito novo no backend vira "sem conferência", não erro de tela nem "OK".
+function parseUtilityCheck(value: unknown): UtilityCheck | null {
+  if (value === null || value === undefined) return null
+  if (!isRecord(value)) throw new Error('Resposta inválida da API: utility_check')
+  const raw = value.verdict
+  const verdict = VERDICTS.includes(raw as UtilityCheckVerdict) ? (raw as UtilityCheckVerdict) : 'UNVERIFIABLE'
+  const reasons = Array.isArray(value.reasons) ? value.reasons.filter((item): item is string => typeof item === 'string') : []
+  return {
+    verdict,
+    missingCreditsKwh: nullableDecimalNumber(value, 'missing_credits_kwh'),
+    creditsAvailableKwh: nullableDecimalNumber(value, 'credits_available_kwh'),
+    creditsUsedKwh: nullableDecimalNumber(value, 'credits_used_kwh'),
+    creditBalanceKwh: nullableDecimalNumber(value, 'credit_balance_kwh'),
+    exportSharePercent: nullableDecimalNumber(value, 'export_share_percent'),
+    exportShareBaselinePercent: nullableDecimalNumber(value, 'export_share_baseline_percent'),
+    reasons,
+  }
+}
+
 function parseCycle(value: unknown): MonthlyProductionCycle {
   if (!isRecord(value)) throw new Error('Resposta inválida da API: cycles[]')
   return {
@@ -147,6 +184,7 @@ function parseCycle(value: unknown): MonthlyProductionCycle {
     importedKwh: nullableDecimalNumber(value, 'imported_kwh'),
     selfConsumptionKwh: nullableDecimalNumber(value, 'self_consumption_kwh'),
     quality: parseQuality(value.quality),
+    utilityCheck: parseUtilityCheck(value.utility_check),
   }
 }
 

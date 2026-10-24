@@ -714,3 +714,33 @@ def test_export_drain_pdf_includes_history(cross_tenant_setup, monkeypatch) -> N
     text = _pdf_text(asyncio.run(_artifact()))
     assert "HISTÓRICO DOS ÚLTIMOS CICLOS" in text
     assert "Fevereiro/2026" in text
+
+
+def test_cycle_carries_utility_check_with_credit_conservation(cross_tenant_setup) -> None:
+    # ADR-084: a conferência usa a fatura do mês anterior como saldo de partida.
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_cycles(
+            factory,
+            plant_id=PLANT_A,
+            months=["2026-08", "2026-09"],
+            extra_metrics=_SEPT_METRICS,
+            calculation_version="0.4.0",
+            generation_cycle_kwh=Decimal("30"),
+        )
+    )
+
+    response = TestClient(app).get(
+        "/reports/monthly/history",
+        headers=_headers(token_a),
+        params={"plant_id": str(PLANT_A)},
+    )
+    first, second = response.json()["cycles"]
+    # Sem fatura anterior: não dá para conferir, nunca "OK" por omissão.
+    assert first["utility_check"]["verdict"] == "UNVERIFIABLE"
+    assert "NO_PREVIOUS_BILL" in first["utility_check"]["reasons"]
+    # Fixture: 30 do medidor + 50 de saldo − 20 usados ≠ 50 de saldo → 10 kWh sumidos.
+    assert second["utility_check"]["verdict"] == "LOSS"
+    assert second["utility_check"]["missing_credits_kwh"] == "10.00"
