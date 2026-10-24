@@ -168,10 +168,15 @@ export function verdictDetail(cycle: MonthlyProductionCycle, distributor: string
   const check = cycle.utilityCheck
   if (!check) return 'Conferência ainda não disponível para este ciclo.'
   switch (check.verdict) {
-    case 'LOSS':
+    case 'LOSS': {
+      const expired =
+        check.expiredCreditsKwh != null && check.expiredCreditsKwh > 0
+          ? ` Outros ${kwh(check.expiredCreditsKwh, 2)} venceram pelo prazo de 5 anos, como a fatura anterior avisava.`
+          : ''
       if (check.lossConfirmed)
-        return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)} nem como abatimento nem como saldo, e confirma que 100% da geração é desta unidade: é prejuízo. Leve a fatura à ouvidoria da ${distributor}.`
-      return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)} nem como abatimento nem como saldo, e não confirma que 100% da geração é desta unidade. Confira com a ${distributor}: o crédito pode ter ido para outra unidade do rateio.`
+        return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)} nem como abatimento nem como saldo, confirma que 100% da geração é desta unidade e não avisou vencimento desse saldo. É forte indício de prejuízo: leve a fatura à ouvidoria da ${distributor} e peça a explicação.${expired}`
+      return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)} nem como abatimento nem como saldo, e não confirma que 100% da geração é desta unidade. Confira com a ${distributor}: o crédito pode ter ido para outra unidade do rateio.${expired}`
+    }
     case 'IMPOSSIBLE':
       return `O medidor da ${distributor} registrou ${kwh(check.meterExportKwh ?? 0)} enviados à rede, mais do que o inversor produziu${cycle.productionKwh != null ? ` (${kwh(cycle.productionKwh)})` : ''}. Um dos dois medidores está errado: vale pedir aferição.`
     case 'SUSPECT':
@@ -306,7 +311,8 @@ function Summary({ cycles }: { cycles: MonthlyProductionCycle[] }) {
     const missing = confirmedLoss.reduce((sum, cycle) => sum + (cycle.utilityCheck?.missingCreditsKwh ?? 0), 0)
     tone = 'danger'
     title = `${kwh(missing, 2)} de créditos faltando`
-    detail = `Em ${confirmedLoss.length} ${plural(confirmedLoss.length)}, a fatura não mostra todo kWh registrado como abatimento ou saldo, e confirma que 100% da geração é desta unidade. Leve as faturas à ouvidoria da ${distributor}.`
+    const unconfirmed = loss.length - confirmedLoss.length
+    detail = `Em ${confirmedLoss.length} ${plural(confirmedLoss.length)}, a fatura não mostra todo kWh registrado como abatimento ou saldo, confirma que 100% da geração é desta unidade e não avisou vencimento. Leve as faturas à ouvidoria da ${distributor}.${unconfirmed > 0 ? ` Em mais ${unconfirmed} ${plural(unconfirmed)}, há créditos sem explicação que a fatura não permite confirmar.` : ''}`
   } else if (loss.length > 0) {
     const missing = loss.reduce((sum, cycle) => sum + (cycle.utilityCheck?.missingCreditsKwh ?? 0), 0)
     tone = 'warning'

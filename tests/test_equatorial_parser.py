@@ -681,3 +681,13 @@ def test_missing_or_impossible_share_is_none_never_presumed() -> None:
     assert without.generation_share_percent is None
     impossible = parse_equatorial_bill_text(SECOND_COPY_BILL_TEXT.replace("= 100%", "= 250%"))
     assert impossible.generation_share_percent is None
+
+
+def test_share_with_two_rateio_lines_is_none_and_two_decimals_are_read() -> None:
+    line = "CADASTRO RATEIO GERAÇÃO: UC XXXXXXXXXXX = 100%"
+    two_ucs = SECOND_COPY_BILL_TEXT.replace(line, line + " CADASTRO RATEIO GERAÇÃO: UC YYYY = 40%")
+    assert parse_equatorial_bill_text(two_ucs).generation_share_percent is None
+    decimals = SECOND_COPY_BILL_TEXT.replace("= 100%", "= 100,00%")
+    assert parse_equatorial_bill_text(decimals).generation_share_percent == Decimal("100.00")
+    rounding = SECOND_COPY_BILL_TEXT.replace("= 100%", "= 99,999%")
+    assert parse_equatorial_bill_text(rounding).generation_share_percent is None

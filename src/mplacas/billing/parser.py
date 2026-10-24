@@ -172,7 +172,7 @@ _GLUED_LAYOUT_FIELDS = frozenset(
 )
 
 _SCEE_GENERATION_SHARE_RE = re.compile(
-    r"cadastro rateio gera[cç][aã]o:\s*uc\s*[^\s=]+\s*=\s*(\d{1,3}(?:,\d+)?)\s*%",
+    r"cadastro rateio gera[cç][aã]o:\s*uc\s*[^\s=]+\s*=\s*(\d{1,3}(?:,\d{1,2})?)\s*%",
     re.IGNORECASE,
 )
 _SCEE_EXPIRING_30D_RE = re.compile(
@@ -272,9 +272,7 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
             values.get("tariff_without_taxes_brl_kwh")
         ),
         wire_b_tariff_brl_kwh=_parse_optional_decimal(values.get("wire_b_tariff_brl_kwh")),
-        generation_share_percent=_share_or_none(
-            _extract_optional(_SCEE_GENERATION_SHARE_RE, normalized)
-        ),
+        generation_share_percent=_share_or_none(_extract_single_share(normalized)),
         credits_expiring_30d_kwh=_extract_optional(_SCEE_EXPIRING_30D_RE, normalized),
     )
     bill.validate()
@@ -447,6 +445,18 @@ def _extract_optional(pattern: re.Pattern[str], normalized: str) -> Decimal | No
         return None
     try:
         return _parse_decimal(m.group(1))
+    except BillParseError:
+        return None
+
+
+def _extract_single_share(normalized: str) -> Decimal | None:
+    """Rateio desta fatura: exige UMA linha só. Com várias UCs no rateio não
+    dá para saber qual percentual é desta unidade — `None`, nunca um palpite."""
+    found = _SCEE_GENERATION_SHARE_RE.findall(normalized)
+    if len(found) != 1:
+        return None
+    try:
+        return _parse_decimal(found[0])
     except BillParseError:
         return None
 

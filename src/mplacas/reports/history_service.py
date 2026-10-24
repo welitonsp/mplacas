@@ -139,7 +139,10 @@ async def load_monthly_production_history(
         injection = _metric_value(report.metrics, "injected_kwh")
         production = _decimal_or_none(_metric_value(report.metrics, "cycle_production_kwh"))
         previous_candidates = bills_by_month.get(_previous_month(report.reference_month), [])
-        previous_ambiguous = len({b.credit_balance_kwh for b in previous_candidates}) > 1
+        starting_points = {
+            (b.credit_balance_kwh, b.credits_expiring_30d_kwh) for b in previous_candidates
+        }
+        previous_ambiguous = len(starting_points) > 1
         quality = _quality_payload(report.quality) or {}
         # Produção com dias estimados pelo sol ou sem leitura (ADR-082) pode
         # ter sido elevada até a leitura do medidor: não serve de prova.

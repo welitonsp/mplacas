@@ -154,20 +154,24 @@ def check_cycle(
         used = bill.compensated_kwh
         balance = bill.credit_balance_kwh
         gap = available - used - balance
+        # Vencimento (60 meses, Lei 14.300) só explica o saldo que a fatura
+        # anterior avisou que venceria E que não foi usado neste ciclo. Regra
+        # conservadora: supõe que o crédito usado saiu primeiro do bloco a
+        # vencer, então nunca atribui a vencimento mais do que
+        # max(0, a vencer − usado). O que sobrar do gap continua faltando.
         expiring = previous_bill.credits_expiring_30d_kwh
-        if (
-            gap > CREDIT_TOLERANCE_KWH
-            and expiring is not None
-            and gap <= expiring + CREDIT_TOLERANCE_KWH
-        ):
-            # A fatura anterior avisou que esse saldo venceria (60 meses, Lei
-            # 14.300): é perda do prazo, não crédito sumido pela distribuidora.
-            expired = gap
-            missing = Decimal("0")
-            reasons.append("CREDITS_EXPIRED")
-        elif gap > CREDIT_TOLERANCE_KWH:
-            missing = gap
-            reasons.append("CREDITS_MISSING")
+        allowance = max(Decimal("0"), expiring - used) if expiring is not None else Decimal("0")
+        if gap > CREDIT_TOLERANCE_KWH:
+            expired_part = min(gap, allowance)
+            remaining = gap - expired_part
+            if expired_part > 0:
+                expired = expired_part
+                reasons.append("CREDITS_EXPIRED")
+            if remaining > CREDIT_TOLERANCE_KWH:
+                missing = remaining
+                reasons.append("CREDITS_MISSING")
+            else:
+                missing = Decimal("0")
         elif gap < -CREDIT_TOLERANCE_KWH:
             # Usou mais crédito do que havia: crédito recebido de outra UC,
             # fatura anterior errada ou compensação lida como consumo total.

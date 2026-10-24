@@ -129,7 +129,7 @@ describe('MonthlyProductionSection', () => {
 
     expect(screen.getByText('15,98 kWh de créditos faltando')).toBeInTheDocument()
     expect(within(row(/mai\/26/)).getByText('Créditos faltando')).toBeInTheDocument()
-    expect(within(row(/mai\/26/)).getByText(/é prejuízo\. Leve a fatura à ouvidoria da Equatorial/)).toBeInTheDocument()
+    expect(within(row(/mai\/26/)).getByText(/forte indício de prejuízo: leve a fatura à ouvidoria da Equatorial/)).toBeInTheDocument()
   })
 
   it('crédito vencido avisado na fatura anterior: sem prejuízo, mas a frase diz quanto venceu', () => {
@@ -139,6 +139,20 @@ describe('MonthlyProductionSection', () => {
 
     expect(within(row(/mai\/26/)).getByText('Sem sinal de prejuízo')).toBeInTheDocument()
     expect(within(row(/mai\/26/)).getByText(/12,5 kWh de crédito venceram \(prazo de 5 anos\)/)).toBeInTheDocument()
+  })
+
+  it('resumo com prejuízo confirmado também conta os ciclos sem explicação; vencimento parcial aparece no ciclo', () => {
+    const history = buildHistory()
+    history.cycles[2] = {
+      ...history.cycles[2],
+      utilityCheck: okCheck({ verdict: 'LOSS', missingCreditsKwh: 5, expiredCreditsKwh: 20, lossConfirmed: true, reasons: ['CREDITS_EXPIRED', 'CREDITS_MISSING'] }),
+    }
+    history.cycles[1] = { ...history.cycles[1], utilityCheck: okCheck({ verdict: 'LOSS', missingCreditsKwh: 3, reasons: ['CREDITS_MISSING'] }) }
+    render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
+
+    expect(screen.getByText('5 kWh de créditos faltando')).toBeInTheDocument()
+    expect(screen.getByText(/Em mais 1 ciclo, há créditos sem explicação/)).toBeInTheDocument()
+    expect(within(row(/mai\/26/)).getByText(/Outros 20 kWh venceram pelo prazo de 5 anos/)).toBeInTheDocument()
   })
 
   it('envio maior que a produção: registro impossível, com pedido de aferição', () => {
