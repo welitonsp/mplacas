@@ -136,9 +136,8 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     ).toBeInTheDocument()
     expect(screen.getByText(/R\$\s*420,71/)).toBeInTheDocument()
     // Ciclo de referência (`current_cycle.reference_month`, achado F1 da
-    // auditoria financeira desta sessão) visível junto de "Custo do ciclo" —
-    // antes só aparecia em `HeroCard`, no módulo Visão Geral (outra rota).
-    expect(screen.getByText('Ciclo de referência: 2026-07')).toBeInTheDocument()
+    // auditoria financeira) continua rastreável: nomeia os detalhes da fatura.
+    expect(screen.getByText('Detalhes da fatura de jul/26')).toBeInTheDocument()
   })
 
   it('em erro de /energy/executive/latest, mostra RetryableError e refaz o fetch ao clicar em "Tentar novamente"', async () => {
@@ -189,5 +188,68 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
       })
     )
     await waitFor(() => expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(2))
+  })
+
+  it('faturas sempre no fim, num único ponto de montagem: chegar o executivo não remonta a seção (estado da importação preservado)', async () => {
+    vi.resetModules()
+    let resolveFetch: (response: Response) => void = () => {}
+    installApiMock({
+      fetchExecutiveDashboard: vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveFetch = resolve
+          }),
+      ),
+    })
+    const { container } = await renderFinancialPage()
+
+    // Enquanto o executivo carrega, as faturas já estão montadas.
+    await screen.findByRole('heading', { level: 2, name: 'Faturas de energia' })
+    const before = container.querySelector('#faturas')
+    const billsHeadingBefore = screen.getByRole('heading', { level: 2, name: 'Faturas de energia' })
+
+    resolveFetch(jsonResponse(executivePayload))
+    const retorno = await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+
+    // Mesmo nó do DOM: a seção não foi desmontada e montada de novo.
+    expect(container.querySelector('#faturas')).toBe(before)
+    expect(screen.getByRole('heading', { level: 2, name: 'Faturas de energia' })).toBe(billsHeadingBefore)
+    expect(retorno.compareDocumentPosition(before as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('executivo indisponível: faturas continuam acessíveis, logo abaixo do aviso', async () => {
+    vi.resetModules()
+    installApiMock({ fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: 'erro' }, 500)) })
+    const { container } = await renderFinancialPage()
+
+    const alert = await screen.findByRole('alert')
+    expect(await screen.findByRole('heading', { level: 2, name: 'Faturas de energia' })).toBeInTheDocument()
+    const faturas = container.querySelector('#faturas') as HTMLElement
+    expect(alert.compareDocumentPosition(faturas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('chegando por #faturas, rola até as faturas uma vez, quando elas já estão na tela', async () => {
+    vi.resetModules()
+    installApiMock()
+    // jsdom não implementa `scrollIntoView`: define só neste teste e remove no fim.
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    try {
+      const { FinancialPage } = await import('./FinancialPage')
+      const { renderModule } = await import('../../test/renderModule')
+      const { DASHBOARD_FINANCIAL_PATH } = await import('../../routes')
+      renderModule(<FinancialPage />, `${DASHBOARD_FINANCIAL_PATH}#faturas`)
+
+      await screen.findByRole('heading', { level: 2, name: 'Faturas de energia' })
+      await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+      // "Atualizar" não puxa o usuário de volta para as faturas.
+      fireEvent.click(screen.getByRole('button', { name: /Atualizar/ }))
+      await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
   })
 })

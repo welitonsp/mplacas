@@ -8,7 +8,7 @@ const ROW_CLASS =
 
 const LINK_TARGET: Record<'setup' | 'bills', { to: string; icon: LucideIcon }> = {
   setup: { to: DASHBOARD_SETUP_PATH, icon: Settings2 },
-  bills: { to: DASHBOARD_FINANCIAL_PATH, icon: FileText },
+  bills: { to: `${DASHBOARD_FINANCIAL_PATH}#faturas`, icon: FileText },
 }
 
 function RowContent({ todo, icon: Icon }: { todo: HomeTodo; icon: LucideIcon }) {

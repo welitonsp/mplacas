@@ -277,7 +277,7 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
       'href',
       '/dashboard/minha-usina',
     )
-    expect(within(todo).getByRole('link', { name: /Conferir 2 faturas importadas/ })).toHaveAttribute('href', '/dashboard/dinheiro')
+    expect(within(todo).getByRole('link', { name: /Conferir 2 faturas importadas/ })).toHaveAttribute('href', '/dashboard/dinheiro#faturas')
     expect(within(todo).queryByText('Nada pendente.')).not.toBeInTheDocument()
 
     // Diagnóstico crítico abre a lista completa, recolhida no próprio Início.

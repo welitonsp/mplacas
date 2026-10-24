@@ -76,6 +76,41 @@ alarme sem lastro.
    - nada de painel de decisão genérico;
    - texto técnico do motor nunca aparece em inglês para o cliente.
 
+## Etapa 2 — aba Dinheiro (2026-10-24)
+
+Ordem nova: **Retorno do investimento → Sua conta com e sem a usina → Detalhes da fatura
+(recolhido) → Usina × CDI → Faturas**.
+
+- **Saem**:
+  - a faixa "Resumo financeiro", que repetia economia, ROI, payback e cobertura;
+  - o painel genérico "Decisão financeira" (`FinancialDecisionPanel`);
+  - os blocos "Custo do ciclo" e "Créditos de energia" (`EstimatedSavingsCard`,
+    `MetricStrip`, `CurrencyCard`).
+- **"Pago com créditos"** entra na conta do ciclo: o percentual do motor
+  (`credit_coverage_rate_percent`, 1 casa) e os kWh compensados de kWh da rede. Abaixo de
+  100%, diz que o restante foi cobrado sem crédito. O texto é neutro de propósito: em
+  faturas antigas, o restante é o mínimo faturável. Explica uma fatura alta como a de
+  out/26: 338 kWh da rede, 256 compensados, 82 sem crédito. Sem energia da rede no ciclo,
+  a linha não aparece.
+- **Detalhes da fatura**, recolhidos:
+  - a decomposição do valor ("Energia e encargos" + iluminação pública);
+  - a "Tarifa impressa na fatura", com 3 casas;
+  - uma nota que diz o que a conta "sem a usina" usou, segundo o motor
+    (`savings_tariff_source`). Não afirma de qual linha veio a tarifa, porque isso depende
+    do layout da fatura e o backend não informa.
+  Antes, as duas tarifas da fatura apareciam com 6 casas ao lado da tarifa cheia usada
+  no "sem a usina", sem explicação, o que parecia erro. A conferência de fatura pendente
+  mantém as 6 casas, porque ali o valor precisa bater com o impresso.
+- **Economia sem conta "sem a usina"** (sem tarifa no ciclo, ou backend anterior ao
+  ADR-080) não some nem vira R$ 0,00: aparece a mensagem do motivo ou só o valor
+  estimado, com o saldo de créditos e a cobertura junto.
+- **Faturas sempre no fim, num único ponto de montagem.** A primeira versão as movia
+  (topo sem ciclo, fim com ciclo), e a troca remontava a seção: perdiam-se o retorno da
+  importação, a lista de PDFs recusados e o foco. Para uma usina sem ciclo não há perda,
+  porque acima delas só ficam o cabeçalho e o aviso.
+- "Conferir faturas" no Início leva a `/dashboard/dinheiro#faturas`, que rola até elas
+  uma vez, quando já estão na tela.
+
 ## Consequências
 
 - A aba Início faz quatro leituras (executivo, produção diária, retorno, cadastro).

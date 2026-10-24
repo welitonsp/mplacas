@@ -1,4 +1,5 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
+import { useLocation } from 'react-router'
 import { fetchExecutiveDashboard, fetchFinancialReturn, fetchInvestorPanel } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
@@ -27,18 +28,11 @@ const InvestorPanelSection = lazy(() =>
   })),
 )
 
-// Módulo Financeiro (ADR-072, Etapa 3) — dois recursos (ver ADR seção 2):
-// `executive` (`/energy/executive/latest`) e `financialReturn`
-// (`/energy/financial-return/latest`). Não existe um endpoint "resumo
-// financeiro" dedicado — `FinancialSection` consome `current_cycle.indicators`
-// (custo do ciclo, tarifas, créditos) e `current_cycle.reference_month`
-// (exibido junto do bloco "Custo do ciclo" — achado F1 da auditoria
-// financeira desta sessão: uma tarifa com 6 casas decimais sem o ciclo ao
-// lado não é reproduzível a partir da fatura confirmada que a originou, ver
-// ADR-056 seção sobre variação de tarifa entre ciclos) do payload executivo,
-// por isso este módulo precisa do recurso executivo inteiro mesmo sem usar
-// `headline`/`status`/`trend`/diagnósticos, que pertencem à Visão Geral
-// (Etapa 5).
+// Aba Dinheiro (ADR-072, Etapa 3; reorganizada no ADR-083, etapa 2). Recursos:
+// `executive` (conta do ciclo, tarifas, créditos — `current_cycle.indicators` e
+// `reference_month`, que nomeia o ciclo dos números exibidos, achado F1),
+// `financialReturn` (ROI/payback), `investor` (usina × CDI) e, dentro de
+// `BillsSection`, faturas pendentes e meses a recalcular.
 export function FinancialPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
@@ -132,15 +126,6 @@ export function FinancialPage() {
         headingRef={headingRef}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
       />
-      {/* Faturas primeiro: sem fatura confirmada não existe custo do ciclo,
-          economia nem retorno — é a porta de entrada dos dados financeiros.
-          Fica fora do bloco do recurso executivo para continuar disponível
-          mesmo quando ele falha ou ainda não tem ciclo nenhum. */}
-      <Suspense
-        fallback={<div className="mb-6 h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)]" aria-hidden="true" />}
-      >
-        <BillsSection plantId={plantId} onConfirmed={refreshAll} />
-      </Suspense>
       {executive.error && (
         <RetryableError
           message={executive.error}
@@ -152,9 +137,8 @@ export function FinancialPage() {
       {executiveLoading && !data && <MetricCardSkeletonGrid />}
 
       {data && indicators && (
-        // Mesma grade de 12 colunas de `DashboardPage`: `FinancialSection`
-        // devolve dois `<section>` irmãos (`md:col-span-6 lg:col-span-12`
-        // cada), preservados sem mudança de layout ao migrar de módulo.
+        // Grade de 12 colunas: cada `<section>` de `FinancialSection` e o painel
+        // do investidor ocupam uma linha cheia (`md:col-span-6 lg:col-span-12`).
         <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
           <FinancialSection
             indicators={indicators}
@@ -174,6 +158,37 @@ export function FinancialPage() {
           </Suspense>
         </div>
       )}
+
+      {/* Faturas sempre no fim e num ÚNICO ponto de montagem (ADR-083, etapa
+          2). Mudar de lugar conforme o executivo carregava remontava a seção
+          e apagava o retorno da importação, a lista de PDFs recusados e o
+          foco (revisão da etapa 2). Usina sem ciclo não perde nada: acima
+          delas só há o cabeçalho e o aviso do executivo. Fora do bloco do
+          executivo, continuam disponíveis quando ele falha. */}
+      <div id="faturas" className="mt-6 scroll-mt-4">
+        <Suspense
+          fallback={<div className="mb-6 h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)]" aria-hidden="true" />}
+        >
+          <BillsSection plantId={plantId} onConfirmed={refreshAll} />
+          <ScrollToBillsOnce />
+        </Suspense>
+      </div>
     </>
   )
+}
+
+// "Conferir faturas" no Início leva a `/dashboard/dinheiro#faturas`; o
+// roteador não rola até a âncora sozinho. Montado junto de `BillsSection`
+// (mesmo Suspense), rola UMA vez, quando as faturas já existem na tela — um
+// "Atualizar" depois não puxa o usuário de volta para elas.
+function ScrollToBillsOnce() {
+  const location = useLocation()
+  useEffect(() => {
+    if (location.hash === '#faturas') {
+      document.getElementById('faturas')?.scrollIntoView?.({ block: 'start' })
+    }
+    // Só na montagem: a rolagem é da chegada pelo link, não de cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return null
 }
