@@ -5,9 +5,10 @@ Revises: 20261024_0048
 
 ADR-087: a classe tarifária passa a ser lida da fatura
 ("Classificação: B B1 RESIDENCIAL - ... CONVENCIONAL") em vez de presumida
-como residencial B1 para todo cliente. Coluna nullable, sem backfill: classe
-nunca é presumida. Faturas já gravadas ganham o campo quando o PDF completa
-os campos vazios (`billing/completion.py`).
+como residencial B1 para todo cliente. Coluna nullable, sem backfill: o banco
+nunca grava uma classe presumida. Fatura antiga (`NULL`) segue calculada com
+B1 residencial marcado como presumido (`cycle_service.resolve_tariff_class`)
+até o PDF completar os campos vazios (`billing/completion.py`).
 """
 
 from alembic import op

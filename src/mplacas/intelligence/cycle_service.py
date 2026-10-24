@@ -228,7 +228,9 @@ async def analyze_confirmed_cycle(
             cycle_end=bill.cycle_end,
             tariff_class=tariff_class,
         ),
-        tariff_class=tariff_class or bill.tariff_class,
+        # Classe exibida: a usada (lida ou presumida); NAO_IDENTIFICADA quando
+        # a fatura foi lida sem classe reconhecida.
+        tariff_class=tariff_class if tariff_class is not None else bill.tariff_class,
         tariff_class_presumed=tariff_class_presumed,
     )
     return PersistedCycleIntelligence(

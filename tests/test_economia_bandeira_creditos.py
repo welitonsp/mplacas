@@ -124,3 +124,17 @@ def test_pre_0_5_report_is_outdated_only_when_bill_has_flag_or_credits() -> None
         gap = _gap_for(bill_id, "2026-10", _snapshot("0.4.0"), bill)  # type: ignore[arg-type]
         assert gap is not None and gap.cause is SavingsGapCause.OUTDATED_CALCULATION
     assert _gap_for(bill_id, "2026-10", _snapshot("0.5.0"), with_flag) is None  # type: ignore[arg-type]
+
+
+def test_report_is_outdated_when_bill_class_differs_from_the_one_used() -> None:
+    from dataclasses import replace
+
+    bill_id = uuid.uuid4()
+    commercial = replace(
+        _october(flag_tariff_brl_kwh=None), tariff_class="B3_COMERCIAL_CONVENCIONAL"
+    )
+    b1 = replace(_october(flag_tariff_brl_kwh=None), tariff_class="B1_RESIDENCIAL_CONVENCIONAL")
+    snap = _snapshot("0.5.0")  # sem métrica de classe: B1 presumido
+    gap = _gap_for(bill_id, "2026-10", snap, commercial)  # type: ignore[arg-type]
+    assert gap is not None and gap.cause is SavingsGapCause.OUTDATED_CALCULATION
+    assert _gap_for(bill_id, "2026-10", snap, b1) is None  # type: ignore[arg-type]

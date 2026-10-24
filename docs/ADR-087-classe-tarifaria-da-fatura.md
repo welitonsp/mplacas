@@ -40,12 +40,26 @@ linha, vem o nome do titular.
 
 ## Validação
 
-- **Faturas reais:** as 30 faturas são lidas como `B1_RESIDENCIAL_CONVENCIONAL`.
+- **Faturas reais:** as 30 leituras (29 textos + a fatura de out/26 pelo extrator do sistema) dão `B1_RESIDENCIAL_CONVENCIONAL`. O nome do titular, logo depois da modalidade, não influencia a leitura (só as palavras até a primeira modalidade são lidas).
 - **Leitor e resolução** (`tests/test_tariff_class.py`): residencial, branca, baixa renda,
   comercial e rural; não identificada; nome do titular não capturado; regra
   presumida × não identificada.
 - **Tarifas:** classe sem tarifa cadastrada ou `None` devolve `None`.
 - **Migration e frontend:** contrato da migration e teste da tela do Dinheiro.
+
+## Ajustes da revisão
+
+- **Modalidade:** é a primeira palavra "convencional" ou "branca" depois de "<classe> -",
+  com até 5 palavras de subclasse antes. O nome do titular vem depois e nunca decide nada.
+- **Subclasses com desconto** ainda sem chave própria (irrigante, cooperativa,
+  aquicultura) e o grupo A com modalidade horária ficam `NAO_IDENTIFICADA`, para não
+  receberem o preço da subclasse errada.
+- **Completion:** substitui `NAO_IDENTIFICADA` por uma classe lida no PDF e nunca apaga uma
+  classe por um PDF que não a traga.
+- **Meses a recalcular:** um relatório feito com outra classe (incluindo B1 presumido) fica
+  desatualizado quando a fatura passa a dizer outra classe.
+- **Na tela:** quando a classe é lida mas não tem tarifa homologada cadastrada, a tela diz
+  isso.
 
 ## Próximo passo (mercado brasileiro)
 

@@ -131,10 +131,26 @@ def _estimate_resolved(report: MonthlyEnergyReport) -> bool:
 FLAG_AND_CREDITS_VERSION = (0, 5, 0)
 
 
+_LEGACY_PRESUMED_CLASS = "B1_RESIDENCIAL_CONVENCIONAL"
+
+
 def _bill_changes_savings(bill: UtilityBill | None) -> bool:
     if bill is None:
         return False
     return bool(bill.flag_tariff_brl_kwh) or bool(bill.non_energy_credits_brl)
+
+
+def _class_changed(snapshot: MonthlyReportSnapshot, bill: UtilityBill | None) -> bool:
+    """Classe lida da fatura difere da usada no relatório (ADR-087).
+
+    Relatório sem a métrica foi calculado com B1 residencial presumido;
+    se a fatura agora diz outra classe (ou não identificada), refazer muda a
+    economia.
+    """
+    if bill is None or bill.tariff_class is None:
+        return False
+    used = _metric_value(snapshot.report, "tariff_class") or _LEGACY_PRESUMED_CLASS
+    return used != bill.tariff_class
 
 
 def _gap_for(
@@ -168,6 +184,7 @@ def _gap_for(
         version < CORRECTED_CALCULATION_VERSION
         or _metric_value(snapshot.report, SAVINGS_TARIFF_SOURCE_METRIC_KEY) == SAVINGS_TARIFF_BILL
         or (version < FLAG_AND_CREDITS_VERSION and _bill_changes_savings(bill))
+        or _class_changed(snapshot, bill)
     )
     if not outdated and _had_gaps_without_estimate(snapshot.report):
         return SavingsGap(

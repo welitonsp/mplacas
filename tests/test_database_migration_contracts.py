@@ -662,6 +662,6 @@ def test_bill_tariff_class_migration_matches_orm() -> None:
     assert 'down_revision = "20261024_0048"' in source
     assert column.nullable is True
     assert column.type.length == 60
-    # Classe nunca é presumida no banco: sem backfill.
+    # O banco nunca grava classe presumida: sem backfill.
     assert "UPDATE" not in source.upper().replace("UPDATED", "")
     assert 'drop_column("tariff_class")' in source

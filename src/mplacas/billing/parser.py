@@ -185,10 +185,18 @@ _NON_ENERGY_CREDIT_RE = re.compile(
 # só os termos conhecidos são lidos — o nome do titular vem colado depois e
 # nunca é capturado.
 _TARIFF_CLASS_RE = re.compile(
-    r"classifica[cç][aã]o:\s*[ab]\s*(b1|b2|b3|a4|a3a|a3|a2|a1|as)\s+"
+    r"classifica[cç][aã]o:\s*[ab]\s*(b1|b2|b3|b4a|b4b|a4|a3a|a3|a2|a1|as)\s+"
     r"(residencial|rural|comercial|industrial|poder p[uú]blico|servi[cç]o p[uú]blico|"
-    r"ilumina[cç][aã]o p[uú]blica)\b(.{0,80})"
+    r"ilumina[cç][aã]o p[uú]blica)\s*-\s*(.{0,120})"
 )
+# A frase depois de "<classe> -" é "<subclasse> <modalidade> <nome do titular>".
+# Só as palavras ATÉ a primeira modalidade são lidas: o nome vem depois dela e
+# nunca influencia o resultado (um sobrenome "Branca" não vira tarifa branca).
+_MODALITY_TOKENS = {"convencional": "CONVENCIONAL", "branca": "BRANCA"}
+_MAX_SUBCLASS_TOKENS = 5
+# Subclasses com desconto próprio que a chave ainda não distingue: sem chave
+# exata, nenhuma tarifa — falha fechada em vez de preço da subclasse errada.
+_UNSUPPORTED_SUBCLASS_TOKENS = {"irrigante", "irrigacao", "irrigação", "cooperativa", "aquicultura"}
 _SCEE_GENERATION_SHARE_RE = re.compile(
     r"cadastro rateio gera[cç][aã]o:\s*uc\s*[^\s=]+\s*=\s*(\d{1,3}(?:,\d{1,2})?)\s*%",
     re.IGNORECASE,
@@ -497,11 +505,11 @@ UNIDENTIFIED_TARIFF_CLASS = "NAO_IDENTIFICADA"
 def _extract_tariff_class(normalized: str) -> str:
     """Chave da classe tarifária ("B1_RESIDENCIAL_CONVENCIONAL"), ou `None`.
 
-    A modalidade sai do trecho logo depois da classe: "branca" vira BRANCA;
-    baixa renda (tarifa social) vira BAIXA_RENDA, porque tem tarifa própria;
-    "convencional" vira CONVENCIONAL. Sem nenhum desses termos, `None` — a
-    economia cai na tarifa da própria fatura, com aviso, em vez de presumir.
-    Sem reconhecer, devolve ``UNIDENTIFIED_TARIFF_CLASS``.
+    A modalidade é a primeira palavra "convencional" ou "branca" depois de
+    "<classe> -", com no máximo 5 palavras de subclasse antes dela; baixa
+    renda/tarifa social na subclasse vira BAIXA_RENDA (tarifa própria). Sem
+    reconhecer, devolve ``UNIDENTIFIED_TARIFF_CLASS`` — a economia cai na
+    tarifa da própria fatura, com aviso, em vez de presumir.
     """
     m = _TARIFF_CLASS_RE.search(normalized)
     if not m:
@@ -510,15 +518,23 @@ def _extract_tariff_class(normalized: str) -> str:
     klass = _CLASS_KEYS.get(m.group(2))
     if klass is None:
         return UNIDENTIFIED_TARIFF_CLASS
-    rest = m.group(3)
-    if "baixa renda" in rest or "tarifa social" in rest:
-        modality = "BAIXA_RENDA"
-    elif "branca" in rest:
-        modality = "BRANCA"
-    elif "convencional" in rest:
-        modality = "CONVENCIONAL"
-    else:
+    tokens = m.group(3).split()
+    subclass: list[str] = []
+    modality_token: str | None = None
+    for token in tokens[: _MAX_SUBCLASS_TOKENS + 1]:
+        if token in _MODALITY_TOKENS:
+            modality_token = token
+            break
+        subclass.append(token)
+    if modality_token is None or set(subclass) & _UNSUPPORTED_SUBCLASS_TOKENS:
         return UNIDENTIFIED_TARIFF_CLASS
+    phrase = " ".join(subclass)
+    if "baixa renda" in phrase or "social" in subclass:
+        if modality_token != "convencional":
+            return UNIDENTIFIED_TARIFF_CLASS
+        modality = "BAIXA_RENDA"
+    else:
+        modality = _MODALITY_TOKENS[modality_token]
     return f"{subgroup}_{klass}_{modality}"
 
 
