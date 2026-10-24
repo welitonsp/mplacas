@@ -30,7 +30,7 @@ describe('MethodologyPage — Como calculamos (ADR-086)', () => {
     expect(screen.getAllByText(/Lei 14\.300\/2022/).length).toBeGreaterThan(1)
     expect(screen.getByText(/REN 1\.000\/2021/)).toBeInTheDocument()
     expect(screen.getByText('registrado pelo medidor + saldo anterior = créditos usados + saldo novo')).toBeInTheDocument()
-    expect(screen.getByText('valor = tarifa cheia com impostos + bandeira − Fio B')).toBeInTheDocument()
+    expect(screen.getByText('valor de 1 kWh = tarifa cheia com impostos + bandeira − Fio B')).toBeInTheDocument()
     expect(screen.getByText('economia = conta sem a usina − valor pago na fatura')).toBeInTheDocument()
     expect(screen.queryByText(/kWh \d/)).not.toBeInTheDocument()
   })

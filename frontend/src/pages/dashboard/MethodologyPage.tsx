@@ -52,28 +52,35 @@ export function MethodologyPage() {
 
       <Section id="fontes" title="De onde vem cada número">
         <Rule title="Produção das placas">
-          Leitura diária do inversor, pelo portal do fabricante. Dia sem leitura não vira zero: ele é estimado pela
-          irradiação solar do dia e aparece marcado como estimado.
+          Leitura diária do inversor, pelo portal do fabricante. Dia sem leitura é estimado pelo sol daquele dia
+          (dado de clima modelado, não medido na usina) multiplicado pelo rendimento da própria usina nos dias com
+          leitura, e aparece marcado como estimado. Se faltar histórico ou dado de clima, o dia não é estimado e o
+          ciclo avisa quantos dias ficaram sem leitura. Num ciclo com dia sem leitura, a produção não fica abaixo do
+          que o medidor da distribuidora registrou como enviado à rede; num ciclo completo, produção abaixo do
+          medidor aparece como divergência.
         </Rule>
         <Rule title="Consumo, envio à rede, créditos e saldo">
           Da fatura da distribuidora que você confirmou: consumo da rede, leitura do medidor de geração, energia
           compensada, saldo de créditos, Fio B, bandeira e iluminação pública.
         </Rule>
         <Rule title="Tarifa cheia">
-          Tarifa homologada pela ANEEL para a sua distribuidora e classe (TUSD + TE). Na Equatorial Goiás, isso vem
-          das Resoluções Homologatórias REH 3.407/2024 e REH 3.544/2025. Quando o reajuste cai no meio do ciclo, a
-          tarifa é dividida por dia, como a distribuidora faz.
+          Tarifa homologada pela ANEEL (TUSD + TE). Hoje cadastrada para a Equatorial Goiás, classe B1 residencial
+          convencional: reajuste de 2023 e as Resoluções Homologatórias REH 3.407/2024 e REH 3.544/2025. Quando o
+          reajuste cai no meio do ciclo, a tarifa é dividida por dia, como a distribuidora faz. Se algum dia do
+          ciclo não tiver tarifa cadastrada, o sistema usa o preço da própria fatura e avisa que a economia pode
+          estar subestimada.
         </Rule>
         <Rule title="Impostos">
-          ICMS, PIS e COFINS vêm da própria fatura de cada mês. Nenhuma alíquota é presumida.
+          O fator de impostos (ICMS, PIS e COFINS) é tirado da própria fatura de cada mês: preço com impostos ÷
+          preço sem impostos da linha de consumo. Nenhuma alíquota é presumida.
         </Rule>
       </Section>
 
       <Section id="placas-distribuidora" title="Placas × distribuidora">
         <Rule title="O que o medidor da distribuidora mede">
-          O medidor fica no padrão de entrada e só registra o que sai da casa para a rede. A energia que a casa
-          consome na hora em que as placas produzem nunca passa por ele, por isso a fatura mostra menos do que o
-          inversor.
+          O medidor fica no padrão de entrada e registra o que entra da rede e o que sai para ela. Da produção das
+          placas, ele só vê a parte que sai para a rede: a energia que a casa consome na hora em que as placas
+          produzem nunca passa por ele. Por isso a fatura mostra menos do que o inversor.
         </Rule>
         <Rule title="O que ficou na casa">
           <Formula>casa = produção do inversor − enviado à rede (medidor)</Formula>É uma estimativa: depende da
@@ -85,7 +92,10 @@ export function MethodologyPage() {
         <Rule title="Todo kWh registrado tem de virar crédito">
           <Formula>registrado pelo medidor + saldo anterior = créditos usados + saldo novo</Formula>
           Se sobrar crédito sem destino, o ciclo mostra créditos sem explicação. Só é tratado como forte indício de
-          prejuízo quando a fatura confirma que 100% da geração é da sua unidade (rateio).
+          prejuízo quando a fatura confirma que 100% da geração é da sua unidade (rateio). Se foi usado mais
+          crédito do que havia, a conta não fecha para nenhum lado e o ciclo fica sem conferência. Sem a leitura do
+          medidor ou sem a fatura do mês anterior, também fica sem conferência — nunca "sem prejuízo" por
+          omissão.
         </Rule>
         <Rule title="Crédito vencido">
           Pela Lei 14.300/2022, o crédito vale 60 meses. Se a fatura anterior avisou um saldo a vencer e ele não foi
@@ -93,16 +103,24 @@ export function MethodologyPage() {
         </Rule>
         <Rule title="Envio impossível">
           O medidor não pode registrar mais envio à rede do que o inversor produziu. Acima de 5% de folga (precisão
-          do inversor), um dos dois medidores está errado e vale pedir aferição.
+          do inversor), algo está errado — um dos medidores ou o recorte de datas — e vale pedir aferição. Não roda
+          em ciclo com dias de produção estimados.
         </Rule>
         <Rule title="Fora do padrão">
-          Se a parte da produção que vai para a rede cair mais de 20 pontos em relação ao seu histórico, aparece uma
-          suspeita. Pode ser o medidor ou mais consumo durante o dia.
+          Se a parte da produção que vai para a rede ficar mais de 20 pontos abaixo da mediana dos seus ciclos
+          anteriores (pelo menos 3), aparece uma suspeita. Pode ser o medidor ou mais consumo durante o dia. Não
+          roda em ciclo com dias de produção estimados.
         </Rule>
-        <Rule title="Valor de 1 kWh de crédito">
-          <Formula>valor = tarifa cheia com impostos + bandeira − Fio B</Formula>
-          Um kWh compensado evita a tarifa cheia, mas ainda paga o Fio B. O valor em reais só aparece quando a
-          fatura refeita com esses preços fecha com a fatura real.
+        <Rule title="Valor dos créditos faltando">
+          <Formula>valor de 1 kWh = tarifa cheia com impostos + bandeira − Fio B</Formula>
+          Um kWh compensado evita a tarifa cheia, mas ainda paga o Fio B. O valor em reais só aparece quando há
+          tarifa cheia homologada e Fio B na fatura, e quando a fatura refeita com esses preços fica a até R$ 5 da
+          fatura real. Fora disso, fica só em kWh.
+        </Rule>
+        <Rule title="Valor do saldo de créditos">
+          O valor do saldo guardado, mostrado em Dinheiro, é uma referência mais simples: tarifa da conta “sem a
+          usina” menos o Fio B do ciclo (sem a bandeira, que muda mês a mês). Sem Fio B na fatura, usa a tarifa
+          inteira.
         </Rule>
       </Section>
 
@@ -121,20 +139,23 @@ export function MethodologyPage() {
           Créditos que não vêm das placas (compensação por falta de luz e Bônus de Itaipu) ficam fora da economia.
         </Rule>
         <Rule title="O que já vem cobrado na fatura">
-          O Fio B (Lei 14.300/2022, Art. 27: parcela crescente de 15% em 2023 a 90% em 2028) e o custo de
-          disponibilidade (REN 1.000/2021) entram como a distribuidora cobrou. O sistema não recalcula esses valores
-          e não os inventa.
+          O Fio B (Lei 14.300/2022, Art. 27: para quem pediu a conexão a partir de 2023, parcela crescente de 15% em
+          2023 a 90% em 2028) e o custo de disponibilidade (REN 1.000/2021) entram como a distribuidora cobrou. O
+          sistema não recalcula esses valores e não os inventa.
         </Rule>
         <Rule title="Conferência do modelo">
-          Todo mês o sistema refaz a fatura com essas regras e compara com o valor cobrado. O que sobra aparece como
-          diferença, por exemplo a parcela retroativa do Fio B, e nunca é escondido.
+          Quando a fatura traz o Fio B e houve consumo da rede, o sistema refaz a fatura com essas regras e compara
+          com o valor cobrado. O que sobra aparece como diferença — por exemplo a parcela retroativa do Fio B ou o
+          custo de disponibilidade, que o modelo não refaz — e nunca é escondido. Sem esses dados, a conferência do
+          modelo aparece como indisponível.
         </Rule>
       </Section>
 
       <Section id="limites" title="Limites">
         <Rule title="Estimado nunca aparece como medido">
           Valores que dependem de estimativa (casa, dias sem leitura, economia) aparecem marcados. Quando falta um
-          dado, a tela diz o motivo e não mostra zero.
+          dado, a tela diz o motivo e não mostra zero. Limitação conhecida: um dia em que só parte dos inversores
+          reportou entra como lido e pode ficar abaixo do real.
         </Rule>
         <Rule title="Não é parecer jurídico ou contábil">
           É uma conferência técnica com as regras públicas. Se encontrar divergência, procure a ouvidoria da
