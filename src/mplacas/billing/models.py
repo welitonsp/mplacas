@@ -31,6 +31,12 @@ class UtilityBill:
     tariff_with_taxes_brl_kwh: Decimal | None = None
     tariff_without_taxes_brl_kwh: Decimal | None = None
     wire_b_tariff_brl_kwh: Decimal | None = None
+    # Bloco SCEE (ADR-084): % da geração rateada para esta UC
+    # ("CADASTRO RATEIO GERAÇÃO: UC … = N%") e créditos que vencem antes da
+    # próxima fatura ("SALDO A EXPIRAR EM 30 DIAS KWH"). `None` quando a
+    # fatura não traz a linha — nunca um valor presumido.
+    generation_share_percent: Decimal | None = None
+    credits_expiring_30d_kwh: Decimal | None = None
 
     def validate(self) -> None:
         if self.cycle_end < self.cycle_start:
@@ -50,6 +56,12 @@ class UtilityBill:
             raise ValueError("bill values cannot be negative")
         if self.generation_cycle_kwh is not None and self.generation_cycle_kwh < 0:
             raise ValueError("bill values cannot be negative")
+        if self.credits_expiring_30d_kwh is not None and self.credits_expiring_30d_kwh < 0:
+            raise ValueError("bill values cannot be negative")
+        if self.generation_share_percent is not None and not (
+            Decimal("0") <= self.generation_share_percent <= Decimal("100")
+        ):
+            raise ValueError("generation share must be between 0 and 100 percent")
         optional_tariff_fields = (
             ("tariff_with_taxes_brl_kwh", self.tariff_with_taxes_brl_kwh),
             ("tariff_without_taxes_brl_kwh", self.tariff_without_taxes_brl_kwh),

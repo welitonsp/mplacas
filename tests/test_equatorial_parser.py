@@ -262,6 +262,7 @@ SET/2026
 INFORMAÇÕES DO SCEE: GERAÇÃO CICLO (9/2026) KWH: UC XXXXXXXXXXX : 235,00,
 EXCEDENTE RECEBIDO KWH: UC XXXXXXXXXXX : 14,00, CRÉDITO RECEBIDO KWH 221,00,
 SALDO KWH: 17,98, SALDO A EXPIRAR EM 30 DIAS KWH: 0,00,
+SALDO A EXPIRAR EM 60 DIAS KWH: 0,00, CADASTRO RATEIO GERAÇÃO: UC XXXXXXXXXXX = 100%
 ENERGIA ATIVA - KWH 01234 221XXXXXXXX 01013 1,000000ÚNICO
 TOTAL 0,00 0,00 0,0070,22
 Equatorial Goiás Distribuidora de Energia S.A.
@@ -654,3 +655,39 @@ def test_new_meter_exception_is_limited_to_a_few_extra_days() -> None:
 
     with pytest.raises(BillParseError, match="billed days"):
         parse_equatorial_bill_text(far_off)
+
+
+def test_second_copy_layout_reads_generation_share_and_expiring_credits() -> None:
+    # ADR-084: rateio de 100% confirma que todo crédito é desta UC; o saldo a
+    # expirar em 30 dias separa vencimento de crédito sumido.
+    bill = parse_equatorial_bill_text(SECOND_COPY_BILL_TEXT)
+    assert bill.generation_share_percent == Decimal("100")
+    assert bill.credits_expiring_30d_kwh == Decimal("0.00")
+
+
+def test_expiring_credits_and_share_are_read_when_present() -> None:
+    text = SECOND_COPY_BILL_TEXT.replace(
+        "SALDO A EXPIRAR EM 30 DIAS KWH: 0,00,", "SALDO A EXPIRAR EM 30 DIAS KWH: 12,50,"
+    ).replace("= 100%", "= 60%")
+    bill = parse_equatorial_bill_text(text)
+    assert bill.credits_expiring_30d_kwh == Decimal("12.50")
+    assert bill.generation_share_percent == Decimal("60")
+
+
+def test_missing_or_impossible_share_is_none_never_presumed() -> None:
+    without = parse_equatorial_bill_text(
+        SECOND_COPY_BILL_TEXT.replace("CADASTRO RATEIO GERAÇÃO: UC XXXXXXXXXXX = 100%", "")
+    )
+    assert without.generation_share_percent is None
+    impossible = parse_equatorial_bill_text(SECOND_COPY_BILL_TEXT.replace("= 100%", "= 250%"))
+    assert impossible.generation_share_percent is None
+
+
+def test_share_with_two_rateio_lines_is_none_and_two_decimals_are_read() -> None:
+    line = "CADASTRO RATEIO GERAÇÃO: UC XXXXXXXXXXX = 100%"
+    two_ucs = SECOND_COPY_BILL_TEXT.replace(line, line + " CADASTRO RATEIO GERAÇÃO: UC YYYY = 40%")
+    assert parse_equatorial_bill_text(two_ucs).generation_share_percent is None
+    decimals = SECOND_COPY_BILL_TEXT.replace("= 100%", "= 100,00%")
+    assert parse_equatorial_bill_text(decimals).generation_share_percent == Decimal("100.00")
+    rounding = SECOND_COPY_BILL_TEXT.replace("= 100%", "= 99,999%")
+    assert parse_equatorial_bill_text(rounding).generation_share_percent is None

@@ -54,6 +54,8 @@ def _serialize(record) -> dict[str, object]:
         "tariff_with_taxes_brl_kwh": _optional_decimal(record.tariff_with_taxes_brl_kwh),
         "tariff_without_taxes_brl_kwh": _optional_decimal(record.tariff_without_taxes_brl_kwh),
         "wire_b_tariff_brl_kwh": _optional_decimal(record.wire_b_tariff_brl_kwh),
+        "generation_share_percent": _optional_decimal(record.generation_share_percent),
+        "credits_expiring_30d_kwh": _optional_decimal(record.credits_expiring_30d_kwh),
         "status": record.status.value,
         "created_at": record.created_at,
         "reviewed_at": record.reviewed_at,

@@ -171,6 +171,14 @@ _GLUED_LAYOUT_FIELDS = frozenset(
     }
 )
 
+_SCEE_GENERATION_SHARE_RE = re.compile(
+    r"cadastro rateio gera[cç][aã]o:\s*uc\s*[^\s=]+\s*=\s*(\d{1,3}(?:,\d{1,2})?)\s*%",
+    re.IGNORECASE,
+)
+_SCEE_EXPIRING_30D_RE = re.compile(
+    r"saldo a expirar em 30 dias kwh:\s*([\d\.]+,\d+)",
+    re.IGNORECASE,
+)
 _SCEE_GENERATION_CYCLE_RE = re.compile(
     r"gera[cç][aã]o\s+ciclo\s*\(\d+/\d+\)\s+kwh:\s*uc[^:]+:\s*([\d\.]+,\d+)",
     re.IGNORECASE,
@@ -264,6 +272,8 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
             values.get("tariff_without_taxes_brl_kwh")
         ),
         wire_b_tariff_brl_kwh=_parse_optional_decimal(values.get("wire_b_tariff_brl_kwh")),
+        generation_share_percent=_share_or_none(_extract_single_share(normalized)),
+        credits_expiring_30d_kwh=_extract_optional(_SCEE_EXPIRING_30D_RE, normalized),
     )
     bill.validate()
     return bill
@@ -426,6 +436,38 @@ def _extract_generation_cycle_kwh(normalized: str) -> Decimal | None:
         return _parse_decimal(m.group(1))
     except BillParseError:
         return None
+
+
+def _extract_optional(pattern: re.Pattern[str], normalized: str) -> Decimal | None:
+    """Campo informativo do bloco SCEE: ausente ou ilegível vira `None`."""
+    m = pattern.search(normalized)
+    if not m:
+        return None
+    try:
+        return _parse_decimal(m.group(1))
+    except BillParseError:
+        return None
+
+
+def _extract_single_share(normalized: str) -> Decimal | None:
+    """Rateio desta fatura: exige UMA linha só. Com várias UCs no rateio não
+    dá para saber qual percentual é desta unidade — `None`, nunca um palpite."""
+    found = _SCEE_GENERATION_SHARE_RE.findall(normalized)
+    # Conta as linhas de rateio por um padrão frouxo: uma linha ilegível ao
+    # lado de outra legível também é "várias UCs".
+    if len(found) != 1 or normalized.count("cadastro rateio") != 1:
+        return None
+    try:
+        return _parse_decimal(found[0])
+    except BillParseError:
+        return None
+
+
+def _share_or_none(value: Decimal | None) -> Decimal | None:
+    # Campo informativo: um percentual impossível não recusa a fatura inteira.
+    if value is None or not (Decimal("0") <= value <= Decimal("100")):
+        return None
+    return value
 
 
 def _parse_optional_decimal(value: str | None) -> Decimal | None:

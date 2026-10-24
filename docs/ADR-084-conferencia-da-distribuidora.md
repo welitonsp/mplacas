@@ -100,3 +100,35 @@ quanto a operadora registrou, para saber se está tendo prejuízo".
 - Teste de integração em `tests/test_reports_monthly_history.py`.
 - Testes de contrato e de componente no frontend, além das capturas `e2e/screenshots.spec.ts`
   (celular e desktop) e da guarda de rolagem lateral.
+
+## Adendo — rateio e saldo a expirar (2026-10-24)
+
+- **O leitor da fatura passa a gravar** dois campos do bloco SCEE (migration `20261024_0047`,
+  colunas nullable, sem backfill):
+  - `generation_share_percent`, de "CADASTRO RATEIO GERAÇÃO: UC … = N%";
+  - `credits_expiring_30d_kwh`, de "SALDO A EXPIRAR EM 30 DIAS KWH".
+
+  Linha ausente ou percentual impossível vira `NULL` e nunca recusa a fatura.
+- **Prejuízo confirmado** (`loss_confirmed`) só quando a fatura do ciclo diz **exatamente
+  100%**.
+  - Nas faturas reais, 24 de 25 meses dizem 100%. A de set/2024 imprime "= 0%", mesmo com
+    toda a geração indo para a própria UC. Por isso nenhum outro valor é interpretado como
+    rateio: qualquer coisa diferente de 100% (ou ausente) mantém o "sem explicação" em
+    âmbar, com o motivo `SHARE_NOT_CONFIRMED`.
+  - Com 100% confirmado, a tela mostra "Créditos faltando" em vermelho e chama de **forte
+    indício**, não de certeza: vencimento não avisado no bloco de 30 dias (ciclo mais longo,
+    bloco de 60 dias) ainda é possível. Orienta levar a fatura à ouvidoria e pedir a
+    explicação.
+  - O rateio exige uma única linha na fatura: com várias UCs, o valor vira `NULL`.
+- **Vencimento, com regra conservadora:**
+  - só explica `max(0, a vencer na fatura anterior − crédito usado no ciclo)`. Supõe que o
+    crédito usado saiu primeiro do bloco a vencer, então nunca atribui a vencimento mais do
+    que isso;
+  - a parte vencida vira `expired_credits_kwh` (`CREDITS_EXPIRED`);
+  - o resto do gap continua `LOSS` (`CREDITS_MISSING`) e pode aparecer junto. Vencimento
+    nunca mascara prejuízo.
+- **Faturas já gravadas** ficam `NULL` até o PDF completar os campos vazios
+  (`billing/completion.py`, que agora inclui os dois). Até lá, a conferência continua
+  funcionando, mas não afirma prejuízo.
+- **Deploy:** rodar a migration (Actions → migrate) **antes** do deploy no Render. As colunas
+  são aditivas: o código atual convive com elas, e o código novo precisa delas.

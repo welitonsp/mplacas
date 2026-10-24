@@ -9,9 +9,11 @@ para a rede. A diferença para o inversor é o consumo simultâneo, não perda.
 Por isso a conferência não compara produção com injeção como prova; ela
 verifica o que a fatura permite provar e vigia o que é fisicamente possível:
 
-1. ``CREDITS_MISSING`` — prejuízo comprovado pela própria fatura: créditos
-   disponíveis (injeção do medidor + saldo anterior) − créditos usados ≠
-   saldo novo. Todo kWh registrado tem de virar abatimento ou saldo.
+1. ``CREDITS_MISSING`` — créditos disponíveis (injeção do medidor + saldo
+   anterior) − créditos usados ≠ saldo novo. Todo kWh registrado tem de virar
+   abatimento ou saldo. É prejuízo **confirmado** (``loss_confirmed``) só
+   quando a fatura diz que 100% da geração é desta UC (rateio); vencimento
+   avisado na fatura anterior vira ``CREDITS_EXPIRED``, não prejuízo.
 2. ``IMPOSSIBLE_EXPORT`` — a distribuidora registrou mais envio à rede do que
    o inversor produziu no ciclo (com folga para a precisão do inversor).
 3. ``EXPORT_SHARE_DROP`` — a fração da produção enviada à rede caiu muito
@@ -54,6 +56,11 @@ class UtilityCheck:
     verdict: str
     # Créditos que não aparecem nem como abatimento nem como saldo (kWh).
     missing_credits_kwh: Decimal | None
+    # Prejuízo confirmado: a fatura diz que 100% da geração é desta UC
+    # (rateio). Sem essa linha (ou com outro valor), o gap é "sem explicação".
+    loss_confirmed: bool
+    # Créditos que venceram no ciclo (5 anos), avisados na fatura anterior.
+    expired_credits_kwh: Decimal | None
     credits_available_kwh: Decimal | None
     credits_used_kwh: Decimal | None
     credit_balance_kwh: Decimal | None
@@ -73,6 +80,8 @@ class UtilityCheck:
         return {
             "verdict": self.verdict,
             "missing_credits_kwh": text(self.missing_credits_kwh),
+            "loss_confirmed": self.loss_confirmed,
+            "expired_credits_kwh": text(self.expired_credits_kwh),
             "credits_available_kwh": text(self.credits_available_kwh),
             "credits_used_kwh": text(self.credits_used_kwh),
             "credit_balance_kwh": text(self.credit_balance_kwh),
@@ -111,12 +120,23 @@ def check_cycle(
     (refaturamento) — o saldo de partida é incerto.
     """
     reasons: list[str] = []
-    available = used = balance = missing = previous_balance = None
+    available = used = balance = missing = previous_balance = expired = None
     unbalanced = False
 
     if bill is None:
         return UtilityCheck(
-            VERDICT_UNVERIFIABLE, None, None, None, None, None, None, None, None, ("NO_BILL",)
+            verdict=VERDICT_UNVERIFIABLE,
+            missing_credits_kwh=None,
+            loss_confirmed=False,
+            expired_credits_kwh=None,
+            credits_available_kwh=None,
+            credits_used_kwh=None,
+            credit_balance_kwh=None,
+            meter_export_kwh=None,
+            previous_balance_kwh=None,
+            export_share_percent=None,
+            export_share_baseline_percent=None,
+            reasons=("NO_BILL",),
         )
 
     # 1. Conservação dos créditos: injeção do medidor + saldo anterior =
@@ -134,9 +154,24 @@ def check_cycle(
         used = bill.compensated_kwh
         balance = bill.credit_balance_kwh
         gap = available - used - balance
+        # Vencimento (60 meses, Lei 14.300) só explica o saldo que a fatura
+        # anterior avisou que venceria E que não foi usado neste ciclo. Regra
+        # conservadora: supõe que o crédito usado saiu primeiro do bloco a
+        # vencer, então nunca atribui a vencimento mais do que
+        # max(0, a vencer − usado). O que sobrar do gap continua faltando.
+        expiring = previous_bill.credits_expiring_30d_kwh
+        allowance = max(Decimal("0"), expiring - used) if expiring is not None else Decimal("0")
         if gap > CREDIT_TOLERANCE_KWH:
-            missing = gap
-            reasons.append("CREDITS_MISSING")
+            expired_part = min(gap, allowance)
+            remaining = gap - expired_part
+            if expired_part > 0:
+                expired = expired_part
+                reasons.append("CREDITS_EXPIRED")
+            if remaining > CREDIT_TOLERANCE_KWH:
+                missing = remaining
+                reasons.append("CREDITS_MISSING")
+            else:
+                missing = Decimal("0")
         elif gap < -CREDIT_TOLERANCE_KWH:
             # Usou mais crédito do que havia: crédito recebido de outra UC,
             # fatura anterior errada ou compensação lida como consumo total.
@@ -183,9 +218,14 @@ def check_cycle(
     else:
         verdict = VERDICT_UNVERIFIABLE
 
+    loss_confirmed = verdict == VERDICT_LOSS and bill.generation_share_percent == Decimal("100")
+    if verdict == VERDICT_LOSS and not loss_confirmed:
+        reasons.append("SHARE_NOT_CONFIRMED")
     return UtilityCheck(
         verdict=verdict,
         missing_credits_kwh=None if missing is None else missing.quantize(Decimal("0.01")),
+        loss_confirmed=loss_confirmed,
+        expired_credits_kwh=None if expired is None else expired.quantize(Decimal("0.01")),
         credits_available_kwh=available,
         credits_used_kwh=used,
         credit_balance_kwh=balance,

@@ -27,6 +27,10 @@ export type UtilityCheckVerdict = 'OK' | 'SUSPECT' | 'LOSS' | 'IMPOSSIBLE' | 'UN
 export interface UtilityCheck {
   verdict: UtilityCheckVerdict
   missingCreditsKwh: number | null
+  // Prejuízo confirmado: a fatura diz que 100% da geração é desta UC.
+  lossConfirmed: boolean
+  // Créditos vencidos no ciclo (prazo de 5 anos), avisados na fatura anterior.
+  expiredCreditsKwh: number | null
   creditsAvailableKwh: number | null
   creditsUsedKwh: number | null
   creditBalanceKwh: number | null
@@ -163,6 +167,9 @@ function parseUtilityCheck(value: unknown): UtilityCheck | null {
   return {
     verdict,
     missingCreditsKwh: nullableDecimalNumber(value, 'missing_credits_kwh'),
+    // Só `true` explícito confirma prejuízo; ausente ou outro valor, não.
+    lossConfirmed: value.loss_confirmed === true,
+    expiredCreditsKwh: nullableDecimalNumber(value, 'expired_credits_kwh'),
     creditsAvailableKwh: nullableDecimalNumber(value, 'credits_available_kwh'),
     creditsUsedKwh: nullableDecimalNumber(value, 'credits_used_kwh'),
     creditBalanceKwh: nullableDecimalNumber(value, 'credit_balance_kwh'),
