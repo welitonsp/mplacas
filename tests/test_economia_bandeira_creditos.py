@@ -44,11 +44,12 @@ def _analyze(bill: UtilityBill):
     )
 
 
-def test_parser_sums_flag_lines_and_reads_glued_price() -> None:
+def test_parser_reads_single_flag_line_glued_price() -> None:
     one = "adc bandeira amarela kwh 0,01172182,02 0,04 0,96"
     assert _sum_flag_tariffs(one) == Decimal("0.011721")
+    # Duas cores no ciclo: formato não confirmado em fatura real — falha fechada.
     two = one + " adc bandeira vermelha patamar 1 kwh 0,03000010,00 0,01 0,30"
-    assert _sum_flag_tariffs(two) == Decimal("0.041721")
+    assert _sum_flag_tariffs(two) is None
     assert _sum_flag_tariffs("consumo scee kwh 0,787884255,98") is None
     # Valor total no lugar do preço (coluna deslocada): implausível, vira None.
     assert _sum_flag_tariffs("adc bandeira amarela kwh 1,23456782,02") is None
@@ -89,6 +90,12 @@ def test_non_energy_credits_do_not_become_plant_savings() -> None:
     # O Bônus de Itaipu baixou a fatura, mas a economia da usina é a mesma.
     assert bonus.estimated_savings_brl == base.estimated_savings_brl
     assert bonus.bill_model_difference_brl == base.bill_model_difference_brl
+    # O componente de energia continua sendo o valor PAGO (cabe no total).
+    assert bonus.bill_energy_component_brl == Decimal("171.32") - Decimal("30.38") - Decimal(
+        "30.21"
+    )
+    # "Sem a usina − você pagou" continua igual à economia.
+    assert bonus.bill_without_solar_brl - bonus.total_amount_brl == bonus.estimated_savings_brl
 
 
 def _snapshot(version: str) -> SimpleNamespace:

@@ -40,13 +40,14 @@ class UtilityBill:
     # fatura não traz a linha — nunca um valor presumido.
     generation_share_percent: Decimal | None = None
     credits_expiring_30d_kwh: Decimal | None = None
-    # Bandeira tarifária do ciclo, com tributos, somando as linhas "ADC
-    # BANDEIRA …" (pode haver duas cores no mesmo ciclo). Só aparece quando há
-    # consumo não compensado; ausente é `None`, nunca zero presumido.
+    # Bandeira tarifária do ciclo, com tributos, da linha "ADC BANDEIRA …".
+    # Só aparece quando há consumo não compensado; ausente (ou mais de uma cor
+    # no ciclo) é `None`, nunca zero presumido.
     flag_tariff_brl_kwh: Decimal | None = None
     # Créditos da fatura que não vêm das placas (compensação por interrupção
     # — DIC/FIC/DMIC/DICRI — e Bônus de Itaipu), em valor absoluto. Saem da
-    # economia: o dono teria esse desconto com ou sem usina.
+    # economia: a compensação existiria com ou sem usina; o Bônus de Itaipu
+    # sai por decisão conservadora (as placas ajudam a ficar na faixa dele).
     non_energy_credits_brl: Decimal | None = None
 
     def validate(self) -> None:

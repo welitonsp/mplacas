@@ -462,16 +462,21 @@ def _extract_optional(pattern: re.Pattern[str], normalized: str) -> Decimal | No
 
 
 def _sum_flag_tariffs(normalized: str) -> Decimal | None:
-    """Bandeira do ciclo (com tributos): soma das linhas, pois duas cores no
-    mesmo ciclo vêm em linhas separadas, cada uma com o preço pró-rata. Valor
-    fora do plausível vira `None` (campo informativo, não recusa a fatura)."""
+    """Bandeira do ciclo (preço com tributos de UMA linha "ADC BANDEIRA").
+
+    Com duas cores no ciclo, não há fatura real que mostre se cada linha traz
+    o preço cheio da cor (com a quantidade pró-rata) ou o preço pró-rata —
+    somar poderia inflar a economia. Até haver essa fatura, mais de uma linha
+    vira `None` (falha fechada: a economia fica no piso). Valor implausível
+    também vira `None` (campo informativo, não recusa a fatura).
+    """
     try:
         prices = [_parse_decimal(found) for found in _FLAG_TARIFF_RE.findall(normalized)]
     except BillParseError:
         return None
-    if not prices:
+    if len(prices) != 1 or normalized.count("adc bandeira") != 1:
         return None
-    total = sum(prices, Decimal("0"))
+    total = prices[0]
     if not (Decimal("0") < total <= Decimal("0.5")):
         return None
     return total

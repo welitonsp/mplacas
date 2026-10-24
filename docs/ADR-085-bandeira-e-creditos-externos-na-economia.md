@@ -24,22 +24,28 @@ no centavo, mas a economia tinha dois desvios.
 
 1. **O leitor da fatura grava dois campos** (migration `20261024_0048`, nullable, sem
    backfill):
-   - `flag_tariff_brl_kwh`: soma dos preços **com tributos** das linhas "ADC BANDEIRA …".
-     Quando duas cores caem no mesmo ciclo, cada uma vem numa linha com o preço pró-rata. O
-     preço já carrega o fator de tributos da própria linha (ICMS/PIS/COFINS do mês).
-     Implausível (> R$ 0,50/kWh) vira `NULL`.
+   - `flag_tariff_brl_kwh`: preço **com tributos** da linha "ADC BANDEIRA …". O preço já
+     carrega o fator de tributos da própria linha (ICMS/PIS/COFINS do mês). Implausível
+     (> R$ 0,50/kWh) vira `NULL`.
+     - **Mais de uma linha (duas cores no ciclo) vira `NULL`.** Nenhuma fatura real mostra
+       se cada linha traz o preço cheio da cor com a quantidade pró-rata (o que exigiria
+       média ponderada) ou o preço pró-rata. Somar poderia inflar a economia. Fica no piso
+       até haver essa fatura.
    - `non_energy_credits_brl`: soma, em valor absoluto, das linhas negativas de compensação
      por interrupção e de Bônus de Itaipu.
 2. **Motor de cálculo** (`energy_engine.analyze_energy_cycle`):
    - conta sem a usina = consumo total × (tarifa cheia homologada × tributos da fatura +
-     bandeira) + iluminação pública;
-   - componente de energia pago = total − iluminação + créditos externos. O dono teria esses
-     créditos com ou sem usina;
+     bandeira) + iluminação pública − créditos externos;
+   - créditos externos entram **dos dois lados**: a conta sem a usina também os teria (−
+     créditos). Assim, "sem a usina − você pagou" continua igual à economia. O componente de
+     energia exibido continua sendo o valor **pago** (total − iluminação), que cabe na barra
+     da fatura;
    - conferência do modelo: a bandeira entra sobre a energia não compensada e os créditos
      externos são abatidos.
-3. **Bônus de Itaipu: decisão conservadora.** Sai da economia. Ele só é pago a quem consome
-   pouco da rede, e as placas ajudam nisso, mas é um crédito do governo, não energia gerada.
-   Tirar mantém a economia como piso.
+3. **Bônus de Itaipu é escolha conservadora, não regra.** Sai da economia. Ele só é pago a
+   quem consome pouco da rede, e as placas ajudam nisso, mas é um crédito do governo, não
+   energia gerada. Tirar mantém a economia como piso. A compensação por interrupção sai por
+   regra: existiria com ou sem usina.
 4. **Sem a linha de bandeira, nada é presumido.** A fatura não traz a bandeira quando toda
    a energia foi compensada ou quando ela é verde. Nesses casos a bandeira fica fora, como
    antes.
@@ -66,6 +72,12 @@ no centavo, mas a economia tinha dois desvios.
     (diferença de R$ 1,31); créditos externos não viram economia; quando um relatório fica
     desatualizado;
   - contrato da migration e da página Dinheiro.
+
+## Deploy
+
+O ORM passa a ler as duas colunas novas. A ordem é merge → **Actions → migrate** (digitar
+`MIGRAR`) → deploy no Render. A migration é aditiva e convive com a API antiga, então
+migrar antes é seguro.
 
 ## Limitações
 
