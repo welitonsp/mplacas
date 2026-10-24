@@ -270,9 +270,7 @@ def test_fewer_cycles_than_limit_returns_all_without_ghost_months(
     factory, _, _, token_a, _ = cross_tenant_setup
     import asyncio
 
-    asyncio.run(
-        _seed_cycles(factory, plant_id=PLANT_A, months=["2026-01", "2026-02"])
-    )
+    asyncio.run(_seed_cycles(factory, plant_id=PLANT_A, months=["2026-01", "2026-02"]))
 
     response = TestClient(app).get(
         "/reports/monthly/history",
@@ -605,9 +603,7 @@ def test_latest_pdf_route_includes_history_within_tenant(cross_tenant_setup) -> 
     factory, _, _, token_a, token_b = cross_tenant_setup
     import asyncio
 
-    asyncio.run(
-        _seed_cycles(factory, plant_id=PLANT_A, months=["2026-01", "2026-02", "2026-03"])
-    )
+    asyncio.run(_seed_cycles(factory, plant_id=PLANT_A, months=["2026-01", "2026-02", "2026-03"]))
     client = TestClient(app)
 
     response = client.get(
@@ -636,9 +632,7 @@ def test_corrupted_old_snapshot_drops_history_but_not_the_current_pdf(
     factory, _, _, token_a, _ = cross_tenant_setup
     import asyncio
 
-    asyncio.run(
-        _seed_cycles(factory, plant_id=PLANT_A, months=["2026-01", "2026-02", "2026-03"])
-    )
+    asyncio.run(_seed_cycles(factory, plant_id=PLANT_A, months=["2026-01", "2026-02", "2026-03"]))
 
     async def _corrupt_january() -> None:
         async with factory() as session:
@@ -714,3 +708,107 @@ def test_export_drain_pdf_includes_history(cross_tenant_setup, monkeypatch) -> N
     text = _pdf_text(asyncio.run(_artifact()))
     assert "HISTÓRICO DOS ÚLTIMOS CICLOS" in text
     assert "Fevereiro/2026" in text
+
+
+def test_cycle_carries_utility_check_with_credit_conservation(cross_tenant_setup) -> None:
+    # ADR-084: a conferência usa a fatura do mês anterior como saldo de partida.
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_cycles(
+            factory,
+            plant_id=PLANT_A,
+            months=["2026-08", "2026-09"],
+            extra_metrics=_SEPT_METRICS,
+            calculation_version="0.4.0",
+            generation_cycle_kwh=Decimal("30"),
+        )
+    )
+
+    response = TestClient(app).get(
+        "/reports/monthly/history",
+        headers=_headers(token_a),
+        params={"plant_id": str(PLANT_A)},
+    )
+    first, second = response.json()["cycles"]
+    # Sem fatura anterior: não dá para conferir, nunca "OK" por omissão.
+    assert first["utility_check"]["verdict"] == "UNVERIFIABLE"
+    assert "NO_PREVIOUS_BILL" in first["utility_check"]["reasons"]
+    # Fixture: 30 do medidor + 50 de saldo − 20 usados ≠ 50 de saldo → 10 kWh sumidos.
+    assert second["utility_check"]["verdict"] == "LOSS"
+    assert second["utility_check"]["missing_credits_kwh"] == "10.00"
+
+
+def test_estimated_production_cycle_skips_physical_checks(cross_tenant_setup) -> None:
+    # ADR-084/082: dia estimado pelo sol pode ter elevado a produção até o
+    # medidor — o ciclo não roda impossível/suspeita nem entra na referência.
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_cycles(
+            factory,
+            plant_id=PLANT_A,
+            months=["2026-08", "2026-09"],
+            production_kwh="10.000",
+            quality={
+                "missing_days": "0",
+                "provisional_days": "0",
+                "incomplete_days": "0",
+                "unavailable_days": "0",
+                "estimated_production_days": "2",
+            },
+            calculation_version="0.4.0",
+            generation_cycle_kwh=Decimal("30"),
+        )
+    )
+
+    response = TestClient(app).get(
+        "/reports/monthly/history",
+        headers=_headers(token_a),
+        params={"plant_id": str(PLANT_A)},
+    )
+    second = response.json()["cycles"][1]["utility_check"]
+    # 30 do medidor > 10 produzidos, mas a produção é estimada: não acusa.
+    assert second["verdict"] != "IMPOSSIBLE"
+    assert "PRODUCTION_ESTIMATED" in second["reasons"]
+    assert second["export_share_percent"] is None
+
+
+def test_ambiguous_previous_month_bills_skip_credit_check(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    async def _seed() -> None:
+        async with factory() as session:
+            refaturada = _bill(
+                plant_id=PLANT_A,
+                reference_month="2026-08",
+                source_hash="r" * 64,
+                generation_cycle_kwh=Decimal("30"),
+            )
+            refaturada.cycle_start = date(2026, 8, 1)
+            refaturada.credit_balance_kwh = Decimal("12")
+            session.add(refaturada)
+            await session.commit()
+
+    asyncio.run(
+        _seed_cycles(
+            factory,
+            plant_id=PLANT_A,
+            months=["2026-08", "2026-09"],
+            calculation_version="0.4.0",
+            generation_cycle_kwh=Decimal("30"),
+        )
+    )
+    asyncio.run(_seed())
+
+    response = TestClient(app).get(
+        "/reports/monthly/history",
+        headers=_headers(token_a),
+        params={"plant_id": str(PLANT_A)},
+    )
+    september = [c for c in response.json()["cycles"] if c["reference_month"] == "2026-09"][0]
+    assert september["utility_check"]["verdict"] == "UNVERIFIABLE"
+    assert "AMBIGUOUS_PREVIOUS_BILL" in september["utility_check"]["reasons"]

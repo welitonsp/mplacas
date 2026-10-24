@@ -56,9 +56,46 @@ describe('parseMonthlyProductionHistory', () => {
             // Snapshot anterior ao ADR-082: sem a chave de dias estimados.
             estimatedDays: null,
           },
+          // Backend anterior ao ADR-084: sem conferência.
+          utilityCheck: null,
         },
       ],
     })
+  })
+
+  it('lê a conferência da distribuidora; veredito desconhecido vira "sem conferência", nunca OK', () => {
+    const result = parseMonthlyProductionHistory(
+      buildPayload({
+        cycles: [
+          buildCycle({
+            utility_check: {
+              verdict: 'LOSS',
+              missing_credits_kwh: '15.98',
+              credits_available_kwh: '255.98',
+              credits_used_kwh: '240',
+              credit_balance_kwh: '0',
+              meter_export_kwh: '238',
+              previous_balance_kwh: '17.98',
+              export_share_percent: '43.3',
+              export_share_baseline_percent: null,
+              reasons: ['CREDITS_MISSING'],
+            },
+          }),
+          buildCycle({ utility_check: { verdict: 'SOMETHING_NEW', reasons: [] } }),
+        ],
+      }),
+    )
+    expect(result.cycles[0].utilityCheck).toMatchObject({
+      verdict: 'LOSS',
+      missingCreditsKwh: 15.98,
+      creditsAvailableKwh: 255.98,
+      meterExportKwh: 238,
+      previousBalanceKwh: 17.98,
+      exportSharePercent: 43.3,
+      exportShareBaselinePercent: null,
+      reasons: ['CREDITS_MISSING'],
+    })
+    expect(result.cycles[1].utilityCheck?.verdict).toBe('UNVERIFIABLE')
   })
 
   it('lê datas do ciclo e o registro da distribuidora quando o backend envia', () => {

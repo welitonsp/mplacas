@@ -20,6 +20,7 @@ from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.intelligence.investor_service import calculation_version_tuple
 from mplacas.reports.contract import MonthlyEnergyReport, ReportMetric
 from mplacas.reports.snapshot import MonthlyReportSnapshotRepository, ReportSnapshotIntegrityError
+from mplacas.reports.utility_check import check_cycle
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,20 @@ def _grid_injection_basis(
     return "METER" if recorded == bill.generation_cycle_kwh else "BILL_LINE"
 
 
+def _previous_month(reference_month: str) -> str:
+    year, month = (int(part) for part in reference_month.split("-"))
+    return f"{year - 1}-12" if month == 1 else f"{year}-{month - 1:02d}"
+
+
+def _decimal_or_none(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(value)
+    except InvalidOperation:
+        return None
+
+
 def _quality_payload(metrics: tuple[ReportMetric, ...]) -> dict[str, int | None] | None:
     if not any(_metric_value(metrics, key) is not None for key in _QUALITY_KEYS):
         return None
@@ -105,18 +120,44 @@ async def load_monthly_production_history(
     ).list_recent_for_plant(plant_id=plant_id, limit=limit)
     # Datas do ciclo vêm da fatura confirmada (o snapshot só guarda o mês de
     # referência). Uma leitura para a janela inteira, não uma por ciclo.
-    bills = {
-        confirmed.id: confirmed.bill
-        for confirmed in await ConfirmedBillReadRepository(
-            session, plant_scope=plant_scope
-        ).list_for_plant(plant_id=plant_id)
-    }
+    confirmed_bills = await ConfirmedBillReadRepository(
+        session, plant_scope=plant_scope
+    ).list_for_plant(plant_id=plant_id)
+    bills = {confirmed.id: confirmed.bill for confirmed in confirmed_bills}
+    # Fatura do mês anterior dá o saldo de partida da conferência de créditos.
+    # Mais de uma confirmada no mesmo mês (refaturamento) com saldos
+    # diferentes deixa o saldo de partida incerto: a conferência não roda.
+    bills_by_month: dict[str, list[UtilityBill]] = {}
+    for confirmed in confirmed_bills:
+        bills_by_month.setdefault(confirmed.bill.reference_month, []).append(confirmed.bill)
 
     cycles: list[dict[str, object]] = []
+    export_shares: list[Decimal] = []
     for snapshot in snapshots:
         report = snapshot.report
         bill = bills.get(report.bill_id)
         injection = _metric_value(report.metrics, "injected_kwh")
+        production = _decimal_or_none(_metric_value(report.metrics, "cycle_production_kwh"))
+        previous_candidates = bills_by_month.get(_previous_month(report.reference_month), [])
+        previous_ambiguous = len({b.credit_balance_kwh for b in previous_candidates}) > 1
+        quality = _quality_payload(report.quality) or {}
+        # Produção com dias estimados pelo sol ou sem leitura (ADR-082) pode
+        # ter sido elevada até a leitura do medidor: não serve de prova.
+        production_estimated = any(
+            (quality.get(key) or 0) > 0
+            for key in ("estimated_production_days", "missing_days", "unavailable_days")
+        )
+        utility_check = check_cycle(
+            bill=bill,
+            previous_bill=previous_candidates[0] if previous_candidates else None,
+            production_kwh=production,
+            previous_export_shares=list(export_shares),
+            production_estimated=production_estimated,
+            previous_bill_ambiguous=previous_ambiguous,
+        )
+        share = utility_check.export_share_percent
+        if share is not None:
+            export_shares.append(share)
         cycles.append(
             {
                 "reference_month": report.reference_month,
@@ -142,6 +183,9 @@ async def load_monthly_production_history(
                     report.metrics, "estimated_self_consumption_kwh"
                 ),
                 "quality": _quality_payload(report.quality),
+                # Conferência da distribuidora (ADR-084): créditos, envio
+                # impossível e fração enviada à rede contra o histórico.
+                "utility_check": utility_check.as_payload(),
             }
         )
 
