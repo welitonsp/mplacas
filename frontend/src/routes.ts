@@ -17,6 +17,8 @@ const HOME_SEGMENT = 'inicio'
 const ENERGY_SEGMENT = 'energia'
 const TECHNICAL_SEGMENT = 'energia/tecnico'
 const MONEY_SEGMENT = 'dinheiro'
+// "Como calculamos" (ADR-086): memória de cálculo, dentro de Dinheiro.
+const METHODOLOGY_SEGMENT = 'dinheiro/como-calculamos'
 // "Minha usina": onde o cliente informa os dados da própria usina.
 const SETUP_SEGMENT = 'minha-usina'
 
@@ -25,6 +27,7 @@ export const DASHBOARD_MODULE_SEGMENTS = {
   production: ENERGY_SEGMENT,
   technical: TECHNICAL_SEGMENT,
   financial: MONEY_SEGMENT,
+  methodology: METHODOLOGY_SEGMENT,
   setup: SETUP_SEGMENT,
 } as const
 
@@ -32,6 +35,7 @@ export const DASHBOARD_OVERVIEW_PATH = `${DASHBOARD_ROOT_PATH}/${HOME_SEGMENT}` 
 export const DASHBOARD_PRODUCTION_PATH = `${DASHBOARD_ROOT_PATH}/${ENERGY_SEGMENT}` as const
 export const DASHBOARD_TECHNICAL_PATH = `${DASHBOARD_ROOT_PATH}/${TECHNICAL_SEGMENT}` as const
 export const DASHBOARD_FINANCIAL_PATH = `${DASHBOARD_ROOT_PATH}/${MONEY_SEGMENT}` as const
+export const DASHBOARD_METHODOLOGY_PATH = `${DASHBOARD_ROOT_PATH}/${METHODOLOGY_SEGMENT}` as const
 export const DASHBOARD_SETUP_PATH = `${DASHBOARD_ROOT_PATH}/${SETUP_SEGMENT}` as const
 
 // URLs da organização anterior (5 abas). Continuam funcionando — favorito,

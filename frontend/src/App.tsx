@@ -32,6 +32,9 @@ const FinancialPage = lazy(() =>
 const TechnicalPage = lazy(() =>
   import('./pages/dashboard/TechnicalPage').then((module) => ({ default: module.TechnicalPage }))
 )
+const MethodologyPage = lazy(() =>
+  import('./pages/dashboard/MethodologyPage').then((module) => ({ default: module.MethodologyPage }))
+)
 const PlantSetupPage = lazy(() =>
   import('./pages/dashboard/PlantSetupPage').then((module) => ({ default: module.PlantSetupPage }))
 )
@@ -82,6 +85,7 @@ export function App() {
               <Route path={DASHBOARD_MODULE_SEGMENTS.production} element={<ProductionPage />} />
               <Route path={DASHBOARD_MODULE_SEGMENTS.technical} element={<TechnicalPage />} />
               <Route path={DASHBOARD_MODULE_SEGMENTS.financial} element={<FinancialPage />} />
+              <Route path={DASHBOARD_MODULE_SEGMENTS.methodology} element={<MethodologyPage />} />
               <Route path={DASHBOARD_MODULE_SEGMENTS.setup} element={<PlantSetupPage />} />
               {/* URLs da organização anterior: redirecionam, nunca 404. */}
               {LEGACY_MODULE_REDIRECTS.map(({ segment, to }) => (

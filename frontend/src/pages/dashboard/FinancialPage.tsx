@@ -13,6 +13,7 @@ import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 import { PageHeader } from '../../components/PageHeader'
+import { MethodologyLink } from '../../components/MethodologyLink'
 
 // Painel do investidor sob demanda: chunk próprio (gráfico de patrimônio +
 // premissas), para não estourar o teto de 15 kB do módulo Financeiro.
@@ -173,6 +174,7 @@ export function FinancialPage() {
           <ScrollToBillsOnce />
         </Suspense>
       </div>
+      <MethodologyLink subtitle="Economia, tarifas homologadas, bandeira, Fio B e créditos" />
     </>
   )
 }

@@ -34,6 +34,7 @@ const MODULOS: ReadonlyArray<{ rotulo: string; nome: string; abrir?: RegExp }> =
   { rotulo: 'Energia', nome: 'energia' },
   { rotulo: 'Energia', nome: 'tecnico', abrir: /Detalhes técnicos/ },
   { rotulo: 'Dinheiro', nome: 'dinheiro' },
+  { rotulo: 'Dinheiro', nome: 'como-calculamos', abrir: /Como calculamos/ },
   { rotulo: 'Minha usina', nome: 'minha-usina' },
 ]
 

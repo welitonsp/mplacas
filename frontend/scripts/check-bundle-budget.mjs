@@ -93,6 +93,13 @@ const BUDGETS = [
     limitKb: 10,
   },
   {
+    // "Como calculamos" (ADR-086): só texto da memória de cálculo, baixado
+    // sob demanda. Teto com folga para novas regras.
+    name: 'módulo MethodologyPage',
+    match: /^MethodologyPage-.*\.js$/,
+    limitKb: 6,
+  },
+  {
     // Painel do investidor (ADR-079), carregado sob demanda pelo Financeiro.
     // Entrou em 2026-10-19; teto com folga para cenários e premissas editáveis.
     name: 'InvestorPanelSection',
