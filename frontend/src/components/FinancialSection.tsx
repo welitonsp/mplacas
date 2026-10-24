@@ -130,7 +130,9 @@ function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndi
   const source = indicators.savings_tariff_source ?? null
   const tariffNote =
     source === 'DISTRIBUTOR_FULL_TARIFF'
-      ? savingsTariff != null
+      ? savingsTariff != null && billTariffWithTaxes != null && Math.abs(savingsTariff - billTariffWithTaxes) < 0.0005
+        ? 'A conta “sem a usina” usa a tarifa cheia da distribuidora, que neste ciclo é a mesma impressa na fatura.'
+        : savingsTariff != null
         ? `A conta “sem a usina” não usa esta tarifa: usa a tarifa cheia da distribuidora, R$ ${formatNumber(savingsTariff, 3)}/kWh com impostos, que é o que você pagaria sem créditos.`
         : 'A conta “sem a usina” não usa esta tarifa: usa a tarifa cheia da distribuidora, que é o que você pagaria sem créditos.'
       : source === 'BILL_TARIFF'

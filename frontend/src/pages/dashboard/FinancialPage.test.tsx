@@ -231,15 +231,25 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
   it('chegando por #faturas, rola até as faturas uma vez, quando elas já estão na tela', async () => {
     vi.resetModules()
     installApiMock()
+    // jsdom não implementa `scrollIntoView`: define só neste teste e remove no fim.
     const scrollIntoView = vi.fn()
     Element.prototype.scrollIntoView = scrollIntoView
-    const { FinancialPage } = await import('./FinancialPage')
-    const { renderModule } = await import('../../test/renderModule')
-    const { DASHBOARD_FINANCIAL_PATH } = await import('../../routes')
-    renderModule(<FinancialPage />, `${DASHBOARD_FINANCIAL_PATH}#faturas`)
+    try {
+      const { FinancialPage } = await import('./FinancialPage')
+      const { renderModule } = await import('../../test/renderModule')
+      const { DASHBOARD_FINANCIAL_PATH } = await import('../../routes')
+      renderModule(<FinancialPage />, `${DASHBOARD_FINANCIAL_PATH}#faturas`)
 
-    await screen.findByRole('heading', { level: 2, name: 'Faturas de energia' })
-    await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      await screen.findByRole('heading', { level: 2, name: 'Faturas de energia' })
+      await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+      // "Atualizar" não puxa o usuário de volta para as faturas.
+      fireEvent.click(screen.getByRole('button', { name: /Atualizar/ }))
+      await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
   })
 })
