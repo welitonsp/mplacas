@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,18 +65,26 @@ def _grid_injection_basis(
 ) -> str | None:
     """De onde veio a injeção gravada no snapshot: METER, BILL_LINE ou None.
 
-    METER só quando há certeza: snapshot 0.3.0+ e a fatura confirmada traz a
-    leitura do medidor. Qualquer dúvida vira BILL_LINE — a tela nunca rotula
-    como "medidor" o que pode ser compensação.
+    METER só quando há prova: snapshot 0.3.0+ e o valor gravado é IGUAL à
+    leitura do medidor da fatura. Não basta a fatura ter a leitura hoje: o PDF
+    pode completá-la depois do snapshot (`billing/completion.py`, ADR-081), e
+    o snapshot continua com a linha da fatura até o mês ser reprocessado.
+    Qualquer dúvida vira BILL_LINE — a tela nunca rotula como "medidor" o que
+    pode ser compensação.
     """
     if injection is None:
         return None
-    metered = (
-        calculation_version_tuple(calculation_version) >= METERED_INJECTION_VERSION
-        and bill is not None
-        and bill.generation_cycle_kwh is not None
-    )
-    return "METER" if metered else "BILL_LINE"
+    if (
+        calculation_version_tuple(calculation_version) < METERED_INJECTION_VERSION
+        or bill is None
+        or bill.generation_cycle_kwh is None
+    ):
+        return "BILL_LINE"
+    try:
+        recorded = Decimal(injection)
+    except InvalidOperation:
+        return "BILL_LINE"
+    return "METER" if recorded == bill.generation_cycle_kwh else "BILL_LINE"
 
 
 def _quality_payload(metrics: tuple[ReportMetric, ...]) -> dict[str, int | None] | None:

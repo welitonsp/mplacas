@@ -356,6 +356,27 @@ def test_pre_0_3_snapshot_injection_is_bill_line_not_meter(cross_tenant_setup) -
     assert cycle["grid_injection_basis"] == "BILL_LINE"
 
 
+def test_meter_reading_completed_after_snapshot_is_not_meter(cross_tenant_setup) -> None:
+    # A fatura ganhou a leitura do medidor pelo PDF DEPOIS do snapshot 0.4.0
+    # (ADR-081): o snapshot ainda guarda a linha da fatura (221), não o
+    # medidor (235). Só a igualdade prova que veio do medidor.
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_cycles(
+            factory,
+            plant_id=PLANT_A,
+            months=["2026-09"],
+            extra_metrics={**_SEPT_METRICS, "injected_kwh": "221"},
+            calculation_version="0.4.0",
+            generation_cycle_kwh=Decimal("235"),
+        )
+    )
+
+    assert _history_cycle(token_a)["grid_injection_basis"] == "BILL_LINE"
+
+
 def test_bill_without_meter_reading_injection_is_bill_line(cross_tenant_setup) -> None:
     # Em 0.3.0+, `reconcile_bill` cai na linha da fatura quando ela não traz
     # `generation_cycle_kwh`: também não é medidor.

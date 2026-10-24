@@ -77,7 +77,7 @@ describe('MonthlyProductionSection', () => {
     expect(within(row).getByText('380 kWh')).toBeInTheDocument()
     expect(within(row).getByText(/Ficou na casa \(estimado\)/)).toBeInTheDocument()
     expect(within(row).getByText('570 kWh')).toBeInTheDocument()
-    expect(within(row).queryByText(/não traz a leitura do medidor/)).not.toBeInTheDocument()
+    expect(within(row).queryByText(/Não é a leitura do medidor/)).not.toBeInTheDocument()
     expect(within(row).getByText('230 kWh')).toBeInTheDocument()
   })
 
@@ -146,7 +146,7 @@ describe('MonthlyProductionSection', () => {
       const row = screen.getByRole('heading', { level: 3, name }).closest('li') as HTMLElement
       expect(within(row).getByText('Injeção na fatura')).toBeInTheDocument()
       expect(within(row).queryByText(/Medidor/)).not.toBeInTheDocument()
-      expect(within(row).getByText(/não traz a leitura do medidor/)).toBeInTheDocument()
+      expect(within(row).getByText(/Não é a leitura do medidor/)).toBeInTheDocument()
     }
   })
 

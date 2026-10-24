@@ -130,8 +130,10 @@ no período do ciclo × o período da operadora".
   - `cycle_start` e `cycle_end`, da fatura confirmada;
   - `grid_injection_kwh`, `imported_kwh` e `self_consumption_kwh`, tal como gravados no
     snapshot do ciclo;
-  - `grid_injection_basis`: `METER` só com snapshot 0.3.0+ **e** fatura com a leitura do
-    medidor (`generation_cycle_kwh`); qualquer outro caso é `BILL_LINE`. Snapshots 0.2.0
+  - `grid_injection_basis`: `METER` só com snapshot 0.3.0+ **e** valor gravado igual à
+    leitura do medidor da fatura (`generation_cycle_kwh`); qualquer outro caso é
+    `BILL_LINE`. A igualdade é a prova: a fatura pode ganhar a leitura pelo PDF depois do
+    snapshot (ADR-081), e ele continua com a linha da fatura até o mês ser reprocessado. Snapshots 0.2.0
     são imutáveis e guardaram a linha "INJEÇÃO SCEE" (compensada; ex.: set/26, 221
     compensados × 235 medidos), e em 0.3.0+ `reconcile_bill` cai nessa linha quando a
     fatura não traz o medidor (ADR-078). A tela nunca chama de "medidor" o que pode ser
@@ -155,7 +157,7 @@ no período do ciclo × o período da operadora".
 - **Dívida aceita da etapa 3** (P3 da revisão): a média e o desempenho do período em
   `ProductionHistorySection` ainda usam as últimas N entradas, enquanto a tendência ao lado
   usa calendário; as datas do ciclo vêm da fatura confirmada atual e os números do
-  snapshot congelado (se a fatura foi completada depois, podem divergir sem aviso).
+  snapshot congelado (a origem da injeção já é protegida pela igualdade acima).
 - **Detalhes técnicos**:
   - sai o painel genérico "Diagnóstico de causa" ("Agir hoje", plano de 3 passos);
   - "Saúde técnica" passa a usar a performance corrigida pelo calor;

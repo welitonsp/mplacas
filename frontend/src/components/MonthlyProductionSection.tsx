@@ -174,8 +174,8 @@ function CycleRow({ cycle, max }: { cycle: MonthlyProductionCycle; max: number }
       </dl>
       {cycle.gridInjectionKwh != null && !metered && (
         <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
-          A fatura deste ciclo não traz a leitura do medidor: este número é a linha de injeção da fatura, que pode ser a
-          energia compensada e não toda a enviada à rede.
+          Não é a leitura do medidor: é a linha de injeção da fatura, que pode ser só a energia compensada. Se for, o
+          enviado à rede foi maior e o que ficou na casa, menor que o estimado.
         </p>
       )}
       {(cycle.selfConsumptionKwh != null || cycle.importedKwh != null) && (
