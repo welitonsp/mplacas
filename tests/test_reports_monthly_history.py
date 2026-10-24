@@ -71,6 +71,7 @@ def _payload(
     reference_month: str,
     production_kwh: str | None,
     quality: dict[str, str] | None,
+    extra_metrics: dict[str, str] | None = None,
 ) -> str:
     quality_items = []
     if quality is not None:
@@ -95,6 +96,17 @@ def _payload(
             "source": "DAILY_ENERGY_AGGREGATE",
         }
     ]
+    for key, value in (extra_metrics or {}).items():
+        metrics.append(
+            {
+                "key": key,
+                "label": key,
+                "value": value,
+                "unit": "kWh",
+                "nature": "MEASURED",
+                "source": "UTILITY_BILL",
+            }
+        )
     payload = {
         "schema_version": "1.0",
         "calculation_version": "0.2.0",
@@ -119,6 +131,7 @@ def _snapshot_record(
     reference_month: str,
     production_kwh: str | None = "100.000",
     quality: dict[str, str] | None = None,
+    extra_metrics: dict[str, str] | None = None,
 ) -> MonthlyReportSnapshotRecord:
     if quality is None:
         quality = {
@@ -133,6 +146,7 @@ def _snapshot_record(
         reference_month=reference_month,
         production_kwh=production_kwh,
         quality=quality,
+        extra_metrics=extra_metrics,
     )
     return MonthlyReportSnapshotRecord(
         plant_id=plant_id,
@@ -250,6 +264,62 @@ def test_fewer_cycles_than_limit_returns_all_without_ghost_months(
     body = response.json()
     assert body["cycles_returned"] == 2
     assert [item["reference_month"] for item in body["cycles"]] == ["2026-01", "2026-02"]
+
+
+def test_cycle_carries_bill_dates_and_utility_meter_side_by_side(cross_tenant_setup) -> None:
+    # ADR-083, etapa 3: placas (inversor) × distribuidora no MESMO ciclo da
+    # fatura. Datas vêm da fatura confirmada; injeção, importação e autoconsumo
+    # vêm do snapshot, tal como gravados (nada recalculado na leitura).
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_cycles(
+            factory,
+            plant_id=PLANT_A,
+            months=["2026-09"],
+            production_kwh="583.210",
+            extra_metrics={
+                "injected_kwh": "235",
+                "imported_kwh": "221",
+                "estimated_self_consumption_kwh": "348.210",
+            },
+        )
+    )
+
+    response = TestClient(app).get(
+        "/reports/monthly/history",
+        headers=_headers(token_a),
+        params={"plant_id": str(PLANT_A)},
+    )
+
+    assert response.status_code == 200
+    cycle = response.json()["cycles"][0]
+    assert cycle["cycle_start"] == "2026-09-28"
+    assert cycle["cycle_end"] == "2026-09-28"
+    assert cycle["production_kwh"] == "583.210"
+    assert cycle["grid_injection_kwh"] == "235"
+    assert cycle["imported_kwh"] == "221"
+    assert cycle["self_consumption_kwh"] == "348.210"
+
+
+def test_old_snapshot_without_meter_metrics_returns_null_not_zero(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(_seed_cycles(factory, plant_id=PLANT_A, months=["2026-01"]))
+
+    response = TestClient(app).get(
+        "/reports/monthly/history",
+        headers=_headers(token_a),
+        params={"plant_id": str(PLANT_A)},
+    )
+
+    cycle = response.json()["cycles"][0]
+    assert cycle["grid_injection_kwh"] is None
+    assert cycle["imported_kwh"] is None
+    assert cycle["self_consumption_kwh"] is None
+    assert cycle["cycle_start"] == "2026-01-28"
 
 
 def test_no_cycles_returns_empty_list_with_200(cross_tenant_setup) -> None:

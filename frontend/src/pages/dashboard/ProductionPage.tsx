@@ -1,22 +1,19 @@
+import { lazy, Suspense } from 'react'
 import { Link } from 'react-router'
 import { fetchAnomalyHistory, fetchExecutiveDashboard, fetchMonthlyProductionHistory, fetchPhotovoltaicSummary } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
-import type { AnomalyDashboardResponse, AnomalyFetchError, AnomalyFetchState, Severity } from '../../lib/dashboard/contracts'
+import type { AnomalyDashboardResponse, AnomalyFetchError, AnomalyFetchState } from '../../lib/dashboard/contracts'
 import {
   classifyAnomalyErrorStatus,
-  latestNonNullProductionDate,
   parseAnomalyDashboard,
   parseExecutiveDashboard,
 } from '../../lib/dashboard/contracts'
 import { parseMonthlyProductionHistory } from '../../lib/dashboard/monthly-history-contracts'
 import type { PhotovoltaicSummaryResponse } from '../../lib/dashboard/photovoltaic-contracts'
-import { parsePhotovoltaicSummary } from '../../lib/dashboard/photovoltaic-contracts'
-import { formatFullDate, formatNumber, toNumber } from '../../lib/format'
-import { levelLabel, levelSeverity } from '../../lib/dashboard/visuals'
+import { baselineUnavailableMessage, parsePhotovoltaicSummary } from '../../lib/dashboard/photovoltaic-contracts'
 import { SectionTitle } from '../../components/SectionTitle'
-import { LatestDailyProductionCard } from '../../components/LatestDailyProductionCard'
 import { EmptyState } from '../../components/EmptyState'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { MonthlyProductionSection } from '../../components/MonthlyProductionSection'
@@ -24,11 +21,16 @@ import { ProductionHistorySection, useProductionPeriodPreference } from '../../c
 import { RefreshBar } from '../../components/RefreshBar'
 import { RetryableError } from '../../components/RetryableError'
 import { PageHeader } from '../../components/PageHeader'
-import { SummaryTile } from '../../components/SummaryTile'
-import { ProductionDiagnosticPanel } from '../../components/ProductionDiagnosticPanel'
-import { EpisodeTimelineSection } from '../../components/EpisodeTimelineSection'
 import { EnergyDestinationSection } from '../../components/EnergyDestinationSection'
 import { DASHBOARD_TECHNICAL_PATH } from '../../routes'
+
+// Comparação com o esperado em chunk próprio: no primeiro ano da usina (sem
+// referência) não aparece, então não precisa ser baixada (ADR-083, etapa 3).
+const ExpectedComparisonSection = lazy(() =>
+  import('../../components/ExpectedComparisonSection').then((module) => ({
+    default: module.ExpectedComparisonSection,
+  })),
+)
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
 // 401): garante um `expectedProduction.available: false` explícito para
@@ -53,27 +55,6 @@ function fallbackPvSummary(plantId: string): PhotovoltaicSummaryResponse {
   }
 }
 
-function formatKwh(value: number | null): string {
-  return value === null ? '—' : `${formatNumber(value)} kWh`
-}
-
-// `expected_production_kwh` (de `/energy/anomalies/latest`) é o MESMO escalar
-// replicado pelo backend em todos os dias do recorte (baseline sazonal do
-// período, não uma previsão por dia — ver `anomaly_service.py:145-171` e o
-// mesmo tratamento em `ProductionHistoryChart.tsx`). O sufixo "kWh/dia"
-// reforça que é uma taxa de referência do período, não o total daquele dia
-// específico — mesma convenção de `formatDailyKwh` em `TechnicalPage.tsx`
-// (cópia local, cada módulo com sua própria instância — ver comentário de
-// `fallbackPvSummary` acima).
-function formatDailyKwh(value: number | null): string {
-  return value === null ? '—' : `${formatNumber(value)} kWh/dia`
-}
-
-function formatDeviation(value: number | null): string {
-  if (value === null) return '—'
-  const prefix = value > 0 ? '+' : ''
-  return `${prefix}${formatNumber(value, 1)}%`
-}
 
 // Módulo Produção (ADR-072, Etapa 4) — três recursos (ver ADR seção 2):
 // `anomalies` (`/energy/anomalies/latest`), `pvSummary`
@@ -209,18 +190,17 @@ export function ProductionPage() {
   // ainda não chegou, nunca o fallback prematuramente.
   const pvSummary = pvSummaryResource.status === 'error' ? fallbackPvSummary(plantId) : pvSummaryResource.data
   const expectedProduction = pvSummary?.expectedProduction ?? null
-  const latestProductionDate = anomalies.data ? latestNonNullProductionDate(anomalies.data.daily) : null
-  const latestProductionPoint =
-    latestProductionDate && anomalies.data
-      ? anomalies.data.daily.find((point) => point.date === latestProductionDate) ?? null
+
+  // Comparação com o esperado (ADR-083, etapa 3). No primeiro ano da usina não
+  // há referência: em vez de "—"/"Baseline indisponível" em seis lugares, um
+  // aviso único diz quando ela começa, e os blocos que só existem contra o
+  // esperado (régua do último dia, desvio, sequência, diagnóstico, episódios)
+  // ficam de fora. Com erro no resumo FV, nada é afirmado sobre a referência.
+  const hasBaseline = anomalies.data != null && anomalies.data.expected_unavailable_reason == null
+  const baselineNotice =
+    pvSummaryResource.status === 'success' && expectedProduction && !expectedProduction.available
+      ? baselineUnavailableMessage(expectedProduction.reason, expectedProduction.referenceCompleteOn)
       : null
-  const latestActualProduction = latestProductionPoint ? toNumber(latestProductionPoint.actual_production_kwh) : null
-  const latestExpectedProduction = latestProductionPoint ? toNumber(latestProductionPoint.expected_production_kwh) : null
-  const latestDeviation = latestProductionPoint ? toNumber(latestProductionPoint.deviation_percent) : null
-  const latestLevel = latestProductionPoint?.level ?? null
-  const deviationTone = latestProductionPoint ? levelSeverity(latestLevel) : 'neutral'
-  const streakDays = anomalies.data?.current_streak_days ?? null
-  const streakTone: Severity = streakDays === null ? 'neutral' : streakDays > 0 ? 'warning' : 'success'
 
   return (
     <>
@@ -231,6 +211,27 @@ export function ProductionPage() {
         headingRef={headingRef}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
       />
+
+      {baselineNotice && !hasBaseline && (
+        <p
+          role="note"
+          className="mb-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-brand-primary-light)] px-4 py-3 text-[14px] leading-6 text-[var(--color-text-primary)]"
+        >
+          {baselineNotice}
+        </p>
+      )}
+
+      {/* O mais importante primeiro: placas × Equatorial no período de cada
+          fatura. Depois, para onde foi a energia e o dia a dia. */}
+      <section className="mb-6">
+        <SectionTitle as="h2">Placas × Equatorial, ciclo a ciclo</SectionTitle>
+        {monthlyHistory.error ? (
+          <RetryableError message={monthlyHistory.error} onRetry={monthlyHistory.refetch} />
+        ) : (
+          <MonthlyProductionSection history={monthlyHistory.data} plantId={plantId} />
+        )}
+      </section>
+
       {executive.data && (
         <EnergyDestinationSection
           indicators={executive.data.current_cycle.indicators}
@@ -238,59 +239,7 @@ export function ProductionPage() {
           referenceMonth={executive.data.current_cycle.reference_month}
         />
       )}
-      <section className="mb-6">
-        <SectionTitle as="h2">Resumo operacional</SectionTitle>
-        {/* "Produção do último dia vs. esperada" mora ao lado de "Última
-            produção" (pedido do dono do produto): o número e a régua contra o
-            esperado são lidos juntos. A partir do tablet são 3 colunas: linha 1
-            = "Última produção" + régua (2 colunas); linha 2 = baseline, desvio
-            e sequência. No celular são 2 colunas e a régua ocupa a linha
-            inteira — `grid-flow-row-dense` puxa o "Baseline" para o lado de
-            "Última produção" em vez de deixar um buraco. Seis colunas no
-            desktop espremiam os números (testado em 1280/1440 px). */}
-        <div className="grid grid-flow-row-dense grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
-          <SummaryTile
-            label="Última produção"
-            value={formatKwh(latestActualProduction)}
-            supportingText={
-              anomalyState.loading && !latestProductionPoint
-                ? 'Carregando histórico'
-                : latestProductionDate
-                  ? `Dado de ${formatFullDate(latestProductionDate)}`
-                  : 'Sem dado diário'
-            }
-            tone="brand"
-          />
-          {/* Compara o último dia com dado diário coletado (real vs. esperado,
-              mesma escala kWh/dia) — não o total do ciclo (~30 dias) contra uma
-              média diária. A produção do ciclo continua visível no nó
-              "Produção" de `EnergyFlowDiagram`, na Visão Geral. */}
-          <LatestDailyProductionCard anomalyState={anomalyState} className="col-span-2 h-full" />
-          <SummaryTile
-            label="Baseline esperado (período)"
-            value={formatDailyKwh(latestExpectedProduction)}
-            supportingText={latestExpectedProduction === null ? 'Baseline indisponível' : 'Referência do período'}
-            tone="neutral"
-          />
-          <SummaryTile
-            label="Desvio"
-            value={formatDeviation(latestDeviation)}
-            supportingText={latestProductionPoint ? levelLabel(latestLevel) : 'Sem comparação'}
-            tone={deviationTone}
-          />
-          <SummaryTile
-            label="Sequência de atenção"
-            value={streakDays === null ? '—' : `${formatNumber(streakDays, 0)} ${streakDays === 1 ? 'dia' : 'dias'}`}
-            supportingText={streakDays === null ? 'Aguardando dados' : streakDays > 0 ? 'abaixo do esperado' : 'sem alerta ativo'}
-            tone={streakTone}
-          />
-        </div>
-      </section>
 
-      {/* Gráfico diário logo abaixo do resumo (pedido do dono do produto):
-          é a primeira coisa que o operador quer ver depois dos números — a
-          produção dia a dia contra o esperado. Só o gráfico sobe; a leitura
-          do período e o rendimento continuam mais abaixo. */}
       <section className="mb-6">
         <SectionTitle as="h2">Histórico de produção</SectionTitle>
         <ProductionHistorySection
@@ -303,58 +252,27 @@ export function ProductionPage() {
         />
       </section>
 
-      <section className="mb-6" aria-label="Diagnóstico de produção do período">
-        <ProductionDiagnosticPanel anomalyState={anomalyState} expectedProduction={expectedProduction} />
-      </section>
-
-      {/* Episódios (ADR-075, Decisão 4) — construído sobre `daily[].diagnostics`,
-          que a API já devolvia e o parser descartava. Fica logo abaixo do painel
-          de diagnóstico porque responde a pergunta seguinte: o painel diz o que
-          está acontecendo AGORA, a linha do tempo diz quando começou e quanto
-          durou. É o único eixo que nenhuma seção existente cobre. Deliberadamente
-          NÃO se chama "alertas": o produto não tem central de alertas, e a tela
-          não pode sugerir que tem (ADR-075, Decisão 3). */}
-      <section className="mb-6" aria-label="Episódios de produção">
-        <EpisodeTimelineSection
+      <section className="mb-6">
+        <ProductionHistorySection
+          layout="details"
+          detailsHeading="Leitura do período"
           anomalyState={anomalyState}
           expectedProduction={expectedProduction}
           onRetry={anomalies.refetch}
+          periodDays={periodDays}
+          onPeriodChange={setPeriodDays}
         />
       </section>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-6 lg:grid-cols-12 lg:gap-6 items-start">
-        {/* Produção por ciclo de faturamento (12 ciclos fechados) — leitura do
-            grosso pro fino: o resumo mensal primeiro, o histórico diário de 90
-            dias (bloco seguinte) depois. Erro desta seção é isolado
-            (`monthlyHistory.error`) e não trava o resto do módulo se a chamada
-            falhar. */}
-        <section className="md:col-span-6 lg:col-span-12">
-          <SectionTitle as="h2">Produção por ciclo de faturamento</SectionTitle>
-          {monthlyHistory.error ? (
-            <RetryableError
-              message={monthlyHistory.error}
-              onRetry={monthlyHistory.refetch}
-            />
-          ) : (
-            <MonthlyProductionSection history={monthlyHistory.data} plantId={plantId} />
-          )}
-        </section>
-
-        {/* Leitura do período (média, desempenho, tendência, gatilho) e
-            rendimento lado a lado (paisagem) — o gráfico em si subiu para logo
-            abaixo do resumo, e o card do último dia foi para o resumo. */}
-        <section className="md:col-span-6 lg:col-span-12">
-          <ProductionHistorySection
-            layout="details"
-            detailsHeading="Leitura do período"
+      {hasBaseline && (
+        <Suspense fallback={<div className="mb-6 h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)]" aria-hidden="true" />}>
+          <ExpectedComparisonSection
             anomalyState={anomalyState}
             expectedProduction={expectedProduction}
             onRetry={anomalies.refetch}
-            periodDays={periodDays}
-            onPeriodChange={setPeriodDays}
           />
-        </section>
-      </div>
+        </Suspense>
+      )}
 
       <Link
         to={DASHBOARD_TECHNICAL_PATH}

@@ -63,7 +63,7 @@ describe('buildHomeStatus (ADR-083)', () => {
   })
 
   it('queda forte contra a semana anterior: perigo, sugerindo conferir o tempo antes', () => {
-    const daily = [...steadyFortnight('2026-10-15', 30).slice(0, 7), ...steadyFortnight('2026-10-22', 10).slice(7)]
+    const daily = [...steadyFortnight('2026-10-22', 30).slice(0, 7), ...steadyFortnight('2026-10-22', 10).slice(7)]
     const status = buildHomeStatus({ daily, latestDataDate: '2026-10-22', today: TODAY })
     expect(status.tone).toBe('danger')
     expect(status.title).toBe('Produção bem abaixo do normal')

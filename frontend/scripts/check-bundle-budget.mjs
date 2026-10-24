@@ -108,6 +108,16 @@ const BUDGETS = [
     limitKb: 8,
   },
   {
+    // Comparação com a produção esperada (régua do último dia, desvio,
+    // sequência, diagnóstico do período, episódios), sob demanda pela aba
+    // Energia (ADR-083, etapa 3). Saiu do módulo em 2026-10-24, quando a
+    // comparação placas × distribuidora levou Energia a 15,08 kB (teto 15).
+    // Só é baixada quando a usina já tem referência esperada. Medido: 6,45 kB.
+    name: 'ExpectedComparisonSection',
+    match: /^ExpectedComparisonSection-.*\.js$/,
+    limitKb: 8,
+  },
+  {
     name: 'LoginPage',
     match: /^LoginPage-.*\.js$/,
     limitKb: 5,

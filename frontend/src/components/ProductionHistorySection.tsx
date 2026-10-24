@@ -292,7 +292,7 @@ export function ProductionHistorySection({
               Últimos {Math.min(selectedPeriodDays, anomalyState.data.daily.length)} dias em foco
             </h3>
             <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[var(--color-text-secondary)]">
-              7 dias mostram queda recente; 30 e 90 dias confirmam se é recorrente ou sazonal.
+              Troque o período para ver se uma variação é passageira (7 dias) ou se repete (30 e 90 dias).
             </p>
           </div>
 
@@ -315,6 +315,9 @@ export function ProductionHistorySection({
             </dd>
           </div>
 
+          {/* Sem referência esperada no recorte, "Desempenho médio" seria só um
+              "—": o aviso único da aba Energia já explica (ADR-083, etapa 3). */}
+          {selectedPerformance.assessedDays > 0 && (
           <div className="min-w-0">
             <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Desempenho médio</dt>
             <dd className="mt-1 font-display text-[22px] font-semibold tabular-nums text-[var(--color-text-primary)]">
@@ -326,6 +329,7 @@ export function ProductionHistorySection({
                 : 'sem baseline no recorte'}
             </dd>
           </div>
+          )}
 
           <div className="min-w-0">
             <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Tendência do recorte</dt>

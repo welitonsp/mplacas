@@ -1,13 +1,11 @@
 import { useState } from 'react'
-import type { ColumnSeriesItem } from './charts/ColumnSeries'
-import { ColumnSeries } from './charts/ColumnSeries'
 import { Card } from './Card'
 import { EmptyState } from './EmptyState'
 import { LoadingAnnouncement } from './LoadingAnnouncement'
-import type { MonthlyProductionHistoryResponse } from '../lib/dashboard/monthly-history-contracts'
+import type { MonthlyProductionCycle, MonthlyProductionHistoryResponse } from '../lib/dashboard/monthly-history-contracts'
 import type { MonthlyReportExportFormat } from '../lib/api'
 import { downloadMonthlyReportExport } from '../lib/api'
-import { formatCycleLabel, formatNumber } from '../lib/format'
+import { formatCycleLabel, formatNumber, formatShortDate } from '../lib/format'
 
 const EXPORT_FORMAT_LABELS: Record<MonthlyReportExportFormat, string> = {
   pdf: 'PDF',
@@ -88,21 +86,78 @@ function MonthlyExportControl({ plantId }: { plantId: string }) {
   )
 }
 
-// Seção "Produção por ciclo de faturamento": um `ColumnSeries` (kWh por
-// ciclo fechado, colunas verticais em ordem cronológica — o tempo se lê da
-// esquerda pra direita, mais compacto que a lista de barras horizontais
-// anterior, ver ADR/instrução da troca). `history === null` é o estado de
-// carregamento (mesmo padrão de `FinancialReturnSection`, cujo fetch/erro é
-// dono do `DashboardPage`, não deste componente). Erro de rede/servidor é
-// tratado fora daqui, isolado do resto da página, com `RetryableError` —
-// este componente só recebe o resultado já parseado (ou `null` enquanto
-// carrega).
+// Ciclo a ciclo da fatura: quanto as PLACAS geraram (inversor) ao lado do que o
+// MEDIDOR da distribuidora registrou no mesmo período (ADR-083, etapa 3 — "o
+// mais importante é saber quanto as placas geraram no período do ciclo × o
+// período da operadora"). A diferença ficou na casa (autoconsumo do motor).
 // Dias sem leitura que o sistema estimou pelo sol (ADR-082) aparecem como
-// tal — nunca somem nem viram "medido".
+// tal — nunca somem nem viram "medido". `history === null` = carregando.
 function gapDescription(gapDays: number, estimatedDays: number): string {
-  const base = `${gapDays} ${gapDays === 1 ? 'dia' : 'dias'} sem dado`
+  const base = `${gapDays} ${gapDays === 1 ? 'dia' : 'dias'} sem leitura do inversor`
   if (estimatedDays <= 0) return base
   return `${base}, ${estimatedDays === gapDays ? 'estimados' : `${estimatedDays} estimados`} pelo sol`
+}
+
+const VISIBLE_CYCLES = 6
+
+function kwh(value: number | null): string {
+  return value == null ? '—' : `${formatNumber(value, 0)} kWh`
+}
+
+function cyclePeriod(cycle: MonthlyProductionCycle): string | null {
+  if (!cycle.cycleStart || !cycle.cycleEnd) return null
+  return `${formatShortDate(cycle.cycleStart)} a ${formatShortDate(cycle.cycleEnd)}`
+}
+
+function Bar({ value, max, className }: { value: number | null; max: number; className: string }) {
+  const width = value == null || max <= 0 ? 0 : Math.max(2, Math.round((value / max) * 100))
+  return (
+    <span aria-hidden="true" className="block h-2.5 w-full overflow-hidden rounded-full bg-[var(--color-chart-track)]">
+      <span className={`block h-full rounded-full ${className}`} style={{ width: `${width}%` }} />
+    </span>
+  )
+}
+
+function CycleRow({ cycle, max }: { cycle: MonthlyProductionCycle; max: number }) {
+  const gapDays = (cycle.quality?.missingDays ?? 0) + (cycle.quality?.unavailableDays ?? 0)
+  const period = cyclePeriod(cycle)
+  const label = formatCycleLabel(cycle.referenceMonth)
+  return (
+    <li className="flex flex-col gap-2 border-t border-[var(--color-border)] py-4 first:border-t-0 first:pt-0">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+          {label}
+          {period && <span className="ml-2 text-[13px] font-normal text-[var(--color-text-secondary)]">{period}</span>}
+        </h3>
+        {gapDays > 0 && (
+          <span className="rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold text-[var(--color-warning-text)]">
+            {gapDescription(gapDays, cycle.quality?.estimatedDays ?? 0)}
+          </span>
+        )}
+      </div>
+      <dl className="grid grid-cols-1 gap-2">
+        <div className="grid grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)_auto] items-center gap-3">
+          <dt className="text-[13px] text-[var(--color-text-secondary)]">Placas geraram</dt>
+          <Bar value={cycle.productionKwh} max={max} className="bg-[var(--color-energy-solar)]" />
+          <dd className="text-right text-[14px] font-semibold tabular-nums text-[var(--color-text-primary)]">{kwh(cycle.productionKwh)}</dd>
+        </div>
+        <div className="grid grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)_auto] items-center gap-3">
+          <dt className="text-[13px] text-[var(--color-text-secondary)]">Equatorial registrou</dt>
+          <Bar value={cycle.gridInjectionKwh} max={max} className="bg-[var(--color-energy-grid)]" />
+          <dd className="text-right text-[14px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+            {cycle.gridInjectionKwh == null ? 'sem registro' : kwh(cycle.gridInjectionKwh)}
+          </dd>
+        </div>
+      </dl>
+      {(cycle.selfConsumptionKwh != null || cycle.importedKwh != null) && (
+        <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
+          {cycle.selfConsumptionKwh != null && <>Ficou na casa: <strong className="font-semibold text-[var(--color-text-primary)]">{kwh(cycle.selfConsumptionKwh)}</strong></>}
+          {cycle.selfConsumptionKwh != null && cycle.importedKwh != null && ' · '}
+          {cycle.importedKwh != null && <>Veio da rede: <strong className="font-semibold text-[var(--color-text-primary)]">{kwh(cycle.importedKwh)}</strong></>}
+        </p>
+      )}
+    </li>
+  )
 }
 
 export function MonthlyProductionSection({
@@ -112,82 +167,59 @@ export function MonthlyProductionSection({
   history: MonthlyProductionHistoryResponse | null
   plantId: string
 }) {
+  const [showAll, setShowAll] = useState(false)
+
   if (history === null) {
     return (
       <Card className="animate-pulse">
+        <LoadingAnnouncement active message="Carregando ciclos da fatura" />
         <div className="h-3 w-1/3 rounded bg-gray-200" />
         <div className="mt-4 h-24 w-full rounded bg-gray-100" />
       </Card>
     )
   }
 
-  const { cycles, cyclesReturned } = history
-
   // Usina nova sem nenhum ciclo com fatura confirmada — estado normal, não
   // erro (o backend devolve `200` com `cycles: []`, ver contrato do endpoint).
-  if (cycles.length === 0) {
+  if (history.cycles.length === 0) {
     return (
       <EmptyState
         title="Sem ciclos fechados"
-        description="Ainda não há ciclo de faturamento fechado para esta usina. Assim que a primeira fatura for consolidada, o histórico mensal aparecerá aqui."
+        description="Ainda não há ciclo de faturamento fechado para esta usina. Assim que a primeira fatura for confirmada, a comparação entre as placas e a Equatorial aparece aqui."
         tone="neutral"
       />
     )
   }
 
-  // `provisionalDays`/`incompleteDays` não disparam o selo de lacuna —
-  // provisório ainda é medição real. Só `missingDays`/`unavailableDays`
-  // (dias sem nenhum dado coletado) contam como lacuna de telemetria. Quando
-  // há lacuna, `description` guarda a contagem EXATA de dias sem dado — o
-  // `BarList` antigo só mostrava o selo "dados parciais" sem nunca expor
-  // esse número em lugar nenhum da UI; a coluna nova preserva o selo E
-  // acrescenta essa contagem (visível abaixo da coluna e na tabela `sr-only`
-  // de `ColumnSeries`), nunca só em tooltip (ver instrução da tarefa).
-  const items: ColumnSeriesItem[] = cycles.map((cycle) => {
-    const gapDays =
-      (cycle.quality?.missingDays ?? 0) + (cycle.quality?.unavailableDays ?? 0)
-    const hasGap = cycle.quality != null && gapDays > 0
-    return {
-      label: formatCycleLabel(cycle.referenceMonth),
-      value: cycle.productionKwh,
-      unavailableLabel: 'sem dado',
-      tone: 'neutral',
-      ...(hasGap
-        ? {
-            badge: { label: 'dados parciais', tone: 'warning' as const },
-            description: gapDescription(gapDays, cycle.quality?.estimatedDays ?? 0),
-          }
-        : {}),
-    }
-  })
-  const hasAnyGap = items.some((item) => item.badge != null)
+  // Mais recente primeiro: é o ciclo da última fatura que o dono compara.
+  const newestFirst = [...history.cycles].reverse()
+  const visible = showAll ? newestFirst : newestFirst.slice(0, VISIBLE_CYCLES)
+  const max = Math.max(
+    1,
+    ...history.cycles.map((cycle) => cycle.productionKwh ?? 0),
+    ...history.cycles.map((cycle) => cycle.gridInjectionKwh ?? 0),
+  )
 
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500">
-        Últimos {cyclesReturned} {cyclesReturned === 1 ? 'ciclo' : 'ciclos'}
+      <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
+        No período exato de cada fatura: o que as placas geraram (inversor) e o que o medidor da Equatorial registrou como
+        enviado à rede. A diferença ficou na casa.
       </p>
-      <ColumnSeries
-        className="mt-4"
-        items={items}
-        valueFormatter={(value) => `${formatNumber(value, 0)} kWh`}
-        // Selo "dados parciais" é dado de qualidade real (ADR-038), não
-        // decoração — a legenda só aparece quando pelo menos um ciclo tem
-        // lacuna, para não poluir a leitura quando todos os ciclos exibidos
-        // são completos.
-        legend={
-          hasAnyGap
-            ? [{ label: 'Dados parciais — dias sem telemetria coletada', tone: 'neutral', dashed: true }]
-            : undefined
-        }
-      />
-      {/* Uma coluna sozinha preenche 100% da escala e sugere uma comparação
-          que não existe — a ressalva evita que o usuário leia "cheio" como
-          "bom" sem nada para comparar (ver instrução da tarefa). */}
-      {cycles.length === 1 && (
-        <p className="mt-3 text-xs text-gray-500">
-          Comparação disponível a partir do segundo ciclo fechado.
-        </p>
+      <ul className="mt-4">
+        {visible.map((cycle) => (
+          <CycleRow key={cycle.billId} cycle={cycle} max={max} />
+        ))}
+      </ul>
+      {newestFirst.length > VISIBLE_CYCLES && (
+        <button
+          type="button"
+          onClick={() => setShowAll((value) => !value)}
+          aria-expanded={showAll}
+          className="mt-2 inline-flex min-h-[44px] items-center rounded text-sm font-semibold text-[var(--color-brand-primary)] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+        >
+          {showAll ? 'Mostrar só os mais recentes' : `Ver os ${newestFirst.length} ciclos`}
+        </button>
       )}
       <MonthlyExportControl plantId={plantId} />
     </Card>

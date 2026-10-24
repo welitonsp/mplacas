@@ -7,11 +7,11 @@ import { parseDeviceDailyStatus } from '../../lib/dashboard/device-contracts'
 import type { PhotovoltaicLossItem, PhotovoltaicSummaryResponse } from '../../lib/dashboard/photovoltaic-contracts'
 import { parsePhotovoltaicSummary, ratioToPercent } from '../../lib/dashboard/photovoltaic-contracts'
 import type { Severity } from '../../lib/dashboard/contracts'
-import { formatNumber, toNumber } from '../../lib/format'
+import { formatFullDate, formatNumber, toNumber } from '../../lib/format'
 import {
-  EVIDENCE_LEVEL_META,
   LOSS_CATEGORY_LABEL,
   performanceSeverity,
+  lossEvidenceMeta,
 } from '../../lib/dashboard/visuals'
 import { DeviceStatusSection } from '../../components/DeviceStatusSection'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
@@ -22,7 +22,6 @@ import { SectionTitle } from '../../components/SectionTitle'
 import { TechnicalPerformanceSection } from '../../components/TechnicalPerformanceSection'
 import { PageHeader } from '../../components/PageHeader'
 import { SummaryTile } from '../../components/SummaryTile'
-import { TechnicalDiagnosticPanel } from '../../components/TechnicalDiagnosticPanel'
 
 // Usado quando `/photovoltaic/summary` falha (rede ou erro de servidor, não
 // 401): a seção mostra as mensagens de indisponibilidade por bloco em vez de
@@ -62,11 +61,15 @@ function technicalHealthLabel(pr: number | null): string {
   return 'Crítico'
 }
 
+// Maior perda com evidência, preferindo as que pedem ação. O calor é física
+// (toda placa rende menos quente), então só aparece como maior perda quando
+// não há outra com evidência — e com tom neutro (ADR-083, etapa 3).
 function topLossCandidate(losses: PhotovoltaicLossItem[] | null): PhotovoltaicLossItem | null {
   if (losses === null) return null
 
-  const candidates = losses
-    .filter((loss) => loss.evidence_level === 'LIKELY' || loss.evidence_level === 'POSSIBLE')
+  const withEvidence = losses.filter((loss) => loss.evidence_level === 'LIKELY' || loss.evidence_level === 'POSSIBLE')
+  const actionable = withEvidence.filter((loss) => loss.category !== 'TEMPERATURE')
+  const candidates = (actionable.length > 0 ? actionable : withEvidence)
     .sort((left, right) => {
       const leftEvidence = left.evidence_level === 'LIKELY' ? 0 : 1
       const rightEvidence = right.evidence_level === 'LIKELY' ? 0 : 1
@@ -163,16 +166,21 @@ export function TechnicalPage() {
   const correctedPerformanceRatio = ratioToPercent(
     pvSummary?.performance?.temperature_corrected_performance_ratio ?? null
   )
-  const reportingAvailability = ratioToPercent(pvSummary?.performance?.reporting_availability_ratio ?? null)
   const expectedDailyProduction = pvSummary?.expectedProduction.available
     ? pvSummary.expectedProduction.kwh
     : null
-  const healthTone: Severity = performanceRatio === null ? 'neutral' : performanceSeverity(performanceRatio)
-  const availabilityTone: Severity =
-    reportingAvailability === null ? 'neutral' : performanceSeverity(reportingAvailability)
+  // Saúde pela performance CORRIGIDA pelo calor quando existe: o PR bruto de um
+  // dia quente cai sem que nada esteja errado (ex.: 80% bruto, 86% corrigido),
+  // e chamar isso de "Atenção" era alarme sem motivo (ADR-083, etapa 3). Os
+  // números de PR ficam só em "Desempenho técnico", abaixo (cada número uma vez).
+  const healthRatio = correctedPerformanceRatio ?? performanceRatio
+  const healthTone: Severity = healthRatio === null ? 'neutral' : performanceSeverity(healthRatio)
   const leadingLoss = topLossCandidate(pvSummary?.losses ?? null)
-  const leadingLossTone: Severity = leadingLoss ? EVIDENCE_LEVEL_META[leadingLoss.evidence_level].severity : 'success'
+  const leadingLossMeta = leadingLoss ? lossEvidenceMeta(leadingLoss.category, leadingLoss.evidence_level) : null
+  const leadingLossTone: Severity = leadingLossMeta?.severity ?? 'success'
   const leadingLossValue = leadingLoss ? toNumber(leadingLoss.estimated_loss_percent) : null
+  const expectedPending =
+    pvSummary && !pvSummary.expectedProduction.available ? pvSummary.expectedProduction.referenceCompleteOn : null
 
   return (
     <>
@@ -186,55 +194,52 @@ export function TechnicalPage() {
       />
       <section className="mb-6">
         <SectionTitle as="h2">Resumo técnico</SectionTitle>
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
           <SummaryTile
             label="Saúde técnica"
-            value={technicalHealthLabel(performanceRatio)}
-            supportingText={`PR bruto ${formatPercent(performanceRatio)}`}
+            value={technicalHealthLabel(healthRatio)}
+            supportingText={
+              correctedPerformanceRatio !== null
+                ? 'Pela performance já descontado o calor'
+                : performanceRatio !== null
+                  ? 'Pela performance do dia'
+                  : 'Aguardando dados'
+            }
             tone={healthTone}
           />
           <SummaryTile
-            label="Disponibilidade dos dados"
-            value={formatPercent(reportingAvailability)}
-            supportingText="reporte dos devices"
-            tone={availabilityTone}
-          />
-          <SummaryTile
-            label="Principal suspeita"
-            value={leadingLoss ? LOSS_CATEGORY_LABEL[leadingLoss.category] : 'Sem causa crítica'}
+            label="Maior perda estimada"
+            value={leadingLoss ? LOSS_CATEGORY_LABEL[leadingLoss.category] : 'Nenhuma relevante'}
             supportingText={
-              leadingLoss
-                ? `${EVIDENCE_LEVEL_META[leadingLoss.evidence_level].label} · ${formatPercent(leadingLossValue, 1)}`
+              leadingLoss && leadingLossMeta
+                ? `${leadingLossMeta.label} · ${formatPercent(leadingLossValue, 1)}`
                 : loading
                   ? 'Carregando perdas'
-                  : 'sem evidência relevante'
+                  : 'Sem evidência de perda'
             }
             tone={leadingLossTone}
           />
           <SummaryTile
             label="Produção esperada"
-            value={formatDailyKwh(expectedDailyProduction)}
+            value={expectedDailyProduction !== null ? formatDailyKwh(expectedDailyProduction) : loading ? '…' : 'Em formação'}
             supportingText={
-              expectedDailyProduction === null
-                ? loading
-                  ? 'Carregando baseline'
-                  : 'baseline indisponível'
-                : correctedPerformanceRatio === null
-                  ? 'baseline sazonal'
-                  : `PR corrigido ${formatPercent(correctedPerformanceRatio)}`
+              expectedDailyProduction !== null
+                ? 'Referência do dia, pela própria usina'
+                : expectedPending
+                  ? `Começa em ${formatFullDate(expectedPending)}`
+                  : loading
+                    ? 'Carregando referência'
+                    : 'Ainda sem referência'
             }
             tone="brand"
           />
         </div>
       </section>
 
-      <section className="mb-6">
-        <TechnicalDiagnosticPanel summary={pvSummary} />
-      </section>
-
-      {/* Visão por inversor (ADR-074, Decisão 5) — entre o diagnóstico de
-          causa e o desempenho técnico agregado: drill-down direto do tile
-          "Disponibilidade dos dados" acima, resposta ao lado da pergunta. */}
+      {/* Visão por inversor (ADR-074, Decisão 5). O painel genérico de
+          "Diagnóstico de causa" (confiança, "Agir hoje", plano de 3 passos)
+          saiu (ADR-083): as causas, com evidência, estão em "Por que produzi
+          menos", dentro de "Desempenho técnico". */}
       <section className="mb-6">
         <DeviceStatusSection resource={deviceStatusResource} />
       </section>

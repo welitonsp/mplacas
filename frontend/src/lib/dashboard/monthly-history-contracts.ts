@@ -23,7 +23,18 @@ export interface MonthlyProductionCycle {
   referenceMonth: string
   billId: string
   status: string
+  // Período exato da fatura (ADR-083, etapa 3); `null` se o backend for
+  // anterior ou a fatura não estiver mais confirmada.
+  cycleStart: string | null
+  cycleEnd: string | null
+  // Placas (inversor) no ciclo da fatura.
   productionKwh: number | null
+  // Distribuidora (medidor), tal como gravado no relatório do ciclo: energia
+  // enviada à rede e trazida da rede. `null` em relatório antigo — nunca 0.
+  gridInjectionKwh: number | null
+  importedKwh: number | null
+  // Autoconsumo calculado pelo motor (placas − enviado à rede), não pela tela.
+  selfConsumptionKwh: number | null
   quality: MonthlyProductionCycleQuality | null
 }
 
@@ -68,6 +79,13 @@ function nullableDecimalNumber(source: Record<string, unknown>, key: string): nu
   throw new Error(`Resposta inválida da API: ${key}`)
 }
 
+function nullableIsoDate(source: Record<string, unknown>, key: string): string | null {
+  const value = source[key]
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  throw new Error(`Resposta inválida da API: ${key}`)
+}
+
 function nullableInt(source: Record<string, unknown>, key: string): number | null {
   const value = source[key]
   if (value === null || value === undefined) return null
@@ -98,7 +116,12 @@ function parseCycle(value: unknown): MonthlyProductionCycle {
     referenceMonth: requireString(value, 'reference_month'),
     billId: requireString(value, 'bill_id'),
     status: requireString(value, 'status'),
+    cycleStart: nullableIsoDate(value, 'cycle_start'),
+    cycleEnd: nullableIsoDate(value, 'cycle_end'),
     productionKwh: nullableDecimalNumber(value, 'production_kwh'),
+    gridInjectionKwh: nullableDecimalNumber(value, 'grid_injection_kwh'),
+    importedKwh: nullableDecimalNumber(value, 'imported_kwh'),
+    selfConsumptionKwh: nullableDecimalNumber(value, 'self_consumption_kwh'),
     quality: parseQuality(value.quality),
   }
 }

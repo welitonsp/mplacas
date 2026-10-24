@@ -111,6 +111,47 @@ Ordem nova: **Retorno do investimento → Sua conta com e sem a usina → Detalh
 - "Conferir faturas" no Início leva a `/dashboard/dinheiro#faturas`, que rola até elas
   uma vez, quando já estão na tela.
 
+## Etapa 3 — aba Energia e Detalhes técnicos (2026-10-24)
+
+Pedido do dono, em suas palavras: "o mais importante é eu saber quanto as placas geraram
+no período do ciclo × o período da operadora".
+
+- **Placas × Equatorial, ciclo a ciclo** abre a aba. Para cada fatura, mais recente
+  primeiro, com o período exato (dd/mm a dd/mm):
+  - quanto as placas geraram (inversor);
+  - quanto o medidor da distribuidora registrou como enviado à rede;
+  - o que ficou na casa e o que veio da rede.
+  Mostra 6 ciclos e um botão para ver todos. Dias sem leitura do inversor aparecem no
+  ciclo, com quantos foram estimados pelo sol.
+- **Backend**: `GET /reports/monthly/history` passa a devolver, por ciclo:
+  - `cycle_start` e `cycle_end`, da fatura confirmada;
+  - `grid_injection_kwh`, `imported_kwh` e `self_consumption_kwh`, tal como gravados no
+    snapshot do ciclo. A injeção é a do medidor (`reconcile_bill`).
+  Leitura estrita, sem recalcular (ADR-038). Snapshot antigo sem esses números devolve
+  `null`, e a tela diz "sem registro", nunca 0.
+- **Primeiro ano sem referência esperada**: um aviso único com a data em que ela começa.
+  Saem os "—" e "Baseline indisponível" espalhados. Os blocos que só existem contra o
+  esperado vão para um chunk sob demanda (`ExpectedComparisonSection`), que só é baixado
+  quando há referência:
+  - régua do último dia;
+  - desvio;
+  - sequência de atenção;
+  - diagnóstico do período;
+  - episódios.
+- **Alerta por dias de calendário**: `productionAlertSignal` e a tendência do período
+  comparam 7 dias de calendário (`calendarWindow`), não as 7 últimas entradas. Fecha a
+  dívida da etapa 1.
+- **Detalhes técnicos**:
+  - sai o painel genérico "Diagnóstico de causa" ("Agir hoje", plano de 3 passos);
+  - "Saúde técnica" passa a usar a performance corrigida pelo calor;
+  - "Principal suspeita" vira "Maior perda estimada", que prefere perdas que pedem ação;
+  - o calor é física: entra só quando não há outra perda, com selo neutro
+    "Efeito normal do calor";
+  - os números de PR ficam só em "Desempenho técnico".
+- **Textos do motor em inglês**: as limitações da taxonomia de perdas são traduzidas
+  (`loss-limitations.ts`). Frase sem tradução não aparece, e um teste compara com
+  `loss_taxonomy.py` para pegar frase nova no backend.
+
 ## Consequências
 
 - A aba Início faz quatro leituras (executivo, produção diária, retorno, cadastro).

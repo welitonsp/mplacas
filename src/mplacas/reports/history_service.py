@@ -13,6 +13,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mplacas.billing.read_repository import ConfirmedBillReadRepository
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.reports.contract import MonthlyEnergyReport, ReportMetric
 from mplacas.reports.snapshot import MonthlyReportSnapshotRepository, ReportSnapshotIntegrityError
@@ -64,16 +65,36 @@ async def load_monthly_production_history(
     snapshots = await MonthlyReportSnapshotRepository(
         session, plant_scope=plant_scope
     ).list_recent_for_plant(plant_id=plant_id, limit=limit)
+    # Datas do ciclo vêm da fatura confirmada (o snapshot só guarda o mês de
+    # referência). Uma leitura para a janela inteira, não uma por ciclo.
+    bills = {
+        confirmed.id: confirmed.bill
+        for confirmed in await ConfirmedBillReadRepository(
+            session, plant_scope=plant_scope
+        ).list_for_plant(plant_id=plant_id)
+    }
 
     cycles: list[dict[str, object]] = []
     for snapshot in snapshots:
         report = snapshot.report
+        bill = bills.get(report.bill_id)
         cycles.append(
             {
                 "reference_month": report.reference_month,
                 "bill_id": str(report.bill_id),
                 "status": report.status,
+                "cycle_start": bill.cycle_start.isoformat() if bill else None,
+                "cycle_end": bill.cycle_end.isoformat() if bill else None,
+                # Placas × distribuidora no MESMO ciclo da fatura (ADR-083,
+                # etapa 3), tal como gravado no snapshot: a injeção é a do
+                # medidor da distribuidora (`reconcile_bill`), e o autoconsumo
+                # é a diferença calculada pelo motor — nada recalculado aqui.
                 "production_kwh": _metric_value(report.metrics, "cycle_production_kwh"),
+                "grid_injection_kwh": _metric_value(report.metrics, "injected_kwh"),
+                "imported_kwh": _metric_value(report.metrics, "imported_kwh"),
+                "self_consumption_kwh": _metric_value(
+                    report.metrics, "estimated_self_consumption_kwh"
+                ),
                 "quality": _quality_payload(report.quality),
             }
         )

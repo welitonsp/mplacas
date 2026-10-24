@@ -1,6 +1,7 @@
 import type { LossesUnavailableReason, PhotovoltaicLossItem } from '../lib/dashboard/photovoltaic-contracts'
 import { lossesUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
-import { EVIDENCE_LEVEL_META, LOSS_CATEGORY_LABEL } from '../lib/dashboard/visuals'
+import { LOSS_CATEGORY_LABEL, lossEvidenceMeta } from '../lib/dashboard/visuals'
+import { limitationInPortuguese } from '../lib/dashboard/loss-limitations'
 import { formatNumber, toNumber } from '../lib/format'
 import type { BarListItem } from './charts/BarList'
 import { BarList } from './charts/BarList'
@@ -32,7 +33,7 @@ export function LossBreakdownSection({
   // `BarList` nunca reordena os itens que recebe — a ordem de `losses` (a
   // mesma devolvida pelo backend) é preservada 1:1 aqui, item a item.
   const items: BarListItem[] = losses.map((item) => {
-    const meta = EVIDENCE_LEVEL_META[item.evidence_level]
+    const meta = lossEvidenceMeta(item.category, item.evidence_level)
     const lossValue = toNumber(item.estimated_loss_percent)
     return {
       label: LOSS_CATEGORY_LABEL[item.category],
@@ -42,7 +43,8 @@ export function LossBreakdownSection({
       value: lossValue,
       tone: meta.severity,
       badge: { label: meta.label, tone: meta.severity },
-      description: item.limitation ?? undefined,
+      // Limitação do motor vem em inglês: só a tradução aparece (ADR-083).
+      description: limitationInPortuguese(item.limitation) ?? undefined,
     }
   })
 

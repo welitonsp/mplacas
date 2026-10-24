@@ -149,7 +149,7 @@ export const LOSS_CATEGORY_LABEL: Record<LossCategory, string> = {
   CLIPPING: 'Clipping (limite do inversor)',
   SOILING: 'Sujeira (soiling)',
   SHADING: 'Sombreamento',
-  TEMPERATURE: 'Temperatura',
+  TEMPERATURE: 'Calor nas placas',
   DEGRADATION: 'Degradação',
   UNEXPLAINED: 'Não explicada',
 }
@@ -159,6 +159,20 @@ export const LOSS_CATEGORY_LABEL: Record<LossCategory, string> = {
 // = evidência parcial, NOT_DETECTED = evidência de que a causa NÃO está
 // presente (bom sinal), NOT_ASSESSABLE = não foi possível avaliar (neutro, não
 // é nem bom nem ruim). Cor sempre acompanhada do rótulo textual.
+// Perda pelo calor é física, não defeito: toda placa produz menos quente
+// (coeficiente de temperatura). Mesmo com evidência forte, não é alarme nem
+// ação (ADR-083, etapa 3 — antes aparecia em vermelho como "Evidência de
+// causa" e virava "Agir hoje").
+export function lossEvidenceMeta(
+  category: LossCategory,
+  level: EvidenceLevel,
+): { label: string; severity: Severity } {
+  if (category === 'TEMPERATURE' && (level === 'LIKELY' || level === 'POSSIBLE')) {
+    return { label: 'Efeito normal do calor', severity: 'neutral' }
+  }
+  return EVIDENCE_LEVEL_META[level]
+}
+
 export const EVIDENCE_LEVEL_META: Record<EvidenceLevel, { label: string; severity: Severity }> = {
   LIKELY: { label: 'Evidência de causa', severity: 'danger' },
   POSSIBLE: { label: 'Possível causa', severity: 'warning' },

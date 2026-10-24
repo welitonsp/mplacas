@@ -79,15 +79,34 @@ export function productionPerformancePercent(daily: readonly AnomalyDailyPoint[]
   }
 }
 
+function shiftIsoDate(iso: string, deltaDays: number): string {
+  const [year, month, day] = iso.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + deltaDays)).toISOString().slice(0, 10)
+}
+
+// Janela de DIAS DE CALENDÁRIO (ADR-083, etapa 3). O backend omite da série os
+// dias sem leitura do inversor (não devolve `null`), então "as 7 últimas
+// entradas" podiam cobrir 10 dias e comparar semanas de tamanhos diferentes.
+// `endOffsetDays` recua a janela inteira (ex.: 7 = a semana anterior). Âncora:
+// o último dia presente na série (ordem cronológica ascendente).
+export function calendarWindow(
+  daily: readonly AnomalyDailyPoint[],
+  days: number,
+  endOffsetDays = 0,
+): AnomalyDailyPoint[] {
+  const anchor = daily[daily.length - 1]?.date
+  if (!anchor) return []
+  const end = shiftIsoDate(anchor, -endOffsetDays)
+  const start = shiftIsoDate(end, -(days - 1))
+  return daily.filter((point) => point.date >= start && point.date <= end)
+}
+
 function compareAgainstPreviousWindow(daily: readonly AnomalyDailyPoint[]): {
   dropPercent: number | null
   recentDays: number
 } {
-  const recent = latestProductionDays(daily, DEFAULT_PRODUCTION_PERIOD_DAYS)
-  const previous = daily.slice(
-    Math.max(0, daily.length - DEFAULT_PRODUCTION_PERIOD_DAYS * 2),
-    Math.max(0, daily.length - DEFAULT_PRODUCTION_PERIOD_DAYS),
-  )
+  const recent = calendarWindow(daily, DEFAULT_PRODUCTION_PERIOD_DAYS)
+  const previous = calendarWindow(daily, DEFAULT_PRODUCTION_PERIOD_DAYS, DEFAULT_PRODUCTION_PERIOD_DAYS)
   const recentAverage = averageActualProduction(recent)
   const previousAverage = averageActualProduction(previous)
 
@@ -105,11 +124,8 @@ export function compareProductionAverageTrend(
   daily: readonly AnomalyDailyPoint[],
   periodDays: ProductionPeriodDays,
 ): ProductionAverageTrend {
-  const recent = latestProductionDays(daily, periodDays)
-  const previous = daily.slice(
-    Math.max(0, daily.length - periodDays * 2),
-    Math.max(0, daily.length - periodDays),
-  )
+  const recent = calendarWindow(daily, periodDays)
+  const previous = calendarWindow(daily, periodDays, periodDays)
   const recentAverage = averageActualProduction(recent)
   const previousAverage = averageActualProduction(previous)
 
@@ -186,7 +202,7 @@ export function compareProductionAverageTrend(
 // Esses critérios seguem o padrão de mercado pesquisado: PR/esperado quando existe,
 // histórico e disponibilidade como fallback quando a referência técnica ainda não fechou.
 export function productionAlertSignal(daily: readonly AnomalyDailyPoint[]): ProductionAlertSignal {
-  const recent = latestProductionDays(daily, DEFAULT_PRODUCTION_PERIOD_DAYS)
+  const recent = calendarWindow(daily, DEFAULT_PRODUCTION_PERIOD_DAYS)
   const recentPerformance = productionPerformancePercent(recent)
 
   if (recentPerformance.percent != null && recentPerformance.assessedDays >= 3) {
