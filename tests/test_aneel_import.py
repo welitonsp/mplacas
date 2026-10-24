@@ -16,6 +16,7 @@ from mplacas.db.base import Base
 from mplacas.tariffs.aneel_import import (
     AneelImportError,
     distributor_code,
+    parse_aneel,
     parse_rows,
     read_csv,
     upsert_periods,
@@ -136,28 +137,47 @@ def test_b3_feeds_every_b3_class_and_rural_generic_only() -> None:
         "B3_COMERCIAL_CONVENCIONAL": Decimal("0.800000"),
         "B3_INDUSTRIAL_CONVENCIONAL": Decimal("0.800000"),
         "B3_PODER_PUBLICO_CONVENCIONAL": Decimal("0.800000"),
-        "B3_SERVICO_PUBLICO_CONVENCIONAL": Decimal("0.800000"),
         "B2_RURAL_CONVENCIONAL": Decimal("0.700000"),
     }
 
 
-def test_implausible_or_conflicting_values_fail_closed() -> None:
-    with pytest.raises(AneelImportError):
-        _parse([_line("2025-10-22", "2026-10-21", "5000,00", "3000,00")])
-    with pytest.raises(AneelImportError):
-        _parse(
+def test_inconsistency_inside_aneel_skips_only_that_key() -> None:
+    # A base real tem casos assim (CEA, 2021): só aquela chave sai, com aviso.
+    result = parse_aneel(
+        read_csv(
             [
-                _line("2025-10-22", "2026-10-21", "567,67", "324,14"),
-                _line("2025-10-22", "2026-10-21", "500,00", "324,14"),
+                HEADER,
+                *REAL_EQUATORIAL,
+                _line("2021-11-30", "2022-11-29", "300,00", "205,25", agent="CEA"),
+                _line("2021-11-30", "2022-11-29", "335,54", "205,25", agent="CEA"),
+                _line("2025-10-22", "2026-10-21", "5000,00", "3000,00", agent="IMPLAUSIVEL"),
+                _line("2025-10-22", "2026-10-21", "500,00", "300,00", agent="SOBREPOE"),
+                _line("2026-01-01", "2026-12-31", "600,00", "300,00", agent="SOBREPOE"),
             ]
         )
+    )
+    assert {p.distributor for p in result.periods} == {"EQUATORIAL_GO"}
+    assert len(result.periods) == 3
+    assert len(result.skipped) == 3
+    assert any("CEA" in reason and "valores diferentes" in reason for reason in result.skipped)
+
+
+def test_missing_column_or_empty_base_refuses_everything() -> None:
     with pytest.raises(AneelImportError):
-        _parse(
-            [
-                _line("2025-10-22", "2026-10-21", "567,67", "324,14"),
-                _line("2026-01-01", "2026-12-31", "600,00", "324,14"),
-            ]
-        )
+        parse_rows(read_csv([HEADER.replace("VlrTUSD", "ValorTUSD"), REAL_EQUATORIAL[0]]))
+    with pytest.raises(AneelImportError):
+        parse_rows(read_csv([HEADER]))
+
+
+def test_implausible_scee_is_dropped_full_tariff_kept() -> None:
+    periods = _parse(
+        [
+            _line("2025-10-22", "2026-10-21", "567,67", "324,14"),
+            _line("2025-10-22", "2026-10-21", "900,00", "100,00", detail="SCEE"),
+        ]
+    )
+    assert periods[0].full_brl_kwh == Decimal("0.891810")
+    assert periods[0].scee_brl_kwh is None
 
 
 def test_distributor_code_matches_the_bill_reader_convention() -> None:
@@ -231,7 +251,42 @@ async def test_registry_diverging_from_aneel_refuses_everything(session: AsyncSe
         await upsert_periods(session, periods, dry_run=False)
 
 
-async def test_period_overlapping_the_registry_is_refused(session: AsyncSession) -> None:
+async def test_period_overlapping_the_registry_is_skipped_never_doubled(
+    session: AsyncSession,
+) -> None:
     periods = _parse([_line("2026-06-01", "2027-05-31", "610,00", "340,00")])
-    with pytest.raises(AneelImportError):
-        await upsert_periods(session, periods, dry_run=False)
+    report = await upsert_periods(session, periods, dry_run=False)
+    assert report.inserted == 0 and len(report.skipped) == 1
+    rows = (await session.scalars(select(DistributorTariffRecord))).all()
+    assert len(rows) == 3
+
+
+async def test_validity_only_extends_never_shortens_or_overlaps(session: AsyncSession) -> None:
+    # Estender a última vigência (a ANEEL fecha a data do reajuste): aceito.
+    extend = _parse(
+        [
+            _line("2025-10-22", "2026-12-31", "567,67", "324,14"),
+            _line("2025-10-22", "2026-12-31", "567,67", "45,36", detail="SCEE"),
+        ]
+    )
+    report = await upsert_periods(session, extend, dry_run=False)
+    assert report.extended == 1
+    rows = {r.valid_from: r for r in (await session.scalars(select(DistributorTariffRecord))).all()}
+    assert rows[date(2025, 10, 22)].valid_to == date(2026, 12, 31)
+
+    # Encurtar: cadastro mantido, com aviso.
+    shorten = _parse(
+        [
+            _line("2024-10-22", "2025-06-30", "474,74", "271,19", reh="3.407"),
+            _line("2024-10-22", "2025-06-30", "474,74", "23,38", reh="3.407", detail="SCEE"),
+        ]
+    )
+    report = await upsert_periods(session, shorten, dry_run=False)
+    assert report.extended == 0 and len(report.skipped) == 1
+    assert rows[date(2024, 10, 22)].valid_to == date(2025, 10, 21)
+
+    # Estender por cima da vigência seguinte: cadastro mantido, com aviso.
+    over = _parse([_line("2023-10-22", "2025-01-31", "428,29", "282,34", reh="3.279")])
+    report = await upsert_periods(session, over, dry_run=False)
+    assert report.extended == 0 and len(report.skipped) == 1
+    assert rows[date(2023, 10, 22)].valid_to == date(2024, 10, 21)

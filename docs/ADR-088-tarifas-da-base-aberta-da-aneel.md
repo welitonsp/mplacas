@@ -34,7 +34,7 @@ valores conferidos nas faturas reais.
    - **Classes importadas:**
      - B1 Residencial/Residencial → `B1_RESIDENCIAL_CONVENCIONAL`;
      - B2 Rural genérica → `B2_RURAL_CONVENCIONAL`;
-     - B3 (uma tarifa só) → comercial, industrial, poder público e serviço público.
+     - B3 (uma tarifa só) → comercial, industrial e poder público.
    - **Classes não importadas:** baixa renda e tarifa social (faixas de desconto por
      consumo), tarifa branca (postos horários), irrigação e cooperativa. Para essas
      classes, o motor usa o preço da fatura e avisa (ADR-087).
@@ -43,21 +43,36 @@ valores conferidos nas faturas reais.
    - **Código da distribuidora:** é a sigla da ANEEL normalizada ("EQUATORIAL GO" →
      `EQUATORIAL_GO`). O leitor de fatura de cada distribuidora nova precisa usar a mesma
      regra.
-2. **Falha fechada.** Nestes casos a importação é interrompida e nada é gravado:
-   - valor implausível (fora de R$ 0,20–2,50/kWh);
-   - valores conflitantes na própria base;
-   - vigências sobrepostas;
-   - cadastro existente com valor diferente do da ANEEL.
-
-   Se o valor for o mesmo, só a data final da vigência pode ser ajustada.
+2. **Segurança da gravação.**
+   - **Inconsistência dentro da base da ANEEL:** inclui valores diferentes na mesma
+     vigência, vigências sobrepostas e valor implausível (fora de R$ 0,20–2,50/kWh). A
+     distribuidora e a classe afetadas ficam de fora, com aviso, e as demais seguem. A base
+     real tem casos assim: a primeira rodada contra ela parou na CEA, em 2021.
+   - **Formato inesperado:** coluna ausente, base vazia, ou base sem a Equatorial GO ou com
+     menos de 20 distribuidoras. Nesses casos a importação recusa tudo e nunca devolve um
+     "sucesso" vazio.
+   - **Cadastro com valor diferente do da ANEEL** (tarifa cheia ou SCEE): recusa tudo,
+     porque precisa de revisão humana.
+   - **Ajuste de vigência com o mesmo valor:** a data final só pode ser **estendida**, e
+     sem encostar em outra vigência. Encurtar, estender por cima de outra linha ou criar um
+     período novo que sobreponha o cadastro deixa aquela chave como está, com aviso. Nunca
+     ficam duas tarifas no mesmo dia.
+   - **SCEE implausível** (≤ 0 ou maior que a tarifa cheia): é descartada e a tarifa cheia
+     é mantida.
+   - **Serviço público** fica fora da B3, porque pode ter desconto próprio.
 3. **Comando:** `python -m mplacas.cloud_jobs import-tariffs`, com as opções `--dry-run` e
    `--no-db`.
 4. **Workflow `import-tariffs`:**
    - **semanal**, às terças, gravando;
    - **manual**, em dois modos: "simular" compara sem gravar; "gravar" exige a confirmação
      `TARIFAS`;
-   - **em pull request que mexe no importador**, baixa a base real e só resume, sem banco
-     nem segredo.
+   - **em pull request que mexe no importador, no comando ou nos testes**, baixa a base real
+     e só resume, sem banco nem segredo, falhando se o comando falhar;
+   - a fila é separada por tipo de execução, para um PR nunca substituir a execução
+     semanal.
+
+   Antes da primeira execução semanal, rode a manual em modo "simular" e confira o
+   resultado.
 
 ## Consequências
 

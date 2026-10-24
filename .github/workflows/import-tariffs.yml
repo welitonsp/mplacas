@@ -33,10 +33,14 @@ on:
   pull_request:
     paths:
       - src/mplacas/tariffs/aneel_import.py
+      - src/mplacas/cloud_jobs.py
+      - tests/test_aneel_import.py
       - .github/workflows/import-tariffs.yml
 
 concurrency:
-  group: import-tariffs
+  # Fila por tipo de execução: um pull request nunca substitui a execução
+  # semanal ou manual que grava no banco.
+  group: import-tariffs-${{ github.event_name }}
   cancel-in-progress: false
 
 permissions:
@@ -77,7 +81,10 @@ jobs:
           status=$?
           set -e
           cat resumo.txt
-          grep -v "httpx" resumo.txt | tail -40 | sed 's/^/::notice title=tarifas::/'
+          # O GitHub mostra no máximo 10 anotações por passo: resumo, até 3
+          # avisos e as vigências da Equatorial (conferidas nas faturas).
+          { grep -E "^aneel_tariffs|^error" resumo.txt; grep "AVISO" resumo.txt | head -3; grep "EQUATORIAL_GO" resumo.txt | tail -5; } \
+            | head -10 | sed 's/^ *//; s/^/::notice title=tarifas::/'
           exit $status
       - name: Comparar ou gravar no banco
         if: github.event_name != 'pull_request'

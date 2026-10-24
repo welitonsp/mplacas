@@ -12,13 +12,16 @@ Regras:
   energia compensada;
 - classes: B1 residencial (não a baixa renda/tarifa social, que tem faixas de
   desconto por consumo), B2 rural genérica e B3 (uma tarifa só para comercial,
-  industrial, poder público e serviço público). Subclasses com desconto
+  industrial e poder público). Serviço público, subclasses com desconto
   próprio (irrigação, cooperativa) e tarifa branca ficam de fora — sem chave
   exata, o motor usa o preço da fatura (ADR-087);
 - vigências seguidas com os mesmos valores são unidas (a ANEEL às vezes parte
   o ano em dois períodos iguais);
-- falha fechada: valor fora do plausível, ou cadastro existente com valor
-  diferente, interrompe a importação sem gravar nada.
+- inconsistência DENTRO da base (valores diferentes na mesma vigência,
+  vigências sobrepostas, valor implausível) tira só aquela distribuidora e
+  classe, com aviso — a base real tem casos assim (ex.: CEA, 2021);
+- cadastro existente com valor diferente da ANEEL interrompe tudo sem gravar
+  nada; coluna ausente ou base vazia também.
 """
 
 from __future__ import annotations
@@ -54,11 +57,13 @@ DEFAULT_SINCE = date(2019, 1, 1)
 _CLASS_MAP: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("B1", "Residencial", "Residencial"): ("B1_RESIDENCIAL_CONVENCIONAL",),
     ("B2", "Rural", _NOT_APPLICABLE): ("B2_RURAL_CONVENCIONAL",),
+    # B3 "demais classes": uma tarifa só para comercial, industrial e poder
+    # público. Serviço público (água, esgoto, saneamento) fica de fora: pode
+    # ter desconto próprio, e sem chave exata o motor usa o preço da fatura.
     ("B3", _NOT_APPLICABLE, _NOT_APPLICABLE): (
         "B3_COMERCIAL_CONVENCIONAL",
         "B3_INDUSTRIAL_CONVENCIONAL",
         "B3_PODER_PUBLICO_CONVENCIONAL",
-        "B3_SERVICO_PUBLICO_CONVENCIONAL",
     ),
 }
 
@@ -84,6 +89,7 @@ class ImportReport:
     inserted: int
     extended: int
     unchanged: int
+    skipped: tuple[str, ...] = ()
 
 
 def distributor_code(sig_agente: str) -> str:
@@ -109,29 +115,66 @@ def _reh(text: str) -> str:
     return match.group(1) if match else text[:60]
 
 
-def parse_rows(
-    rows: Iterable[dict[str, str]], *, since: date = DEFAULT_SINCE
-) -> list[TariffPeriod]:
-    """Linhas do CSV → períodos de tarifa por distribuidora e classe."""
+REQUIRED_COLUMNS = frozenset(
+    {
+        "DscREH",
+        "SigAgente",
+        "DatInicioVigencia",
+        "DatFimVigencia",
+        "DscBaseTarifaria",
+        "DscSubGrupo",
+        "DscModalidadeTarifaria",
+        "DscClasse",
+        "DscSubClasse",
+        "DscDetalhe",
+        "NomPostoTarifario",
+        "DscUnidadeTerciaria",
+        "SigAgenteAcessante",
+        "VlrTUSD",
+        "VlrTE",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ParseResult:
+    periods: list[TariffPeriod]
+    # Distribuidora/classe deixadas de fora por inconsistência DENTRO da base
+    # da ANEEL (valores diferentes na mesma vigência, vigências sobrepostas,
+    # valor implausível). Isoladas para não travar as demais distribuidoras.
+    skipped: list[str]
+
+
+def parse_aneel(rows: Iterable[dict[str, str]], *, since: date = DEFAULT_SINCE) -> ParseResult:
+    """Linhas do CSV → períodos de tarifa por distribuidora e classe.
+
+    Inconsistência numa distribuidora/classe tira só aquela chave (com
+    aviso); formato inesperado da base (coluna ausente) recusa tudo.
+    """
     # (distribuidora, classe, início, fim) → [tarifa cheia, tarifa SCEE, REH]
     found: dict[tuple[str, str, date, date], list[object]] = {}
+    bad: dict[tuple[str, str], str] = {}
+    checked_header = False
     for row in rows:
-        if row.get("DscBaseTarifaria") != "Tarifa de Aplicação":
+        if not checked_header:
+            missing = REQUIRED_COLUMNS - set(row)
+            if missing:
+                raise AneelImportError(f"base da ANEEL sem as colunas: {sorted(missing)}")
+            checked_header = True
+        if row["DscBaseTarifaria"] != "Tarifa de Aplicação":
             continue
-        if row.get("DscModalidadeTarifaria") != "Convencional":
+        if row["DscModalidadeTarifaria"] != "Convencional":
             continue
-        if row.get("NomPostoTarifario") != _NOT_APPLICABLE:
+        if row["NomPostoTarifario"] != _NOT_APPLICABLE:
             continue
-        if row.get("SigAgenteAcessante") != _NOT_APPLICABLE:
+        if row["SigAgenteAcessante"] != _NOT_APPLICABLE:
             continue
-        if row.get("DscUnidadeTerciaria") != "MWh":
+        if row["DscUnidadeTerciaria"] != "MWh":
             continue
-        detail = row.get("DscDetalhe")
+        detail = row["DscDetalhe"]
         if detail not in (_NOT_APPLICABLE, "SCEE"):
             continue
-        classes = _CLASS_MAP.get(
-            (row.get("DscSubGrupo", ""), row.get("DscClasse", ""), row.get("DscSubClasse", ""))
-        )
+        classes = _CLASS_MAP.get((row["DscSubGrupo"], row["DscClasse"], row["DscSubClasse"]))
         if classes is None:
             continue
         start = date.fromisoformat(row["DatInicioVigencia"])
@@ -142,25 +185,32 @@ def parse_rows(
             _SIX_PLACES, rounding=ROUND_HALF_UP
         )
         code = distributor_code(row["SigAgente"])
+        if not code or len(code) > 40:
+            continue
         for tariff_class in classes:
             slot = found.setdefault(
                 (code, tariff_class, start, end), [None, None, _reh(row["DscREH"])]
             )
             index = 0 if detail == _NOT_APPLICABLE else 1
             if slot[index] is not None and slot[index] != value:
-                raise AneelImportError(
-                    f"valores diferentes para {code} {tariff_class} {start}: "
-                    f"{slot[index]} e {value}"
+                bad.setdefault(
+                    (code, tariff_class),
+                    f"{code} {tariff_class}: valores diferentes na vigência {start} "
+                    f"({slot[index]} e {value})",
                 )
             slot[index] = value
+    if not checked_header:
+        raise AneelImportError("base da ANEEL vazia")
 
     periods = []
     for (code, tariff_class, start, end), (full, scee, reh) in found.items():
-        if full is None:
+        if (code, tariff_class) in bad or not isinstance(full, Decimal):
             continue  # só a linha SCEE: sem tarifa cheia não há o que usar
-        assert isinstance(full, Decimal)
         if not (_MIN_FULL <= full <= _MAX_FULL):
-            raise AneelImportError(f"tarifa implausível para {code} {tariff_class} {start}: {full}")
+            bad.setdefault((code, tariff_class), f"{code} {tariff_class}: tarifa {full} em {start}")
+            continue
+        # SCEE plausível: positiva e não maior que a cheia; senão, sem SCEE.
+        scee_value = scee if isinstance(scee, Decimal) and Decimal("0") < scee <= full else None
         periods.append(
             TariffPeriod(
                 distributor=code,
@@ -168,28 +218,43 @@ def parse_rows(
                 valid_from=start,
                 valid_to=end,
                 full_brl_kwh=full,
-                scee_brl_kwh=scee if isinstance(scee, Decimal) else None,
+                scee_brl_kwh=scee_value,
                 source=f"ANEEL dados abertos, REH {reh}",
             )
         )
-    return _coalesce(periods)
+    merged, overlapping = _coalesce(
+        [p for p in periods if (p.distributor, p.tariff_class) not in bad]
+    )
+    for key, reason in overlapping.items():
+        bad.setdefault(key, reason)
+    final = [p for p in merged if (p.distributor, p.tariff_class) not in bad]
+    return ParseResult(periods=final, skipped=sorted(bad.values()))
 
 
-def _coalesce(periods: list[TariffPeriod]) -> list[TariffPeriod]:
-    """Une vigências seguidas e iguais; recusa vigências sobrepostas."""
+def parse_rows(
+    rows: Iterable[dict[str, str]], *, since: date = DEFAULT_SINCE
+) -> list[TariffPeriod]:
+    return parse_aneel(rows, since=since).periods
+
+
+def _coalesce(
+    periods: list[TariffPeriod],
+) -> tuple[list[TariffPeriod], dict[tuple[str, str], str]]:
+    """Une vigências seguidas e iguais; aponta chaves com vigências sobrepostas."""
     periods = sorted(periods, key=lambda p: (p.distributor, p.tariff_class, p.valid_from))
     merged: list[TariffPeriod] = []
+    overlapping: dict[tuple[str, str], str] = {}
     for period in periods:
+        key = (period.distributor, period.tariff_class)
         last = merged[-1] if merged else None
-        if last and (last.distributor, last.tariff_class) == (
-            period.distributor,
-            period.tariff_class,
-        ):
+        if last and (last.distributor, last.tariff_class) == key:
             if period.valid_from <= last.valid_to:
-                raise AneelImportError(
-                    f"vigências sobrepostas na ANEEL: {period.distributor} {period.tariff_class} "
-                    f"{last.valid_from}..{last.valid_to} e {period.valid_from}"
+                overlapping.setdefault(
+                    key,
+                    f"{key[0]} {key[1]}: vigências sobrepostas {last.valid_from}..{last.valid_to} "
+                    f"e {period.valid_from}",
                 )
+                continue
             if (
                 period.valid_from == last.valid_to + timedelta(days=1)
                 and period.full_brl_kwh == last.full_brl_kwh
@@ -198,78 +263,100 @@ def _coalesce(periods: list[TariffPeriod]) -> list[TariffPeriod]:
                 merged[-1] = replace(last, valid_to=period.valid_to)
                 continue
         merged.append(period)
-    return merged
+    return merged, overlapping
 
 
 def read_csv(lines: Iterable[str]) -> Iterator[dict[str, str]]:
     yield from csv.DictReader(lines, delimiter=";")
 
 
+def _overlaps(
+    rows: list[DistributorTariffRecord], start: date, end: date, *, ignore: object = None
+) -> DistributorTariffRecord | None:
+    return next(
+        (r for r in rows if r is not ignore and r.valid_from <= end and start <= r.valid_to),
+        None,
+    )
+
+
 async def upsert_periods(
     session: AsyncSession, periods: list[TariffPeriod], *, dry_run: bool
 ) -> ImportReport:
-    """Grava os períodos novos. Período já cadastrado com o MESMO valor pode
-    ter a vigência ajustada (a ANEEL fecha a data quando sai o reajuste);
-    com valor diferente, recusa tudo — nunca reescreve tarifa em silêncio."""
-    existing = {
-        (row.distributor, row.tariff_class, row.valid_from): row
-        for row in (await session.scalars(select(DistributorTariffRecord))).all()
-    }
+    """Grava os períodos novos, sem nunca reescrever tarifa em silêncio.
+
+    - Período já cadastrado com valor DIFERENTE: recusa tudo (precisa de
+      revisão humana).
+    - Mesmo valor: a vigência só pode ser ESTENDIDA (a ANEEL fecha a data
+      quando sai o reajuste), e só se não encostar em outra vigência.
+      Encurtar, ou estender por cima de outra linha, deixa aquela chave como
+      está, com aviso.
+    - Período novo que sobrepõe o cadastro: chave fica como está, com aviso —
+      nunca dois valores no mesmo dia (service.py não escolheria).
+    """
+    by_key: dict[tuple[str, str], list[DistributorTariffRecord]] = {}
+    for stored in (await session.scalars(select(DistributorTariffRecord))).all():
+        by_key.setdefault((stored.distributor, stored.tariff_class), []).append(stored)
     inserted = extended = unchanged = 0
+    skipped: list[str] = []
     to_add: list[DistributorTariffRecord] = []
     for period in periods:
-        row = existing.get((period.distributor, period.tariff_class, period.valid_from))
+        key = (period.distributor, period.tariff_class)
+        rows = by_key.setdefault(key, [])
+        row = next((r for r in rows if r.valid_from == period.valid_from), None)
         if row is None:
-            clash = next(
-                (
-                    other
-                    for other in existing.values()
-                    if (other.distributor, other.tariff_class)
-                    == (period.distributor, period.tariff_class)
-                    and other.valid_from <= period.valid_to
-                    and period.valid_from <= other.valid_to
-                ),
-                None,
-            )
+            clash = _overlaps(rows, period.valid_from, period.valid_to)
             if clash is not None:
-                # Vigência sobreposta deixaria dias com duas tarifas — o motor
-                # não escolhe (service.py devolve None). Recusa tudo.
-                raise AneelImportError(
-                    f"vigência da ANEEL {period.valid_from}..{period.valid_to} sobrepõe o "
-                    f"cadastro {clash.valid_from}..{clash.valid_to} em "
-                    f"{period.distributor} {period.tariff_class}"
+                skipped.append(
+                    f"{key[0]} {key[1]}: vigência {period.valid_from}..{period.valid_to} sobrepõe "
+                    f"o cadastro {clash.valid_from}..{clash.valid_to}"
                 )
-            inserted += 1
-            to_add.append(
-                DistributorTariffRecord(
-                    distributor=period.distributor,
-                    tariff_class=period.tariff_class,
-                    valid_from=period.valid_from,
-                    valid_to=period.valid_to,
-                    full_brl_kwh=period.full_brl_kwh,
-                    scee_brl_kwh=period.scee_brl_kwh,
-                    source=period.source[:200],
-                )
+                continue
+            record = DistributorTariffRecord(
+                distributor=period.distributor,
+                tariff_class=period.tariff_class,
+                valid_from=period.valid_from,
+                valid_to=period.valid_to,
+                full_brl_kwh=period.full_brl_kwh,
+                scee_brl_kwh=period.scee_brl_kwh,
+                source=period.source[:200],
             )
+            rows.append(record)
+            to_add.append(record)
+            inserted += 1
             continue
         if row.full_brl_kwh != period.full_brl_kwh or (
-            row.scee_brl_kwh is not None
-            and period.scee_brl_kwh is not None
-            and row.scee_brl_kwh != period.scee_brl_kwh
+            row.scee_brl_kwh is not None and row.scee_brl_kwh != period.scee_brl_kwh
         ):
             raise AneelImportError(
-                f"cadastro diverge da ANEEL em {period.distributor} {period.tariff_class} "
-                f"{period.valid_from}: {row.full_brl_kwh} × {period.full_brl_kwh}"
+                f"cadastro diverge da ANEEL em {key[0]} {key[1]} {period.valid_from}: "
+                f"cheia {row.full_brl_kwh} × {period.full_brl_kwh}, "
+                f"SCEE {row.scee_brl_kwh} × {period.scee_brl_kwh}"
             )
-        if row.valid_to != period.valid_to:
+        if period.valid_to == row.valid_to:
+            unchanged += 1
+        elif period.valid_to < row.valid_to:
+            skipped.append(
+                f"{key[0]} {key[1]}: ANEEL encurta a vigência {row.valid_from}..{row.valid_to} "
+                f"para {period.valid_to}; cadastro mantido"
+            )
+        else:
+            clash = _overlaps(rows, row.valid_to + timedelta(days=1), period.valid_to, ignore=row)
+            if clash is not None:
+                skipped.append(
+                    f"{key[0]} {key[1]}: estender {row.valid_from}..{row.valid_to} até "
+                    f"{period.valid_to} encostaria em {clash.valid_from}..{clash.valid_to}"
+                )
+                continue
             extended += 1
             if not dry_run:
                 row.valid_to = period.valid_to
-        else:
-            unchanged += 1
     if not dry_run:
         session.add_all(to_add)
         await session.flush()
     return ImportReport(
-        periods=len(periods), inserted=inserted, extended=extended, unchanged=unchanged
+        periods=len(periods),
+        inserted=inserted,
+        extended=extended,
+        unchanged=unchanged,
+        skipped=tuple(skipped),
     )
