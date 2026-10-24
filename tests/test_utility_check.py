@@ -269,3 +269,90 @@ def test_gap_larger_than_announced_expiry_is_still_loss() -> None:
         bill=bill, previous_bill=previous, production_kwh=None, previous_export_shares=[]
     )
     assert check.verdict == VERDICT_LOSS
+
+
+def test_credit_unit_value_is_full_tariff_plus_flag_minus_wire_b() -> None:
+    from dataclasses import replace
+
+    from mplacas.reports.utility_check import credit_unit_value_brl
+
+    # Fatura real de out/26: 82,02 não compensados, 255,98 compensados.
+    bill = replace(
+        _bill(),
+        wire_b_tariff_brl_kwh=Decimal("0.175126"),
+        public_lighting_brl=Decimal("30.21"),
+        total_amount_brl=Decimal("171.32"),
+    )
+    full = {"savings_tariff_source": "DISTRIBUTOR_FULL_TARIFF"}
+    # 1,146180 cheia com impostos + 0,011721 bandeira − 0,175126 Fio B.
+    assert credit_unit_value_brl(
+        savings_tariff_brl_kwh=Decimal("1.146180"),
+        flag_tariff_brl_kwh=Decimal("0.011721"),
+        bill=bill,
+        **full,
+    ) == Decimal("0.982775")
+    # Sem Fio B, sem tarifa ou com a tarifa da própria fatura: nada presumido.
+    assert (
+        credit_unit_value_brl(
+            savings_tariff_brl_kwh=Decimal("1.146180"),
+            flag_tariff_brl_kwh=None,
+            bill=replace(bill, wire_b_tariff_brl_kwh=None),
+            **full,
+        )
+        is None
+    )
+    assert (
+        credit_unit_value_brl(
+            savings_tariff_brl_kwh=None, flag_tariff_brl_kwh=None, bill=bill, **full
+        )
+        is None
+    )
+    assert (
+        credit_unit_value_brl(
+            savings_tariff_brl_kwh=Decimal("1.146180"),
+            flag_tariff_brl_kwh=Decimal("0.011721"),
+            bill=bill,
+            savings_tariff_source="BILL_TARIFF",
+        )
+        is None
+    )
+
+
+def test_credit_value_is_withheld_when_model_does_not_explain_the_bill() -> None:
+    from dataclasses import replace
+
+    from mplacas.reports.utility_check import credit_unit_value_brl
+
+    # Layout antigo: ICMS sobre a energia compensada deixava ~R$ 18 a mais.
+    bill = replace(
+        _bill(),
+        wire_b_tariff_brl_kwh=Decimal("0.175126"),
+        public_lighting_brl=Decimal("30.21"),
+        total_amount_brl=Decimal("171.32") + Decimal("18.26"),
+    )
+    assert (
+        credit_unit_value_brl(
+            savings_tariff_brl_kwh=Decimal("1.146180"),
+            flag_tariff_brl_kwh=Decimal("0.011721"),
+            bill=bill,
+            savings_tariff_source="DISTRIBUTOR_FULL_TARIFF",
+        )
+        is None
+    )
+
+
+def test_missing_credits_value_uses_cycle_unit_value() -> None:
+    from mplacas.reports.utility_check import missing_credits_value_brl
+
+    check = check_cycle(
+        bill=_bill(compensated="240", balance="0"),
+        previous_bill=PREVIOUS,
+        production_kwh=None,
+        previous_export_shares=[],
+    )
+    assert missing_credits_value_brl(check, Decimal("0.982775")) == Decimal("15.70")
+    assert missing_credits_value_brl(check, None) is None
+    ok = check_cycle(
+        bill=_bill(), previous_bill=PREVIOUS, production_kwh=None, previous_export_shares=[]
+    )
+    assert missing_credits_value_brl(ok, Decimal("0.982775")) is None

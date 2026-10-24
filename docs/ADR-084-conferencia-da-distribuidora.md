@@ -132,3 +132,27 @@ quanto a operadora registrou, para saber se está tendo prejuízo".
   funcionando, mas não afirma prejuízo.
 - **Deploy:** rodar a migration (Actions → migrate) **antes** do deploy no Render. As colunas
   são aditivas: o código atual convive com elas, e o código novo precisa delas.
+
+## Adendo — prejuízo em reais (2026-10-24)
+
+- **O que o payload passa a trazer:** `utility_check` ganha `credit_unit_value_brl` (valor
+  de 1 kWh de crédito no ciclo) e `missing_credits_value_brl` (kWh faltando × esse valor).
+- **Como se calcula o valor do kWh:** tarifa da conta "sem a usina" gravada no snapshot +
+  bandeira gravada no snapshot (ADR-085) − Fio B da fatura. Um kWh compensado evita a
+  tarifa cheia e a bandeira, mas ainda paga o Fio B (Lei 14.300). A preços do próprio
+  ciclo, sem recalcular nada.
+- **Quando não há valor:** o campo vem `NULL`, nunca um número presumido. Isso acontece
+  quando:
+  - falta a tarifa no snapshot ou o Fio B na fatura;
+  - a tarifa não é a cheia homologada (`BILL_TARIFF`);
+  - o valor dá ≤ 0;
+  - a fatura refeita com esses preços fica mais de R$ 5 longe da real. O layout de
+    out/2024–jan/2025 cobrava ICMS sobre a energia compensada, e ali o kWh compensado
+    custava mais que o Fio B. Nas faturas reais, fev/2025 em diante tem valor (R$ 0,82–1,04
+    por kWh), e dez/24 e jan/25 ficam sem valor.
+- **Na tela:**
+  - a frase do ciclo diz "(cerca de R$ X a preços deste ciclo)". Quando o prejuízo não
+    está confirmado, diz "se confirmado, cerca de R$ X", e o valor não entra no título
+    âmbar;
+  - o resumo soma "cerca de R$ X" só quando **todos** os ciclos com crédito faltando têm
+    valor. Uma soma parcial em reais pareceria o total.

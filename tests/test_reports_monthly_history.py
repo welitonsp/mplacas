@@ -738,6 +738,9 @@ def test_cycle_carries_utility_check_with_credit_conservation(cross_tenant_setup
     # Fixture: 30 do medidor + 50 de saldo − 20 usados ≠ 50 de saldo → 10 kWh sumidos.
     assert second["utility_check"]["verdict"] == "LOSS"
     assert second["utility_check"]["missing_credits_kwh"] == "10.00"
+    # Snapshot sem tarifa da economia: valor em reais não é presumido.
+    assert second["utility_check"]["credit_unit_value_brl"] is None
+    assert second["utility_check"]["missing_credits_value_brl"] is None
 
 
 def test_estimated_production_cycle_skips_physical_checks(cross_tenant_setup) -> None:
