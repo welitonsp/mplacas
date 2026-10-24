@@ -237,24 +237,48 @@ def check_cycle(
     )
 
 
+# Diferença máxima entre a fatura real e a refeita pelo modelo para confiar no
+# valor do kWh de crédito. As faturas atuais fecham em R$ 1,31 (parcela
+# retroativa do Fio B); o layout antigo (out/2024–jan/2025) também cobrava
+# ICMS sobre a energia compensada e fica ~R$ 10–18 fora — ali o kWh
+# compensado custava mais que o Fio B e o valor sairia inflado.
+MODEL_MATCH_TOLERANCE_BRL = Decimal("5")
+
+
 def credit_unit_value_brl(
     *,
     savings_tariff_brl_kwh: Decimal | None,
     flag_tariff_brl_kwh: Decimal | None,
     bill: UtilityBill | None,
+    savings_tariff_source: str | None = None,
 ) -> Decimal | None:
     """Quanto vale 1 kWh de crédito neste ciclo, com impostos (ADR-084).
 
     Um kWh compensado evita a tarifa cheia (e a bandeira, quando há), mas
     ainda paga o Fio B da parcela compensada (Lei 14.300). Valor = tarifa da
-    conta "sem a usina" + bandeira − Fio B. Sem a tarifa ou sem o Fio B lido na
-    fatura, `None` — nunca um valor presumido.
+    conta "sem a usina" + bandeira − Fio B. `None` — nunca um valor presumido —
+    quando falta a tarifa cheia homologada, o Fio B, ou quando a fatura
+    refeita com esses preços não fecha com a real (o kWh compensado custava
+    outra coisa naquele layout).
     """
-    if savings_tariff_brl_kwh is None or bill is None or bill.wire_b_tariff_brl_kwh is None:
+    if (
+        savings_tariff_brl_kwh is None
+        or bill is None
+        or bill.wire_b_tariff_brl_kwh is None
+        or savings_tariff_source != "DISTRIBUTOR_FULL_TARIFF"
+    ):
         return None
-    value = (
-        savings_tariff_brl_kwh + (flag_tariff_brl_kwh or Decimal("0")) - bill.wire_b_tariff_brl_kwh
+    flag = flag_tariff_brl_kwh or Decimal("0")
+    used = min(bill.compensated_kwh, bill.imported_kwh)
+    modeled = (
+        (bill.imported_kwh - used) * (savings_tariff_brl_kwh + flag)
+        + used * bill.wire_b_tariff_brl_kwh
+        + bill.public_lighting_brl
+        - (bill.non_energy_credits_brl or Decimal("0"))
     )
+    if abs(bill.total_amount_brl - modeled) > MODEL_MATCH_TOLERANCE_BRL:
+        return None
+    value = savings_tariff_brl_kwh + flag - bill.wire_b_tariff_brl_kwh
     return value.quantize(Decimal("0.000001")) if value > 0 else None
 
 

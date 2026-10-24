@@ -169,9 +169,12 @@ export function verdictDetail(cycle: MonthlyProductionCycle, distributor: string
   if (!check) return 'Conferência ainda não disponível para este ciclo.'
   switch (check.verdict) {
     case 'LOSS': {
+      // Não confirmado: o valor é condicional, nunca dinheiro dado como perdido.
       const value =
         check.missingCreditsValueBrl != null
-          ? ` (cerca de ${formatCurrency(check.missingCreditsValueBrl)} a preços deste ciclo)`
+          ? check.lossConfirmed
+            ? ` (cerca de ${formatCurrency(check.missingCreditsValueBrl)} a preços deste ciclo)`
+            : ` (se confirmado, cerca de ${formatCurrency(check.missingCreditsValueBrl)} a preços deste ciclo)`
           : ''
       const expired =
         check.expiredCreditsKwh != null && check.expiredCreditsKwh > 0
@@ -328,7 +331,7 @@ function Summary({ cycles }: { cycles: MonthlyProductionCycle[] }) {
   } else if (loss.length > 0) {
     const missing = loss.reduce((sum, cycle) => sum + (cycle.utilityCheck?.missingCreditsKwh ?? 0), 0)
     tone = 'warning'
-    title = `${kwh(missing, 2)} de créditos sem explicação${moneySuffix(loss)}`
+    title = `${kwh(missing, 2)} de créditos sem explicação`
     detail = `Em ${loss.length} ${plural(loss.length)}, a fatura não mostra todo kWh registrado como abatimento ou saldo. Confira com a ${distributor}: pode ser prejuízo, crédito vencido ou crédito enviado a outra unidade do rateio.`
   } else if (impossible.length > 0) {
     tone = 'danger'

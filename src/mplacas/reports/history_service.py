@@ -175,6 +175,7 @@ async def load_monthly_production_history(
                 _metric_value(report.metrics, "flag_tariff_brl_kwh")
             ),
             bill=bill,
+            savings_tariff_source=_metric_value(report.metrics, "savings_tariff_source"),
         )
         check_payload = utility_check.as_payload()
         check_payload["credit_unit_value_brl"] = None if unit_value is None else str(unit_value)

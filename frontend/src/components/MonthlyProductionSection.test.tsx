@@ -176,6 +176,17 @@ describe('MonthlyProductionSection', () => {
     expect(screen.getByText('18,98 kWh de créditos faltando')).toBeInTheDocument()
   })
 
+  it('prejuízo não confirmado: valor só condicional e fora do título do resumo', () => {
+    const history = buildHistory()
+    history.cycles[2] = {
+      ...history.cycles[2],
+      utilityCheck: okCheck({ verdict: 'LOSS', missingCreditsKwh: 15.98, missingCreditsValueBrl: 15.7, reasons: ['CREDITS_MISSING'] }),
+    }
+    render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
+    expect(screen.getByText('15,98 kWh de créditos sem explicação')).toBeInTheDocument()
+    expect(within(row(/mai\/26/)).getByText(/se confirmado, cerca de R\$\s*15,70/)).toBeInTheDocument()
+  })
+
   it('envio maior que a produção: registro impossível, com pedido de aferição', () => {
     const history = buildHistory()
     history.cycles[2] = { ...history.cycles[2], gridInjectionKwh: 1200, utilityCheck: okCheck({ verdict: 'IMPOSSIBLE', reasons: ['IMPOSSIBLE_EXPORT'] }) }
