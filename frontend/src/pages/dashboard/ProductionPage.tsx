@@ -23,6 +23,7 @@ import { RetryableError } from '../../components/RetryableError'
 import { PageHeader } from '../../components/PageHeader'
 import { EnergyDestinationSection } from '../../components/EnergyDestinationSection'
 import { DASHBOARD_TECHNICAL_PATH } from '../../routes'
+import { MethodologyLink } from '../../components/MethodologyLink'
 
 // Comparação com o esperado em chunk próprio: no primeiro ano da usina (sem
 // referência) não aparece, então não precisa ser baixada (ADR-083, etapa 3).
@@ -284,6 +285,7 @@ export function ProductionPage() {
         </span>
         <span aria-hidden="true" className="text-[var(--color-gray-400)]">›</span>
       </Link>
+      <MethodologyLink subtitle="Placas × distribuidora e a conferência dos créditos" />
     </>
   )
 }

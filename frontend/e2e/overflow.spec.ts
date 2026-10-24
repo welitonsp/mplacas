@@ -127,5 +127,18 @@ test.describe('layout não rola de lado', () => {
       documento: document.documentElement.scrollWidth,
     }))
     expect(larguras.documento, 'Detalhes técnicos: rolagem lateral').toBeLessThanOrEqual(larguras.viewport)
+
+    // "Como calculamos" (subpágina de Dinheiro, ADR-086): fórmulas em fonte
+    // mono são o risco de estourar a largura no celular.
+    await page.getByRole('navigation', { name: 'Seções do painel' }).getByRole('link', { name: 'Dinheiro', exact: true }).click({ force: true })
+    const metodo = page.getByRole('main').getByRole('link', { name: /Como calculamos/ })
+    await metodo.scrollIntoViewIfNeeded()
+    await metodo.click({ force: true })
+    await expect(page.getByRole('heading', { level: 1, name: 'Como calculamos' })).toBeVisible()
+    const larguras2 = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      documento: document.documentElement.scrollWidth,
+    }))
+    expect(larguras2.documento, 'Como calculamos: rolagem lateral').toBeLessThanOrEqual(larguras2.viewport)
   })
 })
