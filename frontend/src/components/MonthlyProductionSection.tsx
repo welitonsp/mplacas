@@ -86,12 +86,15 @@ function MonthlyExportControl({ plantId }: { plantId: string }) {
   )
 }
 
-// Ciclo a ciclo da fatura: quanto as PLACAS geraram (inversor) ao lado do que o
-// MEDIDOR da distribuidora registrou no mesmo período (ADR-083, etapa 3 — "o
-// mais importante é saber quanto as placas geraram no período do ciclo × o
-// período da operadora"). A diferença ficou na casa (autoconsumo do motor).
-// Dias sem leitura que o sistema estimou pelo sol (ADR-082) aparecem como
-// tal — nunca somem nem viram "medido". `history === null` = carregando.
+// Ciclo a ciclo da fatura: quanto as PLACAS geraram (inversor) ao lado do que a
+// distribuidora registrou no mesmo período (ADR-083, etapa 3 — "o mais
+// importante é saber quanto as placas geraram no período do ciclo × o período
+// da operadora"). A injeção só é chamada de "medidor" quando o backend afirma
+// (`gridInjectionBasis === 'METER'`, ADR-078); senão é a linha de injeção da
+// fatura, que no layout atual é a energia compensada. "Ficou na casa" é
+// estimativa do motor (placas − injeção) e aparece como tal. Dias sem leitura
+// estimados pelo sol (ADR-082) aparecem — nunca somem nem viram "medido".
+// `history === null` = carregando.
 function gapDescription(gapDays: number, estimatedDays: number): string {
   const base = `${gapDays} ${gapDays === 1 ? 'dia' : 'dias'} sem leitura do inversor`
   if (estimatedDays <= 0) return base
@@ -100,8 +103,18 @@ function gapDescription(gapDays: number, estimatedDays: number): string {
 
 const VISIBLE_CYCLES = 6
 
-function kwh(value: number | null): string {
-  return value == null ? '—' : `${formatNumber(value, 0)} kWh`
+const DISTRIBUTOR_NAMES: Readonly<Record<string, string>> = {
+  EQUATORIAL_GO: 'Equatorial',
+}
+
+// Nome curto da distribuidora pelo código da fatura; código desconhecido ou
+// ausente vira "distribuidora", nunca um nome inventado.
+export function distributorDisplayName(code: string | null | undefined): string {
+  return (code && DISTRIBUTOR_NAMES[code]) || 'distribuidora'
+}
+
+function kwh(value: number): string {
+  return `${formatNumber(value, 0)} kWh`
 }
 
 function cyclePeriod(cycle: MonthlyProductionCycle): string | null {
@@ -110,7 +123,8 @@ function cyclePeriod(cycle: MonthlyProductionCycle): string | null {
 }
 
 function Bar({ value, max, className }: { value: number | null; max: number; className: string }) {
-  const width = value == null || max <= 0 ? 0 : Math.max(2, Math.round((value / max) * 100))
+  // Zero desenha zero: só valor positivo ganha a largura mínima visível.
+  const width = value == null || value <= 0 || max <= 0 ? 0 : Math.max(2, Math.round((value / max) * 100))
   return (
     <span aria-hidden="true" className="block h-2.5 w-full overflow-hidden rounded-full bg-[var(--color-chart-track)]">
       <span className={`block h-full rounded-full ${className}`} style={{ width: `${width}%` }} />
@@ -118,10 +132,29 @@ function Bar({ value, max, className }: { value: number | null; max: number; cla
   )
 }
 
+// Linha de uma `dl`: o `div` só agrupa `dt` + `dd` (modelo de conteúdo de
+// `dl`); a barra decorativa mora dentro do `dd`, junto do valor.
+function MeterLine({ label, value, max, barClassName }: { label: string; value: number | null; max: number; barClassName: string }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)] items-center gap-3">
+      <dt className="text-[13px] text-[var(--color-text-secondary)]">{label}</dt>
+      <dd className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+        <Bar value={value} max={max} className={barClassName} />
+        <span className="text-right text-[14px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+          {value == null ? 'sem registro' : kwh(value)}
+        </span>
+      </dd>
+    </div>
+  )
+}
+
 function CycleRow({ cycle, max }: { cycle: MonthlyProductionCycle; max: number }) {
   const gapDays = (cycle.quality?.missingDays ?? 0) + (cycle.quality?.unavailableDays ?? 0)
   const period = cyclePeriod(cycle)
   const label = formatCycleLabel(cycle.referenceMonth)
+  const distributor = distributorDisplayName(cycle.distributor)
+  const metered = cycle.gridInjectionBasis === 'METER'
+  const injectionLabel = metered ? `Medidor da ${distributor}` : 'Injeção na fatura'
   return (
     <li className="flex flex-col gap-2 border-t border-[var(--color-border)] py-4 first:border-t-0 first:pt-0">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -136,22 +169,22 @@ function CycleRow({ cycle, max }: { cycle: MonthlyProductionCycle; max: number }
         )}
       </div>
       <dl className="grid grid-cols-1 gap-2">
-        <div className="grid grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)_auto] items-center gap-3">
-          <dt className="text-[13px] text-[var(--color-text-secondary)]">Placas geraram</dt>
-          <Bar value={cycle.productionKwh} max={max} className="bg-[var(--color-energy-solar)]" />
-          <dd className="text-right text-[14px] font-semibold tabular-nums text-[var(--color-text-primary)]">{kwh(cycle.productionKwh)}</dd>
-        </div>
-        <div className="grid grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)_auto] items-center gap-3">
-          <dt className="text-[13px] text-[var(--color-text-secondary)]">Equatorial registrou</dt>
-          <Bar value={cycle.gridInjectionKwh} max={max} className="bg-[var(--color-energy-grid)]" />
-          <dd className="text-right text-[14px] font-semibold tabular-nums text-[var(--color-text-primary)]">
-            {cycle.gridInjectionKwh == null ? 'sem registro' : kwh(cycle.gridInjectionKwh)}
-          </dd>
-        </div>
+        <MeterLine label="Placas geraram" value={cycle.productionKwh} max={max} barClassName="bg-[var(--color-energy-solar)]" />
+        <MeterLine label={injectionLabel} value={cycle.gridInjectionKwh} max={max} barClassName="bg-[var(--color-energy-grid)]" />
       </dl>
+      {cycle.gridInjectionKwh != null && !metered && (
+        <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
+          A fatura deste ciclo não traz a leitura do medidor: este número é a linha de injeção da fatura, que pode ser a
+          energia compensada e não toda a enviada à rede.
+        </p>
+      )}
       {(cycle.selfConsumptionKwh != null || cycle.importedKwh != null) && (
         <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
-          {cycle.selfConsumptionKwh != null && <>Ficou na casa: <strong className="font-semibold text-[var(--color-text-primary)]">{kwh(cycle.selfConsumptionKwh)}</strong></>}
+          {cycle.selfConsumptionKwh != null && (
+            <>
+              Ficou na casa (estimado): <strong className="font-semibold text-[var(--color-text-primary)]">{kwh(cycle.selfConsumptionKwh)}</strong>
+            </>
+          )}
           {cycle.selfConsumptionKwh != null && cycle.importedKwh != null && ' · '}
           {cycle.importedKwh != null && <>Veio da rede: <strong className="font-semibold text-[var(--color-text-primary)]">{kwh(cycle.importedKwh)}</strong></>}
         </p>
@@ -185,7 +218,7 @@ export function MonthlyProductionSection({
     return (
       <EmptyState
         title="Sem ciclos fechados"
-        description="Ainda não há ciclo de faturamento fechado para esta usina. Assim que a primeira fatura for confirmada, a comparação entre as placas e a Equatorial aparece aqui."
+        description="Ainda não há ciclo de faturamento fechado para esta usina. Assim que a primeira fatura for confirmada, a comparação entre as placas e a distribuidora aparece aqui."
         tone="neutral"
       />
     )
@@ -203,8 +236,8 @@ export function MonthlyProductionSection({
   return (
     <Card>
       <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
-        No período exato de cada fatura: o que as placas geraram (inversor) e o que o medidor da Equatorial registrou como
-        enviado à rede. A diferença ficou na casa.
+        No período exato de cada fatura: o que as placas geraram (inversor) e o que a {distributorDisplayName(newestFirst[0]?.distributor)}{' '}
+        registrou como enviado à rede. O que ficou na casa é estimado pela diferença entre os dois.
       </p>
       <ul className="mt-4">
         {visible.map((cycle) => (

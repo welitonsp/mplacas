@@ -22,6 +22,8 @@ function buildHistory(
         cycleEnd: '2026-03-16',
         productionKwh: 1000,
         gridInjectionKwh: 400,
+        gridInjectionBasis: 'METER',
+        distributor: 'EQUATORIAL_GO',
         importedKwh: 210,
         selfConsumptionKwh: 600,
         quality: { missingDays: 0, provisionalDays: 0, incompleteDays: 0, unavailableDays: 0 },
@@ -34,6 +36,8 @@ function buildHistory(
         cycleEnd: '2026-04-15',
         productionKwh: 1100,
         gridInjectionKwh: 450,
+        gridInjectionBasis: 'METER',
+        distributor: 'EQUATORIAL_GO',
         importedKwh: 200,
         selfConsumptionKwh: 650,
         quality: { missingDays: 0, provisionalDays: 2, incompleteDays: 0, unavailableDays: 0 },
@@ -46,6 +50,8 @@ function buildHistory(
         cycleEnd: '2026-05-15',
         productionKwh: 950,
         gridInjectionKwh: 380,
+        gridInjectionBasis: 'METER',
+        distributor: 'EQUATORIAL_GO',
         importedKwh: 230,
         selfConsumptionKwh: 570,
         quality: { missingDays: 3, provisionalDays: 0, incompleteDays: 0, unavailableDays: 0 },
@@ -60,16 +66,18 @@ describe('MonthlyProductionSection', () => {
     vi.restoreAllMocks()
   })
 
-  it('placas × Equatorial no mesmo ciclo: período da fatura, kWh das placas, kWh registrado pela Equatorial e o que ficou na casa', () => {
+  it('placas × medidor da Equatorial no mesmo ciclo: período da fatura, kWh das placas, kWh do medidor e o que ficou na casa (estimado)', () => {
     render(<MonthlyProductionSection history={buildHistory()} plantId={PLANT_ID} />)
 
     const row = screen.getByRole('heading', { level: 3, name: /mai\/26/ }).closest('li') as HTMLElement
     expect(within(row).getByText('16/04 a 15/05')).toBeInTheDocument()
     expect(within(row).getByText('Placas geraram')).toBeInTheDocument()
     expect(within(row).getByText('950 kWh')).toBeInTheDocument()
-    expect(within(row).getByText('Equatorial registrou')).toBeInTheDocument()
+    expect(within(row).getByText('Medidor da Equatorial')).toBeInTheDocument()
     expect(within(row).getByText('380 kWh')).toBeInTheDocument()
+    expect(within(row).getByText(/Ficou na casa \(estimado\)/)).toBeInTheDocument()
     expect(within(row).getByText('570 kWh')).toBeInTheDocument()
+    expect(within(row).queryByText(/não traz a leitura do medidor/)).not.toBeInTheDocument()
     expect(within(row).getByText('230 kWh')).toBeInTheDocument()
   })
 
@@ -92,7 +100,7 @@ describe('MonthlyProductionSection', () => {
     expect(within(april).queryByText(/sem leitura/)).not.toBeInTheDocument()
   })
 
-  it('relatório antigo sem registro da Equatorial: diz "sem registro", nunca 0', () => {
+  it('relatório antigo sem registro da distribuidora: diz "sem registro", nunca 0', () => {
     const history = buildHistory({
       cyclesReturned: 1,
       cycles: [
@@ -104,6 +112,8 @@ describe('MonthlyProductionSection', () => {
           cycleEnd: null,
           productionKwh: 700,
           gridInjectionKwh: null,
+          gridInjectionBasis: null,
+          distributor: null,
           importedKwh: null,
           selfConsumptionKwh: null,
           quality: null,
@@ -117,13 +127,36 @@ describe('MonthlyProductionSection', () => {
     expect(screen.queryByText(/Ficou na casa/)).not.toBeInTheDocument()
   })
 
-  it('produção sem dado no ciclo: "—", sem barra fabricada', () => {
+  it('produção sem dado no ciclo: "sem registro", sem barra fabricada', () => {
     const history = buildHistory()
     history.cycles[2] = { ...history.cycles[2], productionKwh: null }
     render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
 
     const row = screen.getByRole('heading', { level: 3, name: /mai\/26/ }).closest('li') as HTMLElement
-    expect(within(row).getByText('—')).toBeInTheDocument()
+    expect(within(row).getByText('sem registro')).toBeInTheDocument()
+  })
+
+  it('injeção que não é do medidor (relatório antigo ou fatura sem leitura): nunca rotulada como medidor', () => {
+    const history = buildHistory()
+    history.cycles[2] = { ...history.cycles[2], gridInjectionBasis: 'BILL_LINE' }
+    history.cycles[1] = { ...history.cycles[1], gridInjectionBasis: null }
+    render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
+
+    for (const name of [/mai\/26/, /abr\/26/]) {
+      const row = screen.getByRole('heading', { level: 3, name }).closest('li') as HTMLElement
+      expect(within(row).getByText('Injeção na fatura')).toBeInTheDocument()
+      expect(within(row).queryByText(/Medidor/)).not.toBeInTheDocument()
+      expect(within(row).getByText(/não traz a leitura do medidor/)).toBeInTheDocument()
+    }
+  })
+
+  it('distribuidora desconhecida: nome genérico, nunca inventado', () => {
+    const history = buildHistory()
+    history.cycles = history.cycles.map((cycle) => ({ ...cycle, distributor: 'OUTRA_SA' }))
+    render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
+
+    expect(screen.getAllByText('Medidor da distribuidora').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Equatorial/)).not.toBeInTheDocument()
   })
 
   it('com mais de 6 ciclos, mostra os 6 mais recentes e um botão para ver todos', () => {

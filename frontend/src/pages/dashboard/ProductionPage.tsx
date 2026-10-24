@@ -221,10 +221,10 @@ export function ProductionPage() {
         </p>
       )}
 
-      {/* O mais importante primeiro: placas × Equatorial no período de cada
+      {/* O mais importante primeiro: placas × distribuidora no período de cada
           fatura. Depois, para onde foi a energia e o dia a dia. */}
       <section className="mb-6">
-        <SectionTitle as="h2">Placas × Equatorial, ciclo a ciclo</SectionTitle>
+        <SectionTitle as="h2">Placas × distribuidora, ciclo a ciclo</SectionTitle>
         {monthlyHistory.error ? (
           <RetryableError message={monthlyHistory.error} onRetry={monthlyHistory.refetch} />
         ) : (

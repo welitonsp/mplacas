@@ -133,7 +133,7 @@ describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
     })
     expect(within(section).getByText('Pela performance já descontado o calor')).toBeInTheDocument()
     expect(within(section).queryByText(/PR bruto|PR corrigido/)).not.toBeInTheDocument()
-    expect(within(section).getByText('Maior perda estimada')).toBeInTheDocument()
+    expect(within(section).getByText('Principal perda a verificar')).toBeInTheDocument()
     // Sujeira (possível, 1,5%) vem antes do calor (2,3%): pede ação; calor é física.
     expect(within(section).getByText('Sujeira (soiling)')).toBeInTheDocument()
     expect(within(section).getByText('Possível causa · 1,5%')).toBeInTheDocument()
@@ -164,6 +164,30 @@ describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
     expect(within(section).getByText('Efeito normal do calor · 2,3%')).toBeInTheDocument()
     const tile = within(section).getByText('Calor nas placas').closest('article') as HTMLElement
     expect(tile.className).not.toMatch(/danger/)
+  })
+
+  it('comunicação nunca vira "perda a verificar": o motor diz que é capacidade sem dados, não perda de energia', async () => {
+    vi.resetModules()
+    installApiMock({
+      fetchPhotovoltaicSummary: vi.fn(async () =>
+        jsonResponse({
+          ...photovoltaicSummaryPayload,
+          losses: photovoltaicSummaryPayload.losses.map((loss: { category: string }) =>
+            loss.category === 'COMMUNICATION'
+              ? { ...loss, evidence_level: 'LIKELY', estimated_loss_percent: '9.00' }
+              : loss,
+          ),
+        }),
+      ),
+    })
+
+    await renderTechnicalPage()
+
+    const section = (await screen.findByRole('heading', { level: 2, name: 'Resumo técnico' })).closest('section') as HTMLElement
+    await waitFor(() => {
+      expect(within(section).getByText('Sujeira (soiling)')).toBeInTheDocument()
+    })
+    expect(within(section).queryByText('Comunicação (dados ausentes)')).not.toBeInTheDocument()
   })
 
   it('renderiza a seção técnica sem nenhum controle de expandir/colapsar (sempre expandida)', async () => {

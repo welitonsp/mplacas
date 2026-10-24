@@ -61,13 +61,17 @@ function technicalHealthLabel(pr: number | null): string {
   return 'Crítico'
 }
 
-// Maior perda com evidência, preferindo as que pedem ação. O calor é física
-// (toda placa rende menos quente), então só aparece como maior perda quando
-// não há outra com evidência — e com tom neutro (ADR-083, etapa 3).
+// Principal perda a verificar: com evidência, preferindo LIKELY e, dentro do
+// mesmo nível, o maior percentual — por isso o rótulo não diz "maior". O calor
+// é física (toda placa rende menos quente) e só aparece quando não há outra
+// com evidência, com tom neutro. Comunicação nunca entra: o próprio motor diz
+// que é capacidade sem dados, não perda de energia (ADR-083, etapa 3).
 function topLossCandidate(losses: PhotovoltaicLossItem[] | null): PhotovoltaicLossItem | null {
   if (losses === null) return null
 
-  const withEvidence = losses.filter((loss) => loss.evidence_level === 'LIKELY' || loss.evidence_level === 'POSSIBLE')
+  const withEvidence = losses.filter(
+    (loss) => loss.category !== 'COMMUNICATION' && (loss.evidence_level === 'LIKELY' || loss.evidence_level === 'POSSIBLE'),
+  )
   const actionable = withEvidence.filter((loss) => loss.category !== 'TEMPERATURE')
   const candidates = (actionable.length > 0 ? actionable : withEvidence)
     .sort((left, right) => {
@@ -208,7 +212,7 @@ export function TechnicalPage() {
             tone={healthTone}
           />
           <SummaryTile
-            label="Maior perda estimada"
+            label="Principal perda a verificar"
             value={leadingLoss ? LOSS_CATEGORY_LABEL[leadingLoss.category] : 'Nenhuma relevante'}
             supportingText={
               leadingLoss && leadingLossMeta

@@ -142,7 +142,7 @@ describe('ProductionPage — comparação com o esperado (ADR-083, etapa 3)', ()
       expect(within(diagnosisSection).getByRole('heading', { level: 2, name: 'Diagnóstico: perda recorrente de produção' })).toBeInTheDocument()
     })
     const order = [
-      screen.getByRole('heading', { level: 2, name: 'Placas × Equatorial, ciclo a ciclo' }),
+      screen.getByRole('heading', { level: 2, name: 'Placas × distribuidora, ciclo a ciclo' }),
       screen.getByRole('heading', { level: 2, name: 'Histórico de produção' }),
       screen.getByRole('heading', { level: 2, name: 'Leitura do período' }),
       screen.getByRole('heading', { level: 2, name: 'Último dia contra o esperado' }),
@@ -154,14 +154,14 @@ describe('ProductionPage — comparação com o esperado (ADR-083, etapa 3)', ()
   })
 })
 
-describe('ProductionPage — seção "Placas × Equatorial, ciclo a ciclo"', () => {
+describe('ProductionPage — seção "Placas × distribuidora, ciclo a ciclo"', () => {
   it('renderiza as colunas do histórico de ciclos, não o banner de erro', async () => {
     vi.resetModules()
     installApiMock()
 
     await renderProductionPage()
 
-    const sectionTitle = await screen.findByText('Placas × Equatorial, ciclo a ciclo')
+    const sectionTitle = await screen.findByText('Placas × distribuidora, ciclo a ciclo')
     const section = sectionTitle.closest('section') as HTMLElement
 
     await waitFor(() => {
@@ -193,7 +193,7 @@ describe('ProductionPage — seção "Placas × Equatorial, ciclo a ciclo"', () 
 
     await renderProductionPage()
 
-    const sectionTitle = await screen.findByText('Placas × Equatorial, ciclo a ciclo')
+    const sectionTitle = await screen.findByText('Placas × distribuidora, ciclo a ciclo')
     const section = sectionTitle.closest('section') as HTMLElement
     expect(within(section).queryByRole('heading', { level: 3 })).not.toBeInTheDocument()
 
@@ -212,7 +212,7 @@ describe('ProductionPage — seção "Placas × Equatorial, ciclo a ciclo"', () 
 
     await renderProductionPage()
 
-    const sectionTitle = await screen.findByText('Placas × Equatorial, ciclo a ciclo')
+    const sectionTitle = await screen.findByText('Placas × distribuidora, ciclo a ciclo')
     const section = sectionTitle.closest('section') as HTMLElement
 
     await waitFor(() => {

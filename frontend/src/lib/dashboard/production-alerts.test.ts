@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AnomalyDailyPoint } from './contracts'
-import { calendarWindow, productionAlertSignal } from './production-alerts'
+import { calendarWindow, compareProductionAverageTrend, productionAlertSignal } from './production-alerts'
 
 function day(date: string, kwh: number): AnomalyDailyPoint {
   return { date, actual_production_kwh: kwh, expected_production_kwh: null, level: null } as AnomalyDailyPoint
@@ -51,5 +51,22 @@ describe('productionAlertSignal por calendário', () => {
   it('semana anterior inteira sem leitura: não compara (sem alarme fabricado)', () => {
     const daily = [...range('2026-10-02', 7, 30), ...range('2026-10-16', 7, 15)]
     expect(productionAlertSignal(daily).tone).toBe('neutral')
+  })
+
+  it('semana anterior com só 1 ou 2 dias de leitura: não compara (média de 1 dia não vale por 7)', () => {
+    const daily = [...range('2026-10-14', 2, 30), ...range('2026-10-16', 7, 15)]
+    expect(productionAlertSignal(daily).tone).toBe('neutral')
+  })
+})
+
+describe('compareProductionAverageTrend por calendário', () => {
+  it('janela anterior com menos de 3 dias: "Sem comparação"', () => {
+    const daily = [...range('2026-10-14', 2, 30), ...range('2026-10-16', 7, 15)]
+    expect(compareProductionAverageTrend(daily, 7).percent).toBeNull()
+  })
+
+  it('com 3 dias ou mais nas duas janelas, compara', () => {
+    const daily = [...range('2026-10-12', 3, 30), ...range('2026-10-16', 7, 15)]
+    expect(compareProductionAverageTrend(daily, 7).percent).toBeCloseTo(-50)
   })
 })

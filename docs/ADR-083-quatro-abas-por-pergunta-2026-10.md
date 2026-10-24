@@ -116,17 +116,28 @@ Ordem nova: **Retorno do investimento → Sua conta com e sem a usina → Detalh
 Pedido do dono, em suas palavras: "o mais importante é eu saber quanto as placas geraram
 no período do ciclo × o período da operadora".
 
-- **Placas × Equatorial, ciclo a ciclo** abre a aba. Para cada fatura, mais recente
+- **Placas × distribuidora, ciclo a ciclo** abre a aba. Para cada fatura, mais recente
   primeiro, com o período exato (dd/mm a dd/mm):
   - quanto as placas geraram (inversor);
-  - quanto o medidor da distribuidora registrou como enviado à rede;
-  - o que ficou na casa e o que veio da rede.
+  - quanto a distribuidora registrou como enviado à rede, com a origem dita: "Medidor da
+    Equatorial" só quando é a leitura do medidor; senão "Injeção na fatura", com aviso
+    de que pode ser a energia compensada;
+  - o que ficou na casa, marcado "(estimado)" (é a diferença calculada pelo motor), e o
+    que veio da rede.
   Mostra 6 ciclos e um botão para ver todos. Dias sem leitura do inversor aparecem no
   ciclo, com quantos foram estimados pelo sol.
 - **Backend**: `GET /reports/monthly/history` passa a devolver, por ciclo:
   - `cycle_start` e `cycle_end`, da fatura confirmada;
   - `grid_injection_kwh`, `imported_kwh` e `self_consumption_kwh`, tal como gravados no
-    snapshot do ciclo. A injeção é a do medidor (`reconcile_bill`).
+    snapshot do ciclo;
+  - `grid_injection_basis`: `METER` só com snapshot 0.3.0+ **e** fatura com a leitura do
+    medidor (`generation_cycle_kwh`); qualquer outro caso é `BILL_LINE`. Snapshots 0.2.0
+    são imutáveis e guardaram a linha "INJEÇÃO SCEE" (compensada; ex.: set/26, 221
+    compensados × 235 medidos), e em 0.3.0+ `reconcile_bill` cai nessa linha quando a
+    fatura não traz o medidor (ADR-078). A tela nunca chama de "medidor" o que pode ser
+    compensação;
+  - `distributor`, o código da fatura, para o nome na tela (código desconhecido vira
+    "distribuidora", nunca um nome inventado).
   Leitura estrita, sem recalcular (ADR-038). Snapshot antigo sem esses números devolve
   `null`, e a tela diz "sem registro", nunca 0.
 - **Primeiro ano sem referência esperada**: um aviso único com a data em que ela começa.
@@ -139,12 +150,18 @@ no período do ciclo × o período da operadora".
   - diagnóstico do período;
   - episódios.
 - **Alerta por dias de calendário**: `productionAlertSignal` e a tendência do período
-  comparam 7 dias de calendário (`calendarWindow`), não as 7 últimas entradas. Fecha a
-  dívida da etapa 1.
+  comparam 7 dias de calendário (`calendarWindow`), não as 7 últimas entradas, e cada
+  janela precisa de pelo menos 3 dias com leitura. Fecha a dívida da etapa 1.
+- **Dívida aceita da etapa 3** (P3 da revisão): a média e o desempenho do período em
+  `ProductionHistorySection` ainda usam as últimas N entradas, enquanto a tendência ao lado
+  usa calendário; as datas do ciclo vêm da fatura confirmada atual e os números do
+  snapshot congelado (se a fatura foi completada depois, podem divergir sem aviso).
 - **Detalhes técnicos**:
   - sai o painel genérico "Diagnóstico de causa" ("Agir hoje", plano de 3 passos);
   - "Saúde técnica" passa a usar a performance corrigida pelo calor;
-  - "Principal suspeita" vira "Maior perda estimada", que prefere perdas que pedem ação;
+  - "Principal suspeita" vira "Principal perda a verificar": prefere evidência provável e,
+    no mesmo nível, o maior percentual (por isso não diz "maior"). Comunicação nunca entra,
+    porque o motor a define como capacidade sem dados, não perda de energia;
   - o calor é física: entra só quando não há outra perda, com selo neutro
     "Efeito normal do calor";
   - os números de PR ficam só em "Desempenho técnico".

@@ -101,6 +101,10 @@ export function calendarWindow(
   return daily.filter((point) => point.date >= start && point.date <= end)
 }
 
+// Cada janela precisa de pelo menos 3 dias com leitura para comparar: com a
+// janela por calendário, lacunas deixariam a média de 1 dia valer por 7.
+const MIN_COMPARISON_DAYS = 3
+
 function compareAgainstPreviousWindow(daily: readonly AnomalyDailyPoint[]): {
   dropPercent: number | null
   recentDays: number
@@ -110,7 +114,12 @@ function compareAgainstPreviousWindow(daily: readonly AnomalyDailyPoint[]): {
   const recentAverage = averageActualProduction(recent)
   const previousAverage = averageActualProduction(previous)
 
-  if (recentAverage.average == null || previousAverage.average == null || previousAverage.average <= 0) {
+  if (
+    recentAverage.average == null ||
+    previousAverage.average == null ||
+    previousAverage.average <= 0 ||
+    previousAverage.days < MIN_COMPARISON_DAYS
+  ) {
     return { dropPercent: null, recentDays: recentAverage.days }
   }
 
@@ -129,7 +138,13 @@ export function compareProductionAverageTrend(
   const recentAverage = averageActualProduction(recent)
   const previousAverage = averageActualProduction(previous)
 
-  if (recentAverage.average == null || previousAverage.average == null || previousAverage.average <= 0) {
+  if (
+    recentAverage.average == null ||
+    previousAverage.average == null ||
+    previousAverage.average <= 0 ||
+    recentAverage.days < MIN_COMPARISON_DAYS ||
+    previousAverage.days < MIN_COMPARISON_DAYS
+  ) {
     return {
       percent: null,
       tone: 'neutral',

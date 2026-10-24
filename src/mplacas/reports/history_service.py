@@ -14,7 +14,9 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.read_repository import ConfirmedBillReadRepository
+from mplacas.billing.models import UtilityBill
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
+from mplacas.intelligence.investor_service import calculation_version_tuple
 from mplacas.reports.contract import MonthlyEnergyReport, ReportMetric
 from mplacas.reports.snapshot import MonthlyReportSnapshotRepository, ReportSnapshotIntegrityError
 
@@ -49,6 +51,33 @@ def _int_metric(metrics: tuple[ReportMetric, ...], key: str) -> int | None:
         return None
 
 
+# A injeção do medidor (`generation_cycle_kwh`) entrou no cálculo na versão
+# 0.3.0 (ADR-078). Snapshots anteriores são imutáveis (ADR-038) e guardaram a
+# linha de injeção da fatura — no layout SCEE, a energia COMPENSADA, não a
+# medida. Mesmo em 0.3.0+, `reconcile_bill` cai nessa linha quando a fatura
+# não traz a leitura do medidor.
+METERED_INJECTION_VERSION = (0, 3, 0)
+
+
+def _grid_injection_basis(
+    *, injection: str | None, calculation_version: str, bill: UtilityBill | None
+) -> str | None:
+    """De onde veio a injeção gravada no snapshot: METER, BILL_LINE ou None.
+
+    METER só quando há certeza: snapshot 0.3.0+ e a fatura confirmada traz a
+    leitura do medidor. Qualquer dúvida vira BILL_LINE — a tela nunca rotula
+    como "medidor" o que pode ser compensação.
+    """
+    if injection is None:
+        return None
+    metered = (
+        calculation_version_tuple(calculation_version) >= METERED_INJECTION_VERSION
+        and bill is not None
+        and bill.generation_cycle_kwh is not None
+    )
+    return "METER" if metered else "BILL_LINE"
+
+
 def _quality_payload(metrics: tuple[ReportMetric, ...]) -> dict[str, int | None] | None:
     if not any(_metric_value(metrics, key) is not None for key in _QUALITY_KEYS):
         return None
@@ -78,6 +107,7 @@ async def load_monthly_production_history(
     for snapshot in snapshots:
         report = snapshot.report
         bill = bills.get(report.bill_id)
+        injection = _metric_value(report.metrics, "injected_kwh")
         cycles.append(
             {
                 "reference_month": report.reference_month,
@@ -86,11 +116,18 @@ async def load_monthly_production_history(
                 "cycle_start": bill.cycle_start.isoformat() if bill else None,
                 "cycle_end": bill.cycle_end.isoformat() if bill else None,
                 # Placas × distribuidora no MESMO ciclo da fatura (ADR-083,
-                # etapa 3), tal como gravado no snapshot: a injeção é a do
-                # medidor da distribuidora (`reconcile_bill`), e o autoconsumo
-                # é a diferença calculada pelo motor — nada recalculado aqui.
+                # etapa 3), tal como gravado no snapshot — nada recalculado
+                # aqui. A injeção vem com a origem (`grid_injection_basis`):
+                # medidor ou linha da fatura. O autoconsumo é estimativa do
+                # motor (produção do inversor − injeção).
                 "production_kwh": _metric_value(report.metrics, "cycle_production_kwh"),
-                "grid_injection_kwh": _metric_value(report.metrics, "injected_kwh"),
+                "grid_injection_kwh": injection,
+                "grid_injection_basis": _grid_injection_basis(
+                    injection=injection,
+                    calculation_version=report.calculation_version,
+                    bill=bill,
+                ),
+                "distributor": bill.distributor if bill else None,
                 "imported_kwh": _metric_value(report.metrics, "imported_kwh"),
                 "self_consumption_kwh": _metric_value(
                     report.metrics, "estimated_self_consumption_kwh"

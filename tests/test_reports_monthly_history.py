@@ -43,7 +43,13 @@ async def _factory():
     return async_sessionmaker(engine, expire_on_commit=False), engine
 
 
-def _bill(*, plant_id: uuid.UUID, reference_month: str, source_hash: str) -> UtilityBillRecord:
+def _bill(
+    *,
+    plant_id: uuid.UUID,
+    reference_month: str,
+    source_hash: str,
+    generation_cycle_kwh: Decimal | None = None,
+) -> UtilityBillRecord:
     cycle_day = date(2026, int(reference_month.split("-")[1]), 28)
     return UtilityBillRecord(
         plant_id=plant_id,
@@ -54,6 +60,7 @@ def _bill(*, plant_id: uuid.UUID, reference_month: str, source_hash: str) -> Uti
         billed_days=1,
         imported_kwh=Decimal("20"),
         injected_kwh=Decimal("40"),
+        generation_cycle_kwh=generation_cycle_kwh,
         compensated_kwh=Decimal("20"),
         credit_balance_kwh=Decimal("50"),
         total_amount_brl=Decimal("60"),
@@ -72,6 +79,7 @@ def _payload(
     production_kwh: str | None,
     quality: dict[str, str] | None,
     extra_metrics: dict[str, str] | None = None,
+    calculation_version: str = "0.2.0",
 ) -> str:
     quality_items = []
     if quality is not None:
@@ -109,7 +117,7 @@ def _payload(
         )
     payload = {
         "schema_version": "1.0",
-        "calculation_version": "0.2.0",
+        "calculation_version": calculation_version,
         "plant_id": str(plant_id),
         "bill_id": str(bill_id),
         "reference_month": reference_month,
@@ -132,6 +140,7 @@ def _snapshot_record(
     production_kwh: str | None = "100.000",
     quality: dict[str, str] | None = None,
     extra_metrics: dict[str, str] | None = None,
+    calculation_version: str = "0.2.0",
 ) -> MonthlyReportSnapshotRecord:
     if quality is None:
         quality = {
@@ -147,24 +156,35 @@ def _snapshot_record(
         production_kwh=production_kwh,
         quality=quality,
         extra_metrics=extra_metrics,
+        calculation_version=calculation_version,
     )
     return MonthlyReportSnapshotRecord(
         plant_id=plant_id,
         bill_id=bill_id,
         reference_month=reference_month,
         schema_version="1.0",
-        calculation_version="0.2.0",
+        calculation_version=calculation_version,
         payload_json=payload_json,
         payload_sha256=hashlib.sha256(payload_json.encode("utf-8")).hexdigest(),
     )
 
 
 async def _seed_cycles(
-    factory, *, plant_id: uuid.UUID, months: list[str], **snapshot_kwargs
+    factory,
+    *,
+    plant_id: uuid.UUID,
+    months: list[str],
+    generation_cycle_kwh: Decimal | None = None,
+    **snapshot_kwargs,
 ) -> None:
     async with factory() as session:
         for index, month in enumerate(months):
-            bill = _bill(plant_id=plant_id, reference_month=month, source_hash=f"{index}" * 64)
+            bill = _bill(
+                plant_id=plant_id,
+                reference_month=month,
+                source_hash=f"{index}" * 64,
+                generation_cycle_kwh=generation_cycle_kwh,
+            )
             session.add(bill)
             await session.flush()
             session.add(
@@ -266,10 +286,28 @@ def test_fewer_cycles_than_limit_returns_all_without_ghost_months(
     assert [item["reference_month"] for item in body["cycles"]] == ["2026-01", "2026-02"]
 
 
-def test_cycle_carries_bill_dates_and_utility_meter_side_by_side(cross_tenant_setup) -> None:
+def _history_cycle(token: str) -> dict:
+    response = TestClient(app).get(
+        "/reports/monthly/history",
+        headers=_headers(token),
+        params={"plant_id": str(PLANT_A)},
+    )
+    assert response.status_code == 200
+    return response.json()["cycles"][0]
+
+
+_SEPT_METRICS = {
+    "injected_kwh": "235",
+    "imported_kwh": "221",
+    "estimated_self_consumption_kwh": "348.210",
+}
+
+
+def test_cycle_carries_bill_dates_and_meter_injection_side_by_side(cross_tenant_setup) -> None:
     # ADR-083, etapa 3: placas (inversor) × distribuidora no MESMO ciclo da
     # fatura. Datas vêm da fatura confirmada; injeção, importação e autoconsumo
-    # vêm do snapshot, tal como gravados (nada recalculado na leitura).
+    # vêm do snapshot, tal como gravados (nada recalculado na leitura). Só é
+    # "medidor" com snapshot 0.3.0+ E fatura com a leitura do medidor (ADR-078).
     factory, _, _, token_a, _ = cross_tenant_setup
     import asyncio
 
@@ -279,28 +317,63 @@ def test_cycle_carries_bill_dates_and_utility_meter_side_by_side(cross_tenant_se
             plant_id=PLANT_A,
             months=["2026-09"],
             production_kwh="583.210",
-            extra_metrics={
-                "injected_kwh": "235",
-                "imported_kwh": "221",
-                "estimated_self_consumption_kwh": "348.210",
-            },
+            extra_metrics=_SEPT_METRICS,
+            calculation_version="0.4.0",
+            generation_cycle_kwh=Decimal("235"),
         )
     )
 
-    response = TestClient(app).get(
-        "/reports/monthly/history",
-        headers=_headers(token_a),
-        params={"plant_id": str(PLANT_A)},
-    )
-
-    assert response.status_code == 200
-    cycle = response.json()["cycles"][0]
+    cycle = _history_cycle(token_a)
     assert cycle["cycle_start"] == "2026-09-28"
     assert cycle["cycle_end"] == "2026-09-28"
     assert cycle["production_kwh"] == "583.210"
     assert cycle["grid_injection_kwh"] == "235"
+    assert cycle["grid_injection_basis"] == "METER"
+    assert cycle["distributor"] == "EQUATORIAL_GO"
     assert cycle["imported_kwh"] == "221"
     assert cycle["self_consumption_kwh"] == "348.210"
+
+
+def test_pre_0_3_snapshot_injection_is_bill_line_not_meter(cross_tenant_setup) -> None:
+    # Snapshot 0.2.0 é imutável e guardou a linha "INJEÇÃO SCEE" (energia
+    # compensada), mesmo que a fatura hoje tenha a leitura do medidor.
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_cycles(
+            factory,
+            plant_id=PLANT_A,
+            months=["2026-09"],
+            extra_metrics=_SEPT_METRICS,
+            calculation_version="0.2.0",
+            generation_cycle_kwh=Decimal("235"),
+        )
+    )
+
+    cycle = _history_cycle(token_a)
+    assert cycle["grid_injection_kwh"] == "235"
+    assert cycle["grid_injection_basis"] == "BILL_LINE"
+
+
+def test_bill_without_meter_reading_injection_is_bill_line(cross_tenant_setup) -> None:
+    # Em 0.3.0+, `reconcile_bill` cai na linha da fatura quando ela não traz
+    # `generation_cycle_kwh`: também não é medidor.
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_cycles(
+            factory,
+            plant_id=PLANT_A,
+            months=["2026-09"],
+            extra_metrics=_SEPT_METRICS,
+            calculation_version="0.4.0",
+            generation_cycle_kwh=None,
+        )
+    )
+
+    assert _history_cycle(token_a)["grid_injection_basis"] == "BILL_LINE"
 
 
 def test_old_snapshot_without_meter_metrics_returns_null_not_zero(cross_tenant_setup) -> None:
@@ -317,6 +390,7 @@ def test_old_snapshot_without_meter_metrics_returns_null_not_zero(cross_tenant_s
 
     cycle = response.json()["cycles"][0]
     assert cycle["grid_injection_kwh"] is None
+    assert cycle["grid_injection_basis"] is None
     assert cycle["imported_kwh"] is None
     assert cycle["self_consumption_kwh"] is None
     assert cycle["cycle_start"] == "2026-01-28"
