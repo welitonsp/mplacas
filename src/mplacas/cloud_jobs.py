@@ -267,7 +267,9 @@ def _handle_import_tariffs(args: argparse.Namespace) -> int:
             print(
                 f"  {period.distributor} {period.tariff_class} {period.valid_from}.."
                 f"{period.valid_to} cheia={period.full_brl_kwh} scee={period.scee_brl_kwh} "
-                f"({period.source})"
+                # Texto vindo do CSV: sem caracteres de controle nem "::",
+                # para não virar comando do GitHub Actions no log.
+                f"({''.join(c for c in period.source if c.isprintable()).replace('::', ':')})"
             )
     if args.no_db:
         return 0

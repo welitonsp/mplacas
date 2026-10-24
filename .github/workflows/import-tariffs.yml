@@ -38,9 +38,9 @@ on:
       - .github/workflows/import-tariffs.yml
 
 concurrency:
-  # Fila por tipo de execução: um pull request nunca substitui a execução
-  # semanal ou manual que grava no banco.
-  group: import-tariffs-${{ github.event_name }}
+  # Pull request em fila própria (nunca substitui a execução que grava);
+  # semanal e manual dividem a mesma fila (nunca gravam ao mesmo tempo).
+  group: import-tariffs-${{ github.event_name == 'pull_request' && 'pr' || 'gravacao' }}
   cancel-in-progress: false
 
 permissions:

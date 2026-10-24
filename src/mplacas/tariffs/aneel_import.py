@@ -324,8 +324,13 @@ async def upsert_periods(
             to_add.append(record)
             inserted += 1
             continue
+        # SCEE só diverge quando os dois lados a têm: a ANEEL pode publicar a
+        # cheia antes da SCEE (ou a SCEE pode ter sido descartada por
+        # implausível) — isso não é motivo para travar todas as distribuidoras.
         if row.full_brl_kwh != period.full_brl_kwh or (
-            row.scee_brl_kwh is not None and row.scee_brl_kwh != period.scee_brl_kwh
+            row.scee_brl_kwh is not None
+            and period.scee_brl_kwh is not None
+            and row.scee_brl_kwh != period.scee_brl_kwh
         ):
             raise AneelImportError(
                 f"cadastro diverge da ANEEL em {key[0]} {key[1]} {period.valid_from}: "
