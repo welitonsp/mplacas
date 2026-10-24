@@ -22,7 +22,7 @@ URL = (
     "resource/fcf2906c-7c32-4b9b-a637-054e7a5234f4/download/"
     "tarifas-homologadas-distribuidoras-energia-eletrica.csv"
 )
-AGENT_HINT = re.compile(r"equatorial|celg|goi", re.IGNORECASE)
+AGENT_HINT = re.compile(r"^EQUATORIAL GO$")
 
 
 def notice(title: str, lines: list[str]) -> None:
@@ -59,26 +59,28 @@ def main() -> int:
 
     combos: collections.Counter[tuple[str, ...]] = collections.Counter()
     for r in rows:
-        if r.get("DscSubgrupo", "").upper().startswith("B"):
+        recent = r.get("DatInicioVigencia", "") >= "2025"
+        if recent and r.get("DscSubGrupo", "").upper().startswith("B"):
             combos[
                 (
-                    r.get("DscSubgrupo", ""),
+                    r.get("DscSubGrupo", ""),
                     r.get("DscModalidadeTarifaria", ""),
                     r.get("DscClasse", ""),
                     r.get("DscSubClasse", ""),
                     r.get("DscDetalhe", ""),
                     r.get("NomPostoTarifario", ""),
-                    r.get("DscBaseTarifa", ""),
+                    r.get("DscBaseTarifaria", ""),
                 )
             ] += 1
-    notice("combinacoes-grupo-b", [f"{n} x {c}" for c, n in combos.most_common(45)])
+    notice("combinacoes-grupo-b-2025", [f"{n} x {c}" for c, n in combos.most_common(60)])
 
     target = [
         r
         for r in rows
         if AGENT_HINT.search(r.get("SigAgente", ""))
-        and r.get("DscSubgrupo", "") == "B1"
+        and r.get("DscSubGrupo", "") == "B1"
         and r.get("DatInicioVigencia", "") >= "2023"
+        and r.get("DscBaseTarifaria", "") == "Tarifa de Aplicação"
     ]
     target.sort(key=lambda r: (r.get("DatInicioVigencia", ""), r.get("DscSubClasse", "")))
     notice(
@@ -88,22 +90,22 @@ def main() -> int:
                 r.get(k, "")
                 for k in (
                     "SigAgente",
-                    "DscResolucaoHomologatoria",
+                    "DscREH",
                     "DatInicioVigencia",
                     "DatFimVigencia",
-                    "DscBaseTarifa",
+                    "DscBaseTarifaria",
                     "DscModalidadeTarifaria",
                     "DscClasse",
                     "DscSubClasse",
                     "DscDetalhe",
                     "NomPostoTarifario",
-                    "DscUnidade",
+                    "DscUnidadeTerciaria",
                     "SigAgenteAcessante",
-                    "VlrTusd",
-                    "VlrTe",
+                    "VlrTUSD",
+                    "VlrTE",
                 )
             )
-            for r in target[:60]
+            for r in target[:80]
         ],
     )
     return 0
