@@ -57,6 +57,10 @@ class UtilityCheck:
     credits_available_kwh: Decimal | None
     credits_used_kwh: Decimal | None
     credit_balance_kwh: Decimal | None
+    # Leitura do medidor (envio à rede) e saldo de partida usados na prova —
+    # a tela cita estes números, nunca a injeção do snapshot.
+    meter_export_kwh: Decimal | None
+    previous_balance_kwh: Decimal | None
     # Fração da produção do inversor enviada à rede, segundo o medidor (%).
     export_share_percent: Decimal | None
     export_share_baseline_percent: Decimal | None
@@ -72,6 +76,8 @@ class UtilityCheck:
             "credits_available_kwh": text(self.credits_available_kwh),
             "credits_used_kwh": text(self.credits_used_kwh),
             "credit_balance_kwh": text(self.credit_balance_kwh),
+            "meter_export_kwh": text(self.meter_export_kwh),
+            "previous_balance_kwh": text(self.previous_balance_kwh),
             "export_share_percent": text(self.export_share_percent),
             "export_share_baseline_percent": text(self.export_share_baseline_percent),
             "reasons": list(self.reasons),
@@ -93,33 +99,60 @@ def check_cycle(
     previous_bill: UtilityBill | None,
     production_kwh: Decimal | None,
     previous_export_shares: list[Decimal],
+    production_estimated: bool = False,
+    previous_bill_ambiguous: bool = False,
 ) -> UtilityCheck:
+    """Confere um ciclo.
+
+    ``production_estimated``: o total do inversor inclui dias estimados pelo
+    sol ou o piso do medidor (ADR-082) — aí comparar inversor × medidor é
+    circular, e os níveis 2 e 3 não rodam. ``previous_bill_ambiguous``: há
+    mais de uma fatura confirmada, com saldos diferentes, no mês anterior
+    (refaturamento) — o saldo de partida é incerto.
+    """
     reasons: list[str] = []
-    available = used = balance = missing = None
+    available = used = balance = missing = previous_balance = None
+    unbalanced = False
 
     if bill is None:
-        return UtilityCheck(VERDICT_UNVERIFIABLE, None, None, None, None, None, None, ("NO_BILL",))
+        return UtilityCheck(
+            VERDICT_UNVERIFIABLE, None, None, None, None, None, None, None, None, ("NO_BILL",)
+        )
 
     # 1. Conservação dos créditos: injeção do medidor + saldo anterior =
     #    usado + saldo novo. Precisa da leitura do medidor e da fatura do mês
     #    anterior (o saldo de partida).
     if bill.generation_cycle_kwh is None:
         reasons.append("NO_METER_READING")
+    elif previous_bill_ambiguous:
+        reasons.append("AMBIGUOUS_PREVIOUS_BILL")
     elif previous_bill is None:
         reasons.append("NO_PREVIOUS_BILL")
     else:
-        available = bill.generation_cycle_kwh + previous_bill.credit_balance_kwh
+        previous_balance = previous_bill.credit_balance_kwh
+        available = bill.generation_cycle_kwh + previous_balance
         used = bill.compensated_kwh
         balance = bill.credit_balance_kwh
         gap = available - used - balance
-        missing = gap if gap > CREDIT_TOLERANCE_KWH else Decimal("0")
-        if missing > 0:
+        if gap > CREDIT_TOLERANCE_KWH:
+            missing = gap
             reasons.append("CREDITS_MISSING")
+        elif gap < -CREDIT_TOLERANCE_KWH:
+            # Usou mais crédito do que havia: crédito recebido de outra UC,
+            # fatura anterior errada ou compensação lida como consumo total.
+            # A conta não fecha — não dá para afirmar nem prejuízo nem OK.
+            unbalanced = True
+            reasons.append("CREDITS_UNBALANCED")
+        else:
+            missing = Decimal("0")
 
     # 2. Envio impossível: o medidor não pode registrar mais saída do que o
     #    inversor produziu.
+    if production_estimated:
+        reasons.append("PRODUCTION_ESTIMATED")
     impossible = (
-        bill.generation_cycle_kwh is not None
+        not production_estimated
+        and bill.generation_cycle_kwh is not None
         and production_kwh is not None
         and production_kwh > 0
         and bill.generation_cycle_kwh > production_kwh * INVERTER_TOLERANCE
@@ -130,7 +163,7 @@ def check_cycle(
         reasons.append("NO_PRODUCTION")
 
     # 3. Fração enviada à rede muito abaixo do histórico.
-    share = export_share(production_kwh=production_kwh, bill=bill)
+    share = None if production_estimated else export_share(production_kwh=production_kwh, bill=bill)
     baseline = (
         Decimal(str(median(previous_export_shares))).quantize(Decimal("0.1"))
         if len(previous_export_shares) >= MIN_HISTORY_CYCLES
@@ -145,7 +178,7 @@ def check_cycle(
         verdict = VERDICT_IMPOSSIBLE
     elif "EXPORT_SHARE_DROP" in reasons:
         verdict = VERDICT_SUSPECT
-    elif available is not None:
+    elif available is not None and not unbalanced:
         verdict = VERDICT_OK
     else:
         verdict = VERDICT_UNVERIFIABLE
@@ -156,6 +189,8 @@ def check_cycle(
         credits_available_kwh=available,
         credits_used_kwh=used,
         credit_balance_kwh=balance,
+        meter_export_kwh=bill.generation_cycle_kwh,
+        previous_balance_kwh=previous_balance,
         export_share_percent=share,
         export_share_baseline_percent=baseline,
         reasons=tuple(reasons),

@@ -20,7 +20,7 @@ from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.intelligence.investor_service import calculation_version_tuple
 from mplacas.reports.contract import MonthlyEnergyReport, ReportMetric
 from mplacas.reports.snapshot import MonthlyReportSnapshotRepository, ReportSnapshotIntegrityError
-from mplacas.reports.utility_check import check_cycle, export_share
+from mplacas.reports.utility_check import check_cycle
 
 logger = logging.getLogger(__name__)
 
@@ -125,9 +125,11 @@ async def load_monthly_production_history(
     ).list_for_plant(plant_id=plant_id)
     bills = {confirmed.id: confirmed.bill for confirmed in confirmed_bills}
     # Fatura do mês anterior dá o saldo de partida da conferência de créditos.
-    bills_by_month = {
-        confirmed.bill.reference_month: confirmed.bill for confirmed in confirmed_bills
-    }
+    # Mais de uma confirmada no mesmo mês (refaturamento) com saldos
+    # diferentes deixa o saldo de partida incerto: a conferência não roda.
+    bills_by_month: dict[str, list[UtilityBill]] = {}
+    for confirmed in confirmed_bills:
+        bills_by_month.setdefault(confirmed.bill.reference_month, []).append(confirmed.bill)
 
     cycles: list[dict[str, object]] = []
     export_shares: list[Decimal] = []
@@ -136,13 +138,24 @@ async def load_monthly_production_history(
         bill = bills.get(report.bill_id)
         injection = _metric_value(report.metrics, "injected_kwh")
         production = _decimal_or_none(_metric_value(report.metrics, "cycle_production_kwh"))
+        previous_candidates = bills_by_month.get(_previous_month(report.reference_month), [])
+        previous_ambiguous = len({b.credit_balance_kwh for b in previous_candidates}) > 1
+        quality = _quality_payload(report.quality) or {}
+        # Produção com dias estimados pelo sol ou sem leitura (ADR-082) pode
+        # ter sido elevada até a leitura do medidor: não serve de prova.
+        production_estimated = any(
+            (quality.get(key) or 0) > 0
+            for key in ("estimated_production_days", "missing_days", "unavailable_days")
+        )
         utility_check = check_cycle(
             bill=bill,
-            previous_bill=bills_by_month.get(_previous_month(report.reference_month)),
+            previous_bill=previous_candidates[0] if previous_candidates else None,
             production_kwh=production,
             previous_export_shares=list(export_shares),
+            production_estimated=production_estimated,
+            previous_bill_ambiguous=previous_ambiguous,
         )
-        share = export_share(production_kwh=production, bill=bill)
+        share = utility_check.export_share_percent
         if share is not None:
             export_shares.append(share)
         cycles.append(

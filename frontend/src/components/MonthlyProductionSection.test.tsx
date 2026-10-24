@@ -13,6 +13,8 @@ function okCheck(overrides: Partial<UtilityCheck> = {}): UtilityCheck {
     creditsAvailableKwh: 255.98,
     creditsUsedKwh: 255.98,
     creditBalanceKwh: 0,
+    meterExportKwh: 238,
+    previousBalanceKwh: 17.98,
     exportSharePercent: 40,
     exportShareBaselinePercent: null,
     reasons: [],
@@ -95,7 +97,7 @@ describe('MonthlyProductionSection', () => {
     expect(within(may).getByText('570 kWh')).toBeInTheDocument()
     expect(within(may).getByText('estimado')).toBeInTheDocument()
     expect(within(may).getByText('Sem sinal de prejuízo')).toBeInTheDocument()
-    expect(within(may).getByText(/Todo kWh registrado virou crédito: 255,98 kWh disponíveis, 255,98 kWh usados, saldo de 0 kWh/)).toBeInTheDocument()
+    expect(within(may).getByText(/Todo kWh registrado virou crédito: 238 kWh registrados \+ 17,98 kWh de saldo anterior; 255,98 kWh usados e saldo de 0 kWh/)).toBeInTheDocument()
   })
 
   it('resumo no topo: sem prejuízo quando todos os ciclos conferidos fecham', () => {
@@ -110,7 +112,7 @@ describe('MonthlyProductionSection', () => {
     history.cycles[2] = { ...history.cycles[2], utilityCheck: okCheck({ verdict: 'LOSS', missingCreditsKwh: 15.98, reasons: ['CREDITS_MISSING'] }) }
     render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
 
-    expect(screen.getByText('15,98 kWh de créditos faltando')).toBeInTheDocument()
+    expect(screen.getByText('15,98 kWh de créditos sem explicação')).toBeInTheDocument()
     expect(within(row(/mai\/26/)).getByText('Créditos faltando')).toBeInTheDocument()
     expect(within(row(/mai\/26/)).getByText(/não mostra 15,98 kWh nem como abatimento nem como saldo/)).toBeInTheDocument()
   })
@@ -121,6 +123,7 @@ describe('MonthlyProductionSection', () => {
     render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
 
     expect(within(row(/mai\/26/)).getByText('Registro impossível')).toBeInTheDocument()
+    expect(within(row(/mai\/26/)).getByText(/registrou 238 kWh enviados à rede/)).toBeInTheDocument()
     expect(within(row(/mai\/26/)).getByText(/vale pedir aferição/)).toBeInTheDocument()
   })
 
@@ -150,6 +153,16 @@ describe('MonthlyProductionSection', () => {
     expect(screen.getByText('Ainda sem conferência')).toBeInTheDocument()
     expect(within(row(/mar\/26/)).getByText('A fatura deste ciclo não traz a leitura do medidor de geração.')).toBeInTheDocument()
     expect(within(row(/abr\/26/)).getByText('Conferência ainda não disponível para este ciclo.')).toBeInTheDocument()
+  })
+
+  it('janela parcial: nunca verde "sem sinal de prejuízo" se algum ciclo ficou sem conferência', () => {
+    const history = buildHistory()
+    history.cycles[2] = { ...history.cycles[2], utilityCheck: okCheck({ verdict: 'UNVERIFIABLE', reasons: ['CREDITS_UNBALANCED'] }) }
+    render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
+
+    expect(screen.getByText('Sem prejuízo nos 2 ciclos conferidos')).toBeInTheDocument()
+    expect(screen.getByText(/2 de 3 ciclos conferidos/)).toBeInTheDocument()
+    expect(within(row(/mai\/26/)).getByText(/passam do que havia/)).toBeInTheDocument()
   })
 
   it('mais recente primeiro: o ciclo da última fatura abre a lista', () => {

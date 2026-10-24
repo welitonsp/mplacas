@@ -145,3 +145,50 @@ def test_export_share_needs_meter_and_positive_production() -> None:
     assert export_share(production_kwh=Decimal("0"), bill=_bill()) is None
     assert export_share(production_kwh=Decimal("500"), bill=_bill(generation=None)) is None
     assert export_share(production_kwh=Decimal("476"), bill=_bill()) == Decimal("50.0")
+
+
+def test_more_credits_used_than_available_is_unbalanced_never_ok() -> None:
+    # 100 disponíveis, 250 usados, saldo 0: a conta não fecha para nenhum lado.
+    previous = _bill(generation="0", compensated="0", balance="0")
+    bill = _bill(generation="100", compensated="250", balance="0")
+    check = check_cycle(
+        bill=bill, previous_bill=previous, production_kwh=None, previous_export_shares=[]
+    )
+    assert check.verdict == VERDICT_UNVERIFIABLE
+    assert "CREDITS_UNBALANCED" in check.reasons
+    assert check.missing_credits_kwh is None
+
+
+def test_estimated_production_skips_impossible_and_share_checks() -> None:
+    # Produção com dias estimados pelo sol pode ter sido elevada até o medidor
+    # (ADR-082): comparar inversor × medidor seria circular.
+    check = check_cycle(
+        bill=_bill(),
+        previous_bill=PREVIOUS,
+        production_kwh=Decimal("200"),
+        previous_export_shares=[Decimal("45"), Decimal("42"), Decimal("48")],
+        production_estimated=True,
+    )
+    assert check.verdict == VERDICT_OK  # créditos fecham; nível 2 e 3 não rodam
+    assert "PRODUCTION_ESTIMATED" in check.reasons
+    assert check.export_share_percent is None
+
+
+def test_ambiguous_previous_bill_is_unverifiable() -> None:
+    check = check_cycle(
+        bill=_bill(),
+        previous_bill=PREVIOUS,
+        production_kwh=None,
+        previous_export_shares=[],
+        previous_bill_ambiguous=True,
+    )
+    assert check.verdict == VERDICT_UNVERIFIABLE
+    assert "AMBIGUOUS_PREVIOUS_BILL" in check.reasons
+
+
+def test_proof_numbers_come_from_the_meter_and_previous_balance() -> None:
+    check = check_cycle(
+        bill=_bill(), previous_bill=PREVIOUS, production_kwh=None, previous_export_shares=[]
+    )
+    assert check.meter_export_kwh == Decimal("238")
+    assert check.previous_balance_kwh == Decimal("17.98")

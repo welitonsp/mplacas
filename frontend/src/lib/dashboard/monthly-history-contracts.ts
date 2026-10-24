@@ -30,6 +30,9 @@ export interface UtilityCheck {
   creditsAvailableKwh: number | null
   creditsUsedKwh: number | null
   creditBalanceKwh: number | null
+  // Números da prova: leitura do medidor e saldo de partida (fatura anterior).
+  meterExportKwh: number | null
+  previousBalanceKwh: number | null
   exportSharePercent: number | null
   exportShareBaselinePercent: number | null
   reasons: string[]
@@ -163,6 +166,8 @@ function parseUtilityCheck(value: unknown): UtilityCheck | null {
     creditsAvailableKwh: nullableDecimalNumber(value, 'credits_available_kwh'),
     creditsUsedKwh: nullableDecimalNumber(value, 'credits_used_kwh'),
     creditBalanceKwh: nullableDecimalNumber(value, 'credit_balance_kwh'),
+    meterExportKwh: nullableDecimalNumber(value, 'meter_export_kwh'),
+    previousBalanceKwh: nullableDecimalNumber(value, 'previous_balance_kwh'),
     exportSharePercent: nullableDecimalNumber(value, 'export_share_percent'),
     exportShareBaselinePercent: nullableDecimalNumber(value, 'export_share_baseline_percent'),
     reasons,

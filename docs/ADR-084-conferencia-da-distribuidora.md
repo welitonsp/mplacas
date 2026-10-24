@@ -37,12 +37,31 @@ quanto a operadora registrou, para saber se está tendo prejuízo".
    - `SUSPECT` — a fração da produção enviada à rede ficou mais de 20 pontos percentuais
      abaixo da mediana dos ciclos anteriores (no mínimo 3). É suspeita, nunca prova: pode ser
      o medidor ou mais consumo durante o dia.
-   - `OK` — os créditos foram conferidos e nada acima disparou.
-   - `UNVERIFIABLE` — sem leitura do medidor, sem a fatura do mês anterior ou sem fatura,
-     com o motivo em `reasons`. Nunca vira "sem prejuízo" por omissão.
+   - `OK` — os créditos foram conferidos e fecharam, e nada acima disparou.
+   - `UNVERIFIABLE` — com o motivo em `reasons`. Nunca vira "sem prejuízo" por omissão.
+     Motivos:
+     - sem leitura do medidor;
+     - sem a fatura do mês anterior;
+     - fatura do mês anterior ambígua (mais de uma confirmada, com saldos diferentes);
+     - créditos que fecham "a mais" (`CREDITS_UNBALANCED`): usados > disponíveis, por
+       crédito vindo de outra UC, fatura anterior errada ou compensação lida como consumo
+       total no fallback do parser.
+   - Ciclos cuja produção inclui dias estimados pelo sol ou sem leitura (`PRODUCTION_ESTIMATED`)
+     não rodam os níveis `IMPOSSIBLE`/`SUSPECT` e não entram na referência da fração. Pelo
+     ADR-082, esse total pode ter sido elevado até a leitura do medidor, e a comparação
+     seria circular.
+   - A prova cita só os números do próprio `utility_check`: `meter_export_kwh` (leitura do
+     medidor) e `previous_balance_kwh` (saldo de partida), nunca a injeção do snapshot.
 2. **Tela** (aba Energia, "Placas × distribuidora, ciclo a ciclo"), minimalista:
-   - no topo, o veredito da janela em uma frase ("Sem sinal de prejuízo", "X kWh de créditos
-     faltando", "Registro impossível", "Ciclo fora do padrão", "Ainda sem conferência");
+   - no topo, o veredito da janela em uma frase:
+     - "Sem sinal de prejuízo": em verde e **só quando todos os ciclos foram conferidos**;
+     - "Sem prejuízo nos N ciclos conferidos": neutro, com "N de M" quando a conferência é
+       parcial;
+     - "X kWh de créditos sem explicação": com as três hipóteses (prejuízo, vencimento,
+       rateio);
+     - "Registro impossível";
+     - "Ciclo fora do padrão";
+     - "Ainda sem conferência";
    - uma legenda que explica rede × casa;
    - por ciclo:
      - uma barra fina com a composição da produção (rede registrada | casa estimada);
@@ -53,8 +72,16 @@ quanto a operadora registrou, para saber se está tendo prejuízo".
 
 ## Limitações conhecidas
 
-- Crédito vencido (60 meses) ou enviado para outra unidade do rateio aparece como `LOSS`. A
-  frase da tela cita as duas hipóteses. O percentual de rateio ainda não é lido da fatura.
+- Crédito vencido (60 meses) ou enviado para outra unidade do rateio aparece como `LOSS`.
+  - O resumo e a frase do ciclo dizem "sem explicação" e citam as hipóteses.
+  - Próximo passo: ler da fatura o percentual de rateio ("CADASTRO RATEIO GERAÇÃO") e o saldo
+    a expirar. Exige coluna nova e migration, para só afirmar prejuízo com rateio de 100%
+    confirmado.
+- A referência do `SUSPECT` usa só os ciclos da janela pedida, então o veredito pode mudar
+  com o `limit`.
+- O fallback do parser `compensated = imported` (layout sem rótulo de compensação) nunca
+  foi validado com fatura real. Nesse caso a conta fecha "a mais" e cai em
+  `CREDITS_UNBALANCED`.
 - Sem medidor próprio de exportação, não dá para afirmar quantos kWh o medidor da
   distribuidora deixou de registrar. Os níveis 2 e 3 vigiam o fisicamente possível. A
   integração com medidor próprio é o caminho para a prova exata.
