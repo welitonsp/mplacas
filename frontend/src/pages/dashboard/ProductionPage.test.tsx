@@ -72,10 +72,8 @@ describe('ProductionPage — módulo Produção (ADR-072, Etapa 4)', () => {
 
     await renderProductionPage()
 
-    // `data-testid="column-series-visual"` (ver `charts/ColumnSeries.tsx`)
-    // identifica a parte visual do gráfico sem ambiguidade com a tabela
-    // `sr-only` que repete os mesmos rótulos/valores de propósito.
-    await screen.findByTestId('column-series-visual')
+    // O ciclo mais recente da comparação placas × Equatorial já renderizado.
+    await screen.findByRole('heading', { level: 3, name: /mai\/26/ })
     await waitFor(() => {
       expect(fetchExecutiveDashboardMock).toHaveBeenCalledTimes(1)
       expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(1)
@@ -88,125 +86,101 @@ describe('ProductionPage — módulo Produção (ADR-072, Etapa 4)', () => {
   })
 })
 
-describe('ProductionPage — resumo operacional', () => {
-  it('destaca produção real, esperado, desvio e sequência de atenção no topo', async () => {
+describe('ProductionPage — comparação com o esperado (ADR-083, etapa 3)', () => {
+  it('com referência: "Último dia contra o esperado" mostra régua, desvio e sequência, sem aviso de referência', async () => {
     vi.resetModules()
     installApiMock()
 
     await renderProductionPage()
 
-    const title = await screen.findByRole('heading', { level: 2, name: 'Resumo operacional' })
+    const title = await screen.findByRole('heading', { level: 2, name: 'Último dia contra o esperado' })
     const section = title.closest('section') as HTMLElement
-
-    expect(within(section).getByText('Última produção')).toBeInTheDocument()
-    // "40 kWh" aparece duas vezes no resumo: no tile "Última produção" e na
-    // régua do card "Produção de … vs. esperada", que fica ao lado dele.
     await waitFor(() => {
-      expect(within(section).getAllByText('40 kWh')).toHaveLength(2)
+      expect(within(section).getByText('Produção de 30/07/2026 vs. esperada')).toBeInTheDocument()
     })
-    expect(within(section).getByText('Produção de 30/07/2026 vs. esperada')).toBeInTheDocument()
     expect(within(section).getByText(/esperado 44 kWh/)).toBeInTheDocument()
-    expect(within(section).getByText('Dado de 30/07/2026')).toBeInTheDocument()
-    // Rótulo alinhado com o do gráfico (ProductionHistoryChart, T5): não
-    // afirma expectativa daquele dia específico, e a unidade "kWh/dia" deixa
-    // claro que é uma taxa de referência do período, não o total do dia.
-    expect(within(section).getByText('Baseline esperado (período)')).toBeInTheDocument()
-    expect(within(section).getByText('44 kWh/dia')).toBeInTheDocument()
-    expect(within(section).getByText('Referência do período')).toBeInTheDocument()
-    expect(within(section).queryByText('Esperado no dia')).not.toBeInTheDocument()
-    expect(within(section).getByText('Desvio')).toBeInTheDocument()
     expect(within(section).getByText('-9%')).toBeInTheDocument()
-    expect(within(section).getByText('Sequência de atenção')).toBeInTheDocument()
     expect(within(section).getByText('2 dias')).toBeInTheDocument()
     expect(within(section).getByText('abaixo do esperado')).toBeInTheDocument()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+    expect(screen.queryByText('Resumo operacional')).not.toBeInTheDocument()
   })
 
-  it('mostra "Baseline indisponível" no tile de baseline esperado quando o último dia não tem expected_production_kwh, sem afirmar um valor', async () => {
+  it('primeiro ano (sem referência): um aviso único com a data; nada de "—"/"Baseline indisponível" nem blocos contra o esperado', async () => {
     vi.resetModules()
-    const noExpectedAnomalyPayload = {
+    const noBaselineAnomalies = {
       ...anomalyPayload,
-      daily: anomalyPayload.daily.map((day, index) =>
-        index === anomalyPayload.daily.length - 1
-          ? { ...day, expected_production_kwh: null, level: null, deviation_percent: null }
-          : day
-      ),
+      current_streak_days: 0,
+      worst_level: null,
+      expected_unavailable_reason: 'REFERENCE_YEAR_INCOMPLETE',
+      daily: anomalyPayload.daily.map((day) => ({ ...day, expected_production_kwh: null, level: null, deviation_percent: null })),
     }
-    installApiMock({ fetchAnomalyHistory: vi.fn(async () => jsonResponse(noExpectedAnomalyPayload)) })
+    installApiMock({
+      fetchAnomalyHistory: vi.fn(async () => jsonResponse(noBaselineAnomalies)),
+      fetchPhotovoltaicSummary: vi.fn(async () => jsonResponse(fallbackPhotovoltaicSummaryPayload)),
+    })
 
     await renderProductionPage()
 
-    const title = await screen.findByRole('heading', { level: 2, name: 'Resumo operacional' })
-    const section = title.closest('section') as HTMLElement
-
-    const label = await waitFor(() => within(section).getByText('Baseline esperado (período)'))
-    // Escopado ao próprio tile (não à seção inteira) porque o tile de "Desvio"
-    // também renderiza "—" quando `deviation_percent` é `null` no mesmo dia —
-    // sem escopar, `getByText('—')` encontraria mais de um elemento.
-    const tile = label.closest('article') as HTMLElement
-    expect(within(tile).getByText('—')).toBeInTheDocument()
-    expect(within(tile).getByText('Baseline indisponível')).toBeInTheDocument()
-    expect(within(section).queryByText('Referência do período')).not.toBeInTheDocument()
+    const note = await screen.findByRole('note')
+    expect(note).toHaveTextContent('Produção esperada disponível a partir de 14/03/2027')
+    await screen.findByRole('heading', { level: 2, name: 'Leitura do período' })
+    expect(screen.queryByRole('heading', { level: 2, name: 'Último dia contra o esperado' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Diagnóstico de produção do período' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Baseline indisponível')).not.toBeInTheDocument()
+    expect(screen.queryByText('Desempenho médio')).not.toBeInTheDocument()
   })
 
-  it('mostra diagnóstico de produção com pior dia, perda estimada e próxima ação antes dos gráficos', async () => {
+  it('ordem: ciclos de fatura → histórico diário → leitura do período → último dia → diagnóstico', async () => {
     vi.resetModules()
     installApiMock()
 
-    const { container } = await renderProductionPage()
+    await renderProductionPage()
 
     const diagnosisSection = await screen.findByRole('region', { name: 'Diagnóstico de produção do período' })
     await waitFor(() => {
       expect(within(diagnosisSection).getByRole('heading', { level: 2, name: 'Diagnóstico: perda recorrente de produção' })).toBeInTheDocument()
     })
-    expect(within(diagnosisSection).getByText(/2 dias seguidos abaixo do esperado/)).toBeInTheDocument()
-    expect(within(diagnosisSection).getByText(/Perda estimada de 10 kWh/)).toBeInTheDocument()
-    expect(within(diagnosisSection).getByRole('group', { name: 'Sinais do diagnóstico de produção' })).toBeInTheDocument()
-
-    const chart = await screen.findByTestId('column-series-visual')
-    const chartSection = chart.closest('section') as HTMLElement
-    expect(container.contains(diagnosisSection)).toBe(true)
-    expect(chartSection).not.toBeNull()
-    expect(Boolean(diagnosisSection.compareDocumentPosition(chartSection) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+    const order = [
+      screen.getByRole('heading', { level: 2, name: 'Placas × distribuidora, ciclo a ciclo' }),
+      screen.getByRole('heading', { level: 2, name: 'Histórico de produção' }),
+      screen.getByRole('heading', { level: 2, name: 'Leitura do período' }),
+      screen.getByRole('heading', { level: 2, name: 'Último dia contra o esperado' }),
+      diagnosisSection,
+    ]
+    for (let index = 1; index < order.length; index += 1) {
+      expect(order[index - 1].compareDocumentPosition(order[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
   })
 })
 
-describe('ProductionPage — seção "Produção por ciclo de faturamento"', () => {
+describe('ProductionPage — seção "Placas × distribuidora, ciclo a ciclo"', () => {
   it('renderiza as colunas do histórico de ciclos, não o banner de erro', async () => {
     vi.resetModules()
     installApiMock()
 
     await renderProductionPage()
 
-    const sectionTitle = await screen.findByText('Produção por ciclo de faturamento')
+    const sectionTitle = await screen.findByText('Placas × distribuidora, ciclo a ciclo')
     const section = sectionTitle.closest('section') as HTMLElement
 
     await waitFor(() => {
       expect(within(section).queryByRole('alert')).not.toBeInTheDocument()
     })
 
-    // Os 3 ciclos de `monthlyHistoryPayload` (default de `installApiMock`)
-    // aparecem como colunas reais (`ColumnSeries`, um único `role="img"` para
-    // toda a série — ver `charts/ColumnSeries.tsx`), em ordem cronológica,
-    // com o valor formatado. Escopado à parte visual (`data-testid`) porque
-    // os mesmos rótulos/valores se repetem, de propósito, na tabela
-    // `sr-only` da primitiva — sem esse escopo `getByText` ficaria ambíguo.
-    await waitFor(() => {
-      expect(within(section).getByRole('img')).toBeInTheDocument()
-    })
-    const visual = within(within(section).getByTestId('column-series-visual'))
-    expect(visual.getByText('mar/26')).toBeInTheDocument()
-    expect(visual.getByText('abr/26')).toBeInTheDocument()
-    expect(visual.getByText('mai/26')).toBeInTheDocument()
-    expect(visual.getByText('980 kWh')).toBeInTheDocument()
-    // O topo do eixo é arredondado para cima (1.050 → 1.200, `niceAxisMax`),
-    // então o maior valor aparece uma vez só, na própria coluna.
-    expect(visual.getAllByText('1.050 kWh')).toHaveLength(1)
-    expect(visual.getByText('1.200 kWh')).toBeInTheDocument()
-    expect(visual.getByText('500 kWh')).toBeInTheDocument()
-
-    // mai/26 tem missing_days: 3 no payload — único ciclo com o selo de
-    // dados parciais.
-    expect(within(section).getAllByText('dados parciais')).toHaveLength(1)
+    // Os 3 ciclos de `monthlyHistoryPayload`, mais recente primeiro, com as
+    // placas e o registro da Equatorial lado a lado (ADR-083, etapa 3).
+    const latest = (await within(section).findByRole('heading', { level: 3, name: /mai\/26/ })).closest('li') as HTMLElement
+    expect(within(latest).getByText('16/04 a 15/05')).toBeInTheDocument()
+    expect(within(latest).getByText('500 kWh')).toBeInTheDocument()
+    expect(within(latest).getByText('190 kWh')).toBeInTheDocument()
+    expect(within(section).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent?.slice(0, 6))).toEqual([
+      'mai/26',
+      'abr/26',
+      'mar/26',
+    ])
+    // mai/26 tem missing_days: 3 no payload — único ciclo com o selo de lacuna.
+    expect(within(section).getAllByText(/sem leitura do inversor/)).toHaveLength(1)
   })
 
   it('mostra o esqueleto de carregamento enquanto /reports/monthly/history está em voo, depois as colunas reais (sucesso)', async () => {
@@ -219,18 +193,13 @@ describe('ProductionPage — seção "Produção por ciclo de faturamento"', () 
 
     await renderProductionPage()
 
-    const sectionTitle = await screen.findByText('Produção por ciclo de faturamento')
+    const sectionTitle = await screen.findByText('Placas × distribuidora, ciclo a ciclo')
     const section = sectionTitle.closest('section') as HTMLElement
-    expect(within(section).queryByRole('img')).not.toBeInTheDocument()
+    expect(within(section).queryByRole('heading', { level: 3 })).not.toBeInTheDocument()
 
     resolveFetch(jsonResponse(monthlyHistoryPayload))
 
-    await waitFor(() => {
-      expect(within(section).getByRole('img')).toBeInTheDocument()
-    })
-    expect(
-      within(within(section).getByTestId('column-series-visual')).getByText('mar/26')
-    ).toBeInTheDocument()
+    expect(await within(section).findByRole('heading', { level: 3, name: /mar\/26/ })).toBeInTheDocument()
   })
 
   it('mostra RetryableError (não as colunas) quando fetchMonthlyProductionHistory falha, sem travar o resto do módulo, e refaz o fetch ao clicar em "Tentar novamente"', async () => {
@@ -243,7 +212,7 @@ describe('ProductionPage — seção "Produção por ciclo de faturamento"', () 
 
     await renderProductionPage()
 
-    const sectionTitle = await screen.findByText('Produção por ciclo de faturamento')
+    const sectionTitle = await screen.findByText('Placas × distribuidora, ciclo a ciclo')
     const section = sectionTitle.closest('section') as HTMLElement
 
     await waitFor(() => {
@@ -261,14 +230,12 @@ describe('ProductionPage — seção "Produção por ciclo de faturamento"', () 
 
     fireEvent.click(within(section).getByRole('button', { name: 'Tentar novamente' }))
 
-    await waitFor(() => {
-      expect(within(section).getByRole('img')).toBeInTheDocument()
-    })
+    expect(await within(section).findByRole('heading', { level: 3, name: /mai\/26/ })).toBeInTheDocument()
     expect(fetchMonthlyProductionHistoryMock).toHaveBeenCalledTimes(2)
   })
 })
 
-describe('ProductionPage — "Histórico de produção" e o card do último dia no resumo operacional', () => {
+describe('ProductionPage — "Histórico de produção" e a comparação do último dia', () => {
   it('mostra o esqueleto de carregamento enquanto /energy/anomalies/latest está em voo, depois o conteúdo real (sucesso)', async () => {
     vi.resetModules()
     let resolveFetch: (value: Response) => void = () => {}
@@ -283,13 +250,12 @@ describe('ProductionPage — "Histórico de produção" e o card do último dia 
     const historySection = historyTitle.closest('section') as HTMLElement
     expect(historySection.querySelector('.animate-pulse')).toBeInTheDocument()
 
-    // O card do último dia mora no resumo operacional, ao lado de "Última
-    // produção" — o esqueleto dele aparece ali enquanto o histórico carrega.
-    const latestTitle = await screen.findByRole('heading', { level: 2, name: 'Resumo operacional' })
-    const latestSection = latestTitle.closest('section') as HTMLElement
-    expect(latestSection.querySelector('.animate-pulse')).toBeInTheDocument()
+    // A comparação com o esperado só existe depois que o histórico responde
+    // (é ele que diz se há referência) — nada de régua vazia enquanto carrega.
+    expect(screen.queryByRole('heading', { level: 2, name: 'Último dia contra o esperado' })).not.toBeInTheDocument()
 
     resolveFetch(jsonResponse(anomalyPayload))
+    const latestSection = (await screen.findByRole('heading', { level: 2, name: 'Último dia contra o esperado' })).closest('section') as HTMLElement
 
     // `anomalyPayload.daily` traz dois dias; o mais recente (2026-07-30) tem
     // actual_production_kwh=40 e expected_production_kwh=44 — mesma escala
@@ -297,7 +263,6 @@ describe('ProductionPage — "Histórico de produção" e o card do último dia 
     await waitFor(() => {
       expect(within(latestSection).getByText('Produção de 30/07/2026 vs. esperada')).toBeInTheDocument()
     })
-    expect(latestSection.querySelector('.animate-pulse')).not.toBeInTheDocument()
     expect(within(latestSection).getByText(/esperado 44 kWh/)).toBeInTheDocument()
     await waitFor(() => {
       expect(within(historySection).getByRole('slider')).toBeInTheDocument()
@@ -323,22 +288,16 @@ describe('ProductionPage — "Histórico de produção" e o card do último dia 
       )).toBeInTheDocument()
     })
 
-    // A produção do último dia também reflete a ausência de dado (mesmo
-    // recurso `anomalies`), sem card de erro próprio — estado indisponível
-    // explícito, não um alerta duplicado. O card fica no resumo operacional.
-    const latestTitle = screen.getByRole('heading', { level: 2, name: 'Resumo operacional' })
-    const latestSection = latestTitle.closest('section') as HTMLElement
-    expect(
-      within(latestSection).getByText(
-        'Ainda não há produção diária registrada para comparar com o esperado.'
-      )
-    ).toBeInTheDocument()
+    // Sem histórico não há o que comparar: a comparação com o esperado não
+    // aparece (nem duplica o erro), e volta quando o histórico responde.
+    expect(screen.queryByRole('heading', { level: 2, name: 'Último dia contra o esperado' })).not.toBeInTheDocument()
 
     fireEvent.click(within(historySection).getByRole('button', { name: 'Tentar novamente' }))
 
     await waitFor(() => {
       expect(within(historySection).getByRole('slider')).toBeInTheDocument()
     })
+    expect(await screen.findByRole('heading', { level: 2, name: 'Último dia contra o esperado' })).toBeInTheDocument()
     expect(fetchAnomalyHistoryMock).toHaveBeenCalledTimes(2)
   })
 })
@@ -466,7 +425,7 @@ describe('ProductionPage — re-busca dados quando a usina ativa muda (ADR-069, 
       </MemoryRouter>
     )
 
-    await screen.findByTestId('column-series-visual')
+    await screen.findByRole('heading', { level: 3, name: /mai\/26/ })
     expect(anomalyCallsPlantIds).toEqual([singlePlant.id])
     expect(pvSummaryCallsPlantIds).toEqual([singlePlant.id])
     expect(monthlyHistoryCallsPlantIds).toEqual([singlePlant.id])
@@ -481,18 +440,18 @@ describe('ProductionPage — re-busca dados quando a usina ativa muda (ADR-069, 
   })
 })
 
-describe('ProductionPage — gráfico diário logo abaixo do resumo operacional', () => {
-  it('a seção seguinte ao resumo é o gráfico de produção diária, sozinho, com o seletor de período', async () => {
+describe('ProductionPage — gráfico diário e leitura do período juntos', () => {
+  it('o gráfico diário vem sozinho com o seletor, e a leitura do período logo abaixo', async () => {
     vi.resetModules()
     installApiMock()
 
     await renderProductionPage()
 
-    const resumo = (await screen.findByRole('heading', { level: 2, name: 'Resumo operacional' })).closest('section') as HTMLElement
-    const historico = screen.getByRole('heading', { level: 2, name: 'Histórico de produção' }).closest('section') as HTMLElement
+    const historico = (await screen.findByRole('heading', { level: 2, name: 'Histórico de produção' })).closest('section') as HTMLElement
+    const leituraSection = (await screen.findByRole('heading', { level: 2, name: 'Leitura do período' })).closest('section') as HTMLElement
 
-    // Ordem no DOM: resumo → gráfico diário → diagnóstico.
-    expect(resumo.nextElementSibling).toBe(historico)
+    // Ordem no DOM: gráfico diário e, logo depois, a leitura do mesmo recorte.
+    expect(historico.nextElementSibling).toBe(leituraSection)
     await waitFor(() => {
       expect(within(historico).getByRole('slider')).toBeInTheDocument()
     })

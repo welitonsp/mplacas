@@ -72,7 +72,7 @@ describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
     expect(fetchDeviceDailyStatusMock).toHaveBeenCalledWith(singlePlant.id)
   })
 
-  it('mostra a lista de inversores entre o diagnóstico de causa e o desempenho técnico (ADR-074, Decisão 5)', async () => {
+  it('mostra a lista de inversores entre o resumo técnico e o desempenho técnico (ADR-074, Decisão 5)', async () => {
     vi.resetModules()
     installApiMock()
 
@@ -89,8 +89,11 @@ describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
     // O inversor silencioso nunca vira "0" nem some — aparece nomeado.
     expect(within(region).getByText('Não reportou')).toBeInTheDocument()
 
-    // Ordem no DOM: diagnóstico de causa -> inversores -> desempenho técnico.
-    const diagnosticHeading = screen.getByText('Diagnóstico de causa')
+    // Ordem no DOM: resumo técnico -> inversores -> desempenho técnico. O painel
+    // genérico "Diagnóstico de causa" saiu (ADR-083, etapa 3).
+    expect(screen.queryByText('Diagnóstico de causa')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Agir hoje/)).not.toBeInTheDocument()
+    const diagnosticHeading = screen.getByRole('heading', { level: 2, name: 'Resumo técnico' })
     const performanceHeading = screen.getByRole('heading', { level: 2, name: 'Desempenho técnico' })
     expect(
       diagnosticHeading.compareDocumentPosition(inverterHeading) & Node.DOCUMENT_POSITION_FOLLOWING
@@ -112,10 +115,10 @@ describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
     const region = screen.getByRole('region', { name: 'Inversores' })
     expect(within(region).getByRole('alert')).toBeInTheDocument()
     // PR/perdas continuam renderizados normalmente apesar do erro isolado.
-    expect(screen.getByText('PR bruto 82%')).toBeInTheDocument()
+    expect(screen.getByText('Performance ratio (PR)')).toBeInTheDocument()
   })
 
-  it('destaca o resumo técnico com saúde, disponibilidade, suspeita principal e produção esperada', async () => {
+  it('resumo técnico: saúde pela performance corrigida pelo calor, maior perda (calor neutro) e produção esperada, sem repetir números de PR', async () => {
     vi.resetModules()
     installApiMock()
 
@@ -124,19 +127,67 @@ describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
     const title = await screen.findByRole('heading', { level: 2, name: 'Resumo técnico' })
     const section = title.closest('section') as HTMLElement
 
+    // PR corrigido 85% no fixture (bruto 82%): pela corrigida, "Saudável".
     await waitFor(() => {
-      expect(within(section).getByText('Saúde técnica')).toBeInTheDocument()
-      expect(within(section).getByText('Atenção')).toBeInTheDocument()
+      expect(within(section).getByText('Saudável')).toBeInTheDocument()
     })
-    expect(within(section).getByText('PR bruto 82%')).toBeInTheDocument()
-    expect(within(section).getByText('Disponibilidade dos dados')).toBeInTheDocument()
-    expect(within(section).getByText('98%')).toBeInTheDocument()
-    expect(within(section).getByText('Principal suspeita')).toBeInTheDocument()
-    expect(within(section).getByText('Temperatura')).toBeInTheDocument()
-    expect(within(section).getByText('Evidência de causa · 2,3%')).toBeInTheDocument()
+    expect(within(section).getByText('Pela performance já descontado o calor')).toBeInTheDocument()
+    expect(within(section).queryByText(/PR bruto|PR corrigido/)).not.toBeInTheDocument()
+    expect(within(section).getByText('Principal perda a verificar')).toBeInTheDocument()
+    // Sujeira (possível, 1,5%) vem antes do calor (2,3%): pede ação; calor é física.
+    expect(within(section).getByText('Sujeira (soiling)')).toBeInTheDocument()
+    expect(within(section).getByText('Possível causa · 1,5%')).toBeInTheDocument()
+    expect(within(section).queryByText('Principal suspeita')).not.toBeInTheDocument()
     expect(within(section).getByText('Produção esperada')).toBeInTheDocument()
     expect(within(section).getByText('44 kWh/dia')).toBeInTheDocument()
-    expect(within(section).getByText('PR corrigido 85%')).toBeInTheDocument()
+  })
+
+  it('só calor com evidência: aparece como maior perda, com selo neutro e sem alarme', async () => {
+    vi.resetModules()
+    installApiMock({
+      fetchPhotovoltaicSummary: vi.fn(async () =>
+        jsonResponse({
+          ...photovoltaicSummaryPayload,
+          losses: photovoltaicSummaryPayload.losses.map((loss: { category: string }) =>
+            loss.category === 'SOILING' ? { ...loss, evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00' } : loss,
+          ),
+        }),
+      ),
+    })
+
+    await renderTechnicalPage()
+
+    const section = (await screen.findByRole('heading', { level: 2, name: 'Resumo técnico' })).closest('section') as HTMLElement
+    await waitFor(() => {
+      expect(within(section).getByText('Calor nas placas')).toBeInTheDocument()
+    })
+    expect(within(section).getByText('Efeito normal do calor · 2,3%')).toBeInTheDocument()
+    const tile = within(section).getByText('Calor nas placas').closest('article') as HTMLElement
+    expect(tile.className).not.toMatch(/danger/)
+  })
+
+  it('comunicação nunca vira "perda a verificar": o motor diz que é capacidade sem dados, não perda de energia', async () => {
+    vi.resetModules()
+    installApiMock({
+      fetchPhotovoltaicSummary: vi.fn(async () =>
+        jsonResponse({
+          ...photovoltaicSummaryPayload,
+          losses: photovoltaicSummaryPayload.losses.map((loss: { category: string }) =>
+            loss.category === 'COMMUNICATION'
+              ? { ...loss, evidence_level: 'LIKELY', estimated_loss_percent: '9.00' }
+              : loss,
+          ),
+        }),
+      ),
+    })
+
+    await renderTechnicalPage()
+
+    const section = (await screen.findByRole('heading', { level: 2, name: 'Resumo técnico' })).closest('section') as HTMLElement
+    await waitFor(() => {
+      expect(within(section).getByText('Sujeira (soiling)')).toBeInTheDocument()
+    })
+    expect(within(section).queryByText('Comunicação (dados ausentes)')).not.toBeInTheDocument()
   })
 
   it('renderiza a seção técnica sem nenhum controle de expandir/colapsar (sempre expandida)', async () => {

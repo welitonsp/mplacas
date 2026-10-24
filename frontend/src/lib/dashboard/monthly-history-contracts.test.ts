@@ -39,7 +39,15 @@ describe('parseMonthlyProductionHistory', () => {
           referenceMonth: '2026-05',
           billId: '11111111-1111-1111-1111-111111111111',
           status: 'STABLE',
+          // Backend anterior à etapa 3 do ADR-083: sem datas nem medidor → null.
+          cycleStart: null,
+          cycleEnd: null,
           productionKwh: 1234.567,
+          gridInjectionKwh: null,
+          gridInjectionBasis: null,
+          distributor: null,
+          importedKwh: null,
+          selfConsumptionKwh: null,
           quality: {
             missingDays: 0,
             provisionalDays: 1,
@@ -51,6 +59,46 @@ describe('parseMonthlyProductionHistory', () => {
         },
       ],
     })
+  })
+
+  it('lê datas do ciclo e o registro da distribuidora quando o backend envia', () => {
+    const result = parseMonthlyProductionHistory(
+      buildPayload({
+        cycles: [
+          buildCycle({
+            cycle_start: '2026-08-17',
+            cycle_end: '2026-09-14',
+            grid_injection_kwh: '235',
+            grid_injection_basis: 'METER',
+            distributor: 'EQUATORIAL_GO',
+            imported_kwh: '221',
+            self_consumption_kwh: '348.210',
+          }),
+        ],
+      }),
+    )
+    expect(result.cycles[0]).toMatchObject({
+      cycleStart: '2026-08-17',
+      cycleEnd: '2026-09-14',
+      gridInjectionKwh: 235,
+      gridInjectionBasis: 'METER',
+      distributor: 'EQUATORIAL_GO',
+      importedKwh: 221,
+      selfConsumptionKwh: 348.21,
+    })
+  })
+
+  it('origem da injeção desconhecida vira null, nunca medidor', () => {
+    const result = parseMonthlyProductionHistory(
+      buildPayload({ cycles: [buildCycle({ grid_injection_kwh: '235', grid_injection_basis: 'SOMETHING_NEW' })] }),
+    )
+    expect(result.cycles[0].gridInjectionBasis).toBeNull()
+  })
+
+  it('recusa data de ciclo malformada', () => {
+    expect(() =>
+      parseMonthlyProductionHistory(buildPayload({ cycles: [buildCycle({ cycle_start: '17/08/2026' })] })),
+    ).toThrow(/cycle_start/)
   })
 
   it('faz parse de production_kwh: null sem fabricar 0', () => {

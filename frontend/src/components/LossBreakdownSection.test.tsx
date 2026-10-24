@@ -11,8 +11,9 @@ function buildLosses(): PhotovoltaicLossItem[] {
     { category: 'SOILING', evidence_level: 'POSSIBLE', estimated_loss_percent: '1.50', evidence_codes: ['SOILING_TREND'], limitation: null },
     { category: 'SHADING', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
     { category: 'TEMPERATURE', evidence_level: 'LIKELY', estimated_loss_percent: '2.30', evidence_codes: ['HIGH_CELL_TEMP'], limitation: null },
-    { category: 'DEGRADATION', evidence_level: 'NOT_ASSESSABLE', estimated_loss_percent: null, evidence_codes: [], limitation: 'Baseline insuficiente.' },
-    { category: 'UNEXPLAINED', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: null },
+    { category: 'DEGRADATION', evidence_level: 'NOT_ASSESSABLE', estimated_loss_percent: null, evidence_codes: [], limitation: 'persistent loss signal is not a component-level root-cause diagnosis' },
+    // Limitação ainda sem tradução: não pode aparecer em inglês.
+    { category: 'UNEXPLAINED', evidence_level: 'NOT_DETECTED', estimated_loss_percent: '0.00', evidence_codes: [], limitation: 'some brand new engine caveat' },
   ]
 }
 
@@ -26,7 +27,7 @@ describe('LossBreakdownSection', () => {
       'Clipping (limite do inversor)',
       'Sujeira (soiling)',
       'Sombreamento',
-      'Temperatura',
+      'Calor nas placas',
       'Degradação',
       'Não explicada',
     ]
@@ -50,11 +51,14 @@ describe('LossBreakdownSection', () => {
     // Selo de evidência continua visível ao lado de cada barra.
     expect(screen.getAllByText('Não detectada').length).toBeGreaterThan(0)
     expect(screen.getByText('Possível causa')).toBeInTheDocument()
-    expect(screen.getByText('Evidência de causa')).toBeInTheDocument()
+    // Calor com evidência é física, não alarme: selo neutro próprio.
+    expect(screen.getByText('Efeito normal do calor')).toBeInTheDocument()
+    expect(screen.queryByText('Evidência de causa')).not.toBeInTheDocument()
     expect(screen.getByText('Não avaliável')).toBeInTheDocument()
 
-    // Item sem valor (NOT_ASSESSABLE) preserva a mensagem de limitação.
-    expect(screen.getByText('Baseline insuficiente.')).toBeInTheDocument()
+    // Limitação do motor aparece traduzida; sem tradução, não aparece (nunca em inglês).
+    expect(screen.getByText('Uma perda que se repete não aponta, sozinha, qual componente é a causa.')).toBeInTheDocument()
+    expect(screen.queryByText(/component-level|brand new engine/)).not.toBeInTheDocument()
   })
 
   it('mostra mensagem específica em vez de card vazio quando losses está indisponível', () => {
