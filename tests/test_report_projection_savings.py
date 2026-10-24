@@ -64,6 +64,8 @@ def _dashboard(
                 savings_tariff_source="DISTRIBUTOR_FULL_TARIFF",
                 flag_tariff_brl_kwh=None,
                 non_energy_credits_brl=None,
+                tariff_class=None,
+                tariff_class_presumed=False,
                 health_score=97,
                 diagnostics=(),
             ),

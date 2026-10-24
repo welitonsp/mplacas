@@ -191,6 +191,30 @@ describe('FinancialSection', () => {
     expect(within(details).getByText(/R\$\s*30,38 de créditos da fatura que não vêm da usina/)).toBeInTheDocument()
   })
 
+  it('classe tarifária: lida, presumida (fatura antiga) e não identificada (ADR-087)', () => {
+    const cases: Array<[Record<string, unknown>, RegExp]> = [
+      [{ tariff_class: 'B1_RESIDENCIAL_CONVENCIONAL', tariff_class_presumed: false }, /Classe tarifária lida da fatura: B1 residencial convencional\./],
+      [{ tariff_class: 'B1_RESIDENCIAL_CONVENCIONAL', tariff_class_presumed: true }, /Classe tarifária presumida: B1 residencial convencional\..*reimporte o PDF/],
+      [{ tariff_class: 'NAO_IDENTIFICADA', tariff_class_presumed: false }, /Classe tarifária não identificada na fatura/],
+      [
+        { tariff_class: 'B1_RESIDENCIAL_BRANCA', tariff_class_presumed: false, savings_tariff_source: 'BILL_TARIFF' },
+        /lida da fatura: B1 residencial, tarifa branca\. Não há tarifa homologada cadastrada para essa classe em todo o período/,
+      ],
+    ]
+    for (const [extra, text] of cases) {
+      const { unmount } = render(
+        <FinancialSection
+          indicators={buildIndicators({ tariff_with_taxes_brl_kwh: 0.787884, tariff_without_taxes_brl_kwh: 0.61303, ...extra })}
+          referenceMonth="2026-07"
+          financialReturn={buildFinancialReturn()}
+          plantId="plant-1"
+        />
+      )
+      expect(screen.getByText(text)).toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it('sem bandeira nem créditos externos: nenhuma linha extra', () => {
     render(
       <FinancialSection

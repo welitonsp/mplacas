@@ -58,6 +58,7 @@ def _serialize(record) -> dict[str, object]:
         "credits_expiring_30d_kwh": _optional_decimal(record.credits_expiring_30d_kwh),
         "flag_tariff_brl_kwh": _optional_decimal(record.flag_tariff_brl_kwh),
         "non_energy_credits_brl": _optional_decimal(record.non_energy_credits_brl),
+        "tariff_class": record.tariff_class,
         "status": record.status.value,
         "created_at": record.created_at,
         "reviewed_at": record.reviewed_at,

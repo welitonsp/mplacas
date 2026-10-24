@@ -48,6 +48,9 @@ export interface ExecutiveIndicators {
   // ADR-085: bandeira somada à conta sem a usina; créditos fora da economia.
   flag_tariff_brl_kwh?: MetricValue
   non_energy_credits_brl?: MetricValue
+  // ADR-087: classe tarifária da tarifa cheia; presumida em fatura antiga.
+  tariff_class?: string | null
+  tariff_class_presumed?: boolean
 }
 
 // Vocabulário compartilhado com o backend (ver
@@ -627,6 +630,8 @@ export function parseExecutiveDashboard(payload: unknown): ExecutiveDashboardRes
         savings_tariff_source: optionalStringOrMissing(indicators, 'savings_tariff_source'),
         flag_tariff_brl_kwh: metricValueOrMissing(indicators, 'flag_tariff_brl_kwh'),
         non_energy_credits_brl: metricValueOrMissing(indicators, 'non_energy_credits_brl'),
+        tariff_class: optionalStringOrMissing(indicators, 'tariff_class'),
+        tariff_class_presumed: indicators.tariff_class_presumed === true,
       },
       diagnostics: parseDiagnostics(currentCycle),
     },

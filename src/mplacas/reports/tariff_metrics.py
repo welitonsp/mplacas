@@ -28,6 +28,12 @@ class _HasSavingsTariff(Protocol):
     @property
     def non_energy_credits_brl(self) -> Decimal | None: ...
 
+    @property
+    def tariff_class(self) -> str | None: ...
+
+    @property
+    def tariff_class_presumed(self) -> bool: ...
+
 
 def savings_tariff_metrics(intelligence: _HasSavingsTariff) -> tuple[ReportMetric, ...]:
     tariff = intelligence.savings_tariff_brl_kwh
@@ -69,5 +75,14 @@ def savings_tariff_metrics(intelligence: _HasSavingsTariff) -> tuple[ReportMetri
             unit="BRL",
             nature="MEASURED",
             source="UTILITY_BILL",
+        ),
+        # ADR-087: classe tarifária da tarifa cheia; ASSUMPTION quando presumida.
+        ReportMetric(
+            key="tariff_class",
+            label="Classe tarifária",
+            value=intelligence.tariff_class or "",
+            unit=None,
+            nature="ASSUMPTION" if intelligence.tariff_class_presumed else "MEASURED",
+            source=_ENGINE_SOURCE if intelligence.tariff_class_presumed else "UTILITY_BILL",
         ),
     )

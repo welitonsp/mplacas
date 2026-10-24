@@ -64,7 +64,7 @@ export function MethodologyPage() {
           compensada, saldo de créditos, Fio B, bandeira e iluminação pública.
         </Rule>
         <Rule title="Tarifa cheia">
-          Tarifa homologada pela ANEEL (TUSD + TE). Hoje cadastrada para a Equatorial Goiás, classe B1 residencial
+          Tarifa homologada pela ANEEL (TUSD + TE) para a classe tarifária lida da fatura (faturas importadas antes dessa leitura usam a classe presumida, e a tela avisa). Hoje cadastrada para a Equatorial Goiás, classe B1 residencial
           convencional: reajuste de 2023 e as Resoluções Homologatórias REH 3.407/2024 e REH 3.544/2025. Quando o
           reajuste cai no meio do ciclo, a tarifa é dividida por dia, como a distribuidora faz. O sistema usa o
           preço da própria fatura, e avisa que a economia pode estar subestimada, quando algum dia do ciclo não tem

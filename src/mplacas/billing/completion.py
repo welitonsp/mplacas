@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from mplacas.billing.db_models import UtilityBillRecord
 from mplacas.billing.models import UtilityBill
+from mplacas.billing.parser import UNIDENTIFIED_TARIFF_CLASS
 
 # Campos que precisam ser idênticos para ser a MESMA fatura.
 _IDENTITY_FIELDS = (
@@ -39,6 +40,7 @@ COMPLETABLE_FIELDS = (
     "credits_expiring_30d_kwh",
     "flag_tariff_brl_kwh",
     "non_energy_credits_brl",
+    "tariff_class",
 )
 
 
@@ -67,6 +69,19 @@ def complete_missing_fields(record: UtilityBillRecord, bill: UtilityBill) -> tup
         current = getattr(record, name)
         incoming = getattr(bill, name)
         if incoming is None:
+            continue
+        # Classe não reconhecida numa leitura anterior conta como vazia: o PDF
+        # pode trazê-la (ADR-087). O contrário — PDF sem classe — não apaga.
+        if name == "tariff_class" and current == UNIDENTIFIED_TARIFF_CLASS:
+            current = None
+        # PDF sem classe reconhecida nunca apaga uma classe lida; mas troca o
+        # NULL antigo (que presumiria B1) por NAO_IDENTIFICADA — nunca presumir
+        # quando o PDF já disse que não dá para saber.
+        if (
+            name == "tariff_class"
+            and incoming == UNIDENTIFIED_TARIFF_CLASS
+            and current is not None
+        ):
             continue
         if current is None:
             filled.append(name)

@@ -110,6 +110,41 @@ function SavingsUnavailableCard({ indicators, referenceMonth }: { indicators: Ex
   )
 }
 
+const CLASS_LABELS: Readonly<Record<string, string>> = {
+  RESIDENCIAL: 'residencial',
+  RURAL: 'rural',
+  COMERCIAL: 'comercial',
+  INDUSTRIAL: 'industrial',
+  PODER_PUBLICO: 'poder público',
+  SERVICO_PUBLICO: 'serviço público',
+  ILUMINACAO_PUBLICA: 'iluminação pública',
+}
+const MODALITY_LABELS: Readonly<Record<string, string>> = {
+  CONVENCIONAL: 'convencional',
+  BRANCA: ', tarifa branca',
+  BAIXA_RENDA: ', baixa renda',
+}
+
+// "B1_RESIDENCIAL_CONVENCIONAL" → "B1 residencial convencional" (ADR-087).
+export function describeTariffClass(key: string | null, presumed: boolean, source: string | null = null): string | null {
+  if (key == null) return null
+  if (key === 'NAO_IDENTIFICADA')
+    return 'Classe tarifária não identificada na fatura: a conta “sem a usina” usa o preço da própria fatura.'
+  const match = /^([A-Z0-9]+)_(.+)_(CONVENCIONAL|BRANCA|BAIXA_RENDA)$/.exec(key)
+  const label = match
+    ? `${match[1]} ${CLASS_LABELS[match[2]] ?? match[2].toLowerCase()}${match[3] === 'CONVENCIONAL' ? ' ' : ''}${MODALITY_LABELS[match[3]]}`
+    : key
+  // Classe lida sem tarifa homologada cadastrada: a conta usou o preço da
+  // fatura — sem esta frase, o leitor acharia que a tarifa cheia é a da classe.
+  const noTariff =
+    source === 'BILL_TARIFF'
+      ? ' Não há tarifa homologada cadastrada para essa classe em todo o período do ciclo; a conta “sem a usina” usa o preço da própria fatura.'
+      : ''
+  return presumed
+    ? `Classe tarifária presumida: ${label}. Esta fatura foi importada antes da leitura da classe; reimporte o PDF para confirmar.${noTariff}`
+    : `Classe tarifária lida da fatura: ${label}.${noTariff}`
+}
+
 // Decomposição do valor da fatura e as tarifas impressas nela. Recolhido: é
 // conferência, não leitura do dia a dia. As duas tarifas eram mostradas lado a
 // lado com a tarifa cheia do cálculo "sem a usina" sem explicação, o que parecia
@@ -129,6 +164,11 @@ function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndi
   // de dez/2024, "energia ativa fornecida"), que o backend não informa.
   const source = indicators.savings_tariff_source ?? null
   // ADR-085: o que entrou e o que saiu da conta da economia, como lido na fatura.
+  const tariffClassNote = describeTariffClass(
+    indicators.tariff_class ?? null,
+    indicators.tariff_class_presumed === true,
+    indicators.savings_tariff_source ?? null,
+  )
   const flagTariff = toNumber(indicators.flag_tariff_brl_kwh ?? null)
   const nonEnergyCredits = toNumber(indicators.non_energy_credits_brl ?? null)
   const tariffNote =
@@ -187,8 +227,9 @@ function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndi
               )}
             </div>
           )}
-          {((flagTariff != null && flagTariff > 0) || (nonEnergyCredits != null && nonEnergyCredits > 0)) && (
+          {(tariffClassNote || (flagTariff != null && flagTariff > 0) || (nonEnergyCredits != null && nonEnergyCredits > 0)) && (
             <ul className="flex flex-col gap-1.5 border-t border-[var(--color-border)] pt-4 text-[13px] leading-5 text-[var(--color-text-secondary)]">
+              {tariffClassNote && <li>{tariffClassNote}</li>}
               {flagTariff != null && flagTariff > 0 && (
                 <li>{`Bandeira tarifária do ciclo (R$ ${formatNumber(flagTariff, 3)}/kWh com impostos) incluída na conta “sem a usina”: sem as placas, todo o consumo pagaria a bandeira.`}</li>
               )}

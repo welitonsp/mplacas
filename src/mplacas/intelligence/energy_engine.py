@@ -95,6 +95,10 @@ class EnergyCycleIntelligence:
     # das placas (excluídos da economia). `None` quando a fatura não traz.
     flag_tariff_brl_kwh: Decimal | None = None
     non_energy_credits_brl: Decimal | None = None
+    # ADR-087: classe tarifária usada na tarifa cheia e se ela foi presumida
+    # (fatura gravada antes da leitura da classe) ou lida da fatura.
+    tariff_class: str | None = None
+    tariff_class_presumed: bool = False
 
 
 def _savings_tariff(
@@ -134,6 +138,8 @@ def analyze_energy_cycle(
     provisional_days: int = 0,
     production_days: int | None = None,
     full_tariff_without_taxes: Decimal | None = None,
+    tariff_class: str | None = None,
+    tariff_class_presumed: bool = False,
 ) -> EnergyCycleIntelligence:
     """Calcula indicadores e diagnósticos auditáveis sem uso de IA generativa."""
     if missing_days < 0 or provisional_days < 0 or (production_days or 0) < 0:
@@ -393,6 +399,8 @@ def analyze_energy_cycle(
         savings_tariff_source=savings_tariff_source,
         flag_tariff_brl_kwh=bill.flag_tariff_brl_kwh,
         non_energy_credits_brl=bill.non_energy_credits_brl,
+        tariff_class=tariff_class,
+        tariff_class_presumed=tariff_class_presumed,
         tariff_with_taxes_brl_kwh=bill.tariff_with_taxes_brl_kwh,
         tariff_without_taxes_brl_kwh=bill.tariff_without_taxes_brl_kwh,
         credit_balance_kwh=bill.credit_balance_kwh,

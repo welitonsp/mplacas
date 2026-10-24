@@ -49,6 +49,12 @@ class UtilityBill:
     # economia: a compensação existiria com ou sem usina; o Bônus de Itaipu
     # sai por decisão conservadora (as placas ajudam a ficar na faixa dele).
     non_energy_credits_brl: Decimal | None = None
+    # Classe tarifária lida da fatura (ADR-087), na chave das tarifas
+    # homologadas: "<subgrupo>_<classe>_<modalidade>", ex.
+    # "B1_RESIDENCIAL_CONVENCIONAL". "NAO_IDENTIFICADA" quando a fatura foi
+    # lida e a classe não foi reconhecida; `None` só em fatura gravada antes
+    # da leitura existir.
+    tariff_class: str | None = None
 
     def validate(self) -> None:
         if self.cycle_end < self.cycle_start:

@@ -181,6 +181,22 @@ _NON_ENERGY_CREDIT_RE = re.compile(
     r"(?:compensa[cç][aã]o de (?:dic|fic|dmic|dicri)\b.{0,30}?|bonus itaipu.{0,40}?)"
     r"\s(-[\d\.]+,\d{2})(?!\d)"
 )
+# "Classificação: B B1 RESIDENCIAL - RESIDENCIAL NORMAL CONVENCIONAL <nome>":
+# só os termos conhecidos são lidos — o nome do titular vem colado depois e
+# nunca é capturado.
+_TARIFF_CLASS_RE = re.compile(
+    r"classifica[cç][aã]o:\s*[ab]\s*(b1|b2|b3|b4a|b4b|a4|a3a|a3|a2|a1|as)\s+"
+    r"(residencial|rural|comercial|industrial|poder p[uú]blico|servi[cç]o p[uú]blico|"
+    r"ilumina[cç][aã]o p[uú]blica)\s*-\s*(.{0,120})"
+)
+# A frase depois de "<classe> -" é "<subclasse> <modalidade> <nome do titular>".
+# Só as palavras ATÉ a primeira modalidade são lidas: o nome vem depois dela e
+# nunca influencia o resultado (um sobrenome "Branca" não vira tarifa branca).
+_MODALITY_TOKENS = {"convencional": "CONVENCIONAL", "branca": "BRANCA"}
+_MAX_SUBCLASS_TOKENS = 5
+# Subclasses com desconto próprio que a chave ainda não distingue: sem chave
+# exata, nenhuma tarifa — falha fechada em vez de preço da subclasse errada.
+_UNSUPPORTED_SUBCLASS_TOKENS = {"irrigante", "irrigacao", "irrigação", "cooperativa", "aquicultura"}
 _SCEE_GENERATION_SHARE_RE = re.compile(
     r"cadastro rateio gera[cç][aã]o:\s*uc\s*[^\s=]+\s*=\s*(\d{1,3}(?:,\d{1,2})?)\s*%",
     re.IGNORECASE,
@@ -286,6 +302,7 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
         credits_expiring_30d_kwh=_extract_optional(_SCEE_EXPIRING_30D_RE, normalized),
         flag_tariff_brl_kwh=_sum_flag_tariffs(normalized),
         non_energy_credits_brl=_sum_non_energy_credits(normalized),
+        tariff_class=_extract_tariff_class(normalized),
     )
     bill.validate()
     return bill
@@ -459,6 +476,71 @@ def _extract_optional(pattern: re.Pattern[str], normalized: str) -> Decimal | No
         return _parse_decimal(m.group(1))
     except BillParseError:
         return None
+
+
+_CLASS_KEYS = {
+    "residencial": "RESIDENCIAL",
+    "rural": "RURAL",
+    "comercial": "COMERCIAL",
+    "industrial": "INDUSTRIAL",
+    "poder publico": "PODER_PUBLICO",
+    "poder público": "PODER_PUBLICO",
+    "servico publico": "SERVICO_PUBLICO",
+    "serviço público": "SERVICO_PUBLICO",
+    "servico público": "SERVICO_PUBLICO",
+    "serviço publico": "SERVICO_PUBLICO",
+    "iluminacao publica": "ILUMINACAO_PUBLICA",
+    "iluminação pública": "ILUMINACAO_PUBLICA",
+    "iluminação publica": "ILUMINACAO_PUBLICA",
+    "iluminacao pública": "ILUMINACAO_PUBLICA",
+}
+
+
+# Fatura lida depois do ADR-087 cuja classe não foi reconhecida. Diferente de
+# `None` (fatura gravada antes de existir a leitura): esta nunca recebe a
+# classe presumida.
+UNIDENTIFIED_TARIFF_CLASS = "NAO_IDENTIFICADA"
+
+
+def _extract_tariff_class(normalized: str) -> str:
+    """Chave da classe tarifária ("B1_RESIDENCIAL_CONVENCIONAL"), ou `None`.
+
+    A modalidade é a primeira palavra "convencional" ou "branca" depois de
+    "<classe> -", com no máximo 5 palavras de subclasse antes dela; baixa
+    renda/tarifa social na subclasse vira BAIXA_RENDA (tarifa própria). Sem
+    reconhecer, devolve ``UNIDENTIFIED_TARIFF_CLASS`` — a economia cai na
+    tarifa da própria fatura, com aviso, em vez de presumir.
+    """
+    m = _TARIFF_CLASS_RE.search(normalized)
+    if not m:
+        return UNIDENTIFIED_TARIFF_CLASS
+    subgroup = m.group(1).upper()
+    klass = _CLASS_KEYS.get(m.group(2))
+    if klass is None:
+        return UNIDENTIFIED_TARIFF_CLASS
+    tokens = m.group(3).split()
+    subclass: list[str] = []
+    modality_token: str | None = None
+    for token in tokens[: _MAX_SUBCLASS_TOKENS + 1]:
+        if token == "convencional":
+            modality_token = token
+            break
+        # "branca" só como a fatura escreve a modalidade ("normal branca",
+        # "tarifa branca"); solta, pode ser sobrenome do titular.
+        if token == "branca" and subclass and subclass[-1] in {"normal", "tarifa"}:
+            modality_token = token
+            break
+        subclass.append(token)
+    if modality_token is None or set(subclass) & _UNSUPPORTED_SUBCLASS_TOKENS:
+        return UNIDENTIFIED_TARIFF_CLASS
+    phrase = " ".join(subclass)
+    if "baixa renda" in phrase or "social" in subclass:
+        if modality_token != "convencional":
+            return UNIDENTIFIED_TARIFF_CLASS
+        modality = "BAIXA_RENDA"
+    else:
+        modality = _MODALITY_TOKENS[modality_token]
+    return f"{subgroup}_{klass}_{modality}"
 
 
 def _sum_flag_tariffs(normalized: str) -> Decimal | None:
