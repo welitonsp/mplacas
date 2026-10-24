@@ -74,40 +74,49 @@ def main() -> int:
             ] += 1
     notice("combinacoes-grupo-b-2025", [f"{n} x {c}" for c, n in combos.most_common(60)])
 
-    target = [
-        r
-        for r in rows
-        if AGENT_HINT.search(r.get("SigAgente", ""))
-        and r.get("DscSubGrupo", "") == "B1"
-        and r.get("DatInicioVigencia", "") >= "2023"
-        and r.get("DscBaseTarifaria", "") == "Tarifa de Aplicação"
-    ]
-    target.sort(key=lambda r: (r.get("DatInicioVigencia", ""), r.get("DscSubClasse", "")))
-    notice(
-        "equatorial-b1-desde-2023",
-        [
-            " | ".join(
-                r.get(k, "")
-                for k in (
-                    "SigAgente",
-                    "DscREH",
-                    "DatInicioVigencia",
-                    "DatFimVigencia",
-                    "DscBaseTarifaria",
-                    "DscModalidadeTarifaria",
-                    "DscClasse",
-                    "DscSubClasse",
-                    "DscDetalhe",
-                    "NomPostoTarifario",
-                    "DscUnidadeTerciaria",
-                    "SigAgenteAcessante",
-                    "VlrTUSD",
-                    "VlrTE",
-                )
+    aplicacao = [r for r in rows if r.get("DscBaseTarifaria", "") == "Tarifa de Aplicação"]
+    vig: dict[tuple[str, ...], tuple[str, str]] = {}
+    for r in aplicacao:
+        if (
+            AGENT_HINT.search(r.get("SigAgente", ""))
+            and r.get("DscSubGrupo", "") == "B1"
+            and r.get("DscModalidadeTarifaria", "") == "Convencional"
+            and r.get("DscSubClasse", "") == "Residencial"
+            and r.get("DatInicioVigencia", "") >= "2022"
+        ):
+            reh = re.search(r"N[ºo°]\s*([\d.]+)", r.get("DscREH", ""))
+            key = (
+                r.get("DatInicioVigencia", ""),
+                r.get("DatFimVigencia", ""),
+                reh.group(1) if reh else "?",
+                r.get("DscDetalhe", ""),
             )
-            for r in target[:80]
+            vig[key] = (r.get("VlrTUSD", ""), r.get("VlrTE", ""))
+    notice(
+        "equatorial-b1-residencial-convencional",
+        [
+            f"{k[0]}..{k[1]} REH {k[2]} {k[3]}: TUSD {v[0]} TE {v[1]}"
+            for k, v in sorted(vig.items())
         ],
     )
+    classes: collections.Counter[tuple[str, ...]] = collections.Counter()
+    for r in aplicacao:
+        if (
+            r.get("DscSubGrupo", "") in {"B1", "B2", "B3", "B4a", "B4b", "B4A", "B4B"}
+            and r.get("DscModalidadeTarifaria", "") == "Convencional"
+            and r.get("DscDetalhe", "") == "Não se aplica"
+            and r.get("DatInicioVigencia", "") >= "2025"
+        ):
+            classes[
+                (r.get("DscSubGrupo", ""), r.get("DscClasse", ""), r.get("DscSubClasse", ""))
+            ] += 1
+    notice("classes-grupo-b", [f"{n} x {c}" for c, n in classes.most_common(70)])
+    detalhes = collections.Counter(
+        r.get("DscDetalhe", "")
+        for r in aplicacao
+        if r.get("DscSubGrupo", "").startswith("B") and r.get("DatInicioVigencia", "") >= "2025"
+    )
+    notice("detalhes-grupo-b", [f"{d}: {n}" for d, n in detalhes.most_common(30)])
     return 0
 
 
