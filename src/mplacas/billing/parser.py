@@ -171,6 +171,16 @@ _GLUED_LAYOUT_FIELDS = frozenset(
     }
 )
 
+# "ADC BANDEIRA AMARELA kWh 0,01172182,02 …": o primeiro número com 6 casas
+# depois de "kwh" é o preço com tributos (no layout colado vem grudado na
+# quantidade, que tem 2 casas).
+_FLAG_TARIFF_RE = re.compile(r"adc bandeira [a-z0-9 ]{3,30}?kwh\s+(\d+,\d{6})")
+# Créditos que não vêm das placas: compensação por interrupção (DIC, FIC,
+# DMIC, DICRI) e Bônus de Itaipu — sempre linhas com valor negativo.
+_NON_ENERGY_CREDIT_RE = re.compile(
+    r"(?:compensa[cç][aã]o de (?:dic|fic|dmic|dicri)\b.{0,30}?|bonus itaipu.{0,40}?)"
+    r"\s(-[\d\.]+,\d{2})(?!\d)"
+)
 _SCEE_GENERATION_SHARE_RE = re.compile(
     r"cadastro rateio gera[cç][aã]o:\s*uc\s*[^\s=]+\s*=\s*(\d{1,3}(?:,\d{1,2})?)\s*%",
     re.IGNORECASE,
@@ -274,6 +284,8 @@ def parse_equatorial_bill_text(text: str) -> UtilityBill:
         wire_b_tariff_brl_kwh=_parse_optional_decimal(values.get("wire_b_tariff_brl_kwh")),
         generation_share_percent=_share_or_none(_extract_single_share(normalized)),
         credits_expiring_30d_kwh=_extract_optional(_SCEE_EXPIRING_30D_RE, normalized),
+        flag_tariff_brl_kwh=_sum_flag_tariffs(normalized),
+        non_energy_credits_brl=_sum_non_energy_credits(normalized),
     )
     bill.validate()
     return bill
@@ -447,6 +459,37 @@ def _extract_optional(pattern: re.Pattern[str], normalized: str) -> Decimal | No
         return _parse_decimal(m.group(1))
     except BillParseError:
         return None
+
+
+def _sum_flag_tariffs(normalized: str) -> Decimal | None:
+    """Bandeira do ciclo (preço com tributos de UMA linha "ADC BANDEIRA").
+
+    Com duas cores no ciclo, não há fatura real que mostre se cada linha traz
+    o preço cheio da cor (com a quantidade pró-rata) ou o preço pró-rata —
+    somar poderia inflar a economia. Até haver essa fatura, mais de uma linha
+    vira `None` (falha fechada: a economia fica no piso). Valor implausível
+    também vira `None` (campo informativo, não recusa a fatura).
+    """
+    try:
+        prices = [_parse_decimal(found) for found in _FLAG_TARIFF_RE.findall(normalized)]
+    except BillParseError:
+        return None
+    if len(prices) != 1 or normalized.count("adc bandeira") != 1:
+        return None
+    total = prices[0]
+    if not (Decimal("0") < total <= Decimal("0.5")):
+        return None
+    return total
+
+
+def _sum_non_energy_credits(normalized: str) -> Decimal | None:
+    try:
+        values = [_parse_decimal(found[1:]) for found in _NON_ENERGY_CREDIT_RE.findall(normalized)]
+    except BillParseError:
+        return None
+    if not values:
+        return None
+    return sum(values, Decimal("0"))
 
 
 def _extract_single_share(normalized: str) -> Decimal | None:

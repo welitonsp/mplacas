@@ -12,6 +12,9 @@ from decimal import Decimal
 # real Brazilian residential tariff with taxes (~R$ 0.80/kWh) while still
 # catching any order-of-magnitude column mismatch.
 _MAX_PLAUSIBLE_TARIFF_BRL_KWH = Decimal("5")
+# Bandeira vermelha patamar 2 com tributos fica perto de R$ 0,10/kWh; 0,5 dá
+# folga e ainda pega uma coluna deslocada (valor total no lugar do preço).
+_MAX_PLAUSIBLE_FLAG_BRL_KWH = Decimal("0.5")
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +40,15 @@ class UtilityBill:
     # fatura não traz a linha — nunca um valor presumido.
     generation_share_percent: Decimal | None = None
     credits_expiring_30d_kwh: Decimal | None = None
+    # Bandeira tarifária do ciclo, com tributos, da linha "ADC BANDEIRA …".
+    # Só aparece quando há consumo não compensado; ausente (ou mais de uma cor
+    # no ciclo) é `None`, nunca zero presumido.
+    flag_tariff_brl_kwh: Decimal | None = None
+    # Créditos da fatura que não vêm das placas (compensação por interrupção
+    # — DIC/FIC/DMIC/DICRI — e Bônus de Itaipu), em valor absoluto. Saem da
+    # economia: a compensação existiria com ou sem usina; o Bônus de Itaipu
+    # sai por decisão conservadora (as placas ajudam a ficar na faixa dele).
+    non_energy_credits_brl: Decimal | None = None
 
     def validate(self) -> None:
         if self.cycle_end < self.cycle_start:
@@ -58,6 +70,12 @@ class UtilityBill:
             raise ValueError("bill values cannot be negative")
         if self.credits_expiring_30d_kwh is not None and self.credits_expiring_30d_kwh < 0:
             raise ValueError("bill values cannot be negative")
+        if self.non_energy_credits_brl is not None and self.non_energy_credits_brl < 0:
+            raise ValueError("bill values cannot be negative")
+        if self.flag_tariff_brl_kwh is not None and not (
+            Decimal("0") < self.flag_tariff_brl_kwh <= _MAX_PLAUSIBLE_FLAG_BRL_KWH
+        ):
+            raise ValueError(f"flag tariff outside plausible range: {self.flag_tariff_brl_kwh}")
         if self.generation_share_percent is not None and not (
             Decimal("0") <= self.generation_share_percent <= Decimal("100")
         ):

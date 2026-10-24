@@ -40,6 +40,8 @@ def _to_confirmed_bill(record: UtilityBillRecord) -> ConfirmedBill:
             generation_cycle_kwh=record.generation_cycle_kwh,
             generation_share_percent=record.generation_share_percent,
             credits_expiring_30d_kwh=record.credits_expiring_30d_kwh,
+            flag_tariff_brl_kwh=record.flag_tariff_brl_kwh,
+            non_energy_credits_brl=record.non_energy_credits_brl,
             tariff_with_taxes_brl_kwh=record.tariff_with_taxes_brl_kwh,
             tariff_without_taxes_brl_kwh=record.tariff_without_taxes_brl_kwh,
             wire_b_tariff_brl_kwh=record.wire_b_tariff_brl_kwh,

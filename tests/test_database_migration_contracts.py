@@ -627,3 +627,24 @@ def test_bill_share_and_expiring_migration_matches_orm() -> None:
     assert columns.credits_expiring_30d_kwh.type.scale == 3
     assert 'drop_column("credits_expiring_30d_kwh")' in source
     assert 'drop_column("generation_share_percent")' in source
+
+
+def test_bill_flag_and_credits_migration_matches_orm() -> None:
+    from mplacas.billing.db_models import UtilityBillRecord
+
+    source = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "20261024_0048_add_bill_flag_and_non_energy_credits.py"
+    ).read_text(encoding="utf-8")
+    columns = UtilityBillRecord.__table__.columns
+
+    assert 'revision = "20261024_0048"' in source
+    assert 'down_revision = "20261024_0047"' in source
+    assert columns.flag_tariff_brl_kwh.nullable is True
+    assert columns.flag_tariff_brl_kwh.type.scale == 6
+    assert columns.non_energy_credits_brl.nullable is True
+    assert columns.non_energy_credits_brl.type.scale == 2
+    assert 'drop_column("flag_tariff_brl_kwh")' in source
+    assert 'drop_column("non_energy_credits_brl")' in source

@@ -22,6 +22,12 @@ class _HasSavingsTariff(Protocol):
     @property
     def savings_tariff_source(self) -> str | None: ...
 
+    @property
+    def flag_tariff_brl_kwh(self) -> Decimal | None: ...
+
+    @property
+    def non_energy_credits_brl(self) -> Decimal | None: ...
+
 
 def savings_tariff_metrics(intelligence: _HasSavingsTariff) -> tuple[ReportMetric, ...]:
     tariff = intelligence.savings_tariff_brl_kwh
@@ -41,5 +47,27 @@ def savings_tariff_metrics(intelligence: _HasSavingsTariff) -> tuple[ReportMetri
             unit=None,
             nature="ASSUMPTION",
             source=_ENGINE_SOURCE,
+        ),
+        # ADR-085: o que entrou e o que saiu da conta da economia, como lido
+        # na fatura. Vazio quando a fatura não traz a linha.
+        ReportMetric(
+            key="flag_tariff_brl_kwh",
+            label="Bandeira tarifária somada à conta sem a usina",
+            value=""
+            if intelligence.flag_tariff_brl_kwh is None
+            else str(intelligence.flag_tariff_brl_kwh),
+            unit="BRL/kWh",
+            nature="MEASURED",
+            source="UTILITY_BILL",
+        ),
+        ReportMetric(
+            key="non_energy_credits_brl",
+            label="Créditos da fatura que não vêm da usina (fora da economia)",
+            value=""
+            if intelligence.non_energy_credits_brl is None
+            else str(intelligence.non_energy_credits_brl),
+            unit="BRL",
+            nature="MEASURED",
+            source="UTILITY_BILL",
         ),
     )

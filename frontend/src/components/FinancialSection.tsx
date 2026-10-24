@@ -128,6 +128,9 @@ function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndi
   // de qual linha da fatura veio a tarifa: depende do layout (SCEE ou, antes
   // de dez/2024, "energia ativa fornecida"), que o backend não informa.
   const source = indicators.savings_tariff_source ?? null
+  // ADR-085: o que entrou e o que saiu da conta da economia, como lido na fatura.
+  const flagTariff = toNumber(indicators.flag_tariff_brl_kwh ?? null)
+  const nonEnergyCredits = toNumber(indicators.non_energy_credits_brl ?? null)
   const tariffNote =
     source === 'DISTRIBUTOR_FULL_TARIFF'
       ? savingsTariff != null && billTariffWithTaxes != null && Math.abs(savingsTariff - billTariffWithTaxes) < 0.0005
@@ -183,6 +186,16 @@ function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndi
                 <p className="text-[13px] leading-5 text-[var(--color-text-secondary)] sm:self-center">{tariffNote}</p>
               )}
             </div>
+          )}
+          {((flagTariff != null && flagTariff > 0) || (nonEnergyCredits != null && nonEnergyCredits > 0)) && (
+            <ul className="flex flex-col gap-1.5 border-t border-[var(--color-border)] pt-4 text-[13px] leading-5 text-[var(--color-text-secondary)]">
+              {flagTariff != null && flagTariff > 0 && (
+                <li>{`Bandeira tarifária do ciclo (R$ ${formatNumber(flagTariff, 3)}/kWh com impostos) incluída na conta “sem a usina”: sem as placas, todo o consumo pagaria a bandeira.`}</li>
+              )}
+              {nonEnergyCredits != null && nonEnergyCredits > 0 && (
+                <li>{`${formatCurrency(nonEnergyCredits)} de créditos da fatura que não vêm da usina (compensação por falta de luz ou Bônus de Itaipu) ficaram fora da economia.`}</li>
+              )}
+            </ul>
           )}
         </div>
       </details>

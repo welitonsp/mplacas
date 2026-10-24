@@ -76,6 +76,8 @@ class UtilityBillRecord(Base):
     credits_expiring_30d_kwh: Mapped[Decimal | None] = mapped_column(
         Numeric(12, 3), nullable=True
     )
+    flag_tariff_brl_kwh: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    non_energy_credits_brl: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     tariff_with_taxes_brl_kwh: Mapped[Decimal | None] = mapped_column(
         Numeric(12, 6), nullable=True
     )

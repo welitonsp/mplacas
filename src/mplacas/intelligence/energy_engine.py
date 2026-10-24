@@ -91,6 +91,10 @@ class EnergyCycleIntelligence:
     # Tarifa (com tributos) usada na conta "sem a usina" e sua origem.
     savings_tariff_brl_kwh: Decimal | None = None
     savings_tariff_source: str | None = None
+    # ADR-085: bandeira somada à conta "sem a usina" e créditos que não vêm
+    # das placas (excluídos da economia). `None` quando a fatura não traz.
+    flag_tariff_brl_kwh: Decimal | None = None
+    non_energy_credits_brl: Decimal | None = None
 
 
 def _savings_tariff(
@@ -154,10 +158,20 @@ def analyze_energy_cycle(
         if bill.imported_kwh
         else Decimal("0")
     )
+    # Componente de energia efetivamente PAGO (total − iluminação). É o que a
+    # tela e os relatórios mostram como parte da fatura.
     energy_component = max(
         Decimal("0"),
         bill.total_amount_brl - bill.public_lighting_brl,
     )
+    # Créditos da fatura que não vêm das placas (interrupção; Bônus de Itaipu
+    # por decisão conservadora) não podem virar economia da usina (ADR-085):
+    # entram dos dois lados — a conta "sem a usina" também os teria.
+    non_energy_credits = bill.non_energy_credits_brl or Decimal("0")
+    # Bandeira do ciclo (com tributos, da própria fatura): sem a usina, todo o
+    # consumo pagaria a bandeira. Sem a linha na fatura (tudo compensado ou
+    # bandeira verde), fica de fora — conservador, nunca presumida.
+    flag_tariff = bill.flag_tariff_brl_kwh or Decimal("0")
 
     # Economia estimada do ciclo: quanto teria custado comprar da rede toda a
     # energia efetivamente consumida (produção autoconsumida + energia
@@ -190,7 +204,10 @@ def analyze_energy_cycle(
         estimated_savings_brl = None
         savings_unavailable_reason = SAVINGS_UNAVAILABLE_NO_CONSUMPTION_DATA
     else:
-        hypothetical_grid_cost = reconciliation.estimated_total_consumption_kwh * savings_tariff
+        hypothetical_grid_cost = (
+            reconciliation.estimated_total_consumption_kwh * (savings_tariff + flag_tariff)
+            - non_energy_credits
+        )
         estimated_savings_brl = (hypothetical_grid_cost - energy_component).quantize(
             Decimal("0.01"),
             rounding=ROUND_HALF_UP,
@@ -202,8 +219,9 @@ def analyze_energy_cycle(
     bill_without_solar_brl: Decimal | None = None
     if estimated_savings_brl is not None and savings_tariff is not None:
         bill_without_solar_brl = (
-            reconciliation.estimated_total_consumption_kwh * savings_tariff
+            reconciliation.estimated_total_consumption_kwh * (savings_tariff + flag_tariff)
             + bill.public_lighting_brl
+            - non_energy_credits
         ).quantize(cents, rounding=ROUND_HALF_UP)
     # Um kWh de crédito, quando usado, evita a tarifa cheia mas ainda paga o
     # Fio B da parcela compensada (Lei 14.300). Valor líquido = tarifa − Fio B
@@ -240,9 +258,10 @@ def analyze_energy_cycle(
         uncompensated = bill.imported_kwh - compensated_used
         # Energia não compensada é cobrada à tarifa cheia.
         modeled_bill_brl = (
-            uncompensated * savings_tariff
+            uncompensated * (savings_tariff + flag_tariff)
             + compensated_used * bill.wire_b_tariff_brl_kwh
             + bill.public_lighting_brl
+            - non_energy_credits
         ).quantize(cents, rounding=ROUND_HALF_UP)
         bill_model_difference_brl = (bill.total_amount_brl - modeled_bill_brl).quantize(
             cents, rounding=ROUND_HALF_UP
@@ -372,6 +391,8 @@ def analyze_energy_cycle(
         public_lighting_brl=bill.public_lighting_brl,
         savings_tariff_brl_kwh=savings_tariff,
         savings_tariff_source=savings_tariff_source,
+        flag_tariff_brl_kwh=bill.flag_tariff_brl_kwh,
+        non_energy_credits_brl=bill.non_energy_credits_brl,
         tariff_with_taxes_brl_kwh=bill.tariff_with_taxes_brl_kwh,
         tariff_without_taxes_brl_kwh=bill.tariff_without_taxes_brl_kwh,
         credit_balance_kwh=bill.credit_balance_kwh,

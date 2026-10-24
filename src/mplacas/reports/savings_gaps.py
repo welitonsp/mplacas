@@ -11,7 +11,9 @@ Uma fatura confirmada pode ficar fora dessa soma para sempre quando:
   gravado (tarifa não lida na fatura, ou sem consumo/telemetria no ciclo);
 - ``OUTDATED_CALCULATION`` — a economia existe, mas foi calculada antes da
   correção da fórmula (versão < 0.4.0: conta "sem a usina" pela tarifa SCEE,
-  ADR-080) ou sem a tarifa cheia do período (``BILL_TARIFF``). É um piso;
+  ADR-080), sem a tarifa cheia do período (``BILL_TARIFF``), ou antes da
+  0.5.0 numa fatura que tem bandeira ou créditos que não vêm das placas
+  (ADR-085);
 - ``PARTIAL_PRODUCTION`` — o ciclo tinha dias sem leitura do inversor e foi
   calculado antes da estimativa desses dias pelo sol (ADR-082). Também é piso.
 
@@ -29,6 +31,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mplacas.billing.models import UtilityBill
 from mplacas.billing.read_repository import ConfirmedBillReadRepository
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.intelligence.energy_engine import SAVINGS_TARIFF_BILL
@@ -122,10 +125,23 @@ def _estimate_resolved(report: MonthlyEnergyReport) -> bool:
     return gaps == 0 or as_int("estimated_production_days") > 0
 
 
+# Versão em que a economia passou a somar a bandeira e a descontar créditos que
+# não vêm das placas (ADR-085). Um relatório anterior só fica desatualizado se
+# a fatura TEM esses dados — sem eles, refazer daria o mesmo número.
+FLAG_AND_CREDITS_VERSION = (0, 5, 0)
+
+
+def _bill_changes_savings(bill: UtilityBill | None) -> bool:
+    if bill is None:
+        return False
+    return bool(bill.flag_tariff_brl_kwh) or bool(bill.non_energy_credits_brl)
+
+
 def _gap_for(
     bill_id: uuid.UUID,
     reference_month: str,
     snapshot: MonthlyReportSnapshot | None,
+    bill: UtilityBill | None = None,
 ) -> SavingsGap | None:
     if snapshot is None:
         return SavingsGap(bill_id, reference_month, SavingsGapCause.REPORT_MISSING, None, None)
@@ -147,10 +163,11 @@ def _gap_for(
             reason,
             snapshot.revision,
         )
-    outdated = calculation_version_tuple(
-        snapshot.report.calculation_version
-    ) < CORRECTED_CALCULATION_VERSION or (
-        _metric_value(snapshot.report, SAVINGS_TARIFF_SOURCE_METRIC_KEY) == SAVINGS_TARIFF_BILL
+    version = calculation_version_tuple(snapshot.report.calculation_version)
+    outdated = (
+        version < CORRECTED_CALCULATION_VERSION
+        or _metric_value(snapshot.report, SAVINGS_TARIFF_SOURCE_METRIC_KEY) == SAVINGS_TARIFF_BILL
+        or (version < FLAG_AND_CREDITS_VERSION and _bill_changes_savings(bill))
     )
     if not outdated and _had_gaps_without_estimate(snapshot.report):
         return SavingsGap(
@@ -190,7 +207,7 @@ async def list_savings_gaps(
     gaps: list[SavingsGap] = []
     for confirmed in bills:
         snapshot = await snapshots.by_bill_id(confirmed.id, plant_id=plant_id)
-        gap = _gap_for(confirmed.id, confirmed.bill.reference_month, snapshot)
+        gap = _gap_for(confirmed.id, confirmed.bill.reference_month, snapshot, confirmed.bill)
         if gap is not None:
             gaps.append(gap)
     return tuple(gaps)

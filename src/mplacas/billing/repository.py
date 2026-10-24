@@ -90,6 +90,8 @@ class UtilityBillRepository:
             generation_cycle_kwh=bill.generation_cycle_kwh,
             generation_share_percent=bill.generation_share_percent,
             credits_expiring_30d_kwh=bill.credits_expiring_30d_kwh,
+            flag_tariff_brl_kwh=bill.flag_tariff_brl_kwh,
+            non_energy_credits_brl=bill.non_energy_credits_brl,
             tariff_with_taxes_brl_kwh=bill.tariff_with_taxes_brl_kwh,
             tariff_without_taxes_brl_kwh=bill.tariff_without_taxes_brl_kwh,
             wire_b_tariff_brl_kwh=bill.wire_b_tariff_brl_kwh,

@@ -108,6 +108,10 @@ def _serialize(result) -> dict[str, object]:
             "credit_balance_value_brl": _optional(intelligence.credit_balance_value_brl),
             "modeled_bill_brl": _optional(intelligence.modeled_bill_brl),
             "bill_model_difference_brl": _optional(intelligence.bill_model_difference_brl),
+            # ADR-085: bandeira somada à conta sem a usina e créditos que não
+            # vêm das placas (fora da economia), como lidos na fatura.
+            "flag_tariff_brl_kwh": _optional(intelligence.flag_tariff_brl_kwh),
+            "non_energy_credits_brl": _optional(intelligence.non_energy_credits_brl),
         },
         "diagnostics": [
             {
