@@ -11,7 +11,7 @@ import type {
 } from '../lib/dashboard/monthly-history-contracts'
 import type { MonthlyReportExportFormat } from '../lib/api'
 import { downloadMonthlyReportExport } from '../lib/api'
-import { formatCycleLabel, formatNumber, formatShortDate } from '../lib/format'
+import { formatCurrency, formatCycleLabel, formatNumber, formatShortDate } from '../lib/format'
 
 const EXPORT_FORMAT_LABELS: Record<MonthlyReportExportFormat, string> = {
   pdf: 'PDF',
@@ -169,13 +169,17 @@ export function verdictDetail(cycle: MonthlyProductionCycle, distributor: string
   if (!check) return 'Conferência ainda não disponível para este ciclo.'
   switch (check.verdict) {
     case 'LOSS': {
+      const value =
+        check.missingCreditsValueBrl != null
+          ? ` (cerca de ${formatCurrency(check.missingCreditsValueBrl)} a preços deste ciclo)`
+          : ''
       const expired =
         check.expiredCreditsKwh != null && check.expiredCreditsKwh > 0
           ? ` Outros ${kwh(check.expiredCreditsKwh, 2)} venceram pelo prazo de 5 anos, como a fatura anterior avisava.`
           : ''
       if (check.lossConfirmed)
-        return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)} nem como abatimento nem como saldo, confirma que 100% da geração é desta unidade e não avisou vencimento do restante. É forte indício de prejuízo: leve a fatura à ouvidoria da ${distributor} e peça a explicação.${expired}`
-      return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)} nem como abatimento nem como saldo, e não confirma que 100% da geração é desta unidade. Confira com a ${distributor}: o crédito pode ter ido para outra unidade do rateio.${expired}`
+        return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)}${value} nem como abatimento nem como saldo, confirma que 100% da geração é desta unidade e não avisou vencimento do restante. É forte indício de prejuízo: leve a fatura à ouvidoria da ${distributor} e peça a explicação.${expired}`
+      return `A fatura não mostra ${kwh(check.missingCreditsKwh ?? 0, 2)}${value} nem como abatimento nem como saldo, e não confirma que 100% da geração é desta unidade. Confira com a ${distributor}: o crédito pode ter ido para outra unidade do rateio.${expired}`
     }
     case 'IMPOSSIBLE':
       return `O medidor da ${distributor} registrou ${kwh(check.meterExportKwh ?? 0)} enviados à rede, mais do que o inversor produziu${cycle.productionKwh != null ? ` (${kwh(cycle.productionKwh)})` : ''}. Um dos dois medidores está errado: vale pedir aferição.`
@@ -291,6 +295,14 @@ function CycleRow({ cycle }: { cycle: MonthlyProductionCycle }) {
   )
 }
 
+// "≈ R$ X" só quando TODOS os ciclos somados têm valor: soma parcial em reais
+// pareceria o total e esconderia o resto.
+function moneySuffix(cycles: MonthlyProductionCycle[]): string {
+  const values = cycles.map((cycle) => cycle.utilityCheck?.missingCreditsValueBrl ?? null)
+  if (values.length === 0 || values.some((value) => value == null)) return ''
+  return ` · cerca de ${formatCurrency(values.reduce<number>((sum, value) => sum + (value ?? 0), 0))}`
+}
+
 // Veredito da janela inteira, no topo: a resposta em uma linha.
 function Summary({ cycles }: { cycles: MonthlyProductionCycle[] }) {
   const distributor = distributorDisplayName(cycles[cycles.length - 1]?.distributor)
@@ -310,13 +322,13 @@ function Summary({ cycles }: { cycles: MonthlyProductionCycle[] }) {
   if (confirmedLoss.length > 0) {
     const missing = confirmedLoss.reduce((sum, cycle) => sum + (cycle.utilityCheck?.missingCreditsKwh ?? 0), 0)
     tone = 'danger'
-    title = `${kwh(missing, 2)} de créditos faltando`
+    title = `${kwh(missing, 2)} de créditos faltando${moneySuffix(confirmedLoss)}`
     const unconfirmed = loss.length - confirmedLoss.length
     detail = `Em ${confirmedLoss.length} ${plural(confirmedLoss.length)}, a fatura não mostra todo kWh registrado como abatimento ou saldo, confirma que 100% da geração é desta unidade e não avisou vencimento. Leve as faturas à ouvidoria da ${distributor}.${unconfirmed > 0 ? ` Em mais ${unconfirmed} ${plural(unconfirmed)}, há créditos sem explicação que a fatura não permite confirmar.` : ''}`
   } else if (loss.length > 0) {
     const missing = loss.reduce((sum, cycle) => sum + (cycle.utilityCheck?.missingCreditsKwh ?? 0), 0)
     tone = 'warning'
-    title = `${kwh(missing, 2)} de créditos sem explicação`
+    title = `${kwh(missing, 2)} de créditos sem explicação${moneySuffix(loss)}`
     detail = `Em ${loss.length} ${plural(loss.length)}, a fatura não mostra todo kWh registrado como abatimento ou saldo. Confira com a ${distributor}: pode ser prejuízo, crédito vencido ou crédito enviado a outra unidade do rateio.`
   } else if (impossible.length > 0) {
     tone = 'danger'

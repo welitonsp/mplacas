@@ -71,6 +71,8 @@ describe('parseMonthlyProductionHistory', () => {
             utility_check: {
               verdict: 'LOSS',
               missing_credits_kwh: '15.98',
+              missing_credits_value_brl: '15.70',
+              credit_unit_value_brl: '0.982775',
               loss_confirmed: true,
               expired_credits_kwh: null,
               credits_available_kwh: '255.98',
@@ -90,6 +92,8 @@ describe('parseMonthlyProductionHistory', () => {
     expect(result.cycles[0].utilityCheck).toMatchObject({
       verdict: 'LOSS',
       missingCreditsKwh: 15.98,
+      missingCreditsValueBrl: 15.7,
+      creditUnitValueBrl: 0.982775,
       lossConfirmed: true,
       expiredCreditsKwh: null,
       creditsAvailableKwh: 255.98,

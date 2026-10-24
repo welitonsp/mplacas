@@ -20,7 +20,11 @@ from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.intelligence.investor_service import calculation_version_tuple
 from mplacas.reports.contract import MonthlyEnergyReport, ReportMetric
 from mplacas.reports.snapshot import MonthlyReportSnapshotRepository, ReportSnapshotIntegrityError
-from mplacas.reports.utility_check import check_cycle
+from mplacas.reports.utility_check import (
+    check_cycle,
+    credit_unit_value_brl,
+    missing_credits_value_brl,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +165,23 @@ async def load_monthly_production_history(
         share = utility_check.export_share_percent
         if share is not None:
             export_shares.append(share)
+        # Valor de 1 kWh de crédito no ciclo, pela tarifa gravada no snapshot
+        # (a mesma da economia) — prejuízo em reais, sem recalcular nada.
+        unit_value = credit_unit_value_brl(
+            savings_tariff_brl_kwh=_decimal_or_none(
+                _metric_value(report.metrics, "savings_tariff_brl_kwh")
+            ),
+            flag_tariff_brl_kwh=_decimal_or_none(
+                _metric_value(report.metrics, "flag_tariff_brl_kwh")
+            ),
+            bill=bill,
+        )
+        check_payload = utility_check.as_payload()
+        check_payload["credit_unit_value_brl"] = None if unit_value is None else str(unit_value)
+        missing_value = missing_credits_value_brl(utility_check, unit_value)
+        check_payload["missing_credits_value_brl"] = (
+            None if missing_value is None else str(missing_value)
+        )
         cycles.append(
             {
                 "reference_month": report.reference_month,
@@ -188,7 +209,7 @@ async def load_monthly_production_history(
                 "quality": _quality_payload(report.quality),
                 # Conferência da distribuidora (ADR-084): créditos, envio
                 # impossível e fração enviada à rede contra o histórico.
-                "utility_check": utility_check.as_payload(),
+                "utility_check": check_payload,
             }
         )
 

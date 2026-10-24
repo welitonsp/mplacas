@@ -10,6 +10,8 @@ function okCheck(overrides: Partial<UtilityCheck> = {}): UtilityCheck {
   return {
     verdict: 'OK',
     missingCreditsKwh: 0,
+    missingCreditsValueBrl: null,
+    creditUnitValueBrl: null,
     lossConfirmed: false,
     expiredCreditsKwh: null,
     creditsAvailableKwh: 255.98,
@@ -153,6 +155,25 @@ describe('MonthlyProductionSection', () => {
     expect(screen.getByText('5 kWh de créditos faltando')).toBeInTheDocument()
     expect(screen.getByText(/Em mais 1 ciclo, há créditos sem explicação/)).toBeInTheDocument()
     expect(within(row(/mai\/26/)).getByText(/Outros 20 kWh venceram pelo prazo de 5 anos/)).toBeInTheDocument()
+  })
+
+  it('prejuízo em reais: frase do ciclo e resumo com o valor a preços do ciclo; soma parcial não vira total', () => {
+    const history = buildHistory()
+    history.cycles[2] = {
+      ...history.cycles[2],
+      utilityCheck: okCheck({ verdict: 'LOSS', missingCreditsKwh: 15.98, missingCreditsValueBrl: 15.7, lossConfirmed: true, reasons: ['CREDITS_MISSING'] }),
+    }
+    const { unmount } = render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
+    expect(screen.getByText(/15,98 kWh de créditos faltando · cerca de R\$\s*15,70/)).toBeInTheDocument()
+    expect(within(row(/mai\/26/)).getByText(/15,98 kWh \(cerca de R\$\s*15,70 a preços deste ciclo\)/)).toBeInTheDocument()
+    unmount()
+
+    history.cycles[1] = {
+      ...history.cycles[1],
+      utilityCheck: okCheck({ verdict: 'LOSS', missingCreditsKwh: 3, missingCreditsValueBrl: null, lossConfirmed: true, reasons: ['CREDITS_MISSING'] }),
+    }
+    render(<MonthlyProductionSection history={history} plantId={PLANT_ID} />)
+    expect(screen.getByText('18,98 kWh de créditos faltando')).toBeInTheDocument()
   })
 
   it('envio maior que a produção: registro impossível, com pedido de aferição', () => {

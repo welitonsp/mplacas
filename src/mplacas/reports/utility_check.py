@@ -235,3 +235,31 @@ def check_cycle(
         export_share_baseline_percent=baseline,
         reasons=tuple(reasons),
     )
+
+
+def credit_unit_value_brl(
+    *,
+    savings_tariff_brl_kwh: Decimal | None,
+    flag_tariff_brl_kwh: Decimal | None,
+    bill: UtilityBill | None,
+) -> Decimal | None:
+    """Quanto vale 1 kWh de crédito neste ciclo, com impostos (ADR-084).
+
+    Um kWh compensado evita a tarifa cheia (e a bandeira, quando há), mas
+    ainda paga o Fio B da parcela compensada (Lei 14.300). Valor = tarifa da
+    conta "sem a usina" + bandeira − Fio B. Sem a tarifa ou sem o Fio B lido na
+    fatura, `None` — nunca um valor presumido.
+    """
+    if savings_tariff_brl_kwh is None or bill is None or bill.wire_b_tariff_brl_kwh is None:
+        return None
+    value = (
+        savings_tariff_brl_kwh + (flag_tariff_brl_kwh or Decimal("0")) - bill.wire_b_tariff_brl_kwh
+    )
+    return value.quantize(Decimal("0.000001")) if value > 0 else None
+
+
+def missing_credits_value_brl(check: UtilityCheck, unit_value: Decimal | None) -> Decimal | None:
+    """Valor dos créditos faltando, a preços do próprio ciclo."""
+    if unit_value is None or not check.missing_credits_kwh:
+        return None
+    return (check.missing_credits_kwh * unit_value).quantize(Decimal("0.01"))
