@@ -92,8 +92,15 @@ jobs:
           MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
           MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
         run: |
-          if [ "$MODO" = "gravar" ]; then
-            python -m mplacas.cloud_jobs import-tariffs
-          else
-            python -m mplacas.cloud_jobs import-tariffs --dry-run
-          fi
+          flag="--dry-run"
+          if [ "$MODO" = "gravar" ]; then flag=""; fi
+          set +e
+          python -m mplacas.cloud_jobs import-tariffs $flag > resumo.txt 2>&1
+          status=$?
+          set -e
+          cat resumo.txt
+          # Resumo também como anotação (visível na tela da execução e pela API,
+          # sem baixar o log): resultado no banco, avisos e erro, no máximo 10.
+          { echo "modo ${MODO}"; grep -E "^aneel_tariffs dry_run|^error" resumo.txt; grep "AVISO" resumo.txt | head -6; } \
+            | head -10 | sed 's/^ *//; s/^/::notice title=tarifas::/'
+          exit $status
