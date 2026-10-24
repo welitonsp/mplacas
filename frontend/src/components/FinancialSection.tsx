@@ -138,7 +138,7 @@ export function describeTariffClass(key: string | null, presumed: boolean, sourc
   // fatura — sem esta frase, o leitor acharia que a tarifa cheia é a da classe.
   const noTariff =
     source === 'BILL_TARIFF'
-      ? ' Ainda não há tarifa homologada cadastrada para essa classe; a conta “sem a usina” usa o preço da própria fatura.'
+      ? ' Não há tarifa homologada cadastrada para essa classe em todo o período do ciclo; a conta “sem a usina” usa o preço da própria fatura.'
       : ''
   return presumed
     ? `Classe tarifária presumida: ${label}. Esta fatura foi importada antes da leitura da classe; reimporte o PDF para confirmar.${noTariff}`

@@ -198,7 +198,7 @@ describe('FinancialSection', () => {
       [{ tariff_class: 'NAO_IDENTIFICADA', tariff_class_presumed: false }, /Classe tarifária não identificada na fatura/],
       [
         { tariff_class: 'B1_RESIDENCIAL_BRANCA', tariff_class_presumed: false, savings_tariff_source: 'BILL_TARIFF' },
-        /lida da fatura: B1 residencial, tarifa branca\. Ainda não há tarifa homologada cadastrada para essa classe/,
+        /lida da fatura: B1 residencial, tarifa branca\. Não há tarifa homologada cadastrada para essa classe em todo o período/,
       ],
     ]
     for (const [extra, text] of cases) {

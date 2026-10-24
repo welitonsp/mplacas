@@ -522,7 +522,12 @@ def _extract_tariff_class(normalized: str) -> str:
     subclass: list[str] = []
     modality_token: str | None = None
     for token in tokens[: _MAX_SUBCLASS_TOKENS + 1]:
-        if token in _MODALITY_TOKENS:
+        if token == "convencional":
+            modality_token = token
+            break
+        # "branca" só como a fatura escreve a modalidade ("normal branca",
+        # "tarifa branca"); solta, pode ser sobrenome do titular.
+        if token == "branca" and subclass and subclass[-1] in {"normal", "tarifa"}:
             modality_token = token
             break
         subclass.append(token)

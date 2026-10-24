@@ -39,6 +39,11 @@ def test_holder_name_never_decides_the_modality() -> None:
         assert _extract_tariff_class(text) == "B1_RESIDENCIAL_CONVENCIONAL"
     branca = " ".join("classificação: b b1 residencial - residencial normal branca joao".split())
     assert _extract_tariff_class(branca) == "B1_RESIDENCIAL_BRANCA"
+    # Fatura sem modalidade e titular "Branca": nunca vira tarifa branca.
+    no_modality = " ".join(
+        "classificação: b b1 residencial - residencial maria branca silva".split()
+    )
+    assert _extract_tariff_class(no_modality) == UNIDENTIFIED_TARIFF_CLASS
 
 
 def test_discounted_subclasses_and_too_long_phrases_fail_closed() -> None:
@@ -122,3 +127,7 @@ def test_pdf_completion_replaces_unidentified_class_but_never_erases_it() -> Non
     unidentified_pdf = replace(bill, tariff_class=UNIDENTIFIED_TARIFF_CLASS)
     assert complete_missing_fields(record, unidentified_pdf) == ()  # type: ignore[arg-type]
     assert record.tariff_class == "B1_RESIDENCIAL_CONVENCIONAL"
+    # Fatura antiga (NULL, presumiria B1) + PDF sem classe: vira não identificada.
+    legacy = SimpleNamespace(**identity, **empty, tariff_class=None)
+    assert complete_missing_fields(legacy, unidentified_pdf) == ("tariff_class",)  # type: ignore[arg-type]
+    assert legacy.tariff_class == UNIDENTIFIED_TARIFF_CLASS
