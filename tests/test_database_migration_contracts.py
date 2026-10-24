@@ -601,3 +601,29 @@ def test_report_snapshot_revision_migration_matches_orm() -> None:
     assert table.c.revision.nullable is False
     assert ("bill_id", "revision") in unique_sets
     assert ("bill_id",) not in unique_sets
+
+
+def test_bill_share_and_expiring_migration_matches_orm() -> None:
+    from mplacas.billing.db_models import UtilityBillRecord
+
+    source = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "20261024_0047_add_bill_scee_share_and_expiring.py"
+    ).read_text(encoding="utf-8")
+    columns = UtilityBillRecord.__table__.columns
+
+    assert 'revision = "20261024_0047"' in source
+    assert 'down_revision = "20261023_0046"' in source
+    # Aditiva e nullable, sem backfill presumido (ADR-084).
+    assert "nullable=True" in source
+    assert "UPDATE" not in source.upper().replace("UPDATED", "")
+    assert columns.generation_share_percent.nullable is True
+    assert columns.generation_share_percent.type.precision == 5
+    assert columns.generation_share_percent.type.scale == 2
+    assert columns.credits_expiring_30d_kwh.nullable is True
+    assert columns.credits_expiring_30d_kwh.type.precision == 12
+    assert columns.credits_expiring_30d_kwh.type.scale == 3
+    assert 'drop_column("credits_expiring_30d_kwh")' in source
+    assert 'drop_column("generation_share_percent")' in source
