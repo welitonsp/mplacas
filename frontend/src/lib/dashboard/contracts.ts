@@ -45,6 +45,9 @@ export interface ExecutiveIndicators {
   // preço da fatura, usado só na falta da cheia (subestima em faturas SCEE).
   savings_tariff_brl_kwh?: MetricValue
   savings_tariff_source?: string | null
+  // ADR-085: bandeira somada à conta sem a usina; créditos fora da economia.
+  flag_tariff_brl_kwh?: MetricValue
+  non_energy_credits_brl?: MetricValue
 }
 
 // Vocabulário compartilhado com o backend (ver
@@ -622,6 +625,8 @@ export function parseExecutiveDashboard(payload: unknown): ExecutiveDashboardRes
         bill_model_difference_brl: metricValueOrMissing(indicators, 'bill_model_difference_brl'),
         savings_tariff_brl_kwh: metricValueOrMissing(indicators, 'savings_tariff_brl_kwh'),
         savings_tariff_source: optionalStringOrMissing(indicators, 'savings_tariff_source'),
+        flag_tariff_brl_kwh: metricValueOrMissing(indicators, 'flag_tariff_brl_kwh'),
+        non_energy_credits_brl: metricValueOrMissing(indicators, 'non_energy_credits_brl'),
       },
       diagnostics: parseDiagnostics(currentCycle),
     },

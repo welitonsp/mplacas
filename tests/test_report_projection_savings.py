@@ -62,6 +62,8 @@ def _dashboard(
                 savings_unavailable_reason=savings_unavailable_reason,
                 savings_tariff_brl_kwh=Decimal("1.145750"),
                 savings_tariff_source="DISTRIBUTOR_FULL_TARIFF",
+                flag_tariff_brl_kwh=None,
+                non_energy_credits_brl=None,
                 health_score=97,
                 diagnostics=(),
             ),

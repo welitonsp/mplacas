@@ -171,6 +171,39 @@ describe('FinancialSection', () => {
     ).toBeInTheDocument()
   })
 
+  it('detalhes: bandeira incluída na conta "sem a usina" e créditos que não vêm da usina fora da economia (ADR-085)', () => {
+    render(
+      <FinancialSection
+        indicators={buildIndicators({
+          tariff_with_taxes_brl_kwh: 0.787884,
+          tariff_without_taxes_brl_kwh: 0.61303,
+          flag_tariff_brl_kwh: 0.011721,
+          non_energy_credits_brl: 30.38,
+        })}
+        referenceMonth="2026-07"
+        financialReturn={buildFinancialReturn()}
+        plantId="plant-1"
+      />
+    )
+
+    const details = screen.getByText('Detalhes da fatura de jul/26').closest('details') as HTMLElement
+    expect(within(details).getByText(/Bandeira tarifária do ciclo \(R\$ 0,012\/kWh com impostos\) incluída/)).toBeInTheDocument()
+    expect(within(details).getByText(/R\$\s*30,38 de créditos da fatura que não vêm da usina/)).toBeInTheDocument()
+  })
+
+  it('sem bandeira nem créditos externos: nenhuma linha extra', () => {
+    render(
+      <FinancialSection
+        indicators={buildIndicators({ tariff_with_taxes_brl_kwh: 0.787884, tariff_without_taxes_brl_kwh: 0.61303 })}
+        referenceMonth="2026-07"
+        financialReturn={buildFinancialReturn()}
+        plantId="plant-1"
+      />
+    )
+    expect(screen.queryByText(/Bandeira tarifária do ciclo/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/não vêm da usina/)).not.toBeInTheDocument()
+  })
+
   it('tarifa da própria fatura (BILL_TARIFF): a nota avisa que pode subestimar; sem o campo, não afirma nada', () => {
     const { unmount } = render(
       <FinancialSection
