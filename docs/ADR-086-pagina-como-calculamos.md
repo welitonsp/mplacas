@@ -18,7 +18,7 @@ calculado. Essas regras hoje só existem nos ADRs técnicos:
 
 - **Onde fica:** nova rota `/dashboard/dinheiro/como-calculamos` (`MethodologyPage`). A aba
   Dinheiro fica ativa (o `NavLink` não usa `end`). A rota é carregada sob demanda e tem
-  orçamento próprio de 6 kB; o tamanho medido é 2,4 kB.
+  orçamento próprio de 6 kB; o tamanho medido é cerca de 3 kB.
 - **Conteúdo fixo, sem dado da usina**, em cinco blocos:
   1. de onde vem cada número;
   2. placas × distribuidora;

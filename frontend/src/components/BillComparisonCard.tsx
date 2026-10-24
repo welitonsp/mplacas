@@ -160,7 +160,7 @@ export function BillComparisonCard({
           <Detail
             label="Créditos guardados"
             value={`${formatNumber(indicators.credit_balance_kwh, 2)} kWh`}
-            note={creditValue != null ? `Valem cerca de ${formatCurrency(creditValue)}, já descontado o Fio B.` : undefined}
+            note={creditValue != null ? `Valem cerca de ${formatCurrency(creditValue)} a preços deste ciclo.` : undefined}
           />
           {coverage != null && imported != null && imported > 0 && (
             <Detail

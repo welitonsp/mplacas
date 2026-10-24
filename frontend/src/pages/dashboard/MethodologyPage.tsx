@@ -56,8 +56,8 @@ export function MethodologyPage() {
           (dado de clima modelado, não medido na usina) multiplicado pelo rendimento da própria usina nos dias com
           leitura, e aparece marcado como estimado. Se faltar histórico ou dado de clima, o dia não é estimado e o
           ciclo avisa quantos dias ficaram sem leitura. Num ciclo com dia sem leitura, a produção não fica abaixo do
-          que o medidor da distribuidora registrou como enviado à rede; num ciclo completo, produção abaixo do
-          medidor aparece como divergência.
+          que o medidor da distribuidora registrou como enviado à rede. Num ciclo completo, se o medidor registrar
+          mais de 5% acima do inversor, aparece como envio impossível.
         </Rule>
         <Rule title="Consumo, envio à rede, créditos e saldo">
           Da fatura da distribuidora que você confirmou: consumo da rede, leitura do medidor de geração, energia
@@ -66,9 +66,10 @@ export function MethodologyPage() {
         <Rule title="Tarifa cheia">
           Tarifa homologada pela ANEEL (TUSD + TE). Hoje cadastrada para a Equatorial Goiás, classe B1 residencial
           convencional: reajuste de 2023 e as Resoluções Homologatórias REH 3.407/2024 e REH 3.544/2025. Quando o
-          reajuste cai no meio do ciclo, a tarifa é dividida por dia, como a distribuidora faz. Se algum dia do
-          ciclo não tiver tarifa cadastrada, o sistema usa o preço da própria fatura e avisa que a economia pode
-          estar subestimada.
+          reajuste cai no meio do ciclo, a tarifa é dividida por dia, como a distribuidora faz. O sistema usa o
+          preço da própria fatura, e avisa que a economia pode estar subestimada, quando algum dia do ciclo não tem
+          tarifa cadastrada, quando a fatura não traz o preço sem impostos ou quando a tarifa cheia calculada fica
+          abaixo do preço da fatura (sinal de cadastro ou classe errados).
         </Rule>
         <Rule title="Impostos">
           O fator de impostos (ICMS, PIS e COFINS) é tirado da própria fatura de cada mês: preço com impostos ÷
@@ -103,7 +104,8 @@ export function MethodologyPage() {
         </Rule>
         <Rule title="Envio impossível">
           O medidor não pode registrar mais envio à rede do que o inversor produziu. Acima de 5% de folga (precisão
-          do inversor), algo está errado — um dos medidores ou o recorte de datas — e vale pedir aferição. Não roda
+          do inversor), algo está errado — um dos medidores ou o recorte de datas. Confira primeiro se as datas do ciclo batem; se
+          baterem, vale pedir aferição. Não roda
           em ciclo com dias de produção estimados.
         </Rule>
         <Rule title="Fora do padrão">
@@ -119,8 +121,7 @@ export function MethodologyPage() {
         </Rule>
         <Rule title="Valor do saldo de créditos">
           O valor do saldo guardado, mostrado em Dinheiro, é uma referência mais simples: tarifa da conta “sem a
-          usina” menos o Fio B do ciclo (sem a bandeira, que muda mês a mês). Sem Fio B na fatura, usa a tarifa
-          inteira.
+          usina” menos o Fio B do ciclo, sem somar a bandeira. Sem Fio B na fatura, usa a tarifa inteira.
         </Rule>
       </Section>
 
@@ -140,8 +141,9 @@ export function MethodologyPage() {
         </Rule>
         <Rule title="O que já vem cobrado na fatura">
           O Fio B (Lei 14.300/2022, Art. 27: para quem pediu a conexão a partir de 2023, parcela crescente de 15% em
-          2023 a 90% em 2028) e o custo de disponibilidade (REN 1.000/2021) entram como a distribuidora cobrou. O
-          sistema não recalcula esses valores e não os inventa.
+          2023 a 90% em 2028) e o custo de disponibilidade (REN 1.000/2021) entram na economia como a distribuidora cobrou:
+          o sistema não recalcula esses valores nem os inventa. Na conferência do modelo, o Fio B é refeito com a
+          tarifa de Fio B impressa na própria fatura.
         </Rule>
         <Rule title="Conferência do modelo">
           Quando a fatura traz o Fio B e houve consumo da rede, o sistema refaz a fatura com essas regras e compara

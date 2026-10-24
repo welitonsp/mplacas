@@ -32,6 +32,10 @@ describe('MethodologyPage — Como calculamos (ADR-086)', () => {
     expect(screen.getByText('registrado pelo medidor + saldo anterior = créditos usados + saldo novo')).toBeInTheDocument()
     expect(screen.getByText('valor de 1 kWh = tarifa cheia com impostos + bandeira − Fio B')).toBeInTheDocument()
     expect(screen.getByText('economia = conta sem a usina − valor pago na fatura')).toBeInTheDocument()
+    // Condições que o motor aplica (ADR-084/085) — texto não pode prometer mais.
+    expect(screen.getByText(/a até R\$ 5 da\s+fatura real/)).toBeInTheDocument()
+    expect(screen.getByText(/mediana dos seus ciclos\s+anteriores \(pelo menos 3\)/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Não\s+roda em ciclo com dias de produção estimados|Não roda\s+em ciclo com dias de produção estimados/).length).toBe(2)
     expect(screen.queryByText(/kWh \d/)).not.toBeInTheDocument()
   })
 })
