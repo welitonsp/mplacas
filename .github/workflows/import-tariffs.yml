@@ -71,7 +71,14 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           MPLACAS_ENVIRONMENT: test
-        run: python -m mplacas.cloud_jobs import-tariffs --no-db | tee resumo.txt && sed 's/^/::notice title=tarifas::/' resumo.txt
+        run: |
+          set +e
+          python -m mplacas.cloud_jobs import-tariffs --no-db > resumo.txt 2>&1
+          status=$?
+          set -e
+          cat resumo.txt
+          grep -v "httpx" resumo.txt | tail -40 | sed 's/^/::notice title=tarifas::/'
+          exit $status
       - name: Comparar ou gravar no banco
         if: github.event_name != 'pull_request'
         env:
