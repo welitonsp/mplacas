@@ -145,6 +145,19 @@ def _build_parser() -> argparse.ArgumentParser:
     climate.add_argument("--end-date", required=True, help="YYYY-MM-DD, inclusive")
     climate.set_defaults(handler=_handle_collect_climate)
 
+    tariffs = subparsers.add_parser(
+        "import-tariffs",
+        help="import homologated tariffs from ANEEL open data (ADR-088)",
+    )
+    tariffs.add_argument("--dry-run", action="store_true", help="compare without writing")
+    tariffs.add_argument(
+        "--no-db",
+        action="store_true",
+        help="only download and summarize (no database access)",
+    )
+    tariffs.add_argument("--url", default=None, help="CSV URL (defaults to ANEEL open data)")
+    tariffs.set_defaults(handler=_handle_import_tariffs)
+
     drain = subparsers.add_parser(
         "drain-collection",
         help="reprocess deferred solar collection tasks",
@@ -201,6 +214,85 @@ def _handle_daily_pipeline(args: argparse.Namespace) -> int:
 
 def _handle_outbox_dispatch(_args: argparse.Namespace) -> int:
     asyncio.run(run_outbox_dispatch())
+    return 0
+
+
+def _handle_import_tariffs(args: argparse.Namespace) -> int:
+    import tempfile
+
+    import httpx
+
+    from mplacas.tariffs.aneel_import import (
+        ANEEL_TARIFFS_CSV_URL,
+        AneelImportError,
+        parse_aneel,
+        read_csv,
+        upsert_periods,
+    )
+
+    url = args.url or ANEEL_TARIFFS_CSV_URL
+    with tempfile.TemporaryFile(mode="w+b") as raw:
+        with httpx.stream("GET", url, timeout=600, follow_redirects=True) as response:
+            response.raise_for_status()
+            for chunk in response.iter_bytes():
+                raw.write(chunk)
+        raw.seek(0)
+        with open(raw.fileno(), encoding="utf-8-sig", newline="", closefd=False) as text:
+            parsed = parse_aneel(read_csv(text))
+    periods = parsed.periods
+
+    by_distributor: dict[str, int] = {}
+    by_class: dict[str, int] = {}
+    for period in periods:
+        by_distributor[period.distributor] = by_distributor.get(period.distributor, 0) + 1
+        by_class[period.tariff_class] = by_class.get(period.tariff_class, 0) + 1
+    print(
+        f"aneel_tariffs periods={len(periods)} distributors={len(by_distributor)} "
+        f"skipped={len(parsed.skipped)} classes={dict(sorted(by_class.items()))}"
+    )
+    for reason in parsed.skipped:
+        print(f"  AVISO (base da ANEEL, chave ignorada): {reason}")
+    # Sanidade: a base precisa conter a distribuidora já cadastrada e conferida
+    # nas faturas; sem ela, o formato mudou — nunca um "sucesso" vazio.
+    if "EQUATORIAL_GO" not in by_distributor or len(by_distributor) < 20:
+        raise AneelImportError(
+            f"base da ANEEL incompleta ou com formato novo: {len(by_distributor)} distribuidoras"
+        )
+    for period in periods:
+        if (
+            period.distributor == "EQUATORIAL_GO"
+            and period.tariff_class == "B1_RESIDENCIAL_CONVENCIONAL"
+            and period.valid_to.year >= 2024
+        ):
+            print(
+                f"  {period.distributor} {period.tariff_class} {period.valid_from}.."
+                f"{period.valid_to} cheia={period.full_brl_kwh} scee={period.scee_brl_kwh} "
+                # Texto vindo do CSV: sem caracteres de controle nem "::",
+                # para não virar comando do GitHub Actions no log.
+                f"({''.join(c for c in period.source if c.isprintable()).replace('::', ':')})"
+            )
+    if args.no_db:
+        return 0
+
+    async def _run() -> str:
+        async with SessionFactory() as session:
+            # Tarifas são dado público global (fora do RLS por organização);
+            # o job roda como plataforma, como os demais jobs operacionais.
+            await set_platform_context(session)
+            report = await upsert_periods(session, periods, dry_run=args.dry_run)
+            if args.dry_run:
+                await session.rollback()
+            else:
+                await session.commit()
+            lines = [
+                f"aneel_tariffs dry_run={args.dry_run} periods={report.periods} "
+                f"inserted={report.inserted} extended={report.extended} "
+                f"unchanged={report.unchanged} skipped={len(report.skipped)}"
+            ]
+            lines += [f"  AVISO (cadastro mantido): {reason}" for reason in report.skipped]
+            return "\n".join(lines)
+
+    print(asyncio.run(_run()))
     return 0
 
 

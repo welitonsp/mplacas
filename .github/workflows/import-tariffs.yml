@@ -1,0 +1,99 @@
+# Tarifas homologadas da ANEEL (ADR-088).
+#
+# Baixa a base aberta "Tarifas de aplicação das distribuidoras" e grava as
+# vigências novas em `distributor_tariffs`. Falha fechada: valor implausível,
+# vigência sobreposta ou cadastro que diverge da ANEEL interrompem tudo sem
+# gravar nada.
+#
+# - Semanal: a ANEEL atualiza a base toda semana; o reajuste novo de cada
+#   distribuidora entra sozinho.
+# - Manual: "simular" compara com o cadastro sem gravar; "gravar" exige a
+#   confirmação TARIFAS.
+# - Pull request que mexe no importador: baixa a base real e só resume, sem
+#   banco nem segredo — valida o formato antes do merge.
+name: import-tariffs
+
+on:
+  schedule:
+    - cron: "23 9 * * 2"
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "simular (não grava) ou gravar"
+        required: true
+        default: simular
+        type: choice
+        options:
+          - simular
+          - gravar
+      confirmacao:
+        description: "Para gravar, digite TARIFAS"
+        required: false
+        default: ""
+  pull_request:
+    paths:
+      - src/mplacas/tariffs/aneel_import.py
+      - src/mplacas/cloud_jobs.py
+      - tests/test_aneel_import.py
+      - .github/workflows/import-tariffs.yml
+
+concurrency:
+  # Pull request em fila própria (nunca substitui a execução que grava);
+  # semanal e manual dividem a mesma fila (nunca gravam ao mesmo tempo).
+  group: import-tariffs-${{ github.event_name == 'pull_request' && 'pr' || 'gravacao' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tarifas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MPLACAS_ENVIRONMENT: production
+      PYTHONPATH: ${{ github.workspace }}/src
+      MODO: ${{ github.event_name == 'schedule' && 'gravar' || inputs.modo || 'resumo' }}
+      CONFIRMACAO: ${{ inputs.confirmacao }}
+      EVENTO: ${{ github.event_name }}
+    steps:
+      - name: Validar modo
+        run: |
+          if [ "$EVENTO" = "workflow_dispatch" ] && [ "$MODO" = "gravar" ] && [ "$CONFIRMACAO" != "TARIFAS" ]; then
+            echo "Para gravar, digite exatamente TARIFAS." >&2
+            exit 1
+          fi
+          echo "Evento ${EVENTO}, modo ${MODO}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements.lock
+      - name: Resumir a base (pull request, sem banco)
+        if: github.event_name == 'pull_request'
+        env:
+          MPLACAS_ENVIRONMENT: test
+        run: |
+          set +e
+          python -m mplacas.cloud_jobs import-tariffs --no-db > resumo.txt 2>&1
+          status=$?
+          set -e
+          cat resumo.txt
+          # O GitHub mostra no máximo 10 anotações por passo: resumo, até 3
+          # avisos e as vigências da Equatorial (conferidas nas faturas).
+          { grep -E "^aneel_tariffs|^error" resumo.txt; grep "AVISO" resumo.txt | head -3; grep "EQUATORIAL_GO" resumo.txt | tail -5; } \
+            | head -10 | sed 's/^ *//; s/^/::notice title=tarifas::/'
+          exit $status
+      - name: Comparar ou gravar no banco
+        if: github.event_name != 'pull_request'
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+        run: |
+          if [ "$MODO" = "gravar" ]; then
+            python -m mplacas.cloud_jobs import-tariffs
+          else
+            python -m mplacas.cloud_jobs import-tariffs --dry-run
+          fi
