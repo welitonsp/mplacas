@@ -91,8 +91,10 @@ export function BillComparisonCard({
   const creditValue = toNumber(indicators.credit_balance_value_brl ?? null)
   const difference = toNumber(indicators.bill_model_difference_brl ?? null)
   // Quanto da energia que veio da rede foi paga com créditos (percentual do
-  // motor, `credit_coverage_rate_percent`). Abaixo de 100%, o resto saiu pela
-  // tarifa cheia — o que mais encarece a conta (ex.: fatura de out/26).
+  // motor, `credit_coverage_rate_percent`, 1 casa). Abaixo de 100%, o restante
+  // foi cobrado sem crédito — o que mais encarece a conta (ex.: out/26). Texto
+  // neutro de propósito: em faturas antigas o restante é o mínimo faturável,
+  // não falta de crédito. Sem energia da rede no ciclo, a linha não aparece.
   const coverage = toNumber(indicators.credit_coverage_rate_percent)
   const compensated = toNumber(indicators.compensated_kwh ?? null)
   const imported = toNumber(indicators.imported_kwh)
@@ -160,17 +162,17 @@ export function BillComparisonCard({
             value={`${formatNumber(indicators.credit_balance_kwh, 2)} kWh`}
             note={creditValue != null ? `Valem cerca de ${formatCurrency(creditValue)}, já descontado o Fio B.` : undefined}
           />
-          {coverage != null && (
+          {coverage != null && imported != null && imported > 0 && (
             <Detail
               label="Pago com créditos"
-              value={`${formatNumber(coverage, 0)}% da energia da rede`}
+              value={`${formatNumber(coverage, 1)}% da energia da rede`}
               note={
-                compensated != null && imported != null
-                  ? `${formatNumber(compensated, 0)} de ${formatNumber(imported, 0)} kWh.${
-                      coverage < 100 ? ' O resto foi cobrado pela tarifa cheia.' : ''
+                compensated != null
+                  ? `${formatNumber(compensated, 2)} de ${formatNumber(imported, 2)} kWh.${
+                      coverage < 100 ? ' O restante foi cobrado sem crédito.' : ''
                     }`
                   : coverage < 100
-                    ? 'O resto foi cobrado pela tarifa cheia.'
+                    ? 'O restante foi cobrado sem crédito.'
                     : undefined
               }
             />

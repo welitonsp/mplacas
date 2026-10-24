@@ -190,25 +190,56 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     await waitFor(() => expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(2))
   })
 
-  it('com ciclo confirmado, as faturas ficam no fim da aba (ADR-083), com âncora #faturas', async () => {
+  it('faturas sempre no fim, num único ponto de montagem: chegar o executivo não remonta a seção (estado da importação preservado)', async () => {
     vi.resetModules()
-    installApiMock()
+    let resolveFetch: (response: Response) => void = () => {}
+    installApiMock({
+      fetchExecutiveDashboard: vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveFetch = resolve
+          }),
+      ),
+    })
     const { container } = await renderFinancialPage()
 
+    // Enquanto o executivo carrega, as faturas já estão montadas.
+    await screen.findByRole('heading', { level: 2, name: 'Faturas de energia' })
+    const before = container.querySelector('#faturas')
+    const billsHeadingBefore = screen.getByRole('heading', { level: 2, name: 'Faturas de energia' })
+
+    resolveFetch(jsonResponse(executivePayload))
     const retorno = await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
-    const faturas = container.querySelector('#faturas') as HTMLElement
-    expect(faturas).not.toBeNull()
-    expect(retorno.compareDocumentPosition(faturas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // Mesmo nó do DOM: a seção não foi desmontada e montada de novo.
+    expect(container.querySelector('#faturas')).toBe(before)
+    expect(screen.getByRole('heading', { level: 2, name: 'Faturas de energia' })).toBe(billsHeadingBefore)
+    expect(retorno.compareDocumentPosition(before as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('sem ciclo com fatura (executivo indisponível), as faturas sobem para o topo', async () => {
+  it('executivo indisponível: faturas continuam acessíveis, logo abaixo do aviso', async () => {
     vi.resetModules()
     installApiMock({ fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: 'erro' }, 500)) })
     const { container } = await renderFinancialPage()
 
     const alert = await screen.findByRole('alert')
+    expect(await screen.findByRole('heading', { level: 2, name: 'Faturas de energia' })).toBeInTheDocument()
     const faturas = container.querySelector('#faturas') as HTMLElement
-    expect(faturas).not.toBeNull()
-    expect(faturas.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(alert.compareDocumentPosition(faturas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('chegando por #faturas, rola até as faturas uma vez, quando elas já estão na tela', async () => {
+    vi.resetModules()
+    installApiMock()
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    const { FinancialPage } = await import('./FinancialPage')
+    const { renderModule } = await import('../../test/renderModule')
+    const { DASHBOARD_FINANCIAL_PATH } = await import('../../routes')
+    renderModule(<FinancialPage />, `${DASHBOARD_FINANCIAL_PATH}#faturas`)
+
+    await screen.findByRole('heading', { level: 2, name: 'Faturas de energia' })
+    await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
   })
 })

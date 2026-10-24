@@ -80,7 +80,7 @@ describe('FinancialSection', () => {
     expect(screen.getByText('Detalhes da fatura de jul/26').closest('details')).not.toBeNull()
   })
 
-  it('"Pago com créditos": percentual do motor e kWh compensados de kWh da rede; abaixo de 100% avisa a tarifa cheia', () => {
+  it('"Pago com créditos": percentual do motor e kWh compensados de kWh da rede; abaixo de 100% diz que o restante foi sem crédito', () => {
     render(
       <FinancialSection
         indicators={buildIndicators({
@@ -97,13 +97,57 @@ describe('FinancialSection', () => {
 
     expect(screen.getByText('Pago com créditos')).toBeInTheDocument()
     expect(screen.getByText('75% da energia da rede')).toBeInTheDocument()
-    expect(screen.getByText('90 de 120 kWh. O resto foi cobrado pela tarifa cheia.')).toBeInTheDocument()
+    expect(screen.getByText('90 de 120 kWh. O restante foi cobrado sem crédito.')).toBeInTheDocument()
   })
 
-  it('detalhes da fatura: decomposição do valor e a tarifa da energia compensada explicada, sem 6 casas decimais', () => {
+  it('"Pago com créditos" com 1 casa: 99,7% não vira 100% ao lado de "o restante"', () => {
     render(
       <FinancialSection
-        indicators={buildIndicators({ bill_without_solar_brl: 540.11, tariff_with_taxes_brl_kwh: 0.787589, tariff_without_taxes_brl_kwh: 0.61303 })}
+        indicators={buildIndicators({ bill_without_solar_brl: 540.11, credit_coverage_rate_percent: 99.7, compensated_kwh: 337, imported_kwh: 338 })}
+        referenceMonth="2026-07"
+        financialReturn={buildFinancialReturn()}
+        plantId="plant-1"
+      />
+    )
+
+    expect(screen.getByText('99,7% da energia da rede')).toBeInTheDocument()
+    expect(screen.getByText('337 de 338 kWh. O restante foi cobrado sem crédito.')).toBeInTheDocument()
+  })
+
+  it('100% coberto: sem a frase do restante; sem energia da rede: sem a linha', () => {
+    const { unmount } = render(
+      <FinancialSection
+        indicators={buildIndicators({ bill_without_solar_brl: 540.11, credit_coverage_rate_percent: 100, compensated_kwh: 120, imported_kwh: 120 })}
+        referenceMonth="2026-07"
+        financialReturn={buildFinancialReturn()}
+        plantId="plant-1"
+      />
+    )
+    expect(screen.getByText('120 de 120 kWh.')).toBeInTheDocument()
+    expect(screen.queryByText(/restante/)).not.toBeInTheDocument()
+    unmount()
+
+    render(
+      <FinancialSection
+        indicators={buildIndicators({ bill_without_solar_brl: 540.11, credit_coverage_rate_percent: 0, compensated_kwh: 0, imported_kwh: 0 })}
+        referenceMonth="2026-07"
+        financialReturn={buildFinancialReturn()}
+        plantId="plant-1"
+      />
+    )
+    expect(screen.queryByText('Pago com créditos')).not.toBeInTheDocument()
+  })
+
+  it('detalhes da fatura: decomposição e tarifa impressa com 3 casas; a nota diz o que a conta "sem a usina" usou, pelo motor', () => {
+    render(
+      <FinancialSection
+        indicators={buildIndicators({
+          bill_without_solar_brl: 540.11,
+          tariff_with_taxes_brl_kwh: 0.787589,
+          tariff_without_taxes_brl_kwh: 0.61303,
+          savings_tariff_source: 'DISTRIBUTOR_FULL_TARIFF',
+          savings_tariff_brl_kwh: 1.146179,
+        })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
         plantId="plant-1"
@@ -112,15 +156,42 @@ describe('FinancialSection', () => {
 
     const details = screen.getByText('Detalhes da fatura de jul/26').closest('details') as HTMLElement
     const billBar = within(details).getByRole('img', { name: /Total R\$\s*420,71/ })
-    expect(billBar.getAttribute('aria-label')).toMatch(/Energia R\$\s*390,50/)
+    expect(billBar.getAttribute('aria-label')).toMatch(/Energia e encargos R\$\s*390,50/)
     expect(billBar.getAttribute('aria-label')).toMatch(/Iluminação pública R\$\s*30,21/)
-    expect(within(details).queryByText('Outros encargos')).not.toBeInTheDocument()
 
-    expect(within(details).getByText('Tarifa da energia compensada')).toBeInTheDocument()
+    expect(within(details).getByText('Tarifa impressa na fatura')).toBeInTheDocument()
     expect(within(details).getByText('R$ 0,788/kWh com impostos')).toBeInTheDocument()
     expect(within(details).getByText('R$ 0,613/kWh sem impostos')).toBeInTheDocument()
-    expect(within(details).getByText(/usa a tarifa cheia/)).toBeInTheDocument()
     expect(within(details).queryByText(/0,787589/)).not.toBeInTheDocument()
+    expect(within(details).queryByText(/SCEE/)).not.toBeInTheDocument()
+    expect(
+      within(details).getByText(
+        'A conta “sem a usina” não usa esta tarifa: usa a tarifa cheia da distribuidora, R$ 1,146/kWh com impostos, que é o que você pagaria sem créditos.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('tarifa da própria fatura (BILL_TARIFF): a nota avisa que pode subestimar; sem o campo, não afirma nada', () => {
+    const { unmount } = render(
+      <FinancialSection
+        indicators={buildIndicators({ bill_without_solar_brl: 540.11, savings_tariff_source: 'BILL_TARIFF' })}
+        referenceMonth="2026-07"
+        financialReturn={buildFinancialReturn()}
+        plantId="plant-1"
+      />
+    )
+    expect(screen.getByText(/usa esta tarifa da própria fatura e, por isso, pode subestimar a economia/)).toBeInTheDocument()
+    unmount()
+
+    render(
+      <FinancialSection
+        indicators={buildIndicators({ bill_without_solar_brl: 540.11 })}
+        referenceMonth="2026-07"
+        financialReturn={buildFinancialReturn()}
+        plantId="plant-1"
+      />
+    )
+    expect(screen.queryByText(/A conta “sem a usina”/)).not.toBeInTheDocument()
   })
 
   it('backend sem a conta "sem a usina": mostra a economia estimada sozinha, sem sumir', () => {
@@ -137,6 +208,10 @@ describe('FinancialSection', () => {
     const section = heading.closest('section') as HTMLElement
     expect(within(section).getByText(/R\$\s*120,40/)).toBeInTheDocument()
     expect(within(section).getByText('Estimado')).toBeInTheDocument()
+    // Saldo e cobertura não somem quando a conta do ciclo não aparece.
+    expect(within(section).getByText('Créditos guardados')).toBeInTheDocument()
+    expect(within(section).getByText('63,98 kWh')).toBeInTheDocument()
+    expect(within(section).getByText('100% da energia da rede')).toBeInTheDocument()
   })
 
   it('nunca mostra R$ 0,00 de economia quando a fatura não tem tarifa registrada — mostra mensagem explícita', () => {
