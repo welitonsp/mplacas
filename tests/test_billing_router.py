@@ -408,7 +408,7 @@ def test_intake_pdf_requires_credentials(monkeypatch) -> None:
     get_settings.cache_clear()
 
 
-def test_intake_pdf_resend_of_confirmed_bill_reports_real_state_and_marks_duplicate(
+def test_intake_pdf_resend_of_confirmed_bill_completes_fields_learned_later(
     monkeypatch,
 ) -> None:
     _configure(monkeypatch)
@@ -449,12 +449,40 @@ def test_intake_pdf_resend_of_confirmed_bill_reports_real_state_and_marks_duplic
 
     response = _post_pdf(_PDF_BYTES)
 
+    # O mesmo PDF reenviado completa o que a fatura confirmada não tinha
+    # (o leitor aprendeu a ler a tarifa depois), sem criar outra fatura.
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed_missing_fields"
+    assert "tariff_with_taxes_brl_kwh" in body["filled_fields"]
+    assert body["bill"]["status"] == "CONFIRMED"
+    assert existing.total_amount_brl == Decimal("70.22")
+    event = FakeAuditEventRepository.events[-1]
+    assert event["action"] == "billing.complete_from_pdf"
+    assert event["details"]["filled_fields"] == body["filled_fields"]
+
+    # Reenviado de novo, com tudo preenchido: "já importada", nada muda.
+    second = _post_pdf(_PDF_BYTES)
+    assert second.status_code == 200
+    assert second.json()["status"] == "already_imported"
+    assert second.json()["filled_fields"] == []
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_resend_of_pending_bill_keeps_reporting_duplicate(monkeypatch) -> None:
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+    pending = _confirmed_without_tariff(status=BillStatus.PENDING_REVIEW)
+    monkeypatch.setattr(FakeUtilityBillRepository, "existing_record", pending)
+    _forbid_create(monkeypatch)
+
+    response = _post_pdf(_PDF_BYTES)
+
     assert response.status_code == 200
     assert response.json()["status"] == "already_imported"
-    assert response.json()["bill"]["status"] == "CONFIRMED"
+    assert response.json()["bill"]["status"] == "PENDING_REVIEW"
     event = FakeAuditEventRepository.events[-1]
     assert event["details"]["duplicate"] is True
-    assert event["details"]["status"] == "CONFIRMED"
     get_settings.cache_clear()
 
 

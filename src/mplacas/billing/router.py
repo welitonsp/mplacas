@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from mplacas.audit.repository import AuditEventRepository
 from mplacas.billing.completion import BillCompletionConflict, complete_missing_fields
+from mplacas.billing.db_models import BillStatus
 from mplacas.billing.parser import BillParseError, parse_equatorial_bill_text
 from mplacas.billing.repository import UtilityBillRepository
 from mplacas.core.config import get_settings
@@ -221,6 +222,12 @@ async def intake_bill_pdf(
                 ),
             )
         confirmed = same_month[0] if same_month else None
+        # Reenvio do MESMO PDF de uma fatura já confirmada também completa os
+        # campos que o leitor aprendeu a ler depois (rateio, bandeira, classe
+        # tarifária...). Antes, o texto idêntico devolvia "já importada" sem
+        # completar nada — e a fatura ficava para sempre sem esses campos.
+        if existing is not None and existing.status == BillStatus.CONFIRMED:
+            confirmed = existing
         if confirmed is not None:
             # Mês já confirmado: o PDF só pode completar campos vazios da MESMA
             # fatura (ex.: tarifa que o texto do Telegram não trazia). Nunca
