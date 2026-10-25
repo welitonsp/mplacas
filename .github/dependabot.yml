@@ -27,3 +27,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    ignore:
+      # A imagem fica no Python 3.12 de propósito: é a versão do lock com
+      # hashes, do CI (setup-python 3.12), do mypy e do contrato do contêiner
+      # (tests/test_container_contract.py). Trocar de versão do Python é
+      # decisão deliberada, não atualização automática — só digest/patch.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
