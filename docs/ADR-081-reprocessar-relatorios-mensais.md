@@ -105,3 +105,12 @@ cria uma segunda fatura do mês.
 
 A operação é auditada como `billing.complete_from_pdf`, com os nomes dos campos preenchidos.
 Depois dela, o mês aparece em "Meses a recalcular" e o recálculo gera a nova revisão.
+
+## Atualização — 2026-10-25 (PR #235)
+
+Reenviar o **mesmo PDF** (texto idêntico) de uma fatura já CONFIRMADA também passa pela
+completação: os campos que o leitor aprendeu a ler depois (rateio, bandeira, créditos
+externos, classe tarifária) são preenchidos se estiverem vazios, com as mesmas regras de
+identidade e plausibilidade. Se a leitura atual divergir de algo já gravado (o leitor mudou
+desde a importação), nada é alterado e a resposta é o reenvio comum (`already_imported`), não
+409. Fatura pendente ou rejeitada reenviada segue como antes.
