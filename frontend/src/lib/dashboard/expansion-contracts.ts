@@ -31,6 +31,8 @@ export interface ExpansionAssessment {
   exportedKwhTotal: string | null
   deficitKwhYear: string | null
   deficitKwhMonth: string | null
+  // Rótulo pronto do backend (falta, sobra ou zero) — a tela não decide pelo sinal.
+  direction: 'FALTA' | 'SOBRA' | 'ZERO' | null
   toleranceKwhYear: string | null
   balanceBeforeKwh: string | null
   balanceAfterKwh: string | null
@@ -45,6 +47,7 @@ export interface ExpansionAssessment {
 }
 
 const STATUSES: readonly ExpansionStatus[] = ['AMPLIAR', 'NAO_VALE', 'EQUILIBRADO', 'CORRIGIR_ANTES', 'INDISPONIVEL']
+const DIRECTIONS = ['FALTA', 'SOBRA', 'ZERO'] as const
 const INVERTER: readonly InverterStatus[] = [
   'OK',
   'VERIFICAR_DATASHEET',
@@ -116,6 +119,7 @@ export function parseExpansionAssessment(payload: unknown): ExpansionAssessment 
     exportedKwhTotal: strOrNull(payload, 'exported_kwh_total'),
     deficitKwhYear: strOrNull(payload, 'deficit_kwh_year'),
     deficitKwhMonth: strOrNull(payload, 'deficit_kwh_month'),
+    direction: payload.direction == null ? null : oneOf(payload, 'direction', DIRECTIONS),
     toleranceKwhYear: strOrNull(payload, 'tolerance_kwh_year'),
     balanceBeforeKwh: strOrNull(payload, 'balance_before_kwh'),
     balanceAfterKwh: strOrNull(payload, 'balance_after_kwh'),

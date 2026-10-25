@@ -520,6 +520,7 @@ def _serialize_expansion(
         "exported_kwh_total": _optional(assessment.exported_kwh_total),
         "deficit_kwh_year": _optional(assessment.deficit_kwh_year),
         "deficit_kwh_month": _optional(assessment.deficit_kwh_month),
+        "direction": assessment.direction,
         "tolerance_kwh_year": _optional(assessment.tolerance_kwh_year),
         "balance_before_kwh": _optional(assessment.balance_before_kwh),
         "balance_after_kwh": _optional(assessment.balance_after_kwh),

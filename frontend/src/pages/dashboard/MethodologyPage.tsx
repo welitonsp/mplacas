@@ -165,12 +165,14 @@ export function MethodologyPage() {
           própria unidade.
         </Rule>
         <Rule title="Quando não recomendamos">
-          Ciclo com créditos faltando ou envio à rede impossível nos 12 meses, ou produção muito abaixo do esperado nos
+          Faltando fatura, leitura do medidor ou rateio de 100%, a análise fica indisponível. Com os dados completos:
+          ciclo com créditos faltando ou envio à rede impossível nos 12 meses, ou produção muito abaixo do esperado nos
           últimos 3: primeiro resolva a usina. Sobra no ano: ampliar só aumentaria a sobra.
         </Rule>
         <Rule title="Tamanho e inversor">
           <Formula>ampliação (kWp) = falta no ano ÷ rendimento anual medido da usina (kWh por kWp)</Formula>
-          Rendimento só de meses sem dia estimado (pelo menos 10). Vale para placas na mesma direção e inclinação das
+          Arredondada para cima em 0,1 kWp. Rendimento só de meses sem dia estimado ou provisório (pelo menos 10),
+          contando os dias do ciclo como a fatura (do primeiro ao último, inclusive). Vale para placas na mesma direção e inclinação das
           atuais. No inversor, placas ÷ potência do inversor até 1,30 cabe; até 1,50 depende do manual; acima disso,
           outro inversor. Com microinversores, a ampliação soma microinversores.
         </Rule>
@@ -181,6 +183,7 @@ export function MethodologyPage() {
           integral como cenário. O Fio B pleno sai da fatura (Fio B do ciclo ÷ parcela do ano), por isso o valor em
           reais só aparece para usinas ligadas a partir de 2024 com Fio B na fatura e quando a fatura refeita fecha
           com a real. Bandeira fica de fora; sem reajuste de tarifa.
+          <Formula>economia por mês = falta no ano ÷ 12 × valor de 1 kWh no ano</Formula>
         </Rule>
       </Section>
 

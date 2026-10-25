@@ -31,13 +31,15 @@ chunk próprio e seção nova em "Como calculamos".
 2. **Veredito**, nesta ordem:
    - `INDISPONIVEL`: menos de 12 ciclos, buraco no calendário, ciclo sem leitura do medidor ou
      consumo, rateio não confirmado.
-   - `CORRIGIR_ANTES`: ciclo com créditos faltando (`LOSS`) ou envio impossível nos 12 meses,
+   - `CORRIGIR_ANTES` (só com dados completos e rateio de 100% — com rateio menor, a
+     conferência marca `LOSS` sem prova de perda): ciclo com créditos faltando (`LOSS`) ou envio impossível nos 12 meses,
      ou produção muito abaixo do esperado nos últimos 3. Suspeita (`SUSPECT`, fração enviada à
      rede caiu) **não** bloqueia — é o sinal típico de consumo diurno maior — e vira aviso.
    - `AMPLIAR` / `NAO_VALE` / `EQUILIBRADO` pelo sinal da falta, com tolerância de 5% do
-     consumo da rede no ano.
-3. **Tamanho** = falta ÷ rendimento anual medido (kWh/kWp/ano, só ciclos sem dia estimado,
-   mínimo 10), arredondado para cima em 0,1 kWp. Premissa declarada: placas na mesma direção e
+     consumo da rede no ano. O sentido (`direction`: FALTA, SOBRA ou ZERO) vem pronto do
+     backend; a tela não decide pelo sinal.
+3. **Tamanho** = falta ÷ rendimento anual medido (kWh/kWp/ano, só ciclos sem dia estimado ou
+   provisório, mínimo 10; dias do ciclo contados como na fatura, os dois extremos inclusive), arredondado para cima em 0,1 kWp. Premissa declarada: placas na mesma direção e
    inclinação. Sem kWp cadastrado ou sem produção medida suficiente, o veredito sai sem tamanho.
 4. **Inversor**: relação placas ÷ inversor depois da ampliação — até 1,30 cabe; até 1,50
    conferir o manual; acima, outro inversor. Mais de um aparelho = microinversores (ampliar é
@@ -49,6 +51,7 @@ chunk próprio e seção nova em "Como calculamos".
    fatura. Bandeira fora; sem reajuste. Economia mensal = falta/12 × valor (limitada à falta).
    Indisponível, com motivo, quando: sem tarifa cheia homologada no último ciclo (ou ciclo
    anterior à versão 0.5.0), sem Fio B, fatura refeita não fecha (`credit_unit_value_brl` nulo),
+   fatura de 2029 em diante (`TRANSITION_ENDED`: sem regra para deduzir o Fio B pleno),
    ou regime não confirmado — usina ligada antes de 2024 (protocolos de 07/01 a 07/07/2023 têm
    outra transição) ou sem data de ligação.
 6. **Conflito de interesse**: veredito só do motor, não editável; "não vale" com o mesmo peso

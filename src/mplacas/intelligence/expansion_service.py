@@ -120,7 +120,8 @@ async def get_expansion_assessment(
         bill = bills.get(str(cycle["bill_id"]))
         start, end = cycle.get("cycle_start"), cycle.get("cycle_end")
         days = (
-            (date.fromisoformat(str(end)) - date.fromisoformat(str(start))).days
+            # O ciclo da fatura inclui os dois extremos (billing/models.py).
+            (date.fromisoformat(str(end)) - date.fromisoformat(str(start))).days + 1
             if start and end
             else None
         )
@@ -137,6 +138,7 @@ async def get_expansion_assessment(
                         "missing_days",
                         "unavailable_days",
                         "incomplete_days",
+                        "provisional_days",
                     )
                 ),
                 cycle_days=days if days and days > 0 else None,

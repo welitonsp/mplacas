@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -132,6 +132,40 @@ def test_money_follows_art_27_wire_b_and_marks_2029_as_scenario() -> None:
     assert money.monthly_saving_scenario_brl == D("18.00")
 
 
+def test_share_below_100_is_unavailable_even_with_loss_verdict() -> None:
+    # Com rateio < 100%, a conferência marca LOSS em todo ciclo (crédito foi
+    # para outra UC): não é defeito, é dado insuficiente.
+    cycles = [_cycle(c.reference_month, share="60", verdict="LOSS") for c in _year()]
+    result = _assess(cycles)
+    assert result.status == STATUS_UNAVAILABLE
+    assert result.reasons == ("SHARE_NOT_CONFIRMED",)
+
+
+def test_direction_labels_surplus_and_zero() -> None:
+    assert _assess(_year(imported="255", export="260")).direction == "SOBRA"
+    assert _assess(_year(imported="260", export="260")).direction == "ZERO"
+
+
+def test_wire_b_from_a_2025_bill_uses_45_percent_share() -> None:
+    money = _assess(
+        _year(), money_inputs=dataclasses.replace(MONEY, reference_month="2025-12")
+    ).money
+    assert money is not None
+    first = money.values_by_year[0]
+    # Fio B pleno = 0,175126 ÷ 0,45 = 0,389169; 2026 paga 60%.
+    assert first.year == 2026
+    assert first.value_brl_kwh == D("0.658309")
+
+
+def test_bill_after_transition_and_late_request_year() -> None:
+    money = _assess(
+        _year(), money_inputs=dataclasses.replace(MONEY, reference_month="2029-02")
+    ).money
+    assert money is not None and money.unavailable_reason == "TRANSITION_ENDED"
+    late = _assess(_year(), request_year=2031).money
+    assert late is not None and [v.year for v in late.values_by_year] == [2029]
+
+
 def test_year_values_start_at_request_year() -> None:
     values = year_values(
         full_tariff_brl_kwh=D("1"),
@@ -219,7 +253,8 @@ def test_money_unavailable_reasons() -> None:
     assert reason(wire_b_tariff_brl_kwh=None) == "WIRE_B_MISSING"
     assert reason(regime_confirmed=False) == "REGIME_NOT_CONFIRMED"
     assert reason(model_matches_bill=False) == "BILL_MODEL_MISMATCH"
-    assert reason(reference_month="2029-02") == "REGIME_NOT_CONFIRMED"
+    assert reason(reference_month="2029-02") == "TRANSITION_ENDED"
+    assert reason(reference_month="2022-06") == "REGIME_NOT_CONFIRMED"
 
 
 def test_low_grid_consumption_warns_minimum_billing() -> None:
@@ -278,7 +313,10 @@ def _history_cycle(month: str, bill_id: str, **overrides: object) -> dict[str, o
         "reference_month": month,
         "bill_id": bill_id,
         "cycle_start": f"{month}-01",
-        "cycle_end": f"{add_months(month, 1)}-01",
+        # Ciclo inclui os dois extremos: 1º ao último dia do mês.
+        "cycle_end": (
+            date.fromisoformat(f"{add_months(month, 1)}-01") - timedelta(days=1)
+        ).isoformat(),
         "imported_kwh": "260",
         "production_kwh": "400",
         "quality": None,
@@ -374,11 +412,44 @@ def test_service_assembles_cycles_and_money(monkeypatch) -> None:  # type: ignor
     assert assessment.status == STATUS_EXPAND
     assert assessment.first_month == "2025-11"
     assert assessment.deficit_kwh_year == D("360")
+    assert assessment.direction == "FALTA"
+    # 4800 kWh em 365 dias (inclusivos) ÷ 3,3 kWp = 1454,5 → 1455; contar
+    # (fim − início) sem o +1 daria 353 dias e 1504 (ampliação subestimada).
+    assert assessment.yield_kwh_per_kwp_year == D("1455")
     assert assessment.balance_before_kwh == D("307")
     assert assessment.inverter_status == INVERTER_OK
     assert assessment.money is not None
     assert assessment.money.unavailable_reason is None
     assert assessment.money.monthly_saving_first_year_brl == D("21.50")
+
+
+def test_service_keeps_the_latest_rebilled_cycle_of_a_month(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # O histórico vem em ordem cronológica e, num refaturamento, o mais novo
+    # por último: ele vence. Aqui o refaturado de out/26 zera o consumo extra.
+    _install_fakes(monkeypatch, MONTHS)
+    original = expansion_service.load_monthly_production_history
+
+    async def with_rebill(session, *, plant_id, plant_scope, limit):  # type: ignore[no-untyped-def]
+        payload = await original(session, plant_id=plant_id, plant_scope=plant_scope, limit=limit)
+        cycles = list(payload["cycles"])
+        rebill = dict(cycles[-1])
+        rebill["imported_kwh"] = "230"
+        return {"cycles": [*cycles, rebill]}
+
+    monkeypatch.setattr(expansion_service, "load_monthly_production_history", with_rebill)
+    factory, engine = asyncio.run(_factory())
+    asyncio.run(_seed(factory, installed_power_kwp=D("3.3"), commissioned_on=date(2024, 8, 10)))
+
+    async def run():  # type: ignore[no-untyped-def]
+        async with factory() as session:
+            return await expansion_service.get_expansion_assessment(
+                session, plant_id=PLANT, today=date(2026, 10, 25)
+            )
+
+    assessment, _ = asyncio.run(run())
+    asyncio.run(engine.dispose())
+    assert assessment.cycles_used == 12
+    assert assessment.deficit_kwh_year == D("330")
 
 
 def test_service_refuses_money_for_2023_plants_and_old_versions(monkeypatch) -> None:  # type: ignore[no-untyped-def]

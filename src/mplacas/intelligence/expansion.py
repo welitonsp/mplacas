@@ -13,8 +13,9 @@ Regras (validadas com os especialistas de domínio e financeiro):
   mínimo, e no layout SCEE atual o compensado já sai limitado pela fatura.
 * **Veredito** pelo sinal do déficit, com tolerância de 5% do consumo da rede
   no ano: acima → AMPLIAR; abaixo de −5% → NAO_VALE; no meio → EQUILIBRADO.
-  Antes disso, usina com problema (prejuízo, envio impossível, suspeita ou
-  produção muito abaixo do esperado) → CORRIGIR_ANTES.
+  Antes disso: dados insuficientes → INDISPONIVEL; usina com problema
+  (prejuízo, envio impossível ou produção muito abaixo do esperado) →
+  CORRIGIR_ANTES. Suspeita (fração enviada à rede caiu) só gera aviso.
 * **Tamanho** = déficit ÷ rendimento anual medido da própria usina
   (kWh/kWp/ano), só ciclos sem dia estimado. Vale para placas novas com a mesma
   orientação e inclinação — premissa declarada.
@@ -126,6 +127,8 @@ class ExpansionAssessment:
     exported_kwh_total: Decimal | None = None
     deficit_kwh_year: Decimal | None = None
     deficit_kwh_month: Decimal | None = None
+    # FALTA, SOBRA ou ZERO — o rótulo vem pronto, a tela não decide pelo sinal.
+    direction: str | None = None
     tolerance_kwh_year: Decimal | None = None
     balance_before_kwh: Decimal | None = None
     balance_after_kwh: Decimal | None = None
@@ -154,7 +157,8 @@ def year_values(
     bill_share = wire_b_share(bill_year)
     full_wire_b = wire_b_tariff_brl_kwh / bill_share
     values: list[YearValue] = []
-    for year in range(max(request_year, 2026), FIRST_SCENARIO_YEAR + 1):
+    start = min(max(request_year, 2026), FIRST_SCENARIO_YEAR)
+    for year in range(start, FIRST_SCENARIO_YEAR + 1):
         share = wire_b_share(year)
         value = full_tariff_brl_kwh - full_wire_b * share
         values.append(
@@ -183,7 +187,10 @@ def _money(
     if not inputs.model_matches_bill:
         return unavailable("BILL_MODEL_MISMATCH")
     bill_year = int(inputs.reference_month[:4])
-    if wire_b_share(bill_year) <= 0 or bill_year > LAST_TRANSITION_YEAR:
+    if bill_year > LAST_TRANSITION_YEAR:
+        # Fio B do art. 17 (2029+) ainda sem regra: não dá para deduzir o pleno.
+        return unavailable("TRANSITION_ENDED")
+    if wire_b_share(bill_year) <= 0:
         return unavailable("REGIME_NOT_CONFIRMED")
     values = year_values(
         full_tariff_brl_kwh=inputs.full_tariff_brl_kwh,
@@ -256,7 +263,15 @@ def assess_expansion(
     if months_between(window[0].reference_month, window[-1].reference_month) != WINDOW_CYCLES - 1:
         return unavailable("CYCLES_NOT_CONTIGUOUS")
 
-    # Usina com problema primeiro: ampliar não resolve defeito nem perda.
+    if any(c.imported_kwh is None or c.meter_export_kwh is None for c in window):
+        return unavailable("MISSING_METER_OR_CONSUMPTION")
+    shares = [c.generation_share_percent for c in window]
+    if any(s is not None and s != Decimal("100") for s in shares) or shares[-1] != Decimal("100"):
+        # Rateio ou autoconsumo remoto: o balanço teria de somar as outras UCs.
+        return unavailable("SHARE_NOT_CONFIRMED")
+
+    # Usina com problema: ampliar não resolve defeito nem perda. Vem depois do
+    # rateio — com rateio < 100%, a conferência marca LOSS sem prova de perda.
     problem_months = tuple(
         c.reference_month for c in window if c.utility_verdict in _PROBLEM_VERDICTS
     ) + tuple(c.reference_month for c in window[-3:] if c.production_well_below_expected)
@@ -272,19 +287,12 @@ def assess_expansion(
             problem_months=tuple(sorted(set(problem_months))),
         )
 
-    if any(c.imported_kwh is None or c.meter_export_kwh is None for c in window):
-        return unavailable("MISSING_METER_OR_CONSUMPTION")
-    shares = [c.generation_share_percent for c in window]
-    if any(s is not None and s != Decimal("100") for s in shares) or shares[-1] != Decimal("100"):
-        # Rateio ou autoconsumo remoto: o balanço teria de somar as outras UCs.
-        return unavailable("SHARE_NOT_CONFIRMED")
-
     imported = sum((c.imported_kwh for c in window if c.imported_kwh is not None), Decimal("0"))
     exported = sum(
         (c.meter_export_kwh for c in window if c.meter_export_kwh is not None), Decimal("0")
     )
     deficit = imported - exported
-    tolerance = (imported * TOLERANCE_FRACTION).quantize(_ONE_DECIMAL)
+    tolerance = (imported * TOLERANCE_FRACTION).quantize(_ONE_DECIMAL, rounding=ROUND_HALF_UP)
     warnings: list[str] = []
     if any(c.utility_verdict == "SUSPECT" for c in window):
         warnings.append("SUSPECT_CYCLES")
@@ -301,6 +309,7 @@ def assess_expansion(
         exported_kwh_total=exported,
         deficit_kwh_year=deficit,
         deficit_kwh_month=(deficit / 12).quantize(_ONE_DECIMAL, rounding=ROUND_HALF_UP),
+        direction="FALTA" if deficit > 0 else "SOBRA" if deficit < 0 else "ZERO",
         tolerance_kwh_year=tolerance,
         balance_before_kwh=previous_balance_kwh,
         balance_after_kwh=window[-1].credit_balance_kwh,

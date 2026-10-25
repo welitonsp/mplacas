@@ -11,6 +11,7 @@ export const expansionAvailablePayload = {
   exported_kwh_total: '2760',
   deficit_kwh_year: '360',
   deficit_kwh_month: '30.0',
+  direction: 'FALTA',
   tolerance_kwh_year: '156.0',
   balance_before_kwh: '307',
   balance_after_kwh: '0',

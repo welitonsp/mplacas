@@ -15,6 +15,7 @@ const base = {
   exported_kwh_total: '2760',
   deficit_kwh_year: '360',
   deficit_kwh_month: '30.0',
+  direction: 'FALTA',
   tolerance_kwh_year: '156.0',
   balance_before_kwh: '307',
   balance_after_kwh: '0',
@@ -66,6 +67,7 @@ describe('ExpansionContent (ADR-089)', () => {
       status: 'NAO_VALE',
       deficit_kwh_year: '-720',
       deficit_kwh_month: '-60.0',
+      direction: 'SOBRA',
       extra_kwp: null,
       money: null,
     })
@@ -73,6 +75,20 @@ describe('ExpansionContent (ADR-089)', () => {
     expect(screen.getByText(/sobram em média 60 kWh por mês/)).toBeInTheDocument()
     expect(screen.getByText('Sobra no ano')).toBeInTheDocument()
     expect(screen.queryByText(/Economia estimada/)).not.toBeInTheDocument()
+  })
+
+  it('equilibrado com sobra pequena: rótulo de sobra, não de falta', () => {
+    renderContent({
+      status: 'EQUILIBRADO',
+      deficit_kwh_year: '-100',
+      deficit_kwh_month: '-8.3',
+      direction: 'SOBRA',
+      extra_kwp: null,
+      money: null,
+    })
+    expect(screen.getByText(/Geração e consumo estão próximos/)).toBeInTheDocument()
+    expect(screen.getByText('Sobra no ano')).toBeInTheDocument()
+    expect(screen.queryByText('Falta no ano')).not.toBeInTheDocument()
   })
 
   it('dinheiro indisponível explica o motivo, sem R$ inventado', () => {

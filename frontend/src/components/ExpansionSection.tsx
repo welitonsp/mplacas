@@ -19,7 +19,11 @@ import { SummaryTile } from './SummaryTile'
 // - nada de botão de orçamento: o veredito é do motor, não de quem vende;
 // - sempre "estimativa", com as premissas à vista.
 
-const kwh = (value: string | null, digits = 0) => `${formatNumber(Math.abs(toNumber(value) ?? 0), digits)} kWh`
+// Magnitude: o sentido (falta/sobra) vem pronto em `direction`.
+const kwh = (value: string | null, digits = 0) => {
+  const numeric = toNumber(value)
+  return numeric == null ? '—' : `${formatNumber(Math.abs(numeric), digits)} kWh`
+}
 
 function period(assessment: ExpansionAssessment): string {
   if (!assessment.firstMonth || !assessment.lastMonth) return 'nos últimos 12 meses'
@@ -36,7 +40,10 @@ const UNAVAILABLE: Record<string, string> = {
 }
 
 const MONEY_UNAVAILABLE: Record<string, string> = {
-  FULL_TARIFF_MISSING: 'Sem a tarifa homologada da ANEEL no último ciclo, não dá para estimar o valor em reais.',
+  FULL_TARIFF_MISSING:
+    'O último ciclo não tem a tarifa homologada da ANEEL (ou foi calculado numa versão antiga e precisa ser recalculado em Faturas). Sem ela, não dá para estimar o valor em reais.',
+  TRANSITION_ENDED:
+    'A transição do Fio B da Lei 14.300 terminou em 2028 e a regra seguinte ainda não foi definida pela ANEEL; o valor em reais fica de fora.',
   WIRE_B_MISSING: 'A fatura não traz o Fio B, então não dá para calcular quanto valeria a energia nova.',
   REGIME_NOT_CONFIRMED:
     'Não foi possível confirmar a regra de cobrança do Fio B da sua usina (data de ligação ausente ou anterior a 2024). O valor em reais fica de fora para não errar.',
@@ -73,8 +80,8 @@ function MoneyBlock({ money }: { money: ExpansionMoney | null }) {
   return (
     <div className="space-y-2">
       <p className="text-[15px] leading-6 text-[var(--color-text-primary)]">
-        Economia estimada de <strong>≈ {formatCurrency(money.monthlySavingFirstYearBrl)} por mês</strong> em{' '}
-        {money.requestYear}, caindo para ≈ {formatCurrency(money.monthlySavingScenarioBrl)} por mês a partir de{' '}
+        Economia estimada de <strong>≈ {formatCurrency(money.monthlySavingFirstYearBrl)} por mês</strong> pela regra
+        de {money.requestYear}, caindo para ≈ {formatCurrency(money.monthlySavingScenarioBrl)} por mês a partir de{' '}
         {scenario?.year ?? 2029}, porque a energia da parte nova paga uma fatia crescente do Fio B.
       </p>
       <table className="w-full max-w-md text-left text-[13px] tabular-nums">
@@ -163,7 +170,7 @@ export function ExpansionContent({ assessment }: { assessment: ExpansionAssessme
           tone="neutral"
         />
         <SummaryTile
-          label={surplus ? 'Sobra no ano' : 'Falta no ano'}
+          label={assessment.direction === 'SOBRA' ? 'Sobra no ano' : assessment.direction === 'ZERO' ? 'Diferença no ano' : 'Falta no ano'}
           value={kwh(assessment.deficitKwhYear)}
           supportingText={`Tolerância: ${kwh(assessment.toleranceKwhYear)}`}
           tone="brand"
@@ -208,8 +215,8 @@ export function ExpansionContent({ assessment }: { assessment: ExpansionAssessme
               </p>
             ) : (
               <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
-                Faltam meses de produção medida ({assessment.measuredCycles} de 12) para estimar o tamanho com
-                segurança.
+                Faltam meses de produção medida para estimar o tamanho com segurança: temos{' '}
+                {assessment.measuredCycles} dos 12 sem dia estimado, e precisamos de pelo menos 10.
               </p>
             )}
             <MoneyBlock money={assessment.money} />
