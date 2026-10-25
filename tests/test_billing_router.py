@@ -408,7 +408,7 @@ def test_intake_pdf_requires_credentials(monkeypatch) -> None:
     get_settings.cache_clear()
 
 
-def test_intake_pdf_resend_of_confirmed_bill_reports_real_state_and_marks_duplicate(
+def test_intake_pdf_resend_of_confirmed_bill_completes_fields_learned_later(
     monkeypatch,
 ) -> None:
     _configure(monkeypatch)
@@ -449,12 +449,80 @@ def test_intake_pdf_resend_of_confirmed_bill_reports_real_state_and_marks_duplic
 
     response = _post_pdf(_PDF_BYTES)
 
+    # O mesmo PDF reenviado completa o que a fatura confirmada não tinha
+    # (o leitor aprendeu a ler a tarifa depois), sem criar outra fatura.
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed_missing_fields"
+    assert "tariff_with_taxes_brl_kwh" in body["filled_fields"]
+    assert body["bill"]["status"] == "CONFIRMED"
+    assert existing.total_amount_brl == Decimal("70.22")
+    # Campo já conferido e igual ao PDF continua igual.
+    assert existing.generation_cycle_kwh == Decimal("235.00")
+    event = FakeAuditEventRepository.events[-1]
+    assert event["action"] == "billing.complete_from_pdf"
+    assert event["details"]["filled_fields"] == body["filled_fields"]
+
+    # Reenviado de novo, com tudo preenchido: "já importada", nada muda.
+    second = _post_pdf(_PDF_BYTES)
+    assert second.status_code == 200
+    assert second.json()["status"] == "already_imported"
+    assert second.json()["filled_fields"] == []
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_identical_resend_with_divergence_is_a_plain_duplicate(monkeypatch) -> None:
+    # Mesmo PDF, mas um campo já gravado diverge da leitura atual (o leitor
+    # mudou): nada é alterado e não vira erro 409 para o cliente.
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+    existing = _confirmed_without_tariff(generation_cycle_kwh=Decimal("999"))
+    monkeypatch.setattr(FakeUtilityBillRepository, "existing_record", existing)
+    _forbid_create(monkeypatch)
+
+    response = _post_pdf(_PDF_BYTES)
+
     assert response.status_code == 200
     assert response.json()["status"] == "already_imported"
-    assert response.json()["bill"]["status"] == "CONFIRMED"
+    assert existing.generation_cycle_kwh == Decimal("999")
+    assert existing.tariff_with_taxes_brl_kwh is None
+    event = FakeAuditEventRepository.events[-1]
+    assert event["action"] == "billing.intake_pdf"
+    assert event["details"]["duplicate"] is True
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_resend_of_rejected_bill_keeps_reporting_duplicate(monkeypatch) -> None:
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+    rejected = _confirmed_without_tariff(status=BillStatus.REJECTED)
+    monkeypatch.setattr(FakeUtilityBillRepository, "existing_record", rejected)
+    _forbid_create(monkeypatch)
+
+    response = _post_pdf(_PDF_BYTES)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "already_imported"
+    assert response.json()["bill"]["status"] == "REJECTED"
+    assert rejected.tariff_with_taxes_brl_kwh is None
+    get_settings.cache_clear()
+
+
+def test_intake_pdf_resend_of_pending_bill_keeps_reporting_duplicate(monkeypatch) -> None:
+    _configure(monkeypatch)
+    _install_pdf_fakes(monkeypatch)
+    pending = _confirmed_without_tariff(status=BillStatus.PENDING_REVIEW)
+    monkeypatch.setattr(FakeUtilityBillRepository, "existing_record", pending)
+    _forbid_create(monkeypatch)
+
+    response = _post_pdf(_PDF_BYTES)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "already_imported"
+    assert response.json()["bill"]["status"] == "PENDING_REVIEW"
+    assert pending.tariff_with_taxes_brl_kwh is None  # nada completado
     event = FakeAuditEventRepository.events[-1]
     assert event["details"]["duplicate"] is True
-    assert event["details"]["status"] == "CONFIRMED"
     get_settings.cache_clear()
 
 
