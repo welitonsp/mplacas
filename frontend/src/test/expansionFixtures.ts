@@ -1,0 +1,37 @@
+// "Vale a pena ampliar?" (ADR-089) no estado mais rico — usado nas capturas
+// visuais e no teste de transbordo (e2e).
+export const expansionAvailablePayload = {
+  status: 'AMPLIAR',
+  reasons: [],
+  warnings: ['SUSPECT_CYCLES'],
+  first_month: '2025-11',
+  last_month: '2026-10',
+  cycles_used: 12,
+  imported_kwh_total: '3120',
+  exported_kwh_total: '2760',
+  deficit_kwh_year: '360',
+  deficit_kwh_month: '30.0',
+  direction: 'FALTA',
+  tolerance_kwh_year: '156.0',
+  balance_before_kwh: '307',
+  balance_after_kwh: '0',
+  installed_kwp: '3.300',
+  measured_cycles: 12,
+  yield_kwh_per_kwp_year: '1475',
+  extra_kwp: '0.3',
+  inverter_status: 'OK',
+  dc_ac_ratio_after: '1.20',
+  problem_months: [],
+  money: {
+    unavailable_reason: null,
+    request_year: 2026,
+    monthly_saving_first_year_brl: '21.50',
+    monthly_saving_scenario_brl: '18.00',
+    values_by_year: [
+      { year: 2026, wire_b_share: '0.60', value_brl_kwh: '0.716684', scenario: false },
+      { year: 2027, wire_b_share: '0.75', value_brl_kwh: '0.672902', scenario: false },
+      { year: 2028, wire_b_share: '0.90', value_brl_kwh: '0.629121', scenario: false },
+      { year: 2029, wire_b_share: '1.00', value_brl_kwh: '0.599933', scenario: true },
+    ],
+  },
+}

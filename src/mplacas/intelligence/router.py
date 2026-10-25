@@ -17,6 +17,11 @@ from mplacas.intelligence.anomaly_service import (
 )
 from mplacas.intelligence.cycle_service import EnergyCycleNotFoundError, analyze_persisted_cycle
 from mplacas.intelligence.dashboard_readmodel import ExecutiveDashboardReadModel
+from mplacas.intelligence.expansion import ExpansionAssessment
+from mplacas.intelligence.expansion_service import (
+    ExpansionPlantNotFoundError,
+    get_expansion_assessment,
+)
 from mplacas.intelligence.financial_return_service import (
     FinancialReturnPlantNotFoundError,
     FinancialReturnResult,
@@ -498,6 +503,69 @@ async def latest_investor_panel(scoped: ReadPlant) -> dict[str, object]:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         await session.commit()
     return _serialize_investor(panel)
+
+
+def _serialize_expansion(
+    assessment: ExpansionAssessment, context: tuple[str, ...]
+) -> dict[str, object]:
+    money = assessment.money
+    return {
+        "status": assessment.status,
+        "reasons": list(assessment.reasons),
+        "warnings": list(assessment.warnings) + list(context),
+        "first_month": assessment.first_month,
+        "last_month": assessment.last_month,
+        "cycles_used": assessment.cycles_used,
+        "imported_kwh_total": _optional(assessment.imported_kwh_total),
+        "exported_kwh_total": _optional(assessment.exported_kwh_total),
+        "deficit_kwh_year": _optional(assessment.deficit_kwh_year),
+        "deficit_kwh_month": _optional(assessment.deficit_kwh_month),
+        "direction": assessment.direction,
+        "tolerance_kwh_year": _optional(assessment.tolerance_kwh_year),
+        "balance_before_kwh": _optional(assessment.balance_before_kwh),
+        "balance_after_kwh": _optional(assessment.balance_after_kwh),
+        "installed_kwp": _optional(assessment.installed_kwp),
+        "measured_cycles": assessment.measured_cycles,
+        "yield_kwh_per_kwp_year": _optional(assessment.yield_kwh_per_kwp_year),
+        "extra_kwp": _optional(assessment.extra_kwp),
+        "inverter_status": assessment.inverter_status,
+        "dc_ac_ratio_after": _optional(assessment.dc_ac_ratio_after),
+        "problem_months": list(assessment.problem_months),
+        "money": None
+        if money is None
+        else {
+            "unavailable_reason": money.unavailable_reason,
+            "request_year": money.request_year,
+            "monthly_saving_first_year_brl": _optional(money.monthly_saving_first_year_brl),
+            "monthly_saving_scenario_brl": _optional(money.monthly_saving_scenario_brl),
+            "values_by_year": [
+                {
+                    "year": value.year,
+                    "wire_b_share": str(value.wire_b_share),
+                    "value_brl_kwh": str(value.value_brl_kwh),
+                    "scenario": value.scenario,
+                }
+                for value in money.values_by_year
+            ],
+        },
+    }
+
+
+@router.get("/expansion/latest")
+async def latest_expansion_assessment(scoped: ReadPlant) -> dict[str, object]:
+    """Vale a pena ampliar a usina? (ADR-089). Somente leitura."""
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        try:
+            assessment, context = await get_expansion_assessment(
+                session,
+                plant_id=scoped.plant_id,
+                today=date.today(),
+                plant_scope=scoped.principal.plant_scope,
+            )
+        except ExpansionPlantNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _serialize_expansion(assessment, context)
 
 
 @router.get("/anomalies/latest")

@@ -107,6 +107,14 @@ const BUDGETS = [
     limitKb: 8,
   },
   {
+    // "Vale a pena ampliar?" (ADR-089), sob demanda pelo Financeiro, com a
+    // própria leitura e parser. Entrou em 2026-10-25 com 4,7 kB; mesmo teto
+    // do painel do investidor (a etapa 2 traz o retorno da proposta).
+    name: 'ExpansionSection',
+    match: /^ExpansionSection-.*\.js$/,
+    limitKb: 8,
+  },
+  {
     // Faturas de energia (importação em lote, "Confirmar todas", meses a
     // recalcular), sob demanda pelo Financeiro. Saiu do módulo em 2026-10-23,
     // quando a importação em lote levou o Financeiro a 15,09 kB (teto 15).
