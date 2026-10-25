@@ -155,6 +155,35 @@ export function MethodologyPage() {
         </Rule>
       </Section>
 
+      <Section id="ampliacao" title="Vale a pena ampliar a usina?">
+        <Rule title="A falta no ano">
+          <Formula>falta = Σ consumo da rede − Σ envio registrado pelo medidor (12 ciclos seguidos)</Formula>
+          O crédito vale 60 meses, por isso a conta é do ano inteiro. Não usamos os créditos usados: quando o saldo
+          guardado está acabando, eles escondem a falta que vai continuar. O mínimo faturável da ligação (30, 50 ou 100
+          kWh) não é descontado: pela Lei 14.300 (art. 16, §1º) ele só pesa quando o consumo da rede fica abaixo dele.
+          Diferença de até 5% do consumo da rede no ano conta como equilíbrio. Exige rateio de 100% da geração na
+          própria unidade.
+        </Rule>
+        <Rule title="Quando não recomendamos">
+          Ciclo com créditos faltando ou envio à rede impossível nos 12 meses, ou produção muito abaixo do esperado nos
+          últimos 3: primeiro resolva a usina. Sobra no ano: ampliar só aumentaria a sobra.
+        </Rule>
+        <Rule title="Tamanho e inversor">
+          <Formula>ampliação (kWp) = falta no ano ÷ rendimento anual medido da usina (kWh por kWp)</Formula>
+          Rendimento só de meses sem dia estimado (pelo menos 10). Vale para placas na mesma direção e inclinação das
+          atuais. No inversor, placas ÷ potência do inversor até 1,30 cabe; até 1,50 depende do manual; acima disso,
+          outro inversor. Com microinversores, a ampliação soma microinversores.
+        </Rule>
+        <Rule title="Valor da energia nova">
+          <Formula>valor de 1 kWh no ano = tarifa cheia com impostos − Fio B pleno × parcela do ano</Formula>A parte
+          ampliada pedida agora segue a regra nova da Lei 14.300 (art. 26, §2º, III): paga 60% do Fio B em 2026, 75%
+          em 2027 e 90% em 2028 (art. 27). De 2029 em diante vale o art. 17, ainda sem regra da ANEEL: usamos Fio B
+          integral como cenário. O Fio B pleno sai da fatura (Fio B do ciclo ÷ parcela do ano), por isso o valor em
+          reais só aparece para usinas ligadas a partir de 2024 com Fio B na fatura e quando a fatura refeita fecha
+          com a real. Bandeira fica de fora; sem reajuste de tarifa.
+        </Rule>
+      </Section>
+
       <Section id="limites" title="Limites">
         <Rule title="Estimado nunca aparece como medido">
           Valores que dependem de estimativa (casa, dias sem leitura, economia) aparecem marcados. Quando falta um

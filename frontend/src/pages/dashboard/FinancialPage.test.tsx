@@ -35,6 +35,32 @@ interface ApiMockOverrides {
   fetchPendingBills?: (plantId: string) => Promise<Response>
   fetchInvestorPanel?: (plantId: string) => Promise<Response>
   fetchSavingsGaps?: (plantId: string) => Promise<Response>
+  fetchExpansionAssessment?: (plantId: string) => Promise<Response>
+}
+
+// "Vale a pena ampliar?" (ADR-089) sem 12 faturas: estado indisponível.
+const expansionUnavailablePayload = {
+  status: 'INDISPONIVEL',
+  reasons: ['NOT_ENOUGH_CYCLES'],
+  warnings: [],
+  first_month: null,
+  last_month: null,
+  cycles_used: 3,
+  imported_kwh_total: null,
+  exported_kwh_total: null,
+  deficit_kwh_year: null,
+  deficit_kwh_month: null,
+  tolerance_kwh_year: null,
+  balance_before_kwh: null,
+  balance_after_kwh: null,
+  installed_kwp: null,
+  measured_cycles: 0,
+  yield_kwh_per_kwp_year: null,
+  extra_kwp: null,
+  inverter_status: 'DESCONHECIDO',
+  dc_ac_ratio_after: null,
+  problem_months: [],
+  money: null,
 }
 
 function installApiMock(overrides: ApiMockOverrides = {}) {
@@ -56,6 +82,9 @@ function installApiMock(overrides: ApiMockOverrides = {}) {
     // Meses a recalcular (ADR-081), dentro do card de faturas.
     fetchSavingsGaps: overrides.fetchSavingsGaps ?? vi.fn(async () => jsonResponse({ count: 0, items: [] })),
     reprocessSavingsGaps: vi.fn(async () => jsonResponse({ count: 0, items: [] })),
+    // Análise de ampliação (ADR-089), chunk próprio com a própria leitura.
+    fetchExpansionAssessment:
+      overrides.fetchExpansionAssessment ?? vi.fn(async () => jsonResponse(expansionUnavailablePayload)),
     configureApi: vi.fn(),
   }))
 }
@@ -68,14 +97,16 @@ async function renderFinancialPage() {
 }
 
 describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
-  it('dispara exatamente 5 requisições de dados — executivo, retorno, faturas pendentes, meses a recalcular e painel do investidor, nenhuma outra', async () => {
+  it('dispara exatamente 6 requisições de dados — executivo, retorno, faturas pendentes, meses a recalcular, painel do investidor e ampliação, nenhuma outra', async () => {
     vi.resetModules()
     const fetchExecutiveMock = vi.fn(async () => jsonResponse(executivePayload))
     const fetchFinancialReturnMock = vi.fn(async () => jsonResponse(financialReturnUnavailablePayload))
     const fetchPendingBillsMock = vi.fn(async () => jsonResponse({ count: 0, items: [] }))
     const fetchInvestorMock = vi.fn(async () => jsonResponse(investorUnavailablePayload))
     const fetchSavingsGapsMock = vi.fn(async () => jsonResponse({ count: 0, items: [] }))
+    const fetchExpansionMock = vi.fn(async () => jsonResponse(expansionUnavailablePayload))
     installApiMock({
+      fetchExpansionAssessment: fetchExpansionMock,
       fetchExecutiveDashboard: fetchExecutiveMock,
       fetchFinancialReturn: fetchFinancialReturnMock,
       fetchPendingBills: fetchPendingBillsMock,
@@ -100,7 +131,9 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
       expect(fetchPendingBillsMock).toHaveBeenCalledTimes(1)
       expect(fetchInvestorMock).toHaveBeenCalledTimes(1)
       expect(fetchSavingsGapsMock).toHaveBeenCalledTimes(1)
+      expect(fetchExpansionMock).toHaveBeenCalledTimes(1)
     })
+    expect(fetchExpansionMock).toHaveBeenCalledWith(singlePlant.id)
     expect(fetchInvestorMock).toHaveBeenCalledWith(singlePlant.id)
     expect(fetchSavingsGapsMock).toHaveBeenCalledWith(singlePlant.id)
     expect(fetchExecutiveMock).toHaveBeenCalledWith(singlePlant.id)

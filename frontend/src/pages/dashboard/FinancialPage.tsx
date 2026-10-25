@@ -29,6 +29,12 @@ const InvestorPanelSection = lazy(() =>
   })),
 )
 
+// "Vale a pena ampliar?" (ADR-089): chunk próprio, com a própria leitura de
+// `/energy/expansion/latest` — o módulo Financeiro está no teto de tamanho.
+const ExpansionSection = lazy(() =>
+  import('../../components/ExpansionSection').then((module) => ({ default: module.ExpansionSection })),
+)
+
 // Aba Dinheiro (ADR-072, Etapa 3; reorganizada no ADR-083, etapa 2). Recursos:
 // `executive` (conta do ciclo, tarifas, créditos — `current_cycle.indicators` e
 // `reference_month`, que nomeia o ciclo dos números exibidos, achado F1),
@@ -157,6 +163,16 @@ export function FinancialPage() {
           >
             <InvestorPanelSection panel={investor.data} error={investor.error} onRetry={investor.refetch} />
           </Suspense>
+          <Suspense
+            fallback={
+              <div
+                className="h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)] md:col-span-6 lg:col-span-12"
+                aria-hidden="true"
+              />
+            }
+          >
+            <ExpansionSection plantId={plantId} />
+          </Suspense>
         </div>
       )}
 
@@ -174,7 +190,7 @@ export function FinancialPage() {
           <ScrollToBillsOnce />
         </Suspense>
       </div>
-      <MethodologyLink subtitle="Economia, tarifas homologadas, bandeira, Fio B e créditos" />
+      <MethodologyLink subtitle="Economia, tarifas homologadas, bandeira, Fio B, créditos e ampliação" />
     </>
   )
 }

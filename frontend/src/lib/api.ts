@@ -344,6 +344,12 @@ export async function fetchInvestorPanel(plantId: string): Promise<Response> {
   return apiFetch(`/energy/investor/latest?plant_id=${encodeURIComponent(plantId)}`)
 }
 
+// Vale a pena ampliar a usina? (ADR-089, `GET /energy/expansion/latest`).
+// Sempre 200 dentro do escopo; o que falta vem em `status`/`reasons`.
+export async function fetchExpansionAssessment(plantId: string): Promise<Response> {
+  return apiFetch(`/energy/expansion/latest?plant_id=${encodeURIComponent(plantId)}`)
+}
+
 // Cadastro da usina ("Minha usina"). `GET /plants/{id}/setup` reúne em uma
 // leitura o que o dono já informou e o checklist do que falta (a regra de
 // "feito" de cada item é do backend). As escritas usam as rotas que já

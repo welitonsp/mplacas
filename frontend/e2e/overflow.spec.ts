@@ -25,6 +25,7 @@ import {
   singlePlant,
 } from '../src/test/dashboardFixtures'
 import { investorAvailablePayload } from '../src/test/investorFixtures'
+import { expansionAvailablePayload } from '../src/test/expansionFixtures'
 
 const MODULOS = ['Início', 'Energia', 'Dinheiro', 'Minha usina'] as const
 
@@ -52,6 +53,7 @@ test.describe('layout não rola de lado', () => {
       ['**/reports/monthly/history*', monthlyHistoryPayload],
       ['**/billing/pending*', { count: 0, items: [] }],
       ['**/energy/investor/latest*', investorAvailablePayload],
+      ['**/energy/expansion/latest*', expansionAvailablePayload],
       [
         '**/plants/*/setup',
         {

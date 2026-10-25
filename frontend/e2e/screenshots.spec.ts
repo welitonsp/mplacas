@@ -20,6 +20,7 @@ import {
   singlePlant,
 } from '../src/test/dashboardFixtures'
 import { investorAvailablePayload } from '../src/test/investorFixtures'
+import { expansionAvailablePayload } from '../src/test/expansionFixtures'
 
 // Rótulo do menu, não segmento de URL: a navegação é feita CLICANDO, nunca com
 // `page.goto`. A sessão vive só em memória (ADR-073), então recarga completa a
@@ -139,6 +140,7 @@ async function interceptarApi(page: import('@playwright/test').Page) {
       },
     ],
     ['**/energy/investor/latest*', investorAvailablePayload],
+    ['**/energy/expansion/latest*', expansionAvailablePayload],
     // Uma fatura aguardando conferência, para a captura mostrar o card
     // "Faturas de energia" do Financeiro no estado mais rico.
     [
