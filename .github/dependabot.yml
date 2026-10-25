@@ -18,6 +18,11 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    groups:
+      # init e analyze do CodeQL precisam da MESMA versão: PRs separados
+      # falham os dois (versão do arquivo de configuração ≠ versão em execução).
+      codeql:
+        patterns: ["github/codeql-action*"]
   - package-ecosystem: docker
     directory: "/"
     schedule:
