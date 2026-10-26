@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Link } from 'react-router'
 import { fetchExpansionAssessment } from '../lib/api'
 import {
@@ -81,8 +82,12 @@ function MoneyBlock({ money }: { money: ExpansionMoney | null }) {
     <div className="space-y-2">
       <p className="text-[15px] leading-6 text-[var(--color-text-primary)]">
         Economia estimada de <strong>≈ {formatCurrency(money.monthlySavingFirstYearBrl)} por mês</strong> pela regra
-        de {money.requestYear}, caindo para ≈ {formatCurrency(money.monthlySavingScenarioBrl)} por mês a partir de{' '}
-        {scenario?.year ?? 2029}, porque a energia da parte nova paga uma fatia crescente do Fio B.
+        de {money.valuesByYear[0]?.year ?? money.requestYear}
+        {money.valuesByYear.length > 1
+          ? `, caindo para ≈ ${formatCurrency(money.monthlySavingScenarioBrl)} por mês a partir de ${
+              scenario?.year ?? 2029
+            }, porque a energia da parte nova paga uma fatia crescente do Fio B.`
+          : ' (cenário com Fio B integral).'}
       </p>
       <table className="w-full max-w-md text-left text-[13px] tabular-nums">
         <caption className="sr-only">Valor de 1 kWh da parte nova, por ano</caption>
@@ -268,13 +273,20 @@ export function ExpansionContent({ assessment }: { assessment: ExpansionAssessme
   )
 }
 
-export function ExpansionSection({ plantId }: { plantId: string }) {
+export function ExpansionSection({ plantId, refreshKey = 0 }: { plantId: string; refreshKey?: number }) {
   const resource = usePlantResource({
     plantId,
     fetcher: fetchExpansionAssessment,
     parse: parseExpansionAssessment,
     errorMessage: 'Erro ao buscar a análise de ampliação.',
   })
+  // Nova leitura quando a página pede (fatura confirmada, "Atualizar"); a
+  // primeira leitura já é do próprio recurso.
+  const { refetch } = resource
+  useEffect(() => {
+    if (refreshKey > 0) refetch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey])
   return (
     <section className="md:col-span-6 lg:col-span-12" aria-labelledby="expansion-heading">
       <SectionTitle as="h2" id="expansion-heading">
