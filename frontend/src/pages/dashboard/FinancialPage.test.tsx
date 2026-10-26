@@ -141,6 +141,18 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     expect(fetchPendingBillsMock).toHaveBeenCalledWith(singlePlant.id)
   })
 
+  it('"Atualizar" também relê a análise de ampliação (ADR-089), que tem leitura própria', async () => {
+    vi.resetModules()
+    const fetchExpansionMock = vi.fn(async () => jsonResponse(expansionUnavailablePayload))
+    installApiMock({ fetchExpansionAssessment: fetchExpansionMock })
+
+    await renderFinancialPage()
+
+    await waitFor(() => expect(fetchExpansionMock).toHaveBeenCalledTimes(1))
+    fireEvent.click(await screen.findByRole('button', { name: /^Atualizar/ }))
+    await waitFor(() => expect(fetchExpansionMock).toHaveBeenCalledTimes(2))
+  })
+
   it('mostra o esqueleto de carregamento enquanto /energy/executive/latest está em voo, depois o conteúdo real (sucesso)', async () => {
     vi.resetModules()
     let resolveFetch: (value: Response) => void = () => {}

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useLocation } from 'react-router'
 import { fetchExecutiveDashboard, fetchFinancialReturn, fetchInvestorPanel } from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
@@ -75,10 +75,15 @@ export function FinancialPage() {
   // "Atualizar" (`RefreshBar`). O erro do recurso executivo continua com seu
   // próprio retry no banner global (`RetryableError` abaixo); este botão só
   // força uma nova tentativa dos 2 recursos ao mesmo tempo.
+  // A análise de ampliação (ADR-089) faz a própria leitura dentro do chunk
+  // dela; este contador pede uma nova leitura quando o módulo atualiza (botão
+  // "Atualizar" ou fatura confirmada/completada).
+  const [expansionRefresh, setExpansionRefresh] = useState(0)
   const refreshAll = () => {
     executive.refetch()
     financialReturn.refetch()
     investor.refetch()
+    setExpansionRefresh((value) => value + 1)
   }
   // Combinado dos 2 recursos — usado pelo `disabled`/texto "Atualizando..."
   // do `RefreshBar`.
@@ -171,7 +176,7 @@ export function FinancialPage() {
               />
             }
           >
-            <ExpansionSection plantId={plantId} />
+            <ExpansionSection plantId={plantId} refreshKey={expansionRefresh} />
           </Suspense>
         </div>
       )}
