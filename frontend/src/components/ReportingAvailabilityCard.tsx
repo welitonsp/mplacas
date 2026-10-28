@@ -41,18 +41,22 @@ export function ReportingAvailabilityCard({
     )
   }
 
+  // Mesmo esqueleto dos outros cartões de "Desempenho técnico": título em
+  // cima, visual, nota. O rótulo do anel fica só no nome acessível.
   return (
     <Card>
-      <div className="mt-1">
+      <p className="text-[13px] font-medium leading-5 text-[var(--color-text-secondary)]">Disponibilidade de reporte</p>
+      <div className="mt-3">
         <Gauge
           value={availability}
           label="Disponibilidade de reporte"
+          showLabel={false}
           valueLabel={`${formatNumber(availability, 0)}%`}
           tone={performanceSeverity(availability)}
           size={72}
         />
       </div>
-      <p className="mt-2 text-xs text-gray-500">
+      <p className="mt-3 text-xs leading-5 text-[var(--color-text-secondary)]">
         Fração de devices que enviaram dados no dia — não é o uptime dos equipamentos.
       </p>
     </Card>

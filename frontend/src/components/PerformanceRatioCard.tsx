@@ -37,12 +37,12 @@ export function PerformanceRatioCard({
 
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500">Performance ratio (PR)</p>
-      <div className="mt-3 flex items-start justify-around gap-4">
+      <p className="text-[13px] font-medium leading-5 text-[var(--color-text-secondary)]">Performance ratio (PR)</p>
+      <div className="mt-3 flex items-start gap-6">
         <PrGauge value={pr} label="Bruto" />
         <PrGauge value={prCorrected} label="Corrigido por temperatura" />
       </div>
-      <p className="mt-3 text-xs text-gray-500">
+      <p className="mt-3 text-xs leading-5 text-[var(--color-text-secondary)]">
         O PR bruto compara produção real com o que a irradiância do dia permitiria. O corrigido
         por temperatura desconta o efeito do calor nas células, então isola melhor problemas que
         não são clima.
@@ -55,10 +55,13 @@ export function PerformanceRatioCard({
 // (ex.: sem POA térmico modelado para o PR corrigido) — nesse caso não faz
 // sentido desenhar um anel de 0%, que sugeriria "performou zero", então
 // mostramos um placeholder neutro sem valor fabricado.
+// Cabe "Corrigido por temperatura" em 2 linhas (antes: 3, na largura do anel).
+const PR_LABEL_WIDTH = 112
+
 function PrGauge({ value, label }: { value: number | null; label: string }) {
   if (value === null) {
     return (
-      <div className="inline-flex flex-col items-center" style={{ width: 72 }}>
+      <div className="inline-flex flex-col items-center" style={{ width: PR_LABEL_WIDTH }}>
         <div
           className="flex items-center justify-center rounded-full border-2 border-dashed border-[var(--color-chart-track)] text-sm font-semibold text-gray-500"
           style={{ width: 72, height: 72 }}
@@ -77,6 +80,7 @@ function PrGauge({ value, label }: { value: number | null; label: string }) {
       valueLabel={`${formatNumber(value, 0)}%`}
       tone={performanceSeverity(value)}
       size={72}
+      labelWidth={PR_LABEL_WIDTH}
     />
   )
 }

@@ -16,7 +16,7 @@ export function statusMeta(status: string): { label: string; severity: Severity 
 
 // Tokens de TEXTO (`-text`), não os de preenchimento — `--color-success`/
 // `--color-warning`/`--color-danger` continuam usados em `SEVERITY_BG`/
-// `SEVERITY_BAR`/`SEVERITY_DOT`/`SEVERITY_BORDER_L` abaixo, sem alteração.
+// `SEVERITY_BAR`/`SEVERITY_DOT` abaixo, sem alteração.
 // Ver `--color-*-text` em `index.css` para a medição de contraste (P1-03).
 export const SEVERITY_TEXT: Record<Severity, string> = {
   success: 'text-[var(--color-success-text)]',
@@ -30,13 +30,6 @@ export const SEVERITY_BG: Record<Severity, string> = {
   warning: 'bg-[var(--color-warning-light)]',
   danger: 'bg-[var(--color-danger-light)]',
   neutral: 'bg-gray-100',
-}
-
-export const SEVERITY_BORDER_L: Record<Severity, string> = {
-  success: 'border-l-[var(--color-success)]',
-  warning: 'border-l-[var(--color-warning)]',
-  danger: 'border-l-[var(--color-danger)]',
-  neutral: 'border-l-gray-300',
 }
 
 export const SEVERITY_BAR: Record<Severity, string> = {

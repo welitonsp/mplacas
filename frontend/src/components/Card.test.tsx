@@ -37,12 +37,12 @@ describe('Card', () => {
     expect(card.className).not.toMatch(/bg-red-|border-red-/)
   })
 
-  it('accent adiciona borda esquerda de severidade sem alterar o fundo', () => {
-    render(<Card accent="success">conteúdo</Card>)
-
-    const card = screen.getByText('conteúdo')
-    expect(card.className).toMatch(/border-l-4/)
-    expect(card.className).toMatch(/bg-\[var\(--color-surface\)\]/)
+  it('nunca desenha faixa lateral colorida (ADR-077, decisão 18: estado só no texto/ícone)', () => {
+    for (const tone of ['neutral', 'warning', 'danger'] as const) {
+      const { unmount } = render(<Card tone={tone}>conteúdo</Card>)
+      expect(screen.getByText('conteúdo').className).not.toMatch(/border-l-\d|border-l-\[/)
+      unmount()
+    }
   })
 
   it('className extra é preservado junto do esqueleto padrão', () => {
@@ -52,4 +52,22 @@ describe('Card', () => {
     expect(card.className).toMatch(/mt-4/)
     expect(card.className).toMatch(/rounded-\[var\(--radius-card\)\]/)
   })
+})
+
+// Guarda de código-fonte (mesmo padrão de `typography.test.tsx`): a faixa
+// lateral colorida saiu de `Card` e de `DiagnosticsCard`; nenhum componente ou
+// página deve reintroduzi-la por classe solta (ADR-077, decisão 18).
+const sideStripeSources = import.meta.glob(['./**/*.tsx', '../pages/**/*.tsx', '../lib/dashboard/visuals.ts'], {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>
+
+describe('nenhum componente usa faixa lateral colorida', () => {
+  it.each(Object.entries(sideStripeSources).filter(([path]) => !path.includes('.test.')))(
+    '%s não usa border-l-N/border-l-[cor]',
+    (_path, content) => {
+      expect(content.match(/\bborder-l-(?:\d|\[)/g) ?? []).toEqual([])
+    }
+  )
 })

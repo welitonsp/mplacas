@@ -160,7 +160,7 @@ function DeviceCard({ device }: { device: DeviceDailyStatus }) {
   // `ReportingAvailabilityCard.tsx`).
   if (device.reporting_status === 'NOT_REPORTED') {
     return (
-      <Card accent="warning">
+      <Card>
         <p className="text-xs font-medium text-gray-500">Inversor</p>
         <p className="mt-1 text-base font-semibold text-gray-950 break-all">{device.serial_number}</p>
         <div className="mt-3 flex items-center gap-2">
@@ -180,7 +180,7 @@ function DeviceCard({ device }: { device: DeviceDailyStatus }) {
   const meta = yieldMeta(device)
 
   return (
-    <Card accent={meta.severity}>
+    <Card>
       <p className="text-xs font-medium text-gray-500">Inversor</p>
       <p className="mt-1 text-base font-semibold text-gray-950 break-all">{device.serial_number}</p>
       {/* Um inversor que reportou exatamente 0 kWh mostra "0 kWh" — visualmente

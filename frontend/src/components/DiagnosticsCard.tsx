@@ -1,5 +1,5 @@
 import type { Diagnostic } from '../lib/dashboard/contracts'
-import { DIAGNOSTIC_SEVERITY_META, SEVERITY_BG, SEVERITY_BORDER_L, SEVERITY_TEXT } from '../lib/dashboard/visuals'
+import { DIAGNOSTIC_SEVERITY_META, SEVERITY_BG, SEVERITY_TEXT } from '../lib/dashboard/visuals'
 import { AiExplanationPanel } from './AiExplanationPanel'
 import { Card } from './Card'
 
@@ -44,7 +44,7 @@ export function DiagnosticsCard({ diagnostics, plantId }: { diagnostics: Diagnos
           return (
             <li
               key={diagnostic.code}
-              className={`rounded-2xl border border-gray-200 border-l-4 bg-[var(--color-surface)] ${SEVERITY_BORDER_L[meta.severity]} p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transition-none`}
+              className={`rounded-2xl border border-gray-200 bg-[var(--color-surface)] p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transition-none`}
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span

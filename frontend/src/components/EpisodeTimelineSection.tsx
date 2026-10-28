@@ -170,7 +170,7 @@ function EpisodeCard({ episode }: { episode: AnomalyEpisode }) {
   const tone = levelSeverity(episode.level)
 
   return (
-    <Card accent={tone} className={SEVERITY_BG[tone]}>
+    <Card className={SEVERITY_BG[tone]}>
       <div className="flex flex-wrap items-center gap-2">
         <SeverityIcon tone={tone} />
         <span className={`text-sm font-semibold ${SEVERITY_TEXT[tone]}`}>{LEVEL_LABEL[episode.level]}</span>
