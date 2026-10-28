@@ -597,34 +597,14 @@ export function ProductionHistoryChart({
             {formatNumber(activeDay.actual_production_kwh)} kWh
           </strong>
         </span>
-        {/* Sem cláusula quando `expected_production_kwh` é `null` (sem
-            expectativa disponível pra esse dia) — nunca "0 kWh esperados"
-            fabricado, mesmo princípio de `LatestDailyProductionCard` para o
-            mesmo caso. Rótulo diz "baseline esperado (período)", não
-            "esperado hoje": é o mesmo escalar replicado pelo backend em
-            todos os dias do recorte (baseline sazonal do período, ver
-            comentário de `expectedDailyValue` acima), não uma previsão
-            específica deste dia — daí também o sufixo "kWh/dia" em vez de
-            "kWh" (é uma taxa de referência, não o total do dia). */}
-        {activeDay.expected_production_kwh != null && (
-          <span>
-            Baseline esperado (período):{' '}
-            <strong className="text-gray-900 tabular-nums">
-              {formatNumber(activeDay.expected_production_kwh)} kWh/dia
-            </strong>
-          </span>
-        )}
+        {/* Sem "Baseline esperado (período)" nem "Média da janela exibida":
+            são escalares do recorte inteiro, já rotulados nas linhas do
+            gráfico ("Esperado N", "Média N"). Aqui fica só o que é do dia
+            selecionado (ADR-077, decisão 15). O texto acessível do slider
+            continua dizendo o baseline. */}
         {activeDay.deviation_percent != null && (
           <span className={`tabular-nums ${SEVERITY_TEXT[activeSeverity]}`}>
             Desvio: {formatNumber(activeDay.deviation_percent, 1)}%
-          </span>
-        )}
-        {averageProduction != null && (
-          <span>
-            Média da janela exibida:{' '}
-            <strong className="text-[var(--color-brand-primary)] tabular-nums">
-              {formatNumber(averageProduction, 1)} kWh/dia
-            </strong>
           </span>
         )}
         {activeAverageDeltaPercent != null && (

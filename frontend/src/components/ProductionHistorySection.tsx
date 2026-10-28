@@ -3,16 +3,14 @@ import type { AnomalyFetchState, Severity } from '../lib/dashboard/contracts'
 import {
   DEFAULT_PRODUCTION_PERIOD_DAYS,
   PRODUCTION_PERIOD_OPTIONS,
-  averageActualProduction,
   compareProductionAverageTrend,
   latestProductionDays,
   productionAlertSignal,
-  productionPerformancePercent,
   type ProductionPeriodDays,
 } from '../lib/dashboard/production-alerts'
 import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-contracts'
 import { baselineUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
-import { formatNumber, toNumber } from '../lib/format'
+import { toNumber } from '../lib/format'
 import { Card } from './Card'
 import { SectionTitle } from './SectionTitle'
 import { EmptyState } from './EmptyState'
@@ -219,8 +217,6 @@ export function ProductionHistorySection({
   }
 
   const filteredDaily = latestProductionDays(anomalyState.data.daily, selectedPeriodDays)
-  const averageProduction = averageActualProduction(filteredDaily)
-  const selectedPerformance = productionPerformancePercent(filteredDaily)
   const averageTrend = compareProductionAverageTrend(anomalyState.data.daily, selectedPeriodDays)
   const alertSignal = productionAlertSignal(anomalyState.data.daily)
   const hasIrradiation = filteredDaily.some((d) => toNumber(d.irradiation_kwh_m2) != null)
@@ -300,37 +296,12 @@ export function ProductionHistorySection({
         </div>
 
         <dl
-          className={`mt-5 grid grid-cols-2 gap-x-6 gap-y-5 border-t border-[var(--color-border)] pt-5 ${landscape ? '2xl:grid-cols-4' : 'xl:grid-cols-4'}`}
+          className="mt-5 grid grid-cols-1 gap-x-6 gap-y-5 border-t border-[var(--color-border)] pt-5 sm:grid-cols-2"
         >
-          <div className="min-w-0">
-            <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Média no período</dt>
-            <dd className="mt-1 font-display text-[22px] font-semibold tabular-nums text-[var(--color-text-primary)]">
-              {averageProduction.average == null ? '—' : formatNumber(averageProduction.average, 1)}
-              {averageProduction.average != null && (
-                <span className="ml-1 font-sans text-sm font-medium text-[var(--color-text-secondary)]">kWh/dia</span>
-              )}
-            </dd>
-            <dd className="text-xs text-[var(--color-text-secondary)]">
-              {averageProduction.days} {averageProduction.days === 1 ? 'dia com dado' : 'dias com dado'}
-            </dd>
-          </div>
-
-          {/* Sem referência esperada no recorte, "Desempenho médio" seria só um
-              "—": o aviso único da aba Energia já explica (ADR-083, etapa 3). */}
-          {selectedPerformance.assessedDays > 0 && (
-          <div className="min-w-0">
-            <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Desempenho médio</dt>
-            <dd className="mt-1 font-display text-[22px] font-semibold tabular-nums text-[var(--color-text-primary)]">
-              {selectedPerformance.percent == null ? '—' : `${formatNumber(selectedPerformance.percent, 1)}%`}
-            </dd>
-            <dd className="text-xs text-[var(--color-text-secondary)]">
-              {selectedPerformance.assessedDays > 0
-                ? `${selectedPerformance.assessedDays} dias contra esperado`
-                : 'sem baseline no recorte'}
-            </dd>
-          </div>
-          )}
-
+          {/* "Média no período" e "Desempenho médio" saíram daqui: o gráfico
+              logo acima já mostra os dois (linha "Média N" e "Desempenho: N%"
+              no cabeçalho). ADR-077, decisão 15 — cada número uma vez por
+              tela. Ficam só os sinais que o gráfico não mostra. */}
           <div className="min-w-0">
             <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Tendência do recorte</dt>
             <dd className={`mt-1 text-[17px] font-semibold ${SIGNAL_TEXT[averageTrend.tone]}`}>{averageTrend.label}</dd>

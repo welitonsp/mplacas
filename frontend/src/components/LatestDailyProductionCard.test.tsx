@@ -64,7 +64,11 @@ describe('LatestDailyProductionCard', () => {
     expect(screen.getByText('Produção de 05/08/2026 vs. esperada')).toBeInTheDocument()
     expect(screen.getByText('40 kWh')).toBeInTheDocument()
     expect(screen.getByText(/esperado 44 kWh/)).toBeInTheDocument()
-    expect(screen.getByText(/-9,1%/)).toBeInTheDocument()
+    // Desvio do BACKEND (`deviation_percent: -9`), não recalculado no
+    // navegador (40 ÷ 44 daria -9,1% e divergiria do resto da tela).
+    expect(screen.getByText('-9%')).toBeInTheDocument()
+    expect(screen.queryByText(/-9,1%/)).not.toBeInTheDocument()
+    expect(screen.getByText('Normal')).toBeInTheDocument()
   })
 
   it('mostra só a barra real, sem desvio fabricado, quando o esperado do último dia é null', () => {
