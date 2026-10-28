@@ -19,9 +19,8 @@ vi.mock('../../env', () => ({
 // por `renderModule`) depende de 4 exports de `../../lib/api`: os dois
 // recursos do módulo (`fetchExecutiveDashboard`, `fetchFinancialReturn`),
 // `fetchPlants` (`PlantContext`), `configureApi` (`AuthContext`) e
-// `updateFinancialConfiguration` (usado por `CapexRegistrationForm`, que
-// `FinancialSection` monta quando o investimento ainda não foi registrado —
-// resolve para o mesmo módulo `lib/api.ts` independentemente do caminho
+// `updateFinancialConfiguration` (mantido no mock por segurança: o cadastro do
+// investimento saiu de Dinheiro e hoje só Minha usina o chama — resolve para o mesmo módulo `lib/api.ts` independentemente do caminho
 // relativo usado em cada arquivo). Nenhum dos outros fetchers de
 // `../../lib/api` (`fetchAnomalyHistory`, `fetchMonthlyProductionHistory`,
 // `fetchPhotovoltaicSummary`) é importado por este módulo — se algum teste
@@ -95,6 +94,11 @@ async function renderFinancialPage() {
   const { DASHBOARD_FINANCIAL_PATH } = await import('../../routes')
   return renderModule(<FinancialPage />, DASHBOARD_FINANCIAL_PATH)
 }
+
+// Sinal de "conteúdo do executivo carregado". Antes era o `<h2>` "Retorno do
+// investimento", que não aparece mais sem investimento cadastrado (o cadastro
+// saiu de Dinheiro). Os detalhes da fatura sempre acompanham o executivo.
+const CONTENT_LOADED = 'Detalhes da fatura de jul/26'
 
 describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
   it('dispara exatamente 6 requisições de dados — executivo, retorno, faturas pendentes, meses a recalcular, painel do investidor e ampliação, nenhuma outra', async () => {
@@ -171,13 +175,13 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     // continua esperando `/energy/executive/latest`.
     expect(await screen.findByRole('heading', { level: 1, name: 'Dinheiro' })).toBeInTheDocument()
     expect(
-      screen.queryByRole('heading', { level: 2, name: 'Retorno do investimento' })
+      screen.queryByText(CONTENT_LOADED)
     ).not.toBeInTheDocument()
 
     resolveFetch(jsonResponse(executivePayload))
 
     expect(
-      await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+      await screen.findByText(CONTENT_LOADED)
     ).toBeInTheDocument()
     expect(screen.getByText(/R\$\s*420,71/)).toBeInTheDocument()
     // Ciclo de referência (`current_cycle.reference_month`, achado F1 da
@@ -198,41 +202,24 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('Erro ao buscar dados.')
     expect(
-      screen.queryByRole('heading', { level: 2, name: 'Retorno do investimento' })
+      screen.queryByText(CONTENT_LOADED)
     ).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }))
 
-    await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+    await screen.findByText(CONTENT_LOADED)
     expect(fetchExecutiveMock).toHaveBeenCalledTimes(2)
   })
 
-  it('cadastro de CAPEX dispara financialReturn.refetch — uma nova chamada a fetchFinancialReturn depois do submit', async () => {
+  it('sem investimento cadastrado, Dinheiro não tem formulário de investimento: o cadastro fica só em Minha usina', async () => {
     vi.resetModules()
-    const fetchFinancialReturnMock = vi.fn(async () => jsonResponse(financialReturnUnavailablePayload))
-    const updateFinancialConfigurationMock = vi.fn(async () => jsonResponse({}))
-    installApiMock({
-      fetchFinancialReturn: fetchFinancialReturnMock,
-      updateFinancialConfiguration: updateFinancialConfigurationMock,
-    })
+    installApiMock()
 
     await renderFinancialPage()
 
-    // `unavailable_reason: 'INVESTMENT_NOT_REGISTERED'` (default do mock) faz
-    // `FinancialReturnSection` renderizar `CapexRegistrationForm` — a única
-    // escrita deste módulo.
-    await screen.findByLabelText(/valor investido/i)
-    expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(1)
-
-    fireEvent.change(screen.getByLabelText(/valor investido/i), { target: { value: '48000.00' } })
-    fireEvent.click(screen.getByRole('button', { name: /cadastrar investimento/i }))
-
-    await waitFor(() =>
-      expect(updateFinancialConfigurationMock).toHaveBeenCalledWith(singlePlant.id, {
-        investment_amount_brl: '48000.00',
-      })
-    )
-    await waitFor(() => expect(fetchFinancialReturnMock).toHaveBeenCalledTimes(2))
+    await screen.findByText(CONTENT_LOADED)
+    expect(screen.queryByLabelText(/valor investido/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /cadastrar investimento/i })).not.toBeInTheDocument()
   })
 
   it('faturas sempre no fim, num único ponto de montagem: chegar o executivo não remonta a seção (estado da importação preservado)', async () => {
@@ -254,7 +241,7 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     const billsHeadingBefore = screen.getByRole('heading', { level: 2, name: 'Faturas de energia' })
 
     resolveFetch(jsonResponse(executivePayload))
-    const retorno = await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+    const retorno = await screen.findByText(CONTENT_LOADED)
 
     // Mesmo nó do DOM: a seção não foi desmontada e montada de novo.
     expect(container.querySelector('#faturas')).toBe(before)
@@ -286,12 +273,12 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
       renderModule(<FinancialPage />, `${DASHBOARD_FINANCIAL_PATH}#faturas`)
 
       await screen.findByRole('heading', { level: 2, name: 'Faturas de energia' })
-      await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+      await screen.findByText(CONTENT_LOADED)
       expect(scrollIntoView).toHaveBeenCalledTimes(1)
 
       // "Atualizar" não puxa o usuário de volta para as faturas.
       fireEvent.click(screen.getByRole('button', { name: /Atualizar/ }))
-      await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+      await screen.findByText(CONTENT_LOADED)
       expect(scrollIntoView).toHaveBeenCalledTimes(1)
     } finally {
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView

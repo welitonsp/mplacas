@@ -61,18 +61,17 @@ function buildFinancialReturn(
 }
 
 describe('FinancialSection', () => {
-  it('ordem da aba Dinheiro (ADR-083): retorno → conta com e sem a usina → detalhes da fatura, sem os blocos repetidos', () => {
+  it('ordem da aba Dinheiro: conta com e sem a usina primeiro; sem investimento cadastrado, nenhuma seção de retorno (o pedido fica no painel Usina × CDI)', () => {
     render(
       <FinancialSection
         indicators={buildIndicators({ bill_without_solar_brl: 540.11, compensated_kwh: 90 })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
 
     const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)
-    expect(headings).toEqual(['Retorno do investimento', 'Sua conta com e sem a usina'])
+    expect(headings).toEqual(['Sua conta com e sem a usina'])
     for (const removed of ['Resumo financeiro', 'Custo do ciclo', 'Créditos de energia', 'Cobertura por créditos']) {
       expect(screen.queryByText(removed)).not.toBeInTheDocument()
     }
@@ -91,7 +90,6 @@ describe('FinancialSection', () => {
         })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
 
@@ -106,7 +104,6 @@ describe('FinancialSection', () => {
         indicators={buildIndicators({ bill_without_solar_brl: 540.11, credit_coverage_rate_percent: 99.7, compensated_kwh: 337, imported_kwh: 338 })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
 
@@ -120,7 +117,6 @@ describe('FinancialSection', () => {
         indicators={buildIndicators({ bill_without_solar_brl: 540.11, credit_coverage_rate_percent: 100, compensated_kwh: 120, imported_kwh: 120 })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
     expect(screen.getByText('120 de 120 kWh.')).toBeInTheDocument()
@@ -132,7 +128,6 @@ describe('FinancialSection', () => {
         indicators={buildIndicators({ bill_without_solar_brl: 540.11, credit_coverage_rate_percent: 0, compensated_kwh: 0, imported_kwh: 0 })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
     expect(screen.queryByText('Pago com créditos')).not.toBeInTheDocument()
@@ -150,7 +145,6 @@ describe('FinancialSection', () => {
         })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
 
@@ -182,7 +176,6 @@ describe('FinancialSection', () => {
         })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
 
@@ -207,8 +200,7 @@ describe('FinancialSection', () => {
           indicators={buildIndicators({ tariff_with_taxes_brl_kwh: 0.787884, tariff_without_taxes_brl_kwh: 0.61303, ...extra })}
           referenceMonth="2026-07"
           financialReturn={buildFinancialReturn()}
-          plantId="plant-1"
-        />
+          />
       )
       expect(screen.getByText(text)).toBeInTheDocument()
       unmount()
@@ -221,7 +213,6 @@ describe('FinancialSection', () => {
         indicators={buildIndicators({ tariff_with_taxes_brl_kwh: 0.787884, tariff_without_taxes_brl_kwh: 0.61303 })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
     expect(screen.queryByText(/Bandeira tarifária do ciclo/)).not.toBeInTheDocument()
@@ -234,7 +225,6 @@ describe('FinancialSection', () => {
         indicators={buildIndicators({ bill_without_solar_brl: 540.11, savings_tariff_source: 'BILL_TARIFF' })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
     expect(screen.getByText(/usa esta tarifa da própria fatura e, por isso, pode subestimar a economia/)).toBeInTheDocument()
@@ -245,7 +235,6 @@ describe('FinancialSection', () => {
         indicators={buildIndicators({ bill_without_solar_brl: 540.11 })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
     expect(screen.queryByText(/A conta “sem a usina”/)).not.toBeInTheDocument()
@@ -257,7 +246,6 @@ describe('FinancialSection', () => {
         indicators={buildIndicators()}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
 
@@ -282,7 +270,6 @@ describe('FinancialSection', () => {
         })}
         referenceMonth="2026-07"
         financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
       />
     )
 
@@ -295,24 +282,42 @@ describe('FinancialSection', () => {
     ).toBeInTheDocument()
   })
 
-  it('renderiza "Retorno do investimento" como uma seção irmã de "Financeiro", com o formulário de cadastro de CAPEX quando o investimento ainda não foi registrado', () => {
+  it('com investimento cadastrado, "Retorno do investimento" vem DEPOIS da conta do ciclo e sem formulário de cadastro', () => {
     render(
       <FinancialSection
-        indicators={buildIndicators()}
+        indicators={buildIndicators({ bill_without_solar_brl: 540.11, compensated_kwh: 90 })}
         referenceMonth="2026-07"
-        financialReturn={buildFinancialReturn()}
-        plantId="plant-1"
+        financialReturn={buildFinancialReturn({
+          data: {
+            plant_id: 'plant-1',
+            investment_amount_brl: '11200.00',
+            investment_recorded_on: '2025-09-01',
+            commissioned_on: '2025-09-01',
+            accumulated_savings_brl: '264.00',
+            average_monthly_savings_brl: '264.00',
+            cycles_counted: 1,
+            cycles_expected: 1,
+            roi_percent: '2.36',
+            payback_projection_months: 42,
+            unavailable_reason: null,
+            payback_unavailable_reason: null,
+          },
+        })}
       />
     )
 
-    // O texto "Retorno do investimento" aparece duas vezes de propósito: o
-    // `<h2>` da seção (`SectionTitle`) e o rótulo do card dentro de
-    // `FinancialReturnSection` — por isso a busca é restrita ao heading.
-    expect(screen.getByRole('heading', { level: 2, name: 'Retorno do investimento' })).toBeInTheDocument()
-    expect(
-      screen.getByText(/cadastre o valor investido nesta usina para calcular o ROI/)
-    ).toBeInTheDocument()
-    expect(screen.getByLabelText(/valor investido/i)).toBeInTheDocument()
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)
+    expect(headings).toEqual(['Sua conta com e sem a usina', 'Retorno do investimento'])
+    expect(screen.queryByLabelText(/valor investido/i)).not.toBeInTheDocument()
+  })
+
+  it('sem investimento cadastrado, não há formulário de investimento em Dinheiro (o cadastro é só em Minha usina)', () => {
+    render(
+      <FinancialSection indicators={buildIndicators()} referenceMonth="2026-07" financialReturn={buildFinancialReturn()} />
+    )
+
+    expect(screen.queryByRole('heading', { level: 2, name: 'Retorno do investimento' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/valor investido/i)).not.toBeInTheDocument()
   })
 
   it('mostra RetryableError (não o card de retorno do investimento) quando financialReturn.error está presente, e refaz o fetch ao clicar em "Tentar novamente"', () => {
@@ -327,7 +332,6 @@ describe('FinancialSection', () => {
           error: 'Erro ao buscar retorno do investimento.',
           refetch,
         })}
-        plantId="plant-1"
       />
     )
 

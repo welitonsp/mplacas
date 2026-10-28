@@ -12,10 +12,14 @@ import { Card } from './Card'
 
 // Aba Dinheiro (ADR-083, etapa 2) — "quanto ganhei?", do horizonte longo para
 // o detalhe:
-// 1. Retorno do investimento (quanto a usina já devolveu);
-// 2. A conta do último ciclo com e sem a usina (BillComparisonCard);
-// 3. Detalhes da fatura, recolhidos: decomposição do valor e as duas tarifas
-//    da fatura, com o que cada uma significa.
+// 1. A conta do último ciclo com e sem a usina (BillComparisonCard) — a
+//    resposta de "quanto ganhei?", primeira coisa da aba (refinamento ADR-077,
+//    auditoria de 28/10/2026: antes vinha abaixo de um formulário);
+// 2. Detalhes da fatura, recolhidos: decomposição do valor e as duas tarifas
+//    da fatura, com o que cada uma significa;
+// 3. Retorno do investimento (quanto a usina já devolveu). Sem valor investido
+//    a seção não aparece: o painel "Usina × CDI", logo abaixo, já pede o dado
+//    com o atalho para Minha usina — único lugar onde ele é cadastrado.
 // Usina × CDI e Faturas ficam em `FinancialPage`, depois deste bloco.
 //
 // Saíram (ADR-083, regra "cada número uma vez por tela"): a faixa "Resumo
@@ -26,34 +30,32 @@ export function FinancialSection({
   indicators,
   referenceMonth,
   financialReturn,
-  plantId,
 }: {
   indicators: ExecutiveIndicators
   referenceMonth: string
   financialReturn: PlantResource<FinancialReturnResponse>
-  plantId: string
 }) {
+  const investmentMissing = financialReturn.data?.unavailable_reason === 'INVESTMENT_NOT_REGISTERED'
+
   return (
     <>
+      <BillComparisonCard indicators={indicators} referenceMonth={referenceMonth} />
+      <SavingsUnavailableCard indicators={indicators} referenceMonth={referenceMonth} />
+
+      <BillDetails indicators={indicators} referenceMonth={referenceMonth} />
+
+      {!investmentMissing && (
       <section className="md:col-span-6 lg:col-span-12">
         <SectionTitle as="h2">Retorno do investimento</SectionTitle>
         {financialReturn.error ? (
           <RetryableError message={financialReturn.error} onRetry={financialReturn.refetch} />
         ) : (
           <div className="max-w-5xl">
-            <FinancialReturnSection
-              financialReturn={financialReturn.data}
-              plantId={plantId}
-              onInvestmentRegistered={financialReturn.refetch}
-            />
+            <FinancialReturnSection financialReturn={financialReturn.data} />
           </div>
         )}
       </section>
-
-      <BillComparisonCard indicators={indicators} referenceMonth={referenceMonth} />
-      <SavingsUnavailableCard indicators={indicators} referenceMonth={referenceMonth} />
-
-      <BillDetails indicators={indicators} referenceMonth={referenceMonth} />
+      )}
     </>
   )
 }

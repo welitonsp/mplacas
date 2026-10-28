@@ -156,7 +156,6 @@ export function FinancialPage() {
             indicators={indicators}
             referenceMonth={data.current_cycle.reference_month}
             financialReturn={financialReturn}
-            plantId={plantId}
           />
           <Suspense
             fallback={

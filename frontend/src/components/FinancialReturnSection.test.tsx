@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import type { FinancialReturnResponse } from '../lib/dashboard/financial-return-contracts'
 import { FinancialReturnSection } from './FinancialReturnSection'
@@ -26,8 +26,6 @@ describe('FinancialReturnSection', () => {
     render(
       <FinancialReturnSection
         financialReturn={buildAvailable()}
-        plantId="plant-1"
-        onInvestmentRegistered={() => {}}
       />
     )
 
@@ -42,8 +40,6 @@ describe('FinancialReturnSection', () => {
     render(
       <FinancialReturnSection
         financialReturn={buildAvailable({ cycles_counted: 12, cycles_expected: 17 })}
-        plantId="plant-1"
-        onInvestmentRegistered={() => {}}
       />
     )
 
@@ -56,8 +52,6 @@ describe('FinancialReturnSection', () => {
     render(
       <FinancialReturnSection
         financialReturn={buildAvailable({ cycles_counted: 17, cycles_expected: 17 })}
-        plantId="plant-1"
-        onInvestmentRegistered={() => {}}
       />
     )
 
@@ -68,8 +62,6 @@ describe('FinancialReturnSection', () => {
     render(
       <FinancialReturnSection
         financialReturn={buildAvailable({ cycles_counted: 20, payback_projection_months: 20 })}
-        plantId="plant-1"
-        onInvestmentRegistered={() => {}}
       />
     )
 
@@ -81,8 +73,6 @@ describe('FinancialReturnSection', () => {
     render(
       <FinancialReturnSection
         financialReturn={buildAvailable()}
-        plantId="plant-1"
-        onInvestmentRegistered={() => {}}
       />
     )
 
@@ -93,7 +83,7 @@ describe('FinancialReturnSection', () => {
     expect(screen.getByText(/mantida a média de economia dos últimos ciclos/)).toBeInTheDocument()
   })
 
-  it('renderiza mensagem específica para INVESTMENT_NOT_REGISTERED e o formulário de cadastro', () => {
+  it('renderiza mensagem específica para INVESTMENT_NOT_REGISTERED sem formulário (o cadastro fica só em Minha usina)', () => {
     render(
       <FinancialReturnSection
         financialReturn={buildAvailable({
@@ -107,13 +97,12 @@ describe('FinancialReturnSection', () => {
           payback_projection_months: null,
           unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
         })}
-        plantId="plant-1"
-        onInvestmentRegistered={() => {}}
       />
     )
 
     expect(screen.getByText(/cadastre o valor investido/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /cadastrar investimento/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
     expect(screen.queryByText('R$ 0,00')).not.toBeInTheDocument()
     expect(screen.queryByText(/^0%$/)).not.toBeInTheDocument()
@@ -130,8 +119,6 @@ describe('FinancialReturnSection', () => {
           payback_projection_months: null,
           unavailable_reason: 'NO_CONSOLIDATED_SAVINGS',
         })}
-        plantId="plant-1"
-        onInvestmentRegistered={() => {}}
       />
     )
 
@@ -149,8 +136,6 @@ describe('FinancialReturnSection', () => {
           payback_projection_months: null,
           payback_unavailable_reason: 'INSUFFICIENT_HISTORY',
         })}
-        plantId="plant-1"
-        onInvestmentRegistered={() => {}}
       />
     )
 
@@ -163,7 +148,7 @@ describe('FinancialReturnSection', () => {
 
   it('mostra um estado de carregamento (sem barra/percentual) quando financialReturn é null', () => {
     render(
-      <FinancialReturnSection financialReturn={null} plantId="plant-1" onInvestmentRegistered={vi.fn()} />
+      <FinancialReturnSection financialReturn={null} />
     )
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })

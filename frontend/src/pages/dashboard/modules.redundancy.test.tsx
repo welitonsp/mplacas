@@ -92,7 +92,7 @@ describe('Módulos do painel — sem redundância cross-módulo (ADR-072, Etapa 
 
     // Financeiro: não busca `anomalies` nenhuma — a frase não pode aparecer.
     renderModule(<FinancialPage />, DASHBOARD_FINANCIAL_PATH)
-    await screen.findByRole('heading', { level: 2, name: 'Retorno do investimento' })
+    await screen.findByText('Detalhes da fatura de jul/26')
     expect(screen.queryAllByText(STREAK_PHRASE)).toHaveLength(0)
     cleanup()
 
