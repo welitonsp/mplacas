@@ -52,6 +52,7 @@ export function Bullet({
   targetLabel = 'esperado',
   tone = 'neutral',
   className = '',
+  deviationPercent: providedDeviationPercent,
 }: {
   value: number
   target: number | null
@@ -67,6 +68,12 @@ export function Bullet({
   targetLabel?: string
   tone?: ChartTone
   className?: string
+  // Desvio já calculado pelo backend (ex.: `deviation_percent` do dia). Quando
+  // informado — inclusive `null` —, é ele que aparece, nunca uma conta feita
+  // aqui: recalcular no navegador dava -9,1% ao lado do -9% do backend na
+  // mesma tela (data-quality-ui: nenhuma composição de grandeza no frontend).
+  // Ausente (`undefined`), mantém o cálculo local para usos genéricos.
+  deviationPercent?: number | null
 }) {
   const formatValue = valueFormatter ?? ((n: number) => String(n))
   const safeValue = Number.isFinite(value) ? value : 0
@@ -80,7 +87,13 @@ export function Bullet({
     safeTarget != null ? Math.min(Math.max((safeTarget / effectiveMax) * 100, 0), 100) : null
 
   const deviationPercent =
-    safeTarget != null && safeTarget !== 0 ? ((safeValue - safeTarget) / safeTarget) * 100 : null
+    providedDeviationPercent !== undefined
+      ? providedDeviationPercent != null && Number.isFinite(providedDeviationPercent) && safeTarget != null
+        ? providedDeviationPercent
+        : null
+      : safeTarget != null && safeTarget !== 0
+        ? ((safeValue - safeTarget) / safeTarget) * 100
+        : null
 
   const color = TONE_BG_VAR[tone]
 

@@ -55,19 +55,6 @@ function worstProductionDay(data: AnomalyDashboardResponse): AnomalyDailyPoint |
   })[0]
 }
 
-function periodPerformance(data: AnomalyDashboardResponse): number | null {
-  const totals = assessedDays(data).reduce(
-    (acc, day) => {
-      const actual = toNumber(day.actual_production_kwh)
-      const expected = toNumber(day.expected_production_kwh)
-      if (actual === null || expected === null) return acc
-      return { actual: acc.actual + actual, expected: acc.expected + expected }
-    },
-    { actual: 0, expected: 0 },
-  )
-  return totals.expected > 0 ? (totals.actual / totals.expected) * 100 : null
-}
-
 function estimatedLossKwh(day: AnomalyDailyPoint | null): number | null {
   if (day === null) return null
   const actual = toNumber(day.actual_production_kwh)
@@ -84,26 +71,29 @@ function totalLossKwh(data: AnomalyDashboardResponse): number | null {
   return losses.reduce((sum, value) => sum + value, 0)
 }
 
+// "Dias abaixo" e "Desempenho do período" saíram dos sinais: o aviso do
+// gráfico ("N dias seguidos…"), a frase deste diagnóstico e o cabeçalho
+// "Desempenho: N%" já mostram os dois (ADR-077, decisão 15). E "Pior dia"
+// virou "Maior desvio": aqui é o dia mais abaixo do ESPERADO (em %), não o de
+// menor kWh — o resumo do gráfico já usa "Pior dia" para esse outro dado.
+const WORST_DEVIATION_LABEL = 'Maior desvio'
+
 function buildSignals(data: AnomalyDashboardResponse | null): ProductionDiagnosis['signals'] {
   if (data === null) {
     return [
-      { label: 'Pior dia', value: '—', tone: 'neutral' },
+      { label: WORST_DEVIATION_LABEL, value: '—', tone: 'neutral' },
       { label: 'Perda estimada', value: '—', tone: 'neutral' },
-      { label: 'Dias abaixo', value: '—', tone: 'neutral' },
-      { label: 'Desempenho do período', value: '—', tone: 'neutral' },
     ]
   }
 
   const worstDay = worstProductionDay(data)
   const loss = estimatedLossKwh(worstDay)
   const totalLoss = totalLossKwh(data)
-  const belowDays = underExpectedDays(data).length
-  const performance = periodPerformance(data)
   const worstTone = worstDay ? levelSeverity(worstDay.level) : 'neutral'
 
   return [
     {
-      label: 'Pior dia',
+      label: WORST_DEVIATION_LABEL,
       value: worstDay ? `${formatFullDate(worstDay.date)} · ${formatDeviation(toNumber(worstDay.deviation_percent))}` : '—',
       tone: worstTone,
     },
@@ -111,16 +101,6 @@ function buildSignals(data: AnomalyDashboardResponse | null): ProductionDiagnosi
       label: 'Perda estimada',
       value: loss === null ? '—' : `${formatKwh(loss, 1)} no pior dia${totalLoss !== null ? ` · ${formatKwh(totalLoss, 1)} no período` : ''}`,
       tone: loss !== null && loss > 0 ? worstTone : 'neutral',
-    },
-    {
-      label: 'Dias abaixo',
-      value: `${belowDays} ${belowDays === 1 ? 'dia' : 'dias'}`,
-      tone: belowDays > 0 ? 'warning' : 'success',
-    },
-    {
-      label: 'Desempenho do período',
-      value: performance === null ? '—' : `${formatNumber(performance, 1)}%`,
-      tone: performance === null ? 'neutral' : performance < 70 ? 'danger' : performance < 85 ? 'warning' : 'success',
     },
   ]
 }

@@ -271,11 +271,14 @@ describe('ProductionHistoryChart — eixo Y e linha de referência esperada (bas
     expect(screen.queryByText('Esperado')).not.toBeInTheDocument()
   })
 
-  it('desenha uma linha de média da janela exibida e mostra o valor no painel de detalhe', () => {
+  it('desenha uma linha de média da janela exibida, rotulada no próprio gráfico — sem repetir o valor no painel do dia', () => {
     const { container } = render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
 
     expect(screen.getByText('Média da janela exibida')).toBeInTheDocument()
-    expect(screen.getByText('20 kWh/dia')).toBeInTheDocument()
+    expect(screen.getByText('Média 20')).toBeInTheDocument()
+    // ADR-077, decisão 15: a média do recorte aparece uma vez (rótulo da linha).
+    const liveRegion = document.querySelector('[aria-live="polite"]') as HTMLElement
+    expect(within(liveRegion).queryByText(/Média da janela exibida/)).not.toBeInTheDocument()
     expect(screen.getByText('1 dia abaixo da média')).toBeInTheDocument()
     expect(screen.getByText('Vs. média: +50%')).toBeInTheDocument()
     expect(container.querySelector('line[stroke="var(--color-brand-primary)"]')).toBeInTheDocument()
@@ -294,15 +297,17 @@ describe('ProductionHistoryChart — eixo Y e linha de referência esperada (bas
     expect(screen.getByRole('slider')).toBeInTheDocument()
   })
 
-  it('o painel de detalhe do dia rotula o valor como "Baseline esperado (período)" em kWh/dia, não como expectativa daquele dia', () => {
+  it('o painel do dia mostra só o que é do dia: o baseline do período fica no rótulo da linha "Esperado N"', () => {
     render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
 
+    // O baseline é um escalar do recorte inteiro: aparece uma vez, na linha.
+    expect(screen.getByText('Esperado 50')).toBeInTheDocument()
     const liveRegion = document.querySelector('[aria-live="polite"]') as HTMLElement
-    expect(within(liveRegion).getByText('Baseline esperado (período):')).toBeInTheDocument()
-    expect(within(liveRegion).getByText('50 kWh/dia')).toBeInTheDocument()
-    // Rótulo antigo, que sugeria uma expectativa específica do dia, não pode
-    // mais aparecer.
+    expect(within(liveRegion).queryByText(/Baseline esperado/)).not.toBeInTheDocument()
     expect(within(liveRegion).queryByText('Esperado:')).not.toBeInTheDocument()
+    // O que é do dia continua: produção real e desvio do backend.
+    expect(within(liveRegion).getByText(/Real:/)).toBeInTheDocument()
+    expect(within(liveRegion).getByText(/Desvio:/)).toBeInTheDocument()
   })
 
   it('o texto acessível (aria-valuetext) do dia ativo descreve o valor esperado como baseline do período, não como expectativa do dia', () => {

@@ -33,8 +33,11 @@ describe('ProductionDiagnosticPanel', () => {
     expect(status).toHaveTextContent('A interface evita classificar perda antes de receber os dados mínimos.')
 
     const signals = screen.getByRole('group', { name: 'Sinais do diagnóstico de produção' })
-    expect(within(signals).getByText('Pior dia')).toBeInTheDocument()
-    expect(within(signals).getByText('Desempenho do período')).toBeInTheDocument()
+    expect(within(signals).getByText('Maior desvio')).toBeInTheDocument()
+    expect(within(signals).getByText('Perda estimada')).toBeInTheDocument()
+    // Saíram por repetir o gráfico/o aviso da mesma tela (ADR-077, decisão 15).
+    expect(within(signals).queryByText('Desempenho do período')).not.toBeInTheDocument()
+    expect(within(signals).queryByText('Dias abaixo')).not.toBeInTheDocument()
   })
 
   it('usa alerta operacional quando o histórico diário não carrega', () => {
@@ -74,8 +77,9 @@ describe('ProductionDiagnosticPanel', () => {
     expect(screen.queryByText(/Pior dia: 29\/07\/2026/)).not.toBeInTheDocument()
 
     const signals = screen.getByRole('group', { name: 'Sinais do diagnóstico de produção' })
-    expect(within(signals).getByText('Pior dia')).toBeInTheDocument()
+    expect(within(signals).getByText('Maior desvio')).toBeInTheDocument()
     expect(within(signals).getByText('29/07/2026 · -13,6%')).toBeInTheDocument()
+    expect(within(signals).queryByText('Pior dia')).not.toBeInTheDocument()
     expect(within(signals).getByText('Perda estimada')).toBeInTheDocument()
     expect(within(signals).getByText('6 kWh no pior dia · 10 kWh no período')).toBeInTheDocument()
 

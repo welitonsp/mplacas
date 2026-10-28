@@ -87,7 +87,7 @@ describe('ProductionPage — módulo Produção (ADR-072, Etapa 4)', () => {
 })
 
 describe('ProductionPage — comparação com o esperado (ADR-083, etapa 3)', () => {
-  it('com referência: "Último dia contra o esperado" mostra régua, desvio e sequência, sem aviso de referência', async () => {
+  it('com referência: "Último dia contra o esperado" mostra a régua com o desvio do backend e a classificação, sem repetir a sequência, sem aviso de referência', async () => {
     vi.resetModules()
     installApiMock()
 
@@ -99,9 +99,12 @@ describe('ProductionPage — comparação com o esperado (ADR-083, etapa 3)', ()
       expect(within(section).getByText('Produção de 30/07/2026 vs. esperada')).toBeInTheDocument()
     })
     expect(within(section).getByText(/esperado 44 kWh/)).toBeInTheDocument()
-    expect(within(section).getByText('-9%')).toBeInTheDocument()
-    expect(within(section).getByText('2 dias')).toBeInTheDocument()
-    expect(within(section).getByText('abaixo do esperado')).toBeInTheDocument()
+    // Uma vez só: o -9% vem do backend (antes havia -9,1% recalculado na régua
+    // E -9% num cartão "Desvio" ao lado). A sequência de dias abaixo já está no
+    // aviso do gráfico e no diagnóstico (ADR-077, decisão 15).
+    expect(within(section).getAllByText('-9%')).toHaveLength(1)
+    expect(within(section).queryByText(/-9,1%/)).not.toBeInTheDocument()
+    expect(within(section).queryByText('Sequência de atenção')).not.toBeInTheDocument()
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
     expect(screen.queryByText('Resumo operacional')).not.toBeInTheDocument()
   })

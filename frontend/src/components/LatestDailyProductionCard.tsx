@@ -1,6 +1,6 @@
 import type { AnomalyFetchState } from '../lib/dashboard/contracts'
 import { latestNonNullProductionDate } from '../lib/dashboard/contracts'
-import { levelSeverity } from '../lib/dashboard/visuals'
+import { SEVERITY_TEXT, levelLabel, levelSeverity } from '../lib/dashboard/visuals'
 import { formatFullDate, formatNumber, toNumber } from '../lib/format'
 import { Bullet } from './charts/Bullet'
 import { Card } from './Card'
@@ -73,8 +73,14 @@ export function LatestDailyProductionCard({
           valueFormatter={(n) => `${formatNumber(n)} kWh`}
           targetLabel="esperado"
           tone={tone}
+          deviationPercent={toNumber(latestPoint.deviation_percent)}
         />
       </div>
+      {/* Classificação do dia (antes num cartão "Desvio" ao lado, que repetia o
+          mesmo percentual — ADR-077, decisão 15). Texto, não só cor. */}
+      {latestPoint.level != null && (
+        <p className={`mt-3 text-[13px] font-semibold ${SEVERITY_TEXT[tone]}`}>{levelLabel(latestPoint.level)}</p>
+      )}
     </Card>
   )
 }
