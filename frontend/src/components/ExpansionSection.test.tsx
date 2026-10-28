@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { ExpansionContent } from './ExpansionSection'
 import { parseExpansionAssessment } from '../lib/dashboard/expansion-contracts'
@@ -40,12 +40,30 @@ const base = {
   },
 }
 
-function renderContent(overrides: Record<string, unknown> = {}) {
+function renderContent(overrides: Record<string, unknown> = {}, onChanged: () => void = () => {}) {
   return render(
     <MemoryRouter>
-      <ExpansionContent assessment={parseExpansionAssessment({ ...base, ...overrides })} />
+      <ExpansionContent
+        assessment={parseExpansionAssessment({ ...base, ...overrides })}
+        plantId="plant-1"
+        onChanged={onChanged}
+      />
     </MemoryRouter>,
   )
+}
+
+const paybackReady = {
+  unavailable_reason: null,
+  proposal_brl: '1500.00',
+  includes_inverter: false,
+  recorded_on: '2026-10-28',
+  payback_months_with_ipca: 75,
+  payback_months_no_growth: 88,
+  payback_months_vs_cdi: null,
+  first_year_monthly_saving_brl: '21.50',
+  lifetime_savings_brl: '9000.00',
+  indices_as_of_month: '2026-09',
+  premises: { tariff_growth_per_year: '0.0450' },
 }
 
 describe('ExpansionContent (ADR-089)', () => {
@@ -113,6 +131,91 @@ describe('ExpansionContent (ADR-089)', () => {
   it('sem potência cadastrada, pede o dado em vez de chutar o tamanho', () => {
     renderContent({ reasons: ['INSTALLED_POWER_UNKNOWN'], extra_kwp: null, installed_kwp: null })
     expect(screen.getByRole('link', { name: 'Minha usina' })).toBeInTheDocument()
+  })
+})
+
+describe('retorno da proposta (ADR-089, etapa 2)', () => {
+  it('sem proposta: pede o valor total e salva no formato da API', async () => {
+    const api = await import('../lib/api')
+    const spy = vi.spyOn(api, 'updateExpansionProposal').mockResolvedValue(new Response('{}', { status: 200 }))
+    const onChanged = vi.fn()
+    renderContent(
+      { payback: { ...paybackReady, unavailable_reason: 'PROPOSAL_MISSING', proposal_brl: null, recorded_on: null } },
+      onChanged,
+    )
+    fireEvent.change(screen.getByLabelText('Valor total da proposta (R$)'), { target: { value: '1.500,00' } })
+    fireEvent.click(screen.getByLabelText(/inclui inversor/))
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular retorno' }))
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+    expect(spy).toHaveBeenCalledWith('plant-1', { amount_brl: '1500.00', includes_inverter: true })
+    spy.mockRestore()
+  })
+
+  it('com proposta: mostra o retorno com IPCA, sem reajuste e contra o CDI', () => {
+    renderContent({ payback: paybackReady })
+    expect(screen.getByText(/6 anos e 3 meses/)).toBeInTheDocument()
+    expect(screen.getByText(/7 anos e 4 meses/)).toBeInTheDocument()
+    expect(screen.getByText(/não supera o CDI em 25 anos/)).toBeInTheDocument()
+    expect(screen.getByText(/informada em 28\/10\/2026/)).toBeInTheDocument()
+  })
+
+  it.each([
+    ['15.000', '15000.00'],
+    ['1.500', '1500.00'],
+    ['1.500.000', '1500000.00'],
+    ['1.500,50', '1500.50'],
+    ['1500.50', '1500.50'],
+    ['R$ 2.300', '2300.00'],
+  ])('lê "%s" em reais como %s', async (typed, sent) => {
+    const api = await import('../lib/api')
+    const spy = vi.spyOn(api, 'updateExpansionProposal').mockResolvedValue(new Response('{}', { status: 200 }))
+    renderContent({ payback: { ...paybackReady, unavailable_reason: 'PROPOSAL_MISSING', proposal_brl: null } })
+    fireEvent.change(screen.getByLabelText('Valor total da proposta (R$)'), { target: { value: typed } })
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular retorno' }))
+    await waitFor(() => expect(spy).toHaveBeenCalled())
+    expect(spy.mock.calls[0][1].amount_brl).toBe(sent)
+    spy.mockRestore()
+  })
+
+  it('prazo nulo: diz que não se paga em 25 anos, sem frase quebrada', () => {
+    renderContent({ payback: { ...paybackReady, payback_months_with_ipca: null, payback_months_no_growth: null } })
+    expect(screen.getByText(/não se paga em 25 anos/)).toBeInTheDocument()
+    expect(screen.queryByText(/retorno estimado é de/)).not.toBeInTheDocument()
+  })
+
+  it('Alterar abre o formulário com o inversor salvo e permite cancelar', () => {
+    renderContent({ payback: { ...paybackReady, includes_inverter: true } })
+    fireEvent.click(screen.getByRole('button', { name: 'Alterar' }))
+    expect(screen.getByLabelText(/inclui inversor/)).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByLabelText('Valor total da proposta (R$)')).not.toBeInTheDocument()
+  })
+
+  it('microinversores e proposta sem inversor: avisa para confirmar com o instalador', () => {
+    renderContent({ inverter_status: 'MICROINVERSORES', payback: paybackReady })
+    expect(screen.getByText(/Confirme com o instalador/)).toBeInTheDocument()
+  })
+
+  it('valor inválido não chama a API', async () => {
+    const api = await import('../lib/api')
+    const spy = vi.spyOn(api, 'updateExpansionProposal')
+    renderContent({ payback: { ...paybackReady, unavailable_reason: 'PROPOSAL_MISSING', proposal_brl: null } })
+    fireEvent.change(screen.getByLabelText('Valor total da proposta (R$)'), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular retorno' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('maior que zero')
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  it('inversor necessário fora da proposta: explica e não mostra prazo', () => {
+    renderContent({ payback: { ...paybackReady, unavailable_reason: 'INVERTER_NOT_IN_PROPOSAL' } })
+    expect(screen.getByText(/não inclui inversor novo/)).toBeInTheDocument()
+    expect(screen.queryByText(/retorno estimado é de/)).not.toBeInTheDocument()
+  })
+
+  it('NOT_APPLICABLE não mostra o bloco', () => {
+    renderContent({ payback: { ...paybackReady, unavailable_reason: 'NOT_APPLICABLE' } })
+    expect(screen.queryByText('Em quanto tempo a ampliação se paga?')).not.toBeInTheDocument()
   })
 })
 

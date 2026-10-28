@@ -665,3 +665,22 @@ def test_bill_tariff_class_migration_matches_orm() -> None:
     # O banco nunca grava classe presumida: sem backfill.
     assert "UPDATE" not in source.upper().replace("UPDATED", "")
     assert 'drop_column("tariff_class")' in source
+
+
+def test_plant_expansion_proposal_migration_matches_orm() -> None:
+    from mplacas.db.models import Plant
+
+    source = (
+        ROOT / "migrations" / "versions" / "20261028_0050_add_plant_expansion_proposal.py"
+    ).read_text(encoding="utf-8")
+    columns = Plant.__table__.columns
+
+    assert 'revision = "20261028_0050"' in source
+    assert 'down_revision = "20261024_0049"' in source
+    assert columns.expansion_proposal_brl.nullable is True
+    assert columns.expansion_proposal_brl.type.scale == 2
+    assert columns.expansion_proposal_includes_inverter.nullable is True
+    assert columns.expansion_proposal_recorded_on.nullable is True
+    assert "ck_plants_expansion_proposal_positive" in source
+    assert "UPDATE " not in source.upper()  # sem backfill
+    assert 'drop_column("expansion_proposal_brl")' in source

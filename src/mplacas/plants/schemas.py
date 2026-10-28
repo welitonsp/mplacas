@@ -100,6 +100,25 @@ class PlantFinancialConfigurationUpdateRequest(BaseModel):
         return self
 
 
+class PlantExpansionProposalUpdateRequest(BaseModel):
+    """Proposta de ampliação (ADR-089, etapa 2): valor TOTAL da proposta
+    (placas, inversor, instalação, homologação). ``amount_brl=None`` apaga a
+    proposta. A data é a do registro, gravada pelo servidor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Obrigatório no corpo: só um `null` EXPLÍCITO apaga (corpo vazio é 422).
+    amount_brl: Decimal | None = Field(..., gt=0, max_digits=12, decimal_places=2)
+    includes_inverter: bool = False
+
+
+class PlantExpansionProposalView(BaseModel):
+    plant_id: uuid.UUID
+    amount_brl: Decimal | None
+    includes_inverter: bool | None
+    recorded_on: date | None
+
+
 class PlantFinancialConfigurationView(BaseModel):
     plant_id: uuid.UUID
     investment_amount_brl: Decimal | None

@@ -72,3 +72,21 @@ chunk próprio e seção nova em "Como calculamos".
 - O cliente recebe uma resposta honesta também quando **não** vale ampliar.
 - Limitações declaradas na tela: orientação igual, critério de divisão GD I/GD II da
   distribuidora não verificado, cenário de 2029+, pedido de conexão e padrão de entrada.
+
+
+## Etapa 2 — retorno da proposta (2026-10-28)
+
+Decisão do dono: **guardar** o valor da proposta na usina.
+
+- Migration 0050: `plants.expansion_proposal_brl` (> 0), `expansion_proposal_includes_inverter`
+  e `expansion_proposal_recorded_on` (data do registro, gravada pelo servidor). Rota
+  `PATCH /plants/{id}/expansion-proposal`, só ADMIN da organização (404 fora do escopo),
+  auditada como `plant.expansion_proposal_updated`; `amount_brl: null` apaga.
+- O retorno reaproveita `project()` do ADR-079 (não o payback nominal do ADR-067, que ignora o
+  Fio B): economia de partida = falta ÷ 12 × (tarifa cheia com impostos − Fio B da fatura),
+  sem bandeira; reajuste pelo IPCA de 12 meses; degradação, O&M, troca do inversor; Fio B da
+  parte nova subindo a partir do ano da fatura (`commissioned_on` = hoje: GD II). Mostra o prazo
+  com IPCA, **sem reajuste** (contraprova) e contando o CDI líquido.
+- Não calcula (`NOT_APPLICABLE`) fora de `AMPLIAR` com valor em reais; `PROPOSAL_MISSING`;
+  `INVERTER_NOT_IN_PROPOSAL` quando a ampliação pede inversor novo e a proposta não o inclui;
+  `MARKET_DATA_UNAVAILABLE` sem 12 meses seguidos de CDI/IPCA.

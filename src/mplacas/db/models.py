@@ -6,6 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -66,6 +67,10 @@ class Plant(Base):
             "investment_amount_brl IS NULL OR investment_amount_brl > 0",
             name="ck_plants_investment_amount_positive",
         ),
+        CheckConstraint(
+            "expansion_proposal_brl IS NULL OR expansion_proposal_brl > 0",
+            name="ck_plants_expansion_proposal_positive",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -95,6 +100,15 @@ class Plant(Base):
         Numeric(12, 2), nullable=True
     )
     investment_recorded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Proposta de ampliação (ADR-089, etapa 2): valor total informado pelo dono
+    # e se ela inclui inversor novo. Quem informou fica na auditoria.
+    expansion_proposal_brl: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
+    expansion_proposal_includes_inverter: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True
+    )
+    expansion_proposal_recorded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -8,6 +8,8 @@ commit. Queries and mutation rules live in ``plants.service``.
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, HTTPException, Request, status
 
 from mplacas.audit.repository import AuditEventRepository
@@ -16,6 +18,8 @@ from mplacas.db.models import Plant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_principal_context
 from mplacas.plants.schemas import (
+    PlantExpansionProposalUpdateRequest,
+    PlantExpansionProposalView,
     PlantFinancialConfigurationUpdateRequest,
     PlantFinancialConfigurationView,
     PlantLocationUpdateRequest,
@@ -219,6 +223,42 @@ async def update_plant_financial_configuration(
             details=payload.model_dump(mode="json", exclude_unset=True),
         )
         response = PlantService.financial_configuration(plant)
+        await session.commit()
+        return response
+
+
+@router.patch(
+    "/{plant_id}/expansion-proposal",
+    response_model=PlantExpansionProposalView,
+)
+async def update_plant_expansion_proposal(
+    request: Request,
+    scoped: AdminPlantPath,
+    payload: PlantExpansionProposalUpdateRequest,
+) -> PlantExpansionProposalView:
+    """Valor da proposta de ampliação (ADR-089, etapa 2), para o retorno.
+
+    Só ADMIN da organização; usina fora do escopo é 404. Quem informou e
+    quando fica na auditoria (``plant.expansion_proposal_updated``).
+    """
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        service = PlantService(session)
+        try:
+            plant = await service.get(scoped.plant_id)
+        except PlantNotFoundError:
+            raise _plant_not_found() from None
+
+        await service.update_expansion_proposal(plant, payload, today=date.today())
+        await AuditEventRepository(session).record(
+            request,
+            action="plant.expansion_proposal_updated",
+            resource_type="plant",
+            resource_id=str(plant.id),
+            outcome="SUCCEEDED",
+            details=payload.model_dump(mode="json"),
+        )
+        response = PlantService.expansion_proposal(plant)
         await session.commit()
         return response
 

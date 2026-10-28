@@ -30,10 +30,18 @@ Regras (validadas com os especialistas de domínio e financeiro):
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import date
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 
-from mplacas.intelligence.investor_metrics import months_between, wire_b_share
+from mplacas.intelligence.investor_metrics import (
+    InvestorPremises,
+    Projection,
+    add_months,
+    months_between,
+    project,
+    wire_b_share,
+)
 
 STATUS_EXPAND = "AMPLIAR"
 STATUS_NOT_WORTH = "NAO_VALE"
@@ -380,4 +388,130 @@ def assess_expansion(
         dc_ac_ratio_after=ratio,
         money=money,
         **base,  # type: ignore[arg-type]
+    )
+
+
+# ------------------------------------------------------------ retorno (etapa 2)
+
+PAYBACK_PROPOSAL_MISSING = "PROPOSAL_MISSING"
+PAYBACK_NOT_APPLICABLE = "NOT_APPLICABLE"
+PAYBACK_INVERTER_NOT_IN_PROPOSAL = "INVERTER_NOT_IN_PROPOSAL"
+PAYBACK_MARKET_DATA_UNAVAILABLE = "MARKET_DATA_UNAVAILABLE"
+
+
+@dataclass(frozen=True, slots=True)
+class ExpansionPayback:
+    unavailable_reason: str | None
+    proposal_brl: Decimal | None
+    includes_inverter: bool | None
+    recorded_on: date | None
+    # Retorno com a tarifa reajustada pelo IPCA de 12 meses (ADR-079) e o
+    # mesmo sem reajuste (contraprova conservadora), em meses inteiros.
+    payback_months_with_ipca: int | None = None
+    payback_months_no_growth: int | None = None
+    # Retorno contando o CDI: a partir de quando a ampliação vale mais do que
+    # deixar o mesmo dinheiro num CDB a 100% do CDI líquido de IR.
+    payback_months_vs_cdi: int | None = None
+    first_year_monthly_saving_brl: Decimal | None = None
+    lifetime_savings_brl: Decimal | None = None
+    premises: InvestorPremises | None = None
+    indices_as_of_month: str | None = None
+
+
+def expansion_payback(
+    *,
+    assessment: ExpansionAssessment,
+    money_inputs: MoneyInputs | None,
+    proposal_brl: Decimal | None,
+    includes_inverter: bool | None,
+    recorded_on: date | None,
+    premises: InvestorPremises | None,
+    indices_as_of_month: str | None,
+    today: date,
+) -> ExpansionPayback:
+    """Em quanto tempo a proposta de ampliação se paga (ADR-089, etapa 2).
+
+    Reaproveita o fluxo mensal do painel do investidor (``project``, ADR-079):
+    reajuste da tarifa pelo IPCA, degradação, O&M, troca do inversor e o Fio B
+    da parte nova subindo pelo art. 27 a partir do ano da fatura. Economia de
+    partida = falta do ano ÷ 12 × (tarifa cheia com impostos − Fio B da
+    fatura), sem bandeira — nunca mais que a falta.
+    """
+
+    def unavailable(reason: str) -> ExpansionPayback:
+        return ExpansionPayback(
+            unavailable_reason=reason,
+            proposal_brl=proposal_brl,
+            includes_inverter=includes_inverter,
+            recorded_on=recorded_on,
+        )
+
+    money = assessment.money
+    if (
+        assessment.status != STATUS_EXPAND
+        or assessment.extra_kwp is None
+        or assessment.deficit_kwh_year is None
+        or money is None
+        or money.unavailable_reason is not None
+        or money_inputs is None
+        or money_inputs.full_tariff_brl_kwh is None
+        or money_inputs.wire_b_tariff_brl_kwh is None
+    ):
+        return unavailable(PAYBACK_NOT_APPLICABLE)
+    if proposal_brl is None or proposal_brl <= 0:
+        return unavailable(PAYBACK_PROPOSAL_MISSING)
+    if assessment.inverter_status == INVERTER_NEW_NEEDED and not includes_inverter:
+        return unavailable(PAYBACK_INVERTER_NOT_IN_PROPOSAL)
+    if premises is None:
+        return unavailable(PAYBACK_MARKET_DATA_UNAVAILABLE)
+
+    monthly_kwh = assessment.deficit_kwh_year / 12
+    # Partida no ano corrente, com a parcela do Fio B DESTE ano — o mesmo valor
+    # da etapa 1 (``values_by_year[0]``), não o do ano da fatura.
+    first = money.values_by_year[0]
+    baseline = monthly_kwh * first.value_brl_kwh
+    if baseline <= 0:
+        return unavailable(PAYBACK_NOT_APPLICABLE)
+    start_month = today.strftime("%Y-%m")
+    bill_year = int(money_inputs.reference_month[:4])
+    full_wire_b = money_inputs.wire_b_tariff_brl_kwh / wire_b_share(bill_year)
+    # Proposta só de placas (o inversor atual absorve): não há inversor novo
+    # para trocar no ano 12 — a troca do inversor atual já está no
+    # investimento original.
+    plan = (
+        premises
+        if includes_inverter
+        else replace(premises, inverter_replacement_fraction=Decimal("0"))
+    )
+
+    def run(growth: Decimal) -> Projection | None:
+        return project(
+            investment_brl=proposal_brl,
+            start_month=start_month,
+            # A parte ampliada pedida agora é GD II (art. 26, §2º, III).
+            commissioned_on=today,
+            savings_by_month={add_months(start_month, 1): baseline},
+            compensated_kwh_per_month=monthly_kwh,
+            # Referência no ano da partida: o Fio B sobe a partir daí.
+            wire_b_tariff_brl_kwh=full_wire_b * first.wire_b_share,
+            wire_b_reference_year=first.year,
+            premises=replace(plan, tariff_growth_per_year=growth),
+        )
+
+    with_ipca = run(premises.tariff_growth_per_year)
+    flat = run(Decimal("0"))
+    if with_ipca is None or flat is None:
+        return unavailable(PAYBACK_NOT_APPLICABLE)
+    return ExpansionPayback(
+        unavailable_reason=None,
+        proposal_brl=proposal_brl,
+        includes_inverter=includes_inverter,
+        recorded_on=recorded_on,
+        payback_months_with_ipca=with_ipca.payback_simple_months,
+        payback_months_no_growth=flat.payback_simple_months,
+        payback_months_vs_cdi=with_ipca.payback_discounted_months,
+        first_year_monthly_saving_brl=baseline.quantize(_CENTS, rounding=ROUND_HALF_UP),
+        lifetime_savings_brl=with_ipca.lifetime_savings_brl,
+        premises=premises,
+        indices_as_of_month=indices_as_of_month,
     )

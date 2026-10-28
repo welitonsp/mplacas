@@ -20,12 +20,23 @@ from mplacas.billing.read_repository import ConfirmedBillReadRepository
 from mplacas.core.authorization import UNRESTRICTED_PLANT_SCOPE, PlantScope
 from mplacas.db.models import Device, Plant
 from mplacas.intelligence.expansion import (
+    STATUS_EXPAND,
     ExpansionAssessment,
+    ExpansionPayback,
+    expansion_payback,
     ExpansionCycle,
     MoneyInputs,
     assess_expansion,
 )
+from mplacas.intelligence.investor_metrics import (
+    InvestorPremises,
+    add_months,
+    annualize,
+    months_between,
+)
 from mplacas.intelligence.investor_service import calculation_version_tuple
+from mplacas.market.bcb import BcbSgsClient
+from mplacas.market.service import last_closed_month, monthly_rates
 from mplacas.reports.history_service import (
     MAX_HISTORY_CYCLES,
     load_monthly_production_history,
@@ -71,8 +82,13 @@ async def get_expansion_assessment(
     plant_id: uuid.UUID,
     today: date,
     plant_scope: PlantScope = UNRESTRICTED_PLANT_SCOPE,
-) -> tuple[ExpansionAssessment, tuple[str, ...]]:
-    """Avaliação e avisos de contexto (cadastro da usina)."""
+    bcb_client: BcbSgsClient | None = None,
+) -> tuple[ExpansionAssessment, tuple[str, ...], ExpansionPayback]:
+    """Avaliação, avisos de contexto (cadastro da usina) e retorno da proposta.
+
+    A única escrita possível é o reabastecimento das taxas públicas de
+    CDI/IPCA (``market_index_monthly``), como no painel do investidor.
+    """
     if not plant_scope.allows(plant_id):
         raise ExpansionPlantNotFoundError("plant not found")
     plant = await session.get(Plant, plant_id)
@@ -209,4 +225,49 @@ async def get_expansion_assessment(
         money_inputs=money_inputs,
         request_year=today.year,
     )
-    return assessment, tuple(context)
+    premises, as_of = (None, None)
+    if (
+        assessment.status == STATUS_EXPAND
+        and plant.expansion_proposal_brl is not None
+        and assessment.money is not None
+        and assessment.money.unavailable_reason is None
+    ):
+        premises, as_of = await _market_premises(session, today=today, client=bcb_client)
+    payback = expansion_payback(
+        assessment=assessment,
+        money_inputs=money_inputs,
+        proposal_brl=plant.expansion_proposal_brl,
+        includes_inverter=plant.expansion_proposal_includes_inverter,
+        recorded_on=plant.expansion_proposal_recorded_on,
+        premises=premises,
+        indices_as_of_month=as_of,
+        today=today,
+    )
+    return assessment, tuple(context), payback
+
+
+async def _market_premises(
+    session: AsyncSession, *, today: date, client: BcbSgsClient | None
+) -> tuple[InvestorPremises | None, str | None]:
+    """CDI e IPCA dos últimos 12 meses fechados — as mesmas premissas do
+    painel do investidor (ADR-079). Sem 12 meses seguidos, sem retorno."""
+    closed = last_closed_month(today)
+    start = add_months(closed, -14)
+    cdi = await monthly_rates(
+        session, "CDI", start_month=start, end_month=closed, client=client, today=today
+    )
+    ipca = await monthly_rates(
+        session, "IPCA", start_month=start, end_month=closed, client=client, today=today
+    )
+    cdi_months, ipca_months = sorted(cdi), sorted(ipca)
+    for months in (cdi_months, ipca_months):
+        if len(months) < 12 or months_between(months[-12], months[-1]) != 11:
+            return None, None
+    cdi_12m = annualize([cdi[m] for m in cdi_months[-12:]]).quantize(Decimal("0.0001"))
+    ipca_12m = annualize([ipca[m] for m in ipca_months[-12:]]).quantize(Decimal("0.0001"))
+    return (
+        InvestorPremises(
+            cdi_per_year=cdi_12m, ipca_per_year=ipca_12m, tariff_growth_per_year=ipca_12m
+        ),
+        cdi_months[-1],
+    )

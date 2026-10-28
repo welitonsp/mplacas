@@ -1,10 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { fetchExpansionAssessment } from '../lib/api'
+import { fetchExpansionAssessment, updateExpansionProposal } from '../lib/api'
 import {
   parseExpansionAssessment,
   type ExpansionAssessment,
   type ExpansionMoney,
+  type ExpansionPayback,
 } from '../lib/dashboard/expansion-contracts'
 import { formatCurrency, formatCycleLabel, formatNumber, toNumber } from '../lib/format'
 import { usePlantResource } from '../hooks/usePlantResource'
@@ -120,7 +121,210 @@ function MoneyBlock({ money }: { money: ExpansionMoney | null }) {
   )
 }
 
-export function ExpansionContent({ assessment }: { assessment: ExpansionAssessment }) {
+function duration(months: number | null): string {
+  if (months == null) return 'não se paga em 25 anos'
+  const years = Math.floor(months / 12)
+  const rest = months % 12
+  const parts = []
+  if (years > 0) parts.push(`${years} ${years === 1 ? 'ano' : 'anos'}`)
+  if (rest > 0) parts.push(`${rest} ${rest === 1 ? 'mês' : 'meses'}`)
+  return parts.join(' e ') || 'menos de 1 mês'
+}
+
+const PAYBACK_UNAVAILABLE: Record<string, string> = {
+  INVERTER_NOT_IN_PROPOSAL:
+    'A ampliação passa do limite do inversor atual e a proposta informada não inclui inversor novo. Informe uma proposta com inversor para calcular o retorno.',
+  MARKET_DATA_UNAVAILABLE:
+    'Não foi possível obter o IPCA e o CDI do Banco Central agora. O retorno volta assim que os índices forem atualizados.',
+}
+
+function PaybackBlock({
+  payback,
+  plantId,
+  onChanged,
+  inverterStatus,
+}: {
+  payback: ExpansionPayback
+  plantId: string
+  onChanged: () => void
+  inverterStatus: string
+}) {
+  const [editing, setEditing] = useState(payback.proposalBrl === null)
+  const [amount, setAmount] = useState('')
+  const [inverter, setInverter] = useState(payback.includesInverter ?? false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function save(value: string | null) {
+    setError(null)
+    setBusy(true)
+    try {
+      const response = await updateExpansionProposal(plantId, { amount_brl: value, includes_inverter: inverter })
+      if (!response.ok) {
+        setError(
+          response.status === 403
+            ? 'Seu perfil não tem permissão para informar a proposta.'
+            : 'Não foi possível salvar a proposta. Tente novamente.',
+        )
+        return
+      }
+      setAmount('')
+      setEditing(false)
+      onChanged()
+    } catch {
+      setError('Não foi possível salvar a proposta. Tente novamente.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    // Dinheiro em pt-BR: "1.500,00", "1.500" e "15.000" têm ponto de milhar;
+    // "1500.50" (sem vírgula e sem grupos de 3) é decimal.
+    const raw = amount.trim().replace(/^R\$\s*/i, '')
+    const normalized = raw.includes(',')
+      ? raw.replace(/\./g, '').replace(',', '.')
+      : /^\d{1,3}(\.\d{3})+$/.test(raw)
+        ? raw.replace(/\./g, '')
+        : raw
+    const numeric = Number(normalized)
+    if (!normalized || !Number.isFinite(numeric) || numeric <= 0) {
+      setError('Informe o valor total da proposta, maior que zero.')
+      return
+    }
+    void save(numeric.toFixed(2))
+  }
+
+  const reason = payback.unavailableReason
+  return (
+    <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
+      <p className="text-[13px] font-semibold text-[var(--color-text-primary)]">Em quanto tempo a ampliação se paga?</p>
+      {payback.proposalBrl !== null && !editing && (
+        <>
+          {reason === null ? (
+            <p className="text-[15px] leading-6 text-[var(--color-text-primary)]">
+              {payback.paybackMonthsWithIpca == null ? (
+                <>
+                  Com a proposta de {formatCurrency(payback.proposalBrl)}, a ampliação <strong>não se paga em 25 anos</strong>{' '}
+                  nas premissas atuais.
+                </>
+              ) : (
+                <>
+                  Com a proposta de {formatCurrency(payback.proposalBrl)}, o retorno estimado é de{' '}
+                  <strong>{duration(payback.paybackMonthsWithIpca)}</strong>, com a tarifa reajustada pelo IPCA (
+                  {formatNumber((toNumber(payback.tariffGrowthPerYear) ?? 0) * 100, 1)}% ao ano). Sem nenhum reajuste:{' '}
+                  {duration(payback.paybackMonthsNoGrowth)}.
+                </>
+              )}{' '}
+              Comparando com deixar o dinheiro no CDI ({formatNumber((toNumber(payback.cdiPerYear) ?? 0) * 100, 1)}% ao
+              ano, líquido de IR no resgate):{' '}
+              {payback.paybackMonthsVsCdi == null ? 'não supera o CDI em 25 anos' : duration(payback.paybackMonthsVsCdi)}.
+            </p>
+          ) : (
+            <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
+              {PAYBACK_UNAVAILABLE[reason] ?? 'Retorno indisponível.'}
+            </p>
+          )}
+          <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
+            Proposta de {formatCurrency(payback.proposalBrl)}
+            {payback.includesInverter ? ', com inversor' : ', sem inversor'}
+            {payback.recordedOn ? `, informada em ${payback.recordedOn.split('-').reverse().join('/')}` : ''}. Conta a
+            partir de hoje, sem o tempo de instalação e homologação; inclui 0,5% ao ano de manutenção e perda de 0,5% ao
+            ano das placas{payback.includesInverter ? ', mais a troca do inversor novo no ano 12 (15% da proposta)' : ''};
+            sem bandeira tarifária.
+            {payback.indicesAsOfMonth ? ` Índices do Banco Central até ${formatCycleLabel(payback.indicesAsOfMonth)}.` : ''}{' '}
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="font-semibold text-[var(--color-brand-primary)] underline"
+            >
+              Alterar
+            </button>{' '}
+            <button
+              type="button"
+              onClick={() => void save(null)}
+              disabled={busy}
+              className="font-semibold text-[var(--color-brand-primary)] underline disabled:opacity-50"
+            >
+              Remover
+            </button>
+          </p>
+        </>
+      )}
+      {editing && (
+        <form onSubmit={submit} noValidate aria-label="Informar proposta de ampliação" className="space-y-2">
+          <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
+            Informe o valor <strong>total</strong> da proposta do instalador: placas, inversor, instalação, projeto e
+            homologação na distribuidora.
+          </p>
+          <label htmlFor="expansion-proposal" className="block text-xs font-medium text-[var(--color-text-secondary)]">
+            Valor total da proposta (R$)
+          </label>
+          <input
+            id="expansion-proposal"
+            aria-invalid={error !== null}
+            aria-describedby={error ? 'expansion-proposal-error' : undefined}
+            type="text"
+            inputMode="decimal"
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            disabled={busy}
+            placeholder="1500,00"
+            className="w-full max-w-xs rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] disabled:opacity-50"
+          />
+          <label className="flex items-center gap-2 text-[13px] text-[var(--color-text-primary)]">
+            <input type="checkbox" checked={inverter} onChange={(event) => setInverter(event.target.checked)} />
+            A proposta inclui inversor ou microinversor novo
+          </label>
+          <button
+            type="submit"
+            disabled={busy}
+            className="inline-flex min-h-[44px] items-center rounded-lg bg-[var(--color-brand-primary)] px-4 text-sm font-semibold text-[var(--color-on-brand)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 disabled:opacity-50"
+          >
+            {busy ? 'Salvando...' : 'Calcular retorno'}
+          </button>
+          {payback.proposalBrl !== null && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false)
+                setError(null)
+                setInverter(payback.includesInverter ?? false)
+              }}
+              className="ml-3 text-sm font-semibold text-[var(--color-brand-primary)] underline"
+            >
+              Cancelar
+            </button>
+          )}
+        </form>
+      )}
+      {payback.proposalBrl !== null &&
+        !payback.includesInverter &&
+        (inverterStatus === 'MICROINVERSORES' || inverterStatus === 'DESCONHECIDO') && (
+          <p className="text-[13px] leading-5 text-[var(--color-warning-text)]">
+            Confirme com o instalador se as placas novas precisam de microinversor ou inversor novo. Se precisarem, inclua
+            o valor na proposta: sem ele, o prazo acima sai curto demais.
+          </p>
+        )}
+      {error && (
+        <p id="expansion-proposal-error" role="alert" className="text-[13px] text-[var(--color-danger-text)]">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+export function ExpansionContent({
+  assessment,
+  plantId = '',
+  onChanged = () => {},
+}: {
+  assessment: ExpansionAssessment
+  plantId?: string
+  onChanged?: () => void
+}) {
   const status = assessment.status
   if (status === 'INDISPONIVEL') {
     return (
@@ -225,6 +429,14 @@ export function ExpansionContent({ assessment }: { assessment: ExpansionAssessme
               </p>
             )}
             <MoneyBlock money={assessment.money} />
+            {assessment.payback && assessment.payback.unavailableReason !== 'NOT_APPLICABLE' && (
+              <PaybackBlock
+                payback={assessment.payback}
+                plantId={plantId}
+                onChanged={onChanged}
+                inverterStatus={assessment.inverterStatus}
+              />
+            )}
           </>
         )}
         {warnings.length > 0 && (
@@ -298,7 +510,7 @@ export function ExpansionSection({ plantId, refreshKey = 0 }: { plantId: string;
       ) : resource.data === null ? (
         <div className="h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)]" aria-hidden="true" />
       ) : (
-        <ExpansionContent assessment={resource.data} />
+        <ExpansionContent assessment={resource.data} plantId={plantId} onChanged={resource.refetch} />
       )}
     </section>
   )
