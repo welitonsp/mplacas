@@ -49,7 +49,10 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      MPLACAS_BACKUP_SOURCE_URL: ${{ secrets.MPLACAS_BACKUP_SOURCE_URL }}
+      # Sem um segredo próprio no ambiente, usa o mesmo endereço do migrate
+      # (papel dono do schema): o dump precisa ler todas as tabelas, inclusive
+      # as protegidas por RLS, que o papel da aplicação não enxerga inteiras.
+      MPLACAS_BACKUP_SOURCE_URL: ${{ secrets.MPLACAS_BACKUP_SOURCE_URL || secrets.MPLACAS_MIGRATION_DATABASE_URL }}
       MPLACAS_RESTORE_DATABASE_URL: postgresql://postgres@localhost:5432/mplacas_restore_check
       MPLACAS_RESTORE_CONFIRM_HOST: localhost
       MPLACAS_BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.MPLACAS_BACKUP_ENCRYPTION_PASSPHRASE }}

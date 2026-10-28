@@ -58,7 +58,7 @@ export BACKUP_DIR="./private-backups"
 
 Na automação, configure o environment `production-restore-drill` com:
 
-- secrets `MPLACAS_BACKUP_SOURCE_URL` e `MPLACAS_BACKUP_ENCRYPTION_PASSPHRASE`;
+- secret `MPLACAS_BACKUP_ENCRYPTION_PASSPHRASE` no ambiente; `MPLACAS_BACKUP_SOURCE_URL` é opcional — sem ele, o drill usa o `MPLACAS_MIGRATION_DATABASE_URL` do repositório (mesmo papel do migrate, que lê todas as tabelas apesar do RLS);
 - variável `MPLACAS_RESTORE_DRILL_OWNER`;
 - acesso administrativo restrito para alterações manuais de secrets.
 
