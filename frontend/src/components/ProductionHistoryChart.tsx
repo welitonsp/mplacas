@@ -22,6 +22,12 @@ import { Card } from './Card'
 const UNASSESSED_ONLY_BAR = 'bg-[var(--color-energy-solar)]'
 const UNASSESSED_MIXED_BAR = 'bg-[var(--color-chart-unassessed)]'
 
+// Recorte curto (até 7 dias): cada dia ocupa no máximo 96 px (barra de até
+// 44 px + respiro, ADR-077 decisão 12) e o grupo fica centralizado. Com
+// `flex-1` puro, 2 dias numa janela de 7 viravam duas colunas soltas nas
+// pontas do cartão.
+const SHORT_RANGE_SLOT = 'max-w-[96px]'
+
 export function ProductionHistoryChart({
   daily,
   currentStreakDays,
@@ -476,7 +482,7 @@ export function ProductionHistoryChart({
                   por seta esquerda/direita (ver `handleChartKeyDown`), não por
                   Tab atravessando até 90 barras. */}
               <div
-                className={`relative z-10 flex h-full items-end ${daily.length <= 31 ? 'gap-[2px] sm:gap-[3px]' : 'gap-[2px]'} rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]`}
+                className={`relative z-10 flex h-full items-end ${showInlineDateLabels ? 'justify-center' : ''} ${daily.length <= 31 ? 'gap-[2px] sm:gap-[3px]' : 'gap-[2px]'} rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]`}
                 tabIndex={0}
                 role="slider"
                 aria-label="Histórico de produção diária. Use as setas esquerda e direita para navegar entre os dias."
@@ -495,25 +501,17 @@ export function ProductionHistoryChart({
                   return (
                     <div
                       key={d.date}
-                      className="relative flex h-full flex-1 items-end justify-center rounded-sm"
+                      className={`relative flex h-full flex-1 items-end justify-center rounded-sm ${showInlineDateLabels ? SHORT_RANGE_SLOT : ''}`}
                       style={{ minWidth: '5px' }}
                       onMouseEnter={() => setSelectedIndex(i)}
                       onClick={() => setSelectedIndex(i)}
                     >
-                      {showInlineDateLabels && (
-                        <span
-                          data-testid="production-bar-date-label"
-                          aria-hidden="true"
-                          className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-xs font-semibold leading-none text-gray-700 shadow-sm tabular-nums"
-                          style={{ bottom: `calc(${Math.max(barHeightPercent, 2)}% + 6px)` }}
-                        >
-                          {formatShortDate(d.date)}
-                        </span>
-                      )}
-                      {/* Cor cheia (sem a opacidade de 85% que deixava tudo
-                          "lavado") + um brilho sutil no topo que dá volume à
-                          barra sem mudar a cor de severidade. O dia ativo
-                          ganha contorno; os outros clareiam no hover. */}
+                      {/* Cor cheia, sem brilho/gradiente (ADR-077, decisão 6 —
+                          o antigo `linear-gradient` branco no topo era
+                          decoração). O dia ativo é marcado por um traço sob a
+                          base (abaixo), não por anel: o anel de 2 px na cor do
+                          texto se confundia com o foco de teclado, que fica no
+                          contêiner do gráfico. Os outros clareiam no hover. */}
                       <span
                         data-testid="production-history-bar"
                         className={`w-full max-w-[44px] rounded-t-[6px] transition-[filter,box-shadow] duration-150 motion-reduce:transition-none ${
@@ -522,16 +520,16 @@ export function ProductionHistoryChart({
                               ? UNASSESSED_ONLY_BAR
                               : UNASSESSED_MIXED_BAR
                             : SEVERITY_BAR[severity]
-                        } ${
-                          isActive
-                            ? 'ring-2 ring-[var(--color-text-primary)] ring-offset-2 ring-offset-[var(--color-surface)]'
-                            : 'hover:brightness-110'
-                        }`}
-                        style={{
-                          height: `${Math.max(barHeightPercent, 2)}%`,
-                          backgroundImage: 'linear-gradient(180deg, rgb(255 255 255 / 0.22) 0%, rgb(255 255 255 / 0) 55%)',
-                        }}
+                        } ${isActive ? '' : 'hover:brightness-110'}`}
+                        style={{ height: `${Math.max(barHeightPercent, 2)}%` }}
                       />
+                      {isActive && (
+                        <span
+                          data-testid="production-history-active-marker"
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -bottom-[5px] left-1/2 h-[3px] w-full max-w-[44px] -translate-x-1/2 rounded-full bg-[var(--color-text-primary)]"
+                        />
+                      )}
                     </div>
                   )
                 })}
@@ -544,11 +542,31 @@ export function ProductionHistoryChart({
                 mesmo em telas menores que a largura mínima do gráfico. */}
             {/* Primeiro/meio/último dia SEM repetir: com 2 dias, "meio" e
                 "último" eram a mesma data e o eixo mostrava 30/07 duas vezes. */}
-            <div className="mt-1 flex justify-between text-xs text-[var(--color-text-secondary)] tabular-nums">
-              {[...new Set([0, Math.floor(daily.length / 2), daily.length - 1])].map((index) => (
-                <span key={daily[index].date}>{formatShortDate(daily[index].date)}</span>
-              ))}
-            </div>
+            {showInlineDateLabels ? (
+              /* Até 7 dias: uma data sob CADA barra, nas mesmas colunas (mesmo
+                 gap e largura máxima). Antes a data ia num balão no topo da
+                 barra e colidia com os rótulos "Média"/"Esperado" das linhas
+                 de referência. */
+              <div
+                className={`mt-1.5 flex justify-center ${daily.length <= 31 ? 'gap-[2px] sm:gap-[3px]' : 'gap-[2px]'} text-xs text-[var(--color-text-secondary)] tabular-nums`}
+              >
+                {daily.map((d, i) => (
+                  <span
+                    key={d.date}
+                    data-testid="production-bar-date-label"
+                    className={`flex-1 text-center ${SHORT_RANGE_SLOT} ${i === activeIndex ? 'font-semibold text-[var(--color-text-primary)]' : ''}`}
+                  >
+                    {formatShortDate(d.date)}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-1 flex justify-between text-xs text-[var(--color-text-secondary)] tabular-nums">
+                {[...new Set([0, Math.floor(daily.length / 2), daily.length - 1])].map((index) => (
+                  <span key={daily[index].date}>{formatShortDate(daily[index].date)}</span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         {/* Eixo da irradiância à direita, fora da área rolável (mesma lógica
