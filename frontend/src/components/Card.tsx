@@ -1,6 +1,4 @@
 import type { ReactNode } from 'react'
-import type { Severity } from '../lib/dashboard/contracts'
-import { SEVERITY_BORDER_L } from '../lib/dashboard/visuals'
 
 // Esqueleto único de card, reaproveitado por todos os cards de métrica/estado
 // do dashboard (Etapa 8 — antes disso, `MetricCard`/`CurrencyCard`/`HeroCard`/
@@ -8,12 +6,15 @@ import { SEVERITY_BORDER_L } from '../lib/dashboard/visuals'
 // fundo/sombra). `CurrencyCard` deliberadamente usa `tone="neutral"` (mesmo
 // visual do `MetricCard` padrão) — um valor financeiro não deve parecer
 // banner promocional, é só um dado com formatação diferente.
+//
+// Sem `accent` (faixa lateral colorida de 4 px) desde o refinamento da
+// ADR-077: a decisão 18 manda a cor de estado só no texto/ícone do valor, e
+// a faixa ainda deformava o canto arredondado do cartão.
 export type CardTone = 'neutral' | 'warning' | 'danger'
 
 export function Card({
   dashed = false,
   tone = 'neutral',
-  accent,
   padding = 'p-4 sm:p-5',
   className = '',
   // `hover:shadow-md` só faz sentido quando o card responde a interação
@@ -26,7 +27,6 @@ export function Card({
 }: {
   dashed?: boolean
   tone?: CardTone
-  accent?: Severity
   // Utilitário de padding sobrescrevível (ex: `QualityBanner` usa `p-4`) — separado
   // de `className` para nunca colidir com o `p-4 sm:p-5` padrão na mesma cascata CSS.
   padding?: string
@@ -40,14 +40,13 @@ export function Card({
       : tone === 'danger'
         ? 'bg-[var(--color-danger-light)] border-[var(--color-danger)]/30'
         : 'bg-[var(--color-surface)] border-[var(--color-border)]'
-  const accentClass = accent ? `border-l-4 ${SEVERITY_BORDER_L[accent]}` : ''
   const interactiveClass = interactive
     ? 'hover:border-[var(--color-gray-300)] hover:-translate-y-0.5 active:translate-y-0'
     : ''
 
   return (
     <div
-      className={`relative rounded-[var(--radius-card)] border ${dashed ? 'border-dashed' : ''} ${toneClass} ${padding} shadow-[var(--shadow-card)] transition-all duration-200 ease-out motion-reduce:transition-none ${interactiveClass} ${accentClass} ${className}`
+      className={`relative rounded-[var(--radius-card)] border ${dashed ? 'border-dashed' : ''} ${toneClass} ${padding} shadow-[var(--shadow-card)] transition-all duration-200 ease-out motion-reduce:transition-none ${interactiveClass} ${className}`
         .replace(/\s+/g, ' ')
         .trim()}
       {...rest}

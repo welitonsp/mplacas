@@ -27,10 +27,14 @@ export function SpecificYieldCard({
 
   return (
     <Card>
-      <p className="text-xs font-medium text-gray-500">Yield específico</p>
-      <p className="mt-2 text-2xl font-semibold text-gray-900 tabular-nums">
+      <p className="text-[13px] font-medium leading-5 text-[var(--color-text-secondary)]">Yield específico</p>
+      {/* Altura do anel (72 px) para alinhar com os vizinhos da grade. */}
+      <p className="mt-3 flex min-h-[72px] items-center text-[28px] font-semibold leading-none text-[var(--color-text-primary)] tabular-nums">
         {formatNumber(toNumber(performance.final_yield_kwh_per_kwp))}
-        <span className="ml-1 text-sm font-normal text-gray-500">kWh/kWp</span>
+        <span className="ml-1.5 text-sm font-normal text-[var(--color-text-secondary)]">kWh/kWp</span>
+      </p>
+      <p className="mt-3 text-xs leading-5 text-[var(--color-text-secondary)]">
+        Energia gerada por kWp instalado. Serve para comparar com usinas de outro tamanho.
       </p>
     </Card>
   )

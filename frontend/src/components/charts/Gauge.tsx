@@ -47,6 +47,8 @@ export function Gauge({
   size = 96,
   tone = 'neutral',
   className = '',
+  labelWidth,
+  showLabel = true,
 }: {
   value: number
   label?: string
@@ -54,6 +56,12 @@ export function Gauge({
   size?: number
   tone?: ChartTone
   className?: string
+  // Largura da coluna do rótulo visível. Por padrão é a do anel (`size`), o
+  // que quebrava "Corrigido por temperatura" em 3 linhas num anel de 72 px.
+  labelWidth?: number
+  // `false` mantém `label` só no nome acessível do SVG — para quando o
+  // cartão já mostra o mesmo texto como título acima do anel.
+  showLabel?: boolean
 }) {
   const pct = clampPercent(value)
   const displayValue = valueLabel ?? `${Math.round(pct)}%`
@@ -71,7 +79,7 @@ export function Gauge({
   return (
     <div
       className={`inline-flex flex-col items-center ${className}`.trim()}
-      style={{ width: size }}
+      style={{ width: Math.max(size, labelWidth ?? size) }}
     >
       {/* O texto central é posicionado sobre o ANEL, não sobre o bloco
           inteiro: antes, com um rótulo de duas ou três linhas embaixo
@@ -106,7 +114,7 @@ export function Gauge({
         {displayValue}
       </div>
       </div>
-      {label && (
+      {label && showLabel && (
         <p className="mt-1.5 text-center text-xs font-medium leading-4 text-[var(--color-text-secondary)]">
           {label}
         </p>
