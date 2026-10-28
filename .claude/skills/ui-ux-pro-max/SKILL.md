@@ -17,7 +17,10 @@ description: "UI/UX design intelligence for web, mobile, and desktop. This skill
 > - cor nova só como token em `frontend/src/index.css`, nunca hex solto;
 > - dado estimado nunca aparece como confirmado, seja qual for o estilo sugerido.
 > Os scripts (`scripts/search.py`) só leem os CSVs locais (biblioteca padrão do Python,
-> sem rede). Rode com `python3 -I .claude/skills/ui-ux-pro-max/scripts/search.py "<consulta>"`.
+> sem rede). Rode com `python3 -E -s .claude/skills/ui-ux-pro-max/scripts/search.py "<consulta>"`.
+> Não use `-I`: ele inclui `-P`, que tira a pasta do script do `sys.path`, e o `search.py`
+> importa `core`/`design_system` dessa pasta (`ModuleNotFoundError: No module named 'core'`).
+> `-E -s` mantém o isolamento (ignora `PYTHONPATH` e o site-packages do usuário).
 
 
 Searchable local UI/UX guidance: 79 searchable styles (50 active), 192 product palettes and exact reasoning profiles, 74 font pairings, 119 UX guidelines, 105 curated icons, 17 GSAP presets, 25 chart types, and 22 technology stacks.
