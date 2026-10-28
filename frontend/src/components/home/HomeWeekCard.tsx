@@ -76,7 +76,7 @@ export function HomeWeekCard({ week }: { week: readonly WeekDay[] }) {
             </div>
             <div className="mt-1.5 flex gap-2" aria-hidden="true">
               {week.map((day) => (
-                <span key={day.date} className="min-w-0 flex-1 text-center text-[11px] tabular-nums text-[var(--color-text-secondary)]">
+                <span key={day.date} className="min-w-0 flex-1 text-center text-xs tabular-nums text-[var(--color-text-secondary)]">
                   {formatShortDate(day.date)}
                 </span>
               ))}

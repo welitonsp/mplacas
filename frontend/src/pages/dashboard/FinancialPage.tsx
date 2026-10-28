@@ -161,7 +161,7 @@ export function FinancialPage() {
           <Suspense
             fallback={
               <div
-                className="h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)] md:col-span-6 lg:col-span-12"
+                className="h-40 animate-pulse rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] md:col-span-6 lg:col-span-12"
                 aria-hidden="true"
               />
             }
@@ -171,7 +171,7 @@ export function FinancialPage() {
           <Suspense
             fallback={
               <div
-                className="h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)] md:col-span-6 lg:col-span-12"
+                className="h-40 animate-pulse rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] md:col-span-6 lg:col-span-12"
                 aria-hidden="true"
               />
             }
@@ -189,7 +189,7 @@ export function FinancialPage() {
           executivo, continuam disponíveis quando ele falha. */}
       <div id="faturas" className="mt-6 scroll-mt-4">
         <Suspense
-          fallback={<div className="mb-6 h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)]" aria-hidden="true" />}
+          fallback={<div className="mb-6 h-40 animate-pulse rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]" aria-hidden="true" />}
         >
           <BillsSection plantId={plantId} onConfirmed={refreshAll} />
           <ScrollToBillsOnce />

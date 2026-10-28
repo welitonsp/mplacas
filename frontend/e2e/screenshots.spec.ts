@@ -123,7 +123,10 @@ async function interceptarApi(page: import('@playwright/test').Page) {
         },
         latitude: null,
         longitude: null,
-        financial: { plant_id: singlePlant.id, investment_amount_brl: '11200.00', investment_recorded_on: null },
+        // Coerente com `financialReturnUnavailablePayload` (INVESTMENT_NOT_REGISTERED):
+        // antes o cadastro dizia "investido R$ 11.200,00" enquanto Início e Dinheiro
+        // pediam para cadastrar — a captura mostrava um estado que não existe.
+        financial: { plant_id: singlePlant.id, investment_amount_brl: null, investment_recorded_on: null },
         confirmed_bills: 0,
         pending_bills: 1,
         items: [
@@ -132,10 +135,10 @@ async function interceptarApi(page: import('@playwright/test').Page) {
           { key: 'COMMISSIONED_ON', done: true },
           { key: 'ORIENTATION', done: false },
           { key: 'MODULE_TECHNOLOGY', done: true },
-          { key: 'INVESTMENT', done: true },
+          { key: 'INVESTMENT', done: false },
           { key: 'CONFIRMED_BILL', done: false },
         ],
-        completed: 4,
+        completed: 3,
         total: 7,
       },
     ],
@@ -198,6 +201,31 @@ async function interceptarApi(page: import('@playwright/test').Page) {
   }
 }
 
+/**
+ * Textos visíveis abaixo de `minimoPx` (achado 8/14 da auditoria visual de
+ * 28/10/2026). O painel tem piso de 12 px; esta guarda impede que um
+ * `text-[11px]` volte sem ninguém notar. Devolve amostras legíveis para o erro.
+ */
+async function textosPequenos(page: import('@playwright/test').Page, minimoPx = 12) {
+  return page.evaluate((minimo) => {
+    const achados: string[] = []
+    const percurso = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    let no: Node | null
+    while ((no = percurso.nextNode())) {
+      const texto = (no.textContent ?? '').trim()
+      const el = no.parentElement
+      if (!texto || !el) continue
+      const caixa = el.getBoundingClientRect()
+      const estilo = getComputedStyle(el)
+      if (caixa.width === 0 || caixa.height === 0 || estilo.visibility === 'hidden' || estilo.display === 'none') continue
+      if (el.closest('.sr-only')) continue
+      const tamanho = parseFloat(estilo.fontSize)
+      if (tamanho < minimo) achados.push(`${tamanho}px: ${texto.slice(0, 40)}`)
+    }
+    return achados
+  }, minimoPx)
+}
+
 async function autenticar(page: import('@playwright/test').Page) {
   await page.goto('/login')
   await page.getByLabel(/usuári|usuario/i).fill('operador')
@@ -252,6 +280,7 @@ test.describe('captura das telas', () => {
     await page.goto('/login')
     await page.evaluate(() => document.fonts.ready)
     await expect(page.getByRole('button', { name: /entrar/i })).toBeVisible()
+    expect(await textosPequenos(page)).toEqual([])
 
     await page.screenshot({ path: `e2e/capturas/${info.project.name}/login.png`, fullPage: true })
   })
@@ -308,6 +337,15 @@ test.describe('captura das telas', () => {
         // Faturas também carregam sob demanda e ficam no fim da aba (ADR-083).
         await expect(page.getByRole('heading', { name: 'Faturas de energia' })).toBeVisible({ timeout: 15_000 })
       }
+
+      if (modulo.nome === 'energia') {
+        // "Último dia contra o esperado", diagnóstico e episódios carregam sob
+        // demanda (Suspense). Sem esperar, a captura saía com um vão vazio de
+        // ~180 px no lugar delas (auditoria visual de 28/10/2026, achado 8).
+        await expect(page.getByRole('heading', { name: 'Último dia contra o esperado' })).toBeVisible({ timeout: 15_000 })
+      }
+
+      expect(await textosPequenos(page), `texto abaixo de 12 px em ${modulo.nome}`).toEqual([])
 
       await page.screenshot({
         path: `e2e/capturas/${info.project.name}/painel-${modulo.nome}.png`,

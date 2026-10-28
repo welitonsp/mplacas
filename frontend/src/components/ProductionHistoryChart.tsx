@@ -438,7 +438,7 @@ export function ProductionHistoryChart({
                   valor sem procurar na legenda. */}
               {hasExpected && expectedLineY != null && (
                 <span
-                  className="pointer-events-none absolute right-1 z-30 -translate-y-full rounded bg-[var(--color-surface)] px-1 text-[11px] font-semibold tabular-nums text-[var(--color-chart-reference)]"
+                  className="pointer-events-none absolute right-1 z-30 -translate-y-full rounded bg-[var(--color-surface)] px-1 text-xs font-semibold tabular-nums text-[var(--color-chart-reference)]"
                   style={{ top: `${expectedLineY}%` }}
                   aria-hidden="true"
                 >
@@ -447,7 +447,7 @@ export function ProductionHistoryChart({
               )}
               {averageLineY != null && averageProduction != null && (
                 <span
-                  className="pointer-events-none absolute left-1 z-30 -translate-y-full rounded bg-[var(--color-surface)] px-1 text-[11px] font-semibold tabular-nums text-[var(--color-brand-primary)]"
+                  className="pointer-events-none absolute left-1 z-30 -translate-y-full rounded bg-[var(--color-surface)] px-1 text-xs font-semibold tabular-nums text-[var(--color-brand-primary)]"
                   style={{ top: `${averageLineY}%` }}
                   aria-hidden="true"
                 >
