@@ -57,7 +57,7 @@ describe('contraste de cor — sem border-gray-400 em componente algum', () => {
 
 // `placeholder-gray-400` (#9ca3af) sobre fundo branco tem contraste ~2,85:1 —
 // reprova WCAG AA para texto normal (mínimo 4.5:1), mesma falha medida nos
-// placeholders de `LoginPage`/`CapexRegistrationForm`. Guard de regressão
+// placeholders do `LoginPage` e do antigo formulário de investimento. Guard de regressão
 // análogo aos de `text-gray-400`/`border-gray-400` acima.
 describe('contraste de cor — sem placeholder-gray-400 em componente algum', () => {
   it.each(files)('%s não usa a classe placeholder-gray-400', (_path, content) => {

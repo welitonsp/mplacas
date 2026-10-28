@@ -7,7 +7,6 @@ import {
 } from '../lib/dashboard/financial-return-contracts'
 import { clampPercent, formatCurrency, formatNumber, toNumber } from '../lib/format'
 import { Card } from './Card'
-import { CapexRegistrationForm } from './CapexRegistrationForm'
 
 // Seção "Retorno do investimento" (ADR-067, Decisão item 7). `financialReturn ===
 // null` é o estado de carregamento; a partir daí, três formas de indisponibilidade
@@ -15,12 +14,8 @@ import { CapexRegistrationForm } from './CapexRegistrationForm'
 // silencioso nem um "R$ 0,00"/"0%" fabricado quando o backend manda `null`.
 export function FinancialReturnSection({
   financialReturn,
-  plantId,
-  onInvestmentRegistered,
 }: {
   financialReturn: FinancialReturnResponse | null
-  plantId: string
-  onInvestmentRegistered: () => void
 }) {
   if (financialReturn === null) {
     return (
@@ -34,18 +29,9 @@ export function FinancialReturnSection({
   // Sem CAPEX cadastrado: nenhum campo derivado existe (todos `null` por contrato),
   // e é aqui que o diálogo de cadastro do CAPEX vive — não em uma área de
   // configurações nova (ADR-067, Decisão item 7).
-  if (financialReturn.unavailable_reason === 'INVESTMENT_NOT_REGISTERED') {
-    return (
-      <Card>
-        <p className="text-xs font-medium text-gray-500">Retorno do investimento</p>
-        <p className="mt-4 text-sm text-gray-500">
-          {financialReturnUnavailableMessage('INVESTMENT_NOT_REGISTERED')}
-        </p>
-        <CapexRegistrationForm plantId={plantId} onSuccess={onInvestmentRegistered} />
-      </Card>
-    )
-  }
-
+  // Sem valor investido o pai (`FinancialSection`) nem monta esta seção; se
+  // montar, cai no estado indisponível genérico abaixo, com o motivo tipado.
+  // O cadastro do investimento fica só em Minha usina.
   if (financialReturn.unavailable_reason !== null) {
     return (
       <Card>

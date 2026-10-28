@@ -153,11 +153,17 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
           className="rounded-[var(--radius-card)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-light)] px-4 py-3 text-[13px] leading-5 text-[var(--color-warning-text)]"
         >
           <p className="font-semibold">Estimativa preliminar</p>
-          <ul className="mt-1 list-disc space-y-1 pl-5">
-            {cautions.map((text) => (
-              <li key={text}>{text}</li>
-            ))}
-          </ul>
+          {/* Um aviso só vira parágrafo; lista com marcador só quando há mais
+              de um (antes: lista de um item com bolinha solta). */}
+          {cautions.length === 1 ? (
+            <p className="mt-1">{cautions[0]}</p>
+          ) : (
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {cautions.map((text) => (
+                <li key={text}>{text}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
@@ -201,7 +207,9 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+      {/* Uma coluna: lado a lado, "Premissas" (fechado) ficava como um cartão
+          órfão de meia largura ao lado do realizado. */}
+      <div className="grid grid-cols-1 gap-4">
         <Card className="sm:p-6">
           <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">
             Realizado desde a ligação{panel.commissionedMonth ? ` (${formatCycleLabel(panel.commissionedMonth)})` : ''}
@@ -243,7 +251,7 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
 
         <Card className="sm:p-6">
           <details>
-            <summary className="cursor-pointer text-[13px] font-semibold text-[var(--color-text-primary)]">
+            <summary className="flex min-h-[44px] cursor-pointer items-center text-[13px] font-semibold text-[var(--color-text-primary)]">
               Premissas da projeção
             </summary>
             {panel.premises && (

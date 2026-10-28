@@ -26,7 +26,7 @@ import { BulkConfirmBar } from './BulkConfirmBar'
 //
 // Perfil: importar/confirmar/rejeitar exigem ADMIN no backend. Uma credencial
 // READ vê o card e recebe a mensagem de permissão ao tentar — mesma limitação
-// conhecida do `CapexRegistrationForm` (o frontend ainda não distingue papel).
+// conhecida dos formulários de Minha usina (o frontend ainda não distingue papel).
 
 const MAX_PDF_BYTES = 10_000_000 // espelha `telegram_document_max_bytes` do backend
 
