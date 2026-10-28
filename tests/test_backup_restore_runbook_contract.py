@@ -114,3 +114,11 @@ def test_restore_drill_objectives_are_explicit() -> None:
     assert "**Retenção:** 35 dias" in content
     assert "MPLACAS_RESTORE_DRILL_OWNER" in content
     assert "PITR" in content
+
+
+def test_backup_source_falls_back_to_the_migration_url() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert (
+        "MPLACAS_BACKUP_SOURCE_URL: ${{ secrets.MPLACAS_BACKUP_SOURCE_URL || "
+        "secrets.MPLACAS_MIGRATION_DATABASE_URL }}"
+    ) in workflow
