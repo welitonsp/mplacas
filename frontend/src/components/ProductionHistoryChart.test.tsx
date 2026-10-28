@@ -82,7 +82,7 @@ describe('ProductionHistoryChart — teclado e semântica ARIA', () => {
     expect(firstDateLabels.some((label) => scrollContainer!.contains(label))).toBe(true)
   })
 
-  it('mostra a data curta no topo de cada barra quando o recorte tem até 7 dias', () => {
+  it('mostra a data curta sob cada barra quando o recorte tem até 7 dias', () => {
     const daily = Array.from({ length: 7 }, (_, index) =>
       buildDaily(`2026-08-${String(index + 2).padStart(2, '0')}`, (index + 1) * 10)
     )
@@ -102,7 +102,7 @@ describe('ProductionHistoryChart — teclado e semântica ARIA', () => {
     ])
   })
 
-  it('não mostra data no topo das barras em recortes maiores para evitar poluição visual', () => {
+  it('não mostra data sob cada barra em recortes maiores para evitar poluição visual', () => {
     const daily = Array.from({ length: 30 }, (_, index) =>
       buildDaily(`2026-08-${String((index % 28) + 1).padStart(2, '0')}`, (index + 1) * 2)
     )
@@ -406,5 +406,24 @@ describe('ProductionHistoryChart — temperatura do dia ativo (plano T7b, P2: da
 
     const liveRegion = document.querySelector('[aria-live="polite"]') as HTMLElement
     expect(within(liveRegion).queryByText('Temperatura média:')).not.toBeInTheDocument()
+  })
+})
+
+describe('ProductionHistoryChart — sem decoração (ADR-077) e seleção distinta do foco', () => {
+  it('nenhuma barra tem gradiente/brilho em estilo inline', () => {
+    render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
+
+    for (const bar of screen.getAllByTestId('production-history-bar')) {
+      expect(bar.getAttribute('style') ?? '').not.toMatch(/gradient/)
+    }
+  })
+
+  it('marca o dia ativo com um único traço sob a barra, sem anel (o anel fica para o foco de teclado)', () => {
+    render(<ProductionHistoryChart daily={DAILY} currentStreakDays={0} />)
+
+    expect(screen.getAllByTestId('production-history-active-marker')).toHaveLength(1)
+    for (const bar of screen.getAllByTestId('production-history-bar')) {
+      expect(bar.className).not.toMatch(/\bring-2\b/)
+    }
   })
 })
