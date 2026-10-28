@@ -182,7 +182,7 @@ function PaybackBlock({
     event.preventDefault()
     // Dinheiro em pt-BR: "1.500,00", "1.500" e "15.000" têm ponto de milhar;
     // "1500.50" (sem vírgula e sem grupos de 3) é decimal.
-    const raw = amount.trim().replace(/^R\$\s*/, '')
+    const raw = amount.trim().replace(/^R\$\s*/i, '')
     const normalized = raw.includes(',')
       ? raw.replace(/\./g, '').replace(',', '.')
       : /^\d{1,3}(\.\d{3})+$/.test(raw)
@@ -290,6 +290,7 @@ function PaybackBlock({
               onClick={() => {
                 setEditing(false)
                 setError(null)
+                setInverter(payback.includesInverter ?? false)
               }}
               className="ml-3 text-sm font-semibold text-[var(--color-brand-primary)] underline"
             >
