@@ -159,6 +159,43 @@ describe('retorno da proposta (ADR-089, etapa 2)', () => {
     expect(screen.getByText(/informada em 28\/10\/2026/)).toBeInTheDocument()
   })
 
+  it.each([
+    ['15.000', '15000.00'],
+    ['1.500', '1500.00'],
+    ['1.500.000', '1500000.00'],
+    ['1.500,50', '1500.50'],
+    ['1500.50', '1500.50'],
+    ['R$ 2.300', '2300.00'],
+  ])('lê "%s" em reais como %s', async (typed, sent) => {
+    const api = await import('../lib/api')
+    const spy = vi.spyOn(api, 'updateExpansionProposal').mockResolvedValue(new Response('{}', { status: 200 }))
+    renderContent({ payback: { ...paybackReady, unavailable_reason: 'PROPOSAL_MISSING', proposal_brl: null } })
+    fireEvent.change(screen.getByLabelText('Valor total da proposta (R$)'), { target: { value: typed } })
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular retorno' }))
+    await waitFor(() => expect(spy).toHaveBeenCalled())
+    expect(spy.mock.calls[0][1].amount_brl).toBe(sent)
+    spy.mockRestore()
+  })
+
+  it('prazo nulo: diz que não se paga em 25 anos, sem frase quebrada', () => {
+    renderContent({ payback: { ...paybackReady, payback_months_with_ipca: null, payback_months_no_growth: null } })
+    expect(screen.getByText(/não se paga em 25 anos/)).toBeInTheDocument()
+    expect(screen.queryByText(/retorno estimado é de/)).not.toBeInTheDocument()
+  })
+
+  it('Alterar abre o formulário com o inversor salvo e permite cancelar', () => {
+    renderContent({ payback: { ...paybackReady, includes_inverter: true } })
+    fireEvent.click(screen.getByRole('button', { name: 'Alterar' }))
+    expect(screen.getByLabelText(/inclui inversor/)).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByLabelText('Valor total da proposta (R$)')).not.toBeInTheDocument()
+  })
+
+  it('microinversores e proposta sem inversor: avisa para confirmar com o instalador', () => {
+    renderContent({ inverter_status: 'MICROINVERSORES', payback: paybackReady })
+    expect(screen.getByText(/Confirme com o instalador/)).toBeInTheDocument()
+  })
+
   it('valor inválido não chama a API', async () => {
     const api = await import('../lib/api')
     const spy = vi.spyOn(api, 'updateExpansionProposal')

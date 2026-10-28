@@ -466,11 +466,23 @@ def expansion_payback(
         return unavailable(PAYBACK_MARKET_DATA_UNAVAILABLE)
 
     monthly_kwh = assessment.deficit_kwh_year / 12
-    baseline = monthly_kwh * (money_inputs.full_tariff_brl_kwh - money_inputs.wire_b_tariff_brl_kwh)
+    # Partida no ano corrente, com a parcela do Fio B DESTE ano — o mesmo valor
+    # da etapa 1 (``values_by_year[0]``), não o do ano da fatura.
+    first = money.values_by_year[0]
+    baseline = monthly_kwh * first.value_brl_kwh
     if baseline <= 0:
         return unavailable(PAYBACK_NOT_APPLICABLE)
     start_month = today.strftime("%Y-%m")
     bill_year = int(money_inputs.reference_month[:4])
+    full_wire_b = money_inputs.wire_b_tariff_brl_kwh / wire_b_share(bill_year)
+    # Proposta só de placas (o inversor atual absorve): não há inversor novo
+    # para trocar no ano 12 — a troca do inversor atual já está no
+    # investimento original.
+    plan = (
+        premises
+        if includes_inverter
+        else replace(premises, inverter_replacement_fraction=Decimal("0"))
+    )
 
     def run(growth: Decimal) -> Projection | None:
         return project(
@@ -480,9 +492,10 @@ def expansion_payback(
             commissioned_on=today,
             savings_by_month={add_months(start_month, 1): baseline},
             compensated_kwh_per_month=monthly_kwh,
-            wire_b_tariff_brl_kwh=money_inputs.wire_b_tariff_brl_kwh,
-            wire_b_reference_year=bill_year,
-            premises=replace(premises, tariff_growth_per_year=growth),
+            # Referência no ano da partida: o Fio B sobe a partir daí.
+            wire_b_tariff_brl_kwh=full_wire_b * first.wire_b_share,
+            wire_b_reference_year=first.year,
+            premises=replace(plan, tariff_growth_per_year=growth),
         )
 
     with_ipca = run(premises.tariff_growth_per_year)

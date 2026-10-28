@@ -553,7 +553,7 @@ def test_payback_uses_capped_saving_and_ipca_against_flat_tariff() -> None:
     assert result.first_year_monthly_saving_brl == D("21.50")
     assert result.payback_months_with_ipca is not None
     assert result.payback_months_no_growth is not None
-    # Sem reajuste é a contraprova conservadora: nunca mais curto. O Fio B da
+    # Sem reajuste é a contraprova conservadora (com IPCA positivo). O Fio B da
     # parte nova subindo e o O&M deixam o prazo acima de 1500 ÷ 21,50 ≈ 70.
     assert result.payback_months_with_ipca <= result.payback_months_no_growth
     assert result.payback_months_no_growth > 70
@@ -650,3 +650,84 @@ def test_proposal_endpoint_is_admin_scoped_audited_and_feeds_the_card(monkeypatc
     assert plant.expansion_proposal_brl is None
     assert plant.expansion_proposal_recorded_on is None
     assert len(events) == 2
+
+
+def test_payback_starts_at_current_year_wire_b_like_stage_one() -> None:
+    # Fatura de dez/2026, conta feita em jan/2027: a partida usa a parcela do
+    # Fio B de 2027 (75%), o mesmo valor que a etapa 1 mostra para 2027.
+    inputs = dataclasses.replace(MONEY, reference_month="2026-12")
+    assessment = _assess(_year(), money_inputs=inputs, request_year=2027)
+    assert assessment.money is not None
+    assert assessment.money.monthly_saving_first_year_brl == D("20.19")
+    result = _payback(assessment, money_inputs=inputs, today=date(2027, 1, 10))
+    assert result.first_year_monthly_saving_brl == D("20.19")
+
+
+def test_proposal_that_never_pays_back_returns_none() -> None:
+    result = _payback(proposal_brl=D("100000"))
+    assert result.unavailable_reason is None
+    assert result.payback_months_with_ipca is None
+    assert result.payback_months_vs_cdi is None
+
+
+def test_inverter_replacement_only_charged_when_proposal_has_inverter() -> None:
+    only_panels = _payback(includes_inverter=False).payback_months_with_ipca
+    with_inverter = _payback(includes_inverter=True).payback_months_with_ipca
+    assert only_panels is not None and with_inverter is not None
+    assert with_inverter >= only_panels
+
+
+def test_market_premises_need_twelve_contiguous_months(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    rates = {add_months("2025-09", k): D("1.0") for k in range(13)}
+
+    async def fake_rates(session, code, *, start_month, end_month, client, today):  # type: ignore[no-untyped-def]
+        return dict(rates)
+
+    monkeypatch.setattr(expansion_service, "monthly_rates", fake_rates)
+    premises, as_of = asyncio.run(
+        expansion_service._market_premises(None, today=date(2026, 10, 28), client=None)  # type: ignore[arg-type]
+    )
+    assert premises is not None and as_of == "2026-09"
+    assert premises.tariff_growth_per_year == premises.ipca_per_year
+    del rates["2026-03"]  # buraco no meio dos 12 meses
+    premises, as_of = asyncio.run(
+        expansion_service._market_premises(None, today=date(2026, 10, 28), client=None)  # type: ignore[arg-type]
+    )
+    assert premises is None and as_of is None
+
+
+def test_proposal_body_without_amount_is_rejected() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from mplacas.plants.schemas import PlantExpansionProposalUpdateRequest
+
+    with pytest.raises(ValidationError):
+        PlantExpansionProposalUpdateRequest.model_validate({})
+    with pytest.raises(ValidationError):
+        PlantExpansionProposalUpdateRequest.model_validate({"includes_inverter": True})
+    assert (
+        PlantExpansionProposalUpdateRequest.model_validate({"amount_brl": None}).amount_brl is None
+    )
+
+
+def test_service_computes_payback_with_saved_proposal(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    async def fake_premises(session, *, today, client):  # type: ignore[no-untyped-def]
+        return PREMISES, "2026-09"
+
+    monkeypatch.setattr(expansion_service, "_market_premises", fake_premises)
+    assessment, _, payback = _run_service(
+        monkeypatch,
+        MONTHS,
+        installed_power_kwp=D("3.3"),
+        commissioned_on=date(2024, 8, 10),
+        expansion_proposal_brl=D("1500"),
+        expansion_proposal_includes_inverter=False,
+        expansion_proposal_recorded_on=date(2026, 10, 25),
+    )
+    assert assessment.status == STATUS_EXPAND
+    assert payback.unavailable_reason is None
+    assert payback.proposal_brl == D("1500")
+    assert payback.first_year_monthly_saving_brl == D("21.50")
+    assert payback.payback_months_with_ipca is not None
+    assert payback.indices_as_of_month == "2026-09"

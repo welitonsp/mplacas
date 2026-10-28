@@ -107,7 +107,8 @@ class PlantExpansionProposalUpdateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    amount_brl: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    # Obrigatório no corpo: só um `null` EXPLÍCITO apaga (corpo vazio é 422).
+    amount_brl: Decimal | None = Field(..., gt=0, max_digits=12, decimal_places=2)
     includes_inverter: bool = False
 
 

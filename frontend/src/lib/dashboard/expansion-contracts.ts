@@ -30,6 +30,7 @@ export interface ExpansionPayback {
   paybackMonthsVsCdi: number | null
   firstYearMonthlySavingBrl: string | null
   tariffGrowthPerYear: string | null
+  cdiPerYear: string | null
   indicesAsOfMonth: string | null
 }
 
@@ -143,6 +144,7 @@ function parsePayback(value: unknown): ExpansionPayback | null {
     paybackMonthsVsCdi: intOrNull(value, 'payback_months_vs_cdi'),
     firstYearMonthlySavingBrl: strOrNull(value, 'first_year_monthly_saving_brl'),
     tariffGrowthPerYear: isRecord(premises) ? strOrNull(premises, 'tariff_growth_per_year') : null,
+    cdiPerYear: isRecord(premises) ? strOrNull(premises, 'cdi_per_year') : null,
     indicesAsOfMonth: strOrNull(value, 'indices_as_of_month'),
   }
 }

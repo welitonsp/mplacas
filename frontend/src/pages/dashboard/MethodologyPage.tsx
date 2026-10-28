@@ -188,8 +188,10 @@ export function MethodologyPage() {
         <Rule title="Em quanto tempo a ampliação se paga">
           Com o valor total da proposta que você informar (placas, inversor, instalação e homologação), o retorno segue
           o mesmo fluxo mensal do painel do investidor: a tarifa reajustada pelo IPCA dos últimos 12 meses, perda de
-          0,5% ao ano das placas, manutenção de 0,5% da proposta ao ano, troca do inversor no ano 12 (15% da proposta)
-          e o Fio B da parte nova subindo ano a ano. Mostramos também o prazo sem nenhum reajuste da tarifa e o prazo
+          0,5% ao ano das placas, manutenção de 0,5% da proposta ao ano, troca do inversor no ano 12 (15% da proposta,
+          só quando ela inclui inversor novo) e o Fio B da parte nova subindo ano a ano, a partir da parcela do ano
+          corrente. Sem bandeira tarifária e contando a partir de hoje, sem o tempo de instalação e homologação — por
+          isso o prazo real tende a ser um pouco maior. Mostramos também o prazo sem nenhum reajuste da tarifa e o prazo
           contando o que o mesmo dinheiro renderia no CDI, líquido de IR. Se a ampliação precisar de inversor novo e a
           proposta não incluir, o retorno não é calculado.
         </Rule>

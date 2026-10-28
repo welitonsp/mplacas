@@ -142,14 +142,16 @@ function PaybackBlock({
   payback,
   plantId,
   onChanged,
+  inverterStatus,
 }: {
   payback: ExpansionPayback
   plantId: string
   onChanged: () => void
+  inverterStatus: string
 }) {
   const [editing, setEditing] = useState(payback.proposalBrl === null)
   const [amount, setAmount] = useState('')
-  const [inverter, setInverter] = useState(false)
+  const [inverter, setInverter] = useState(payback.includesInverter ?? false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -178,9 +180,14 @@ function PaybackBlock({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    // "1.500,00" (padrão brasileiro) ou "1500.00": com vírgula, o ponto é milhar.
-    const raw = amount.trim()
-    const normalized = raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.') : raw
+    // Dinheiro em pt-BR: "1.500,00", "1.500" e "15.000" têm ponto de milhar;
+    // "1500.50" (sem vírgula e sem grupos de 3) é decimal.
+    const raw = amount.trim().replace(/^R\$\s*/, '')
+    const normalized = raw.includes(',')
+      ? raw.replace(/\./g, '').replace(',', '.')
+      : /^\d{1,3}(\.\d{3})+$/.test(raw)
+        ? raw.replace(/\./g, '')
+        : raw
     const numeric = Number(normalized)
     if (!normalized || !Number.isFinite(numeric) || numeric <= 0) {
       setError('Informe o valor total da proposta, maior que zero.')
@@ -197,10 +204,21 @@ function PaybackBlock({
         <>
           {reason === null ? (
             <p className="text-[15px] leading-6 text-[var(--color-text-primary)]">
-              Com a proposta de {formatCurrency(payback.proposalBrl)}, o retorno estimado é de{' '}
-              <strong>{duration(payback.paybackMonthsWithIpca)}</strong>, com a tarifa reajustada pelo IPCA (
-              {formatNumber((toNumber(payback.tariffGrowthPerYear) ?? 0) * 100, 1)}% ao ano). Sem nenhum reajuste:{' '}
-              {duration(payback.paybackMonthsNoGrowth)}. Comparando com deixar o dinheiro no CDI:{' '}
+              {payback.paybackMonthsWithIpca == null ? (
+                <>
+                  Com a proposta de {formatCurrency(payback.proposalBrl)}, a ampliação <strong>não se paga em 25 anos</strong>{' '}
+                  nas premissas atuais.
+                </>
+              ) : (
+                <>
+                  Com a proposta de {formatCurrency(payback.proposalBrl)}, o retorno estimado é de{' '}
+                  <strong>{duration(payback.paybackMonthsWithIpca)}</strong>, com a tarifa reajustada pelo IPCA (
+                  {formatNumber((toNumber(payback.tariffGrowthPerYear) ?? 0) * 100, 1)}% ao ano). Sem nenhum reajuste:{' '}
+                  {duration(payback.paybackMonthsNoGrowth)}.
+                </>
+              )}{' '}
+              Comparando com deixar o dinheiro no CDI ({formatNumber((toNumber(payback.cdiPerYear) ?? 0) * 100, 1)}% ao
+              ano, líquido de IR no resgate):{' '}
               {payback.paybackMonthsVsCdi == null ? 'não supera o CDI em 25 anos' : duration(payback.paybackMonthsVsCdi)}.
             </p>
           ) : (
@@ -211,8 +229,11 @@ function PaybackBlock({
           <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
             Proposta de {formatCurrency(payback.proposalBrl)}
             {payback.includesInverter ? ', com inversor' : ', sem inversor'}
-            {payback.recordedOn ? `, informada em ${payback.recordedOn.split('-').reverse().join('/')}` : ''}. Inclui
-            0,5% ao ano de manutenção, troca do inversor no ano 12 (15% da proposta) e perda de 0,5% ao ano das placas.{' '}
+            {payback.recordedOn ? `, informada em ${payback.recordedOn.split('-').reverse().join('/')}` : ''}. Conta a
+            partir de hoje, sem o tempo de instalação e homologação; inclui 0,5% ao ano de manutenção e perda de 0,5% ao
+            ano das placas{payback.includesInverter ? ', mais a troca do inversor novo no ano 12 (15% da proposta)' : ''};
+            sem bandeira tarifária.
+            {payback.indicesAsOfMonth ? ` Índices do Banco Central até ${formatCycleLabel(payback.indicesAsOfMonth)}.` : ''}{' '}
             <button
               type="button"
               onClick={() => setEditing(true)}
@@ -242,6 +263,8 @@ function PaybackBlock({
           </label>
           <input
             id="expansion-proposal"
+            aria-invalid={error !== null}
+            aria-describedby={error ? 'expansion-proposal-error' : undefined}
             type="text"
             inputMode="decimal"
             value={amount}
@@ -261,10 +284,30 @@ function PaybackBlock({
           >
             {busy ? 'Salvando...' : 'Calcular retorno'}
           </button>
+          {payback.proposalBrl !== null && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false)
+                setError(null)
+              }}
+              className="ml-3 text-sm font-semibold text-[var(--color-brand-primary)] underline"
+            >
+              Cancelar
+            </button>
+          )}
         </form>
       )}
+      {payback.proposalBrl !== null &&
+        !payback.includesInverter &&
+        (inverterStatus === 'MICROINVERSORES' || inverterStatus === 'DESCONHECIDO') && (
+          <p className="text-[13px] leading-5 text-[var(--color-warning-text)]">
+            Confirme com o instalador se as placas novas precisam de microinversor ou inversor novo. Se precisarem, inclua
+            o valor na proposta: sem ele, o prazo acima sai curto demais.
+          </p>
+        )}
       {error && (
-        <p role="alert" className="text-[13px] text-[var(--color-danger-text)]">
+        <p id="expansion-proposal-error" role="alert" className="text-[13px] text-[var(--color-danger-text)]">
           {error}
         </p>
       )}
@@ -386,7 +429,12 @@ export function ExpansionContent({
             )}
             <MoneyBlock money={assessment.money} />
             {assessment.payback && assessment.payback.unavailableReason !== 'NOT_APPLICABLE' && (
-              <PaybackBlock payback={assessment.payback} plantId={plantId} onChanged={onChanged} />
+              <PaybackBlock
+                payback={assessment.payback}
+                plantId={plantId}
+                onChanged={onChanged}
+                inverterStatus={assessment.inverterStatus}
+              />
             )}
           </>
         )}
