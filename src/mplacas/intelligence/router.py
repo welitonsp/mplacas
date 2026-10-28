@@ -553,19 +553,55 @@ def _serialize_expansion(
 
 @router.get("/expansion/latest")
 async def latest_expansion_assessment(scoped: ReadPlant) -> dict[str, object]:
-    """Vale a pena ampliar a usina? (ADR-089). Somente leitura."""
+    """Vale a pena ampliar a usina? (ADR-089).
+
+    Leitura; a única escrita é o reabastecimento das taxas públicas de
+    CDI/IPCA, usadas no retorno da proposta — por isso o ``commit`` no fim.
+    """
+    settings = get_settings()
+    allowed = bcb_host_allowed(
+        settings.market_indices_base_url, settings.external_http_allowed_host_set
+    )
+    client = BcbSgsClient(base_url=settings.market_indices_base_url) if allowed else None
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
         try:
-            assessment, context = await get_expansion_assessment(
+            assessment, context, payback = await get_expansion_assessment(
                 session,
                 plant_id=scoped.plant_id,
                 today=date.today(),
                 plant_scope=scoped.principal.plant_scope,
+                bcb_client=client,
             )
         except ExpansionPlantNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _serialize_expansion(assessment, context)
+        await session.commit()
+    body = _serialize_expansion(assessment, context)
+    premises = payback.premises
+    body["payback"] = {
+        "unavailable_reason": payback.unavailable_reason,
+        "proposal_brl": _optional(payback.proposal_brl),
+        "includes_inverter": payback.includes_inverter,
+        "recorded_on": payback.recorded_on.isoformat() if payback.recorded_on else None,
+        "payback_months_with_ipca": payback.payback_months_with_ipca,
+        "payback_months_no_growth": payback.payback_months_no_growth,
+        "payback_months_vs_cdi": payback.payback_months_vs_cdi,
+        "first_year_monthly_saving_brl": _optional(payback.first_year_monthly_saving_brl),
+        "lifetime_savings_brl": _optional(payback.lifetime_savings_brl),
+        "indices_as_of_month": payback.indices_as_of_month,
+        "premises": None
+        if premises is None
+        else {
+            "cdi_per_year": str(premises.cdi_per_year),
+            "tariff_growth_per_year": str(premises.tariff_growth_per_year),
+            "horizon_years": premises.horizon_years,
+            "degradation_per_year": str(premises.degradation_per_year),
+            "om_per_year_fraction": str(premises.om_per_year_fraction),
+            "inverter_replacement_year": premises.inverter_replacement_year,
+            "inverter_replacement_fraction": str(premises.inverter_replacement_fraction),
+        },
+    }
+    return body
 
 
 @router.get("/anomalies/latest")

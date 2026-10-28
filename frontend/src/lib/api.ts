@@ -350,6 +350,17 @@ export async function fetchExpansionAssessment(plantId: string): Promise<Respons
   return apiFetch(`/energy/expansion/latest?plant_id=${encodeURIComponent(plantId)}`)
 }
 
+// Proposta de ampliação (ADR-089, etapa 2): valor total; `null` apaga. ADMIN.
+export async function updateExpansionProposal(
+  plantId: string,
+  payload: { amount_brl: string | null; includes_inverter: boolean },
+): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/expansion-proposal`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
 // Cadastro da usina ("Minha usina"). `GET /plants/{id}/setup` reúne em uma
 // leitura o que o dono já informou e o checklist do que falta (a regra de
 // "feito" de cada item é do backend). As escritas usam as rotas que já

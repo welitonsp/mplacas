@@ -402,7 +402,7 @@ MONTHS = [add_months("2025-11", k) for k in range(12)]
 
 
 def test_service_assembles_cycles_and_money(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    assessment, context = _run_service(
+    assessment, context, _payback = _run_service(
         monkeypatch,
         ["2024-08", *MONTHS],  # mês da ligação fica de fora
         installed_power_kwp=D("3.3"),
@@ -446,14 +446,14 @@ def test_service_keeps_the_latest_rebilled_cycle_of_a_month(monkeypatch) -> None
                 session, plant_id=PLANT, today=date(2026, 10, 25)
             )
 
-    assessment, _ = asyncio.run(run())
+    assessment, _, _ = asyncio.run(run())
     asyncio.run(engine.dispose())
     assert assessment.cycles_used == 12
     assert assessment.deficit_kwh_year == D("330")
 
 
 def test_service_refuses_money_for_2023_plants_and_old_versions(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    assessment, _ = _run_service(
+    assessment, _, _ = _run_service(
         monkeypatch,
         MONTHS,
         installed_power_kwp=D("3.3"),
@@ -462,7 +462,7 @@ def test_service_refuses_money_for_2023_plants_and_old_versions(monkeypatch) -> 
     assert assessment.money is not None
     assert assessment.money.unavailable_reason == "REGIME_NOT_CONFIRMED"
 
-    outdated, _ = _run_service(
+    outdated, _, _ = _run_service(
         monkeypatch,
         MONTHS,
         version="0.4.0",
@@ -474,7 +474,9 @@ def test_service_refuses_money_for_2023_plants_and_old_versions(monkeypatch) -> 
 
 
 def test_service_flags_missing_commissioning_and_microinverters(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    assessment, context = _run_service(monkeypatch, MONTHS, devices=8, installed_power_kwp=D("3.3"))
+    assessment, context, _payback = _run_service(
+        monkeypatch, MONTHS, devices=8, installed_power_kwp=D("3.3")
+    )
     assert context == ("COMMISSIONING_DATE_MISSING",)
     assert assessment.inverter_status == INVERTER_MICRO
     # Sem data de ligação, o regime não é confirmado: sem reais.
@@ -511,3 +513,140 @@ def test_route_is_tenant_scoped_and_serializes(monkeypatch) -> None:  # type: ig
     assert body["warnings"] == ["COMMISSIONING_DATE_MISSING"]
     assert body["money"] is None
     assert foreign.status_code == 404
+
+
+# ------------------------------------------------------- retorno (etapa 2)
+
+from mplacas.intelligence.expansion import (  # noqa: E402
+    PAYBACK_INVERTER_NOT_IN_PROPOSAL,
+    PAYBACK_MARKET_DATA_UNAVAILABLE,
+    PAYBACK_NOT_APPLICABLE,
+    PAYBACK_PROPOSAL_MISSING,
+    expansion_payback,
+)
+from mplacas.intelligence.investor_metrics import InvestorPremises  # noqa: E402
+
+PREMISES = InvestorPremises(
+    cdi_per_year=D("0.14"), ipca_per_year=D("0.045"), tariff_growth_per_year=D("0.045")
+)
+
+
+def _payback(assessment=None, **overrides):  # type: ignore[no-untyped-def]
+    params = dict(
+        assessment=assessment or _assess(_year()),
+        money_inputs=MONEY,
+        proposal_brl=D("1500"),
+        includes_inverter=False,
+        recorded_on=date(2026, 10, 28),
+        premises=PREMISES,
+        indices_as_of_month="2026-09",
+        today=date(2026, 10, 28),
+    )
+    params.update(overrides)
+    return expansion_payback(**params)  # type: ignore[arg-type]
+
+
+def test_payback_uses_capped_saving_and_ipca_against_flat_tariff() -> None:
+    result = _payback()
+    assert result.unavailable_reason is None
+    # 30 kWh/mês × (0,891810 − 0,175126) = R$ 21,50 no 1º ano.
+    assert result.first_year_monthly_saving_brl == D("21.50")
+    assert result.payback_months_with_ipca is not None
+    assert result.payback_months_no_growth is not None
+    # Sem reajuste é a contraprova conservadora: nunca mais curto. O Fio B da
+    # parte nova subindo e o O&M deixam o prazo acima de 1500 ÷ 21,50 ≈ 70.
+    assert result.payback_months_with_ipca <= result.payback_months_no_growth
+    assert result.payback_months_no_growth > 70
+    assert 60 < result.payback_months_with_ipca < 120
+
+
+def test_bigger_proposal_takes_longer() -> None:
+    cheap = _payback(proposal_brl=D("1500")).payback_months_with_ipca
+    pricey = _payback(proposal_brl=D("3000")).payback_months_with_ipca
+    assert cheap is not None and pricey is not None and pricey > cheap
+
+
+def test_payback_unavailable_reasons() -> None:
+    assert _payback(proposal_brl=None).unavailable_reason == PAYBACK_PROPOSAL_MISSING
+    assert _payback(premises=None).unavailable_reason == PAYBACK_MARKET_DATA_UNAVAILABLE
+    surplus = _assess(_year(imported="200", export="260"))
+    assert _payback(surplus).unavailable_reason == PAYBACK_NOT_APPLICABLE
+    no_money = _assess(_year(), money_inputs=None)
+    assert _payback(no_money).unavailable_reason == PAYBACK_NOT_APPLICABLE
+    # Inversor novo necessário e a proposta não o inclui: não calcula.
+    needs_inverter = _assess(_year(imported="460", export="230"), inverter_ac_kw=D("2.5"))
+    assert needs_inverter.inverter_status == INVERTER_NEW_NEEDED
+    assert (
+        _payback(needs_inverter, includes_inverter=False).unavailable_reason
+        == PAYBACK_INVERTER_NOT_IN_PROPOSAL
+    )
+    assert _payback(needs_inverter, includes_inverter=True).unavailable_reason is None
+
+
+def test_proposal_endpoint_is_admin_scoped_audited_and_feeds_the_card(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("MPLACAS_JWT_SECRET", "test-jwt-secret-at-least-32-bytes-long")
+    # BCB fora da allowlist: a rota não sai para a rede.
+    monkeypatch.setenv("MPLACAS_EXTERNAL_HTTP_ALLOWED_HOSTS", "api.nepviewer.net")
+    get_settings.cache_clear()
+    import mplacas.plants.router as plants_router
+
+    factory, engine = asyncio.run(_factory())
+    org_a, org_b = asyncio.run(_seed(factory))
+    monkeypatch.setattr(db_session, "SessionFactory", factory)
+    monkeypatch.setattr(intelligence_router, "SessionFactory", factory)
+    monkeypatch.setattr(plants_router, "SessionFactory", factory)
+    admin = encode_access_token(uuid.uuid4(), org_a, OperationsRole.ADMIN.value)
+    reader = encode_access_token(uuid.uuid4(), org_a, OperationsRole.READ.value)
+    foreign = encode_access_token(uuid.uuid4(), org_b, OperationsRole.ADMIN.value)
+    url = f"/plants/{PLANT}/expansion-proposal"
+    body = {"amount_brl": "1500.00", "includes_inverter": False}
+
+    with TestClient(app) as client:
+        saved = client.patch(url, json=body, headers={"Authorization": f"Bearer {admin}"})
+        denied = client.patch(url, json=body, headers={"Authorization": f"Bearer {reader}"})
+        other = client.patch(url, json=body, headers={"Authorization": f"Bearer {foreign}"})
+        bad = client.patch(
+            url, json={"amount_brl": "-1"}, headers={"Authorization": f"Bearer {admin}"}
+        )
+        card = client.get(
+            f"/energy/expansion/latest?plant_id={PLANT}",
+            headers={"Authorization": f"Bearer {reader}"},
+        )
+        cleared = client.patch(
+            url, json={"amount_brl": None}, headers={"Authorization": f"Bearer {admin}"}
+        )
+
+    async def stored():  # type: ignore[no-untyped-def]
+        from sqlalchemy import select
+
+        from mplacas.audit.db_models import AuditEventRecord
+
+        async with factory() as session:
+            plant = await session.get(Plant, PLANT)
+            events = (
+                await session.scalars(
+                    select(AuditEventRecord).where(
+                        AuditEventRecord.action == "plant.expansion_proposal_updated"
+                    )
+                )
+            ).all()
+            return plant, events
+
+    plant, events = asyncio.run(stored())
+    asyncio.run(engine.dispose())
+    get_settings.cache_clear()
+    assert saved.status_code == 200
+    assert saved.json()["amount_brl"] == "1500.00"
+    assert saved.json()["recorded_on"] is not None
+    assert denied.status_code == 403
+    assert other.status_code == 404
+    assert bad.status_code == 422
+    # Sem 12 faturas, o card fica indisponível e o retorno "não se aplica",
+    # mas a proposta salva aparece.
+    payback = card.json()["payback"]
+    assert payback["unavailable_reason"] == "NOT_APPLICABLE"
+    assert payback["proposal_brl"] == "1500.00"
+    assert cleared.status_code == 200 and cleared.json()["amount_brl"] is None
+    assert plant.expansion_proposal_brl is None
+    assert plant.expansion_proposal_recorded_on is None
+    assert len(events) == 2

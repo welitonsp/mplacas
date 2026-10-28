@@ -20,6 +20,19 @@ export interface ExpansionMoney {
   valuesByYear: ExpansionYearValue[]
 }
 
+export interface ExpansionPayback {
+  unavailableReason: string | null
+  proposalBrl: string | null
+  includesInverter: boolean | null
+  recordedOn: string | null
+  paybackMonthsWithIpca: number | null
+  paybackMonthsNoGrowth: number | null
+  paybackMonthsVsCdi: number | null
+  firstYearMonthlySavingBrl: string | null
+  tariffGrowthPerYear: string | null
+  indicesAsOfMonth: string | null
+}
+
 export interface ExpansionAssessment {
   status: ExpansionStatus
   reasons: string[]
@@ -44,6 +57,7 @@ export interface ExpansionAssessment {
   dcAcRatioAfter: string | null
   problemMonths: string[]
   money: ExpansionMoney | null
+  payback: ExpansionPayback | null
 }
 
 const STATUSES: readonly ExpansionStatus[] = ['AMPLIAR', 'NAO_VALE', 'EQUILIBRADO', 'CORRIGIR_ANTES', 'INDISPONIVEL']
@@ -106,6 +120,33 @@ function parseMoney(value: unknown): ExpansionMoney | null {
   }
 }
 
+function intOrNull(source: Rec, key: string): number | null {
+  const value = source[key]
+  if (value === null || value === undefined) return null
+  return int(source, key)
+}
+
+function parsePayback(value: unknown): ExpansionPayback | null {
+  if (value === null || value === undefined) return null
+  if (!isRecord(value)) fail('payback')
+  const inverter = value.includes_inverter
+  if (inverter !== null && inverter !== undefined && typeof inverter !== 'boolean') fail('payback.includes_inverter')
+  const premises = value.premises
+  if (premises !== null && premises !== undefined && !isRecord(premises)) fail('payback.premises')
+  return {
+    unavailableReason: strOrNull(value, 'unavailable_reason'),
+    proposalBrl: strOrNull(value, 'proposal_brl'),
+    includesInverter: typeof inverter === 'boolean' ? inverter : null,
+    recordedOn: strOrNull(value, 'recorded_on'),
+    paybackMonthsWithIpca: intOrNull(value, 'payback_months_with_ipca'),
+    paybackMonthsNoGrowth: intOrNull(value, 'payback_months_no_growth'),
+    paybackMonthsVsCdi: intOrNull(value, 'payback_months_vs_cdi'),
+    firstYearMonthlySavingBrl: strOrNull(value, 'first_year_monthly_saving_brl'),
+    tariffGrowthPerYear: isRecord(premises) ? strOrNull(premises, 'tariff_growth_per_year') : null,
+    indicesAsOfMonth: strOrNull(value, 'indices_as_of_month'),
+  }
+}
+
 export function parseExpansionAssessment(payload: unknown): ExpansionAssessment {
   if (!isRecord(payload)) fail('payload')
   return {
@@ -131,5 +172,6 @@ export function parseExpansionAssessment(payload: unknown): ExpansionAssessment 
     dcAcRatioAfter: strOrNull(payload, 'dc_ac_ratio_after'),
     problemMonths: strList(payload, 'problem_months'),
     money: parseMoney(payload.money),
+    payback: parsePayback(payload.payback),
   }
 }

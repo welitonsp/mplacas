@@ -34,4 +34,17 @@ export const expansionAvailablePayload = {
       { year: 2029, wire_b_share: '1.00', value_brl_kwh: '0.599933', scenario: true },
     ],
   },
+  payback: {
+    unavailable_reason: null,
+    proposal_brl: '1500.00',
+    includes_inverter: false,
+    recorded_on: '2026-10-28',
+    payback_months_with_ipca: 75,
+    payback_months_no_growth: 88,
+    payback_months_vs_cdi: 140,
+    first_year_monthly_saving_brl: '21.50',
+    lifetime_savings_brl: '9000.00',
+    indices_as_of_month: '2026-09',
+    premises: { tariff_growth_per_year: '0.0450' },
+  },
 }

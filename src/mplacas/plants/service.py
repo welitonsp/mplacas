@@ -10,6 +10,7 @@ FastAPI app.
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
@@ -22,6 +23,8 @@ from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.plants.schemas import (
     DevicePowerConfigurationView,
     ModuleTechnology,
+    PlantExpansionProposalUpdateRequest,
+    PlantExpansionProposalView,
     PlantFinancialConfigurationUpdateRequest,
     PlantFinancialConfigurationView,
     PlantLocationUpdateRequest,
@@ -194,6 +197,32 @@ class PlantService:
         for field_name in _FINANCIAL_FIELDS:
             if field_name in payload.model_fields_set:
                 setattr(plant, field_name, getattr(payload, field_name))
+        await self._session.flush()
+
+    @staticmethod
+    def expansion_proposal(plant: Plant) -> PlantExpansionProposalView:
+        return PlantExpansionProposalView(
+            plant_id=plant.id,
+            amount_brl=plant.expansion_proposal_brl,
+            includes_inverter=plant.expansion_proposal_includes_inverter,
+            recorded_on=plant.expansion_proposal_recorded_on,
+        )
+
+    async def update_expansion_proposal(
+        self,
+        plant: Plant,
+        payload: PlantExpansionProposalUpdateRequest,
+        *,
+        today: date,
+    ) -> None:
+        if payload.amount_brl is None:
+            plant.expansion_proposal_brl = None
+            plant.expansion_proposal_includes_inverter = None
+            plant.expansion_proposal_recorded_on = None
+        else:
+            plant.expansion_proposal_brl = payload.amount_brl
+            plant.expansion_proposal_includes_inverter = payload.includes_inverter
+            plant.expansion_proposal_recorded_on = today
         await self._session.flush()
 
     async def setup_status(self, plant: Plant) -> PlantSetupView:
