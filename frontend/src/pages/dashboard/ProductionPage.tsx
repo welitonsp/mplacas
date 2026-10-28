@@ -266,7 +266,7 @@ export function ProductionPage() {
       </section>
 
       {hasBaseline && (
-        <Suspense fallback={<div className="mb-6 h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)]" aria-hidden="true" />}>
+        <Suspense fallback={<div className="mb-6 h-40 animate-pulse rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]" aria-hidden="true" />}>
           <ExpectedComparisonSection
             anomalyState={anomalyState}
             expectedProduction={expectedProduction}

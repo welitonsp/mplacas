@@ -43,15 +43,19 @@ const files = Object.entries({ ...componentSources, ...pageSources, ...otherSour
 
 // Casa qualquer `text-[Npx]` com N < 12 (1 ou 2 dígitos apenas, para não
 // capturar `text-[12px]`+ por engano).
-const BELOW_FLOOR_ARBITRARY_TEXT_SIZE = /text-\[(\d{1,2})px\]/
+//
+// Flag `g` + `matchAll`: a versão anterior usava `content.match` sem `g`, que
+// só olha a PRIMEIRA ocorrência do arquivo. Um `text-[13px]` no topo escondia
+// qualquer `text-[11px]` abaixo — foi assim que três rótulos de 11 px
+// (`ProductionHistoryChart`, `HomeWeekCard`) passaram pelo guard
+// (auditoria visual de 28/10/2026).
+const ARBITRARY_TEXT_SIZE = /text-\[(\d{1,2})px\]/g
 
 describe('tipografia — nenhum tamanho de texto arbitrário abaixo do piso de 12px', () => {
   it.each(files)('%s não usa text-[Npx] com N < 12', (_path, content) => {
-    const match = content.match(BELOW_FLOOR_ARBITRARY_TEXT_SIZE)
-    if (match) {
-      expect(Number(match[1])).toBeGreaterThanOrEqual(12)
-    } else {
-      expect(match).toBeNull()
-    }
+    const belowFloor = [...content.matchAll(ARBITRARY_TEXT_SIZE)]
+      .map((match) => Number(match[1]))
+      .filter((size) => size < 12)
+    expect(belowFloor).toEqual([])
   })
 })
