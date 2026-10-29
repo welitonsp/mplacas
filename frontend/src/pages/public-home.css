@@ -456,3 +456,102 @@ h2 { margin: 0; color: var(--navy); font: 600 clamp(2.55rem, 4.6vw, 4.7rem)/.98 
 @media (max-width: 640px) {
   .site-shell .site-nav a { display: flex; min-height: 48px; }
 }
+
+/* ── Identidade ADR-077 na landing (ADR-090) ───────────────────────────────
+   A landing tinha paleta própria (verde-água #4BB9A9, âmbar, creme, marinho
+   esverdeado) e rótulos em CAIXA ALTA espaçada; o painel segue a ADR-077
+   (verde #009C77 = energia, marinho #00406E = estrutura/ação, cinza frio,
+   sentence case). Quem clicava em "Entrar" mudava de produto visualmente.
+   Aqui só cor, tipo de rótulo e decoração mudam; composição, fotos, texto e
+   o símbolo da marca ficam (ver ADR-090).
+   Fica DEPOIS do bloco de acessibilidade, que continua valendo. */
+
+.site-shell {
+  /* Mesmos papéis da ADR-077, nos valores do painel: */
+  --navy: #0e1b2a;      /* tinta / fundo escuro (antes #102126, esverdeado) */
+  --navy-2: #13212f;    /* fundo escuro em degrau (gray-900 do painel) */
+  --teal: #2bc79b;      /* verde de energia sobre fundo escuro (tema escuro) */
+  --teal-dark: #00775b; /* verde de energia sobre fundo claro (success-text) */
+  --amber: var(--teal); /* âmbar era decoração; laranja é só atenção (ADR-077) */
+  --paper: #f3f5f8;     /* fundo da página do painel (antes creme #f3f4ee) */
+  --paper-2: #eef2f6;   /* fundo em degrau (gray-100) */
+  --ink: #0e1b2a;
+  --muted: #556576;     /* text-secondary do painel: 5,3:1 nos dois fundos */
+  --line: rgba(14, 27, 42, 0.12);
+  color: var(--ink);
+  background: var(--paper);
+}
+
+/* Cores que estavam escritas direto nas regras. */
+.site-shell .section-label,
+.site-shell .eyebrow,
+.site-shell .capability-card__content > a { color: var(--teal-dark); }
+.site-shell .split-story__content { background: var(--paper-2); }
+.site-shell .split-story--climate .split-story__content { background: var(--navy); }
+.site-shell .site-footer { background: #0a1017; }
+.site-shell .capability-card { background: rgba(255, 255, 255, 0.6); border-color: var(--line); }
+.site-shell .capability-card:hover { background: #ffffff; border-color: rgba(0, 119, 91, 0.45); }
+.site-shell .capability-card__content > a { border-color: rgba(0, 119, 91, 0.4); }
+.site-shell .text-link { border-bottom-color: rgba(0, 119, 91, 0.42); }
+.site-shell .split-story--climate .text-link { border-bottom-color: rgba(43, 199, 155, 0.38); }
+.site-shell .quote-card { background: rgba(43, 199, 155, 0.1); }
+.site-shell .header-cta:hover { background: rgba(122, 174, 219, 0.12); border-color: #7aaedb; }
+
+/* Ação primária = marinho (ADR-077, decisão 1). Sobre fundo escuro, o
+   marinho clareado do tema escuro do painel, com o mesmo texto escuro
+   (`--color-on-brand` do escuro): 7,6:1. Antes: verde-água. */
+.site-shell .button--primary { color: #06182a; background: #7aaedb; }
+.site-shell .button--primary:hover { background: #a7cbea; }
+.site-shell .button--outline-light { border-color: rgba(122, 174, 219, 0.65); color: #7aaedb; }
+.site-shell .button--outline-light:hover { color: #06182a; background: #7aaedb; }
+
+/* Véu escuro sobre as fotos: continua (é o que deixa o texto legível sobre
+   a imagem), agora na tinta do painel em vez do esverdeado. */
+.site-shell .hero-section__shade {
+  background:
+    linear-gradient(90deg, rgba(10, 16, 23, 0.96) 0%, rgba(10, 16, 23, 0.83) 37%, rgba(10, 16, 23, 0.24) 76%, rgba(10, 16, 23, 0.3) 100%),
+    linear-gradient(180deg, rgba(10, 16, 23, 0.55) 0%, transparent 24%, rgba(10, 16, 23, 0.62) 100%);
+}
+@media (max-width: 640px) {
+  .site-shell .hero-section__shade {
+    background: linear-gradient(90deg, rgba(10, 16, 23, 0.94), rgba(10, 16, 23, 0.63)), linear-gradient(180deg, rgba(10, 16, 23, 0.5), rgba(10, 16, 23, 0.75));
+  }
+}
+.site-shell .split-story__image::after { background: linear-gradient(180deg, rgba(10, 16, 23, 0.05), rgba(10, 16, 23, 0.48)); }
+
+/* Sem decoração (ADR-077, decisão 6): saem a textura pontilhada do hero e o
+   brilho radial da seção de confiabilidade. */
+.site-shell .hero-section::after,
+.site-shell .trust-section::before { display: none; }
+
+/* Rótulos em sentence case (ADR-077, decisão 5), sem o espaçamento largo da
+   CAIXA ALTA. O texto já foi escrito com a primeira letra maiúscula no
+   componente. */
+.site-shell .section-label,
+.site-shell .hero-note,
+.site-shell .hero-meta,
+.site-shell .hero-bottom-marker,
+.site-shell .evidence-item span,
+.site-shell .evidence-mark span,
+.site-shell .intro-section__stamp,
+.site-shell .eyebrow,
+.site-shell .visual-annotation,
+.site-shell .dashboard-mockup__pill,
+.site-shell .image-caption,
+.site-shell .story-stat span,
+.site-shell .quote-card span,
+.site-shell .faq-cta > div > span,
+.site-shell .trust-section__footer,
+.site-shell .site-footer__links span,
+.site-shell .site-footer__bottom,
+.site-shell .vertical-note,
+.site-shell .capability-card__top,
+.site-shell .evidence-intro__index,
+.site-shell .trust-grid__number { text-transform: none; letter-spacing: 0; }
+
+/* Prévia ilustrativa: a linha do "esperado" usa a cor de referência dos
+   gráficos do painel (tracejado azul-acinzentado), não âmbar nem verde. */
+.site-shell .chart-line--expected { stroke: #3e5c76; }
+.site-shell .chart-legend b { border-top-color: #3e5c76; }
+.site-shell .chart-area { fill: rgba(0, 156, 119, 0.12); }
+.site-shell .dashboard-mockup__side-line--active { background: rgba(0, 156, 119, 0.2); }

@@ -18,7 +18,7 @@ ler o número — é o oposto do objetivo.
 
 ## Paleta e tokens já estabelecidos (não invente uma paleta nova)
 
-A identidade vigente é a da **ADR-077 (2026-10)** — leia `docs/ADR-077-identidade-visual-2026-10.md`
+A identidade vigente é a da **ADR-077 (2026-10)**, estendida à landing pública pela **ADR-090** (cores e rótulos do painel, composição própria) — leia `docs/ADR-077-identidade-visual-2026-10.md`
 antes de mexer em visual. Resumo do que ela fixou:
 
 - **Duas cores de marca com papel fixo**, as mesmas do PDF mensal: **verde `#009C77`** =
