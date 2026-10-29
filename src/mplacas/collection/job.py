@@ -7,6 +7,7 @@ from mplacas.collection.queue import CollectionQueueRepository
 from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context
+from mplacas.providers.accounts import ProviderLogin
 from mplacas.providers.base import ProviderError
 from mplacas.providers.nepviewer.factory import build_resilient_nepviewer
 from mplacas.services.collection import CollectionResult, SolarCollectionService
@@ -20,7 +21,8 @@ async def run_solar_collection(
     *,
     target_date: date,
     plant_id,
-    plant_name: str,
+    plant_name: str | None = None,
+    credentials: ProviderLogin | None = None,
 ) -> CollectionResult | None:
     """Coleta a produção diária das placas com resiliência e reagendamento.
 
@@ -28,14 +30,26 @@ async def run_solar_collection(
     dados incompletos. Se, mesmo após o retry, a API seguir indisponível ou
     incompleta, a coleta do dia é enfileirada para nova tentativa posterior,
     em vez de falhar em definitivo.
+
+    Com ``credentials`` (conexão da usina, ADR-091), grava na usina
+    ``plant_id``. Sem elas, usa a conta global das variáveis ``NEP_*`` e a
+    usina ``plant_name`` (caminho antigo, até a fase 7).
     """
     settings = get_settings()
-    if settings.nep_account is None or settings.nep_password is None:
-        raise RuntimeError("NEPViewer credentials must be configured for solar collection")
+    if credentials is None:
+        if settings.nep_account is None or settings.nep_password is None:
+            raise RuntimeError("NEPViewer credentials must be configured for solar collection")
+        if plant_name is None:
+            raise ValueError("plant_name is required for the global NEPViewer account")
+        account = settings.nep_account
+        password = settings.nep_password.get_secret_value()
+    else:
+        account = credentials.login
+        password = credentials.password
 
     client, provider = build_resilient_nepviewer(
-        account=settings.nep_account,
-        password=settings.nep_password.get_secret_value(),
+        account=account,
+        password=password,
         base_url=str(settings.nep_base_url),
         timeout_seconds=settings.request_timeout_seconds,
     )
@@ -44,7 +58,8 @@ async def run_solar_collection(
             await set_platform_context(session)
             service = SolarCollectionService(session, provider)
             result = await service.collect(
-                plant_name=plant_name,
+                plant_name=plant_name if credentials is None else None,
+                plant_id=plant_id if credentials is not None else None,
                 start=target_date,
                 end=target_date,
                 consolidate_through=target_date,

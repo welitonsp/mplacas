@@ -102,6 +102,7 @@ jobs:
           MPLACAS_TELEGRAM_BOT_TOKEN: ${{ secrets.MPLACAS_TELEGRAM_BOT_TOKEN }}
           MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
           MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
+          MPLACAS_PROVIDER_SECRET_KEYS: ${{ secrets.MPLACAS_PROVIDER_SECRET_KEYS }}
         run: python -m mplacas.cloud_jobs smoke --operational
 
       - name: collect — telemetria do fornecedor
@@ -111,6 +112,7 @@ jobs:
           MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
           MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
           MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
+          MPLACAS_PROVIDER_SECRET_KEYS: ${{ secrets.MPLACAS_PROVIDER_SECRET_KEYS }}
         run: |
           args=()
           [[ -z "$TARGET_DATE" ]] || args+=(--target-date "$TARGET_DATE")
@@ -123,6 +125,7 @@ jobs:
           MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
           MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
           MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
+          MPLACAS_PROVIDER_SECRET_KEYS: ${{ secrets.MPLACAS_PROVIDER_SECRET_KEYS }}
         run: python -m mplacas.cloud_jobs drain-collection
 
       - name: daily-pipeline — analise do dia
@@ -133,6 +136,7 @@ jobs:
           MPLACAS_TELEGRAM_BOT_TOKEN: ${{ secrets.MPLACAS_TELEGRAM_BOT_TOKEN }}
           MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
           MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
+          MPLACAS_PROVIDER_SECRET_KEYS: ${{ secrets.MPLACAS_PROVIDER_SECRET_KEYS }}
         run: |
           args=()
           [[ -z "$TARGET_DATE" ]] || args+=(--target-date "$TARGET_DATE")
