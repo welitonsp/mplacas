@@ -38,6 +38,12 @@ describe('RefreshBar', () => {
     const { rerender } = render(<RefreshBar onRefresh={onRefresh} loading={false} />)
 
     expect(screen.getByText('Dados podem ser sincronizados manualmente')).toBeInTheDocument()
+    // Repouso: sem bolinha verde (verde é energia/"tudo certo") e o texto
+    // some no celular, só o botão fica.
+    const idleStatus = screen.getByText('Dados podem ser sincronizados manualmente')
+    expect(idleStatus.querySelector('span')).toBeNull()
+    expect(idleStatus.className).toMatch(/\bhidden\b/)
+    expect(idleStatus.className).toMatch(/sm:inline-flex/)
 
     fireEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
     expect(screen.getByText(/Atualização solicitada às 14:35/)).toBeInTheDocument()

@@ -7,6 +7,10 @@ import { DASHBOARD_PRODUCTION_PATH } from '../../routes'
 // Só o medido: desvio contra o esperado, irradiância e rendimento ficam na aba
 // Energia. Dia sem leitura aparece como coluna vazia "sem dado" e o total diz
 // quantos dias somou — nunca soma 5 dias como se fossem 7.
+// Altura útil da barra mais alta: h-28 (112 px) menos o rótulo do valor (~16 px)
+// e o espaço entre os dois.
+const BAR_MAX_PX = 88
+
 export function HomeWeekCard({ week }: { week: readonly WeekDay[] }) {
   const measured = week.filter((day): day is WeekDay & { kwh: number } => day.kwh != null)
   const total = measured.reduce((sum, day) => sum + day.kwh, 0)
@@ -56,20 +60,34 @@ export function HomeWeekCard({ week }: { week: readonly WeekDay[] }) {
             )}
           </div>
           <div role="img" aria-label={`Produção diária: ${summary}`}>
-            <div className="flex h-24 items-end gap-2" aria-hidden="true">
+            {/* Valor de cada dia sobre a barra (chart-standards, regra 2: sem
+                escala, barra não é dado). Unidade dita uma vez, acima. Dia sem
+                leitura continua tracejado e sem número — nunca um 0 fabricado. */}
+            <p className="mb-1 text-xs text-[var(--color-text-secondary)]" aria-hidden="true">
+              kWh por dia
+            </p>
+            <div className="flex h-28 items-end gap-2" aria-hidden="true">
               {week.map((day) => (
-                <div key={day.date} className="flex h-full min-w-0 flex-1 items-end justify-center">
+                <div key={day.date} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
                   {day.kwh == null ? (
                     <span
                       data-testid="home-week-gap"
                       className="h-1.5 w-full max-w-8 rounded-full border border-dashed border-[var(--color-gray-400)]"
                     />
                   ) : (
-                    <span
-                      data-testid="home-week-bar"
-                      className="w-full max-w-8 rounded-t-md bg-[var(--color-energy-solar)]"
-                      style={{ height: `${Math.max(6, Math.round((day.kwh / max) * 100))}%` }}
-                    />
+                    <>
+                      <span
+                        data-testid="home-week-value"
+                        className="text-xs font-semibold tabular-nums text-[var(--color-text-primary)]"
+                      >
+                        {formatNumber(day.kwh, 0)}
+                      </span>
+                      <span
+                        data-testid="home-week-bar"
+                        className="w-full max-w-8 rounded-t-md bg-[var(--color-energy-solar)]"
+                        style={{ height: `${Math.max(4, Math.round((day.kwh / max) * BAR_MAX_PX))}px` }}
+                      />
+                    </>
                   )}
                 </div>
               ))}
@@ -93,7 +111,7 @@ export function HomeWeekCard({ week }: { week: readonly WeekDay[] }) {
 
       <Link
         to={DASHBOARD_PRODUCTION_PATH}
-        className="inline-flex min-h-[44px] items-center gap-1 self-start rounded text-sm font-semibold text-[var(--color-brand-primary)] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+        className="mt-auto inline-flex min-h-[44px] items-center gap-1 self-start rounded text-sm font-semibold text-[var(--color-brand-primary)] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
       >
         Ver minha energia <span aria-hidden="true">→</span>
       </Link>

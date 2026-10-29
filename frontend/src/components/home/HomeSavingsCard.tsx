@@ -116,7 +116,7 @@ export function HomeSavingsCard({
 
       <ReturnProgress result={financialReturn} />
 
-      <Link to={DASHBOARD_FINANCIAL_PATH} className={`${LINK_CLASS} self-start`}>
+      <Link to={DASHBOARD_FINANCIAL_PATH} className={`${LINK_CLASS} mt-auto self-start`}>
         Ver meu dinheiro <span aria-hidden="true">→</span>
       </Link>
     </section>

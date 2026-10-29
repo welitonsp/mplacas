@@ -185,6 +185,10 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
     expect(within(week).getByText('Soma de 2 dias: 5 dias ficaram sem leitura.')).toBeInTheDocument()
     expect(within(week).getAllByTestId('home-week-bar')).toHaveLength(2)
     expect(within(week).getAllByTestId('home-week-gap')).toHaveLength(5)
+    // Valor de cada dia medido sobre a barra; dia sem leitura sem número
+    // (nunca um 0 fabricado).
+    expect(within(week).getAllByTestId('home-week-value')).toHaveLength(2)
+    expect(within(week).getByText('kWh por dia')).toBeInTheDocument()
     expect(
       within(week).getByRole('img', {
         name: 'Produção diária: 24/07: sem dado; 25/07: sem dado; 26/07: sem dado; 27/07: sem dado; 28/07: sem dado; 29/07: 38 kWh; 30/07: 40 kWh',

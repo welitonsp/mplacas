@@ -20,6 +20,7 @@ export function RefreshBar({
     onRefresh()
   }
 
+  const idle = !loading && requestedAt === null
   const statusText = loading
     ? 'Sincronizando dados do painel'
     : requestedAt
@@ -35,11 +36,15 @@ export function RefreshBar({
   // de levantar, que pareciam conteúdo e quebravam o alinhamento do cabeçalho.
   return (
     <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 ${className}`.trim()}>
-      <p aria-live="polite" className="inline-flex items-center gap-2 text-[13px] text-[var(--color-text-secondary)]">
-        <span
-          aria-hidden="true"
-          className={`h-2 w-2 rounded-full ${loading ? 'animate-pulse bg-[var(--color-brand-primary)]' : 'bg-[var(--color-success)]'}`}
-        />
+      {/* Em repouso o texto é neutro: nada aconteceu, então nada de bolinha
+          verde (verde, no MPlacas, é energia/"tudo certo"). No celular o texto
+          de repouso some — só o botão, para o conteúdo subir; durante e depois
+          da atualização o retorno aparece em qualquer tela. */}
+      <p
+        aria-live="polite"
+        className={`items-center gap-2 text-[13px] text-[var(--color-text-secondary)] ${idle ? 'hidden sm:inline-flex' : 'inline-flex'}`}
+      >
+        {loading && <span aria-hidden="true" className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-brand-primary)]" />}
         {statusText}
       </p>
 
