@@ -91,14 +91,14 @@ function MoneyBlock({ money }: { money: ExpansionMoney | null }) {
             Economia estimada pela regra de {firstYear}
             {hasScenario ? '' : ' (cenário com Fio B integral)'}
           </dt>
-          <dd className="font-display text-[20px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+          <dd className="font-display text-lg font-semibold tabular-nums text-[var(--color-text-primary)]">
             ≈ {formatCurrency(money.monthlySavingFirstYearBrl)} por mês
           </dd>
         </div>
         {hasScenario && (
           <div>
             <dt className="text-[13px] text-[var(--color-text-secondary)]">A partir de {scenario?.year ?? 2029} (cenário)</dt>
-            <dd className="font-display text-[20px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+            <dd className="font-display text-lg font-semibold tabular-nums text-[var(--color-text-primary)]">
               ≈ {formatCurrency(money.monthlySavingScenarioBrl)} por mês
             </dd>
           </div>
@@ -248,14 +248,14 @@ function PaybackBlock({
                   Retorno com a tarifa reajustada pelo IPCA (
                   {formatNumber((toNumber(payback.tariffGrowthPerYear) ?? 0) * 100, 1)}% ao ano)
                 </dt>
-                <dd className="font-display text-[20px] font-semibold text-[var(--color-text-primary)]">
+                <dd className="font-display text-lg font-semibold text-[var(--color-text-primary)]">
                   {payback.paybackMonthsWithIpca == null ? 'não se paga em 25 anos' : duration(payback.paybackMonthsWithIpca)}
                 </dd>
               </div>
               {payback.paybackMonthsWithIpca != null && (
                 <div>
                   <dt className="text-[13px] text-[var(--color-text-secondary)]">Sem nenhum reajuste da tarifa</dt>
-                  <dd className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+                  <dd className="text-sm font-semibold text-[var(--color-text-primary)]">
                     {duration(payback.paybackMonthsNoGrowth)}
                   </dd>
                 </div>
@@ -265,7 +265,7 @@ function PaybackBlock({
                   Comparado a deixar o dinheiro no CDI ({formatNumber((toNumber(payback.cdiPerYear) ?? 0) * 100, 1)}% ao
                   ano, líquido de IR)
                 </dt>
-                <dd className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+                <dd className="text-sm font-semibold text-[var(--color-text-primary)]">
                   {payback.paybackMonthsVsCdi == null ? 'não supera o CDI em 25 anos' : duration(payback.paybackMonthsVsCdi)}
                 </dd>
               </div>
@@ -378,7 +378,7 @@ export function ExpansionContent({
   if (status === 'INDISPONIVEL') {
     return (
       <Card className="sm:p-6">
-        <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">Ainda não dá para responder</p>
+        <p className="text-sm font-semibold text-[var(--color-text-primary)]">Ainda não dá para responder</p>
         <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
           {UNAVAILABLE[assessment.reasons[0] ?? ''] ?? 'Faltam dados para a análise.'}
           {assessment.reasons[0] === 'NOT_ENOUGH_CYCLES' ? ` Temos ${assessment.cyclesUsed}.` : ''}
@@ -389,7 +389,7 @@ export function ExpansionContent({
   if (status === 'CORRIGIR_ANTES') {
     return (
       <Card className="sm:p-6">
-        <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">Resolva a usina antes de ampliar</p>
+        <p className="text-sm font-semibold text-[var(--color-text-primary)]">Resolva a usina antes de ampliar</p>
         <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
           Há ciclo com créditos faltando, envio à rede impossível ou produção muito abaixo do esperado (
           {assessment.problemMonths.map(formatCycleLabel).join(', ')}). Ampliar não resolve defeito nem perda: confira
@@ -448,7 +448,7 @@ export function ExpansionContent({
       </div>
 
       <Card className="sm:p-6 space-y-3">
-        <p className="text-[15px] font-semibold leading-6 text-[var(--color-text-primary)]">{headline}</p>
+        <p className="text-sm font-semibold leading-6 text-[var(--color-text-primary)]">{headline}</p>
         {status === 'AMPLIAR' && (
           <>
             {assessment.balanceBeforeKwh && toNumber(assessment.balanceBeforeKwh)! > 0 && (
@@ -458,7 +458,7 @@ export function ExpansionContent({
               </p>
             )}
             {assessment.extraKwp ? (
-              <p className="text-[15px] leading-6 text-[var(--color-text-primary)]">
+              <p className="text-sm leading-6 text-[var(--color-text-primary)]">
                 {/* O tamanho (≈ N kWp) já está no cartão "Ampliação estimada" acima:
                     aqui só o que ele significa (ADR-077, decisão 15). */}
                 A ampliação estimada acima cobriria essa falta e {INVERTER[assessment.inverterStatus]}

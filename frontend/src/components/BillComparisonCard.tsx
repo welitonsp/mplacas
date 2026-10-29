@@ -35,7 +35,7 @@ function BillBar({
         <span className="text-[13px] font-medium text-[var(--color-text-secondary)]">{label}</span>
         <span
           className={`font-display tabular-nums font-semibold ${
-            tone === 'brand' ? 'text-[24px] text-[var(--color-text-primary)]' : 'text-[20px] text-[var(--color-text-secondary)]'
+            tone === 'brand' ? 'text-2xl text-[var(--color-text-primary)]' : 'text-lg text-[var(--color-text-secondary)]'
           }`}
         >
           {formatCurrency(value)}
@@ -57,7 +57,7 @@ function Detail({ label, value, note }: { label: string; value: string; note?: s
   return (
     <div className="min-w-0">
       <dt className="text-[13px] font-medium leading-5 text-[var(--color-text-secondary)]">{label}</dt>
-      <dd className="mt-0.5 text-[15px] font-semibold tabular-nums text-[var(--color-text-primary)]">{value}</dd>
+      <dd className="mt-0.5 text-sm font-semibold tabular-nums text-[var(--color-text-primary)]">{value}</dd>
       {note && <dd className="text-xs leading-5 text-[var(--color-text-secondary)]">{note}</dd>}
     </div>
   )
@@ -126,7 +126,7 @@ export function BillComparisonCard({
             <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">
               Economia no ciclo {formatCycleLabel(referenceMonth)}
             </p>
-            <p className="mt-1 font-display text-[32px] font-semibold leading-tight tabular-nums text-[var(--color-success-text)]">
+            <p className="mt-1 font-display text-[28px] font-semibold leading-tight tabular-nums text-[var(--color-success-text)]">
               {formatCurrency(savings)}
             </p>
           </div>

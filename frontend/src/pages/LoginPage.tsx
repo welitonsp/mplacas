@@ -165,7 +165,7 @@ export function LoginPage() {
                   onClick={() => setShowPassword((prev) => !prev)}
                   aria-pressed={showPassword}
                   disabled={loading}
-                  className="absolute inset-y-1 right-1 flex min-w-[72px] items-center justify-center rounded-lg px-3 text-xs font-semibold text-[var(--color-text-secondary)] transition-all duration-150 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] disabled:opacity-50"
+                  className="absolute inset-y-[2px] right-1 flex min-w-[72px] items-center justify-center rounded-lg px-3 text-xs font-semibold text-[var(--color-text-secondary)] transition-all duration-150 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] disabled:opacity-50"
                 >
                   {showPassword ? 'Ocultar' : 'Mostrar'}
                 </button>
@@ -186,7 +186,7 @@ export function LoginPage() {
               type="submit"
               disabled={loading}
               aria-busy={loading}
-              className="mt-2 inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand-primary)] px-4 py-3 text-[15px] font-semibold text-[var(--color-on-brand)] transition-colors duration-150 hover:bg-[var(--color-brand-primary-dark)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none"
+              className="mt-2 inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--color-brand-primary)] px-4 py-3 text-sm font-semibold text-[var(--color-on-brand)] transition-colors duration-150 hover:bg-[var(--color-brand-primary-dark)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none"
             >
               {loading && (
                 <span
@@ -236,7 +236,7 @@ export function LoginPage() {
           <ul className="grid max-w-3xl grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
             {BENEFITS.map((benefit) => (
               <li key={benefit.title} className="border-t border-[var(--color-border)] pt-4">
-                <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">{benefit.title}</p>
+                <p className="text-sm font-semibold text-[var(--color-text-primary)]">{benefit.title}</p>
                 <p className="mt-1 text-sm leading-relaxed text-[var(--color-text-secondary)]">
                   {benefit.description}
                 </p>

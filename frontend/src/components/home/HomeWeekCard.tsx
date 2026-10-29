@@ -30,7 +30,7 @@ export function HomeWeekCard({ week }: { week: readonly WeekDay[] }) {
       className="flex flex-col gap-3.5 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] sm:p-6"
     >
       <div className="flex items-baseline justify-between gap-3">
-        <h2 id="home-week-heading" className="text-[14px] font-medium text-[var(--color-text-secondary)]">
+        <h2 id="home-week-heading" className="text-sm font-medium text-[var(--color-text-secondary)]">
           {first && last ? `Gerou de ${formatShortDate(first)} a ${formatShortDate(last)}` : 'Produção recente'}
         </h2>
         <span className="shrink-0 rounded-full bg-[var(--color-gray-100)] px-2 py-0.5 text-xs font-semibold text-[var(--color-chart-reference)]">
@@ -39,15 +39,15 @@ export function HomeWeekCard({ week }: { week: readonly WeekDay[] }) {
       </div>
 
       {measured.length === 0 ? (
-        <p className="text-[15px] leading-6 text-[var(--color-text-secondary)]">Ainda sem produção diária registrada nestes dias.</p>
+        <p className="text-sm leading-6 text-[var(--color-text-secondary)]">Ainda sem produção diária registrada nestes dias.</p>
       ) : (
         <>
           <div className="flex flex-col gap-1">
             <p className="flex flex-wrap items-baseline gap-x-2">
-              <span className="font-display text-[32px] font-semibold leading-none tabular-nums text-[var(--color-text-primary)]">
+              <span className="font-display text-[28px] font-semibold leading-none tabular-nums text-[var(--color-text-primary)]">
                 {formatNumber(total, 0)}
               </span>
-              <span className="text-[15px] text-[var(--color-text-secondary)]">
+              <span className="text-sm text-[var(--color-text-secondary)]">
                 {average == null ? 'kWh' : `kWh · média ${formatNumber(average, 1)} por dia`}
               </span>
             </p>

@@ -141,8 +141,8 @@ function BillField({ label, value, emphasis = false }: { label: string; value: s
       <dd
         className={
           emphasis
-            ? 'mt-0.5 font-display text-[20px] font-semibold tabular-nums text-[var(--color-text-primary)]'
-            : 'mt-0.5 text-[15px] font-semibold tabular-nums text-[var(--color-text-primary)]'
+            ? 'mt-0.5 font-display text-lg font-semibold tabular-nums text-[var(--color-text-primary)]'
+            : 'mt-0.5 text-sm font-semibold tabular-nums text-[var(--color-text-primary)]'
         }
       >
         {value}
@@ -436,7 +436,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
       <Card className="sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 max-w-2xl">
-            <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+            <p className="text-sm font-semibold text-[var(--color-text-primary)]">
               Importe a fatura da Equatorial em PDF
             </p>
             <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">

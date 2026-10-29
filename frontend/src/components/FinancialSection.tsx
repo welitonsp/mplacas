@@ -80,13 +80,13 @@ function SavingsUnavailableCard({ indicators, referenceMonth }: { indicators: Ex
       </SectionTitle>
       <Card className="sm:p-6">
         {savings == null ? (
-          <p className="text-[15px] leading-6 text-[var(--color-text-secondary)]">
+          <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
             {indicators.savings_unavailable_reason
               ? savingsUnavailableMessage(indicators.savings_unavailable_reason)
               : 'Economia ainda não disponível para este ciclo.'}
           </p>
         ) : (
-          <p className="font-display text-[32px] font-semibold tabular-nums text-[var(--color-success-text)]">
+          <p className="font-display text-[28px] font-semibold tabular-nums text-[var(--color-success-text)]">
             {formatCurrency(savings)}
             <span className="ml-2 align-middle font-sans text-xs font-semibold text-[var(--color-chart-reference)]">Estimado</span>
           </p>
@@ -96,13 +96,13 @@ function SavingsUnavailableCard({ indicators, referenceMonth }: { indicators: Ex
             {balance != null && (
               <div>
                 <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Créditos guardados</dt>
-                <dd className="mt-0.5 text-[16px] font-semibold tabular-nums text-[var(--color-text-primary)]">{`${formatNumber(balance, 2)} kWh`}</dd>
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums text-[var(--color-text-primary)]">{`${formatNumber(balance, 2)} kWh`}</dd>
               </div>
             )}
             {coverage != null && imported != null && imported > 0 && (
               <div>
                 <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Pago com créditos</dt>
-                <dd className="mt-0.5 text-[16px] font-semibold tabular-nums text-[var(--color-text-primary)]">{`${formatNumber(coverage, 1)}% da energia da rede`}</dd>
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums text-[var(--color-text-primary)]">{`${formatNumber(coverage, 1)}% da energia da rede`}</dd>
               </div>
             )}
           </dl>
@@ -189,9 +189,9 @@ function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndi
   return (
     <section className="md:col-span-6 lg:col-span-12" aria-label={`Detalhes da fatura de ${cycle}`}>
       <details className="group rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-        <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-card)] px-5 text-[15px] font-semibold text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] [&::-webkit-details-marker]:hidden">
+        <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-card)] px-5 text-sm font-semibold text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] [&::-webkit-details-marker]:hidden">
           {`Detalhes da fatura de ${cycle}`}
-          <span aria-hidden="true" className="text-[var(--color-gray-400)] transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none">
+          <span aria-hidden="true" className="text-[var(--color-gray-500)] transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none">
             ›
           </span>
         </summary>
@@ -199,7 +199,7 @@ function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndi
           {total != null && energy != null && lighting != null && (
             <div>
               <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">Valor da fatura</p>
-              <p className="mt-1 mb-3 font-display text-[24px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+              <p className="mt-1 mb-3 font-display text-2xl font-semibold tabular-nums text-[var(--color-text-primary)]">
                 {formatCurrency(total)}
               </p>
               <StackedBar
@@ -217,7 +217,7 @@ function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndi
             <div className="grid grid-cols-1 gap-4 border-t border-[var(--color-border)] pt-4 sm:grid-cols-2">
               <dl>
                 <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Tarifa impressa na fatura</dt>
-                <dd className="mt-0.5 text-[16px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums text-[var(--color-text-primary)]">
                   {`R$ ${formatNumber(billTariffWithTaxes, 3)}/kWh com impostos`}
                 </dd>
                 {billTariffWithoutTaxes != null && (

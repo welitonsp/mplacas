@@ -256,7 +256,7 @@ export function ProductionHistoryChart({
     <Card className="overflow-hidden sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
             Histórico de produção diária ({daily.length} dias)
           </h3>
           <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">

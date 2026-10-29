@@ -33,7 +33,7 @@ export function BrandMark({
         <path d="M38 35H83" stroke="#EEF4EA" strokeWidth="7" strokeLinecap="round" opacity=".92" />
       </svg>
       {showWordmark ? (
-        <span className="font-display text-[19px] font-bold leading-none tracking-[-0.01em]">MPlacas</span>
+        <span className="font-display text-lg font-bold leading-none tracking-[-0.01em]">MPlacas</span>
       ) : (
         <span className="sr-only">MPlacas</span>
       )}

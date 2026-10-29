@@ -194,7 +194,7 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
       </div>
 
       <Card className="sm:p-6">
-        <p className="text-[15px] font-semibold leading-6 text-[var(--color-text-primary)]">{verdict}</p>
+        <p className="text-sm font-semibold leading-6 text-[var(--color-text-primary)]">{verdict}</p>
         <p className="mt-1 text-[13px] text-[var(--color-text-secondary)]">
           Patrimônio nos dois caminhos: a usina com cada economia aplicada no CDI, e o mesmo investimento só no CDI.
         </p>
@@ -218,7 +218,7 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
             <p className="mt-2 text-sm text-[var(--color-text-primary)]">Sem CDI suficiente para comparar o período.</p>
           ) : coverage < MIN_REALIZED_COVERAGE ? (
             <>
-              <p className="mt-2 text-[15px] font-semibold text-[var(--color-text-primary)]">
+              <p className="mt-2 text-sm font-semibold text-[var(--color-text-primary)]">
                 {formatCurrency(realized.accumulatedSavingsBrl)} de economia confirmada em {realized.cyclesCounted}{' '}
                 {realized.cyclesCounted === 1 ? 'fatura' : 'faturas'}
               </p>
@@ -231,13 +231,13 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
             <dl className="mt-3 grid grid-cols-2 gap-4">
               <div>
                 <dt className="text-[13px] text-[var(--color-text-secondary)]">Economias aplicadas no CDI</dt>
-                <dd className="font-display text-[20px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+                <dd className="font-display text-lg font-semibold tabular-nums text-[var(--color-text-primary)]">
                   {formatCurrency(realized.solarPathNetBrl)}
                 </dd>
               </div>
               <div>
                 <dt className="text-[13px] text-[var(--color-text-secondary)]">Investimento só no CDI</dt>
-                <dd className="font-display text-[20px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+                <dd className="font-display text-lg font-semibold tabular-nums text-[var(--color-text-primary)]">
                   {formatCurrency(realized.cdiPathNetBrl)}
                 </dd>
               </div>

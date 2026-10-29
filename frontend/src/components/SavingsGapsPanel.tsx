@@ -127,7 +127,7 @@ export function SavingsGapsPanel({
       aria-labelledby="savings-gaps-heading"
       className="mt-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4"
     >
-      <h3 id="savings-gaps-heading" className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+      <h3 id="savings-gaps-heading" className="text-sm font-semibold text-[var(--color-text-primary)]">
         Meses a recalcular
       </h3>
       <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
