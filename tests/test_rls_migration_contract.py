@@ -26,10 +26,38 @@ def _load_migration() -> ModuleType:
     return module
 
 
+# Tabelas de inquilino criadas depois da 20260802_0040: cada migration liga o
+# próprio RLS com a mesma política (ver teste abaixo).
+LATER_RLS_MIGRATIONS = {
+    "provider_accounts": ROOT
+    / "migrations"
+    / "versions"
+    / "20261029_0051_add_provider_accounts.py",
+}
+
+
 def test_rls_migration_covers_exactly_the_application_inventory() -> None:
     migration = _load_migration()
-    assert set(migration.ALL_TABLES) == set(RLS_TABLES)
+    assert set(migration.ALL_TABLES) | set(LATER_RLS_MIGRATIONS) == set(RLS_TABLES)
+    assert not set(migration.ALL_TABLES) & set(LATER_RLS_MIGRATIONS)
     assert len(migration.ALL_TABLES) == len(set(migration.ALL_TABLES)) == 24
+
+
+def test_later_tenant_tables_enable_the_same_fail_closed_policy() -> None:
+    migration = _load_migration()
+    for table_name, path in LATER_RLS_MIGRATIONS.items():
+        spec = importlib.util.spec_from_file_location(f"rls_{table_name}", path)
+        assert spec is not None and spec.loader is not None
+        later = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(later)
+
+        assert later.POLICY_NAME == migration.POLICY_NAME
+        expected = migration._policy_expression("devices").replace("devices.", f"{table_name}.")
+        assert later.POLICY_EXPRESSION == expected
+        source = path.read_text(encoding="utf-8")
+        assert "ENABLE ROW LEVEL SECURITY" in source
+        assert "FORCE ROW LEVEL SECURITY" in source
+        assert "USING ({POLICY_EXPRESSION}) WITH CHECK ({POLICY_EXPRESSION})" in source
 
 
 def test_rls_policy_expressions_are_fail_closed_and_role_gated() -> None:

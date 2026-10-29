@@ -116,7 +116,7 @@ def parse_keyring(raw: str) -> dict[int, bytes]:
 class SecretBox:
     """Cifra e decifra segredos com AES-256-GCM e um chaveiro versionado."""
 
-    __slots__ = ("_ciphers", "_current_version", "_fingerprint_key")
+    __slots__ = ("_ciphers", "_current_version", "_fingerprint_keys")
 
     def __init__(self, keys: Mapping[int, bytes]) -> None:
         if not keys:
@@ -126,12 +126,15 @@ class SecretBox:
                 raise SecretBoxUnavailableError(f"provider secret key version {version} is invalid")
         self._current_version = max(keys)
         self._ciphers = {version: AESGCM(key) for version, key in keys.items()}
-        self._fingerprint_key = HKDF(
-            algorithm=hashes.SHA256(),
-            length=KEY_BYTES,
-            salt=None,
-            info=_FINGERPRINT_INFO,
-        ).derive(keys[self._current_version])
+        self._fingerprint_keys = {
+            version: HKDF(
+                algorithm=hashes.SHA256(),
+                length=KEY_BYTES,
+                salt=None,
+                info=_FINGERPRINT_INFO,
+            ).derive(key)
+            for version, key in keys.items()
+        }
 
     @classmethod
     def from_keyring(cls, raw: str) -> SecretBox:
@@ -186,12 +189,28 @@ class SecretBox:
         """HMAC-SHA256 estável para detectar repetição sem guardar o valor.
 
         Usa uma subchave derivada (HKDF) da chave atual, nunca a chave de
-        cifra diretamente. Trocar a chave muda as impressões: o comando de
-        rotação as recalcula junto com o texto cifrado.
+        cifra diretamente. Trocar a chave muda a impressão gravada: o comando
+        de rotação a recalcula. Para procurar repetição, use
+        ``fingerprint_candidates``, que cobre todas as versões do chaveiro.
         """
+        return self._fingerprint_with(self._current_version, value, purpose=purpose)
+
+    def fingerprint_candidates(self, value: str, *, purpose: str) -> frozenset[str]:
+        """Impressões do valor sob cada versão do chaveiro.
+
+        Uma linha ainda não rotacionada guarda a impressão da chave antiga;
+        procurar por todas evita aceitar a mesma conta em outra usina no
+        intervalo entre acrescentar a chave nova e rodar a rotação.
+        """
+        return frozenset(
+            self._fingerprint_with(version, value, purpose=purpose)
+            for version in self._fingerprint_keys
+        )
+
+    def _fingerprint_with(self, version: int, value: str, *, purpose: str) -> str:
         _check_label(purpose, name="fingerprint purpose")
         message = f"{purpose}\x00{value}".encode()
-        return hmac.new(self._fingerprint_key, message, hashlib.sha256).hexdigest()
+        return hmac.new(self._fingerprint_keys[version], message, hashlib.sha256).hexdigest()
 
 
 def generate_key() -> str:

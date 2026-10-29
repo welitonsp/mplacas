@@ -37,6 +37,7 @@ async def test_application_rls_enforces_crud_and_every_ownership_chain() -> None
     version_a, version_b = uuid.uuid4(), uuid.uuid4()
     audit_a, audit_b, audit_platform = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     alert_a, alert_b = uuid.uuid4(), uuid.uuid4()
+    account_a, account_b = uuid.uuid4(), uuid.uuid4()
     job_run_id = uuid.uuid4()
     marker_created = False
     roles_created = False
@@ -112,6 +113,23 @@ async def test_application_rls_enforces_crud_and_every_ownership_chain() -> None
                     "device_b": device_b,
                     "plant_b": plant_b,
                     "serial_b": f"rls-b-{suffix}",
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO provider_accounts "
+                    "(id, plant_id, provider, login_hint, account_fingerprint, "
+                    "ciphertext, key_version, active) VALUES "
+                    "(:account_a, :plant_a, 'NEPVIEWER', 'a***', :fp_a, '\\x01', 1, true), "
+                    "(:account_b, :plant_b, 'NEPVIEWER', 'b***', :fp_b, '\\x02', 1, true)"
+                ),
+                {
+                    "account_a": account_a,
+                    "plant_a": plant_a,
+                    "fp_a": f"a-{suffix}",
+                    "account_b": account_b,
+                    "plant_b": plant_b,
+                    "fp_b": f"b-{suffix}",
                 },
             )
             await connection.execute(
@@ -204,7 +222,7 @@ async def test_application_rls_enforces_crud_and_every_ownership_chain() -> None
                     {"tables": list(RLS_TABLES)},
                 )
             ).scalar_one()
-            assert policy_count == enabled_count == len(RLS_TABLES) == 24
+            assert policy_count == enabled_count == len(RLS_TABLES) == 25
 
         async with factory() as session:
             await _set_local_role(session, tenant_role)
@@ -243,6 +261,19 @@ async def test_application_rls_enforces_crud_and_every_ownership_chain() -> None
             assert (
                 await session.execute(text("SELECT count(*) FROM job_runs"))
             ).scalar_one() == 0
+            assert (
+                await session.execute(
+                    text("SELECT array_agg(id ORDER BY id) FROM provider_accounts")
+                )
+            ).scalar_one() == [account_a]
+            stolen = await session.execute(
+                text(
+                    "UPDATE provider_accounts SET login_hint = 'x' "
+                    "WHERE id = :id RETURNING id"
+                ),
+                {"id": account_b},
+            )
+            assert stolen.scalar_one_or_none() is None
 
             updated = await session.execute(
                 text("UPDATE plants SET name = 'forbidden' WHERE id = :plant_id RETURNING id"),

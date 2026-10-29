@@ -18,10 +18,14 @@ def _make_engine():
             url,
             poolclass=NullPool,
             connect_args=database_connect_args(url),
+            hide_parameters=True,
         )
     return create_async_engine(
         url,
         pool_pre_ping=True,
+        # Erros do SQLAlchemy não repetem valores gravados (texto cifrado,
+        # dicas de login) no log nem no console do CI (ADR-091).
+        hide_parameters=True,
         pool_size=3,
         max_overflow=2,
         connect_args=database_connect_args(url),

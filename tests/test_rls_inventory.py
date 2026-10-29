@@ -25,13 +25,15 @@ from mplacas.orchestration import db_models as _orchestration_models  # noqa: F4
 from mplacas.organizations import db_models as _organization_models  # noqa: F401
 from mplacas.organizations import invitation_db_models as _invitation_models  # noqa: F401
 from mplacas.photovoltaic import db_models as _photovoltaic_models  # noqa: F401
+from mplacas.providers import db_models as _provider_models  # noqa: F401
 from mplacas.reports import db_models as _report_models  # noqa: F401
+from mplacas.tariffs import db_models as _tariff_models  # noqa: F401
 
 
 def test_every_application_table_has_exactly_one_rls_classification() -> None:
     assert classified_application_tables() == frozenset(Base.metadata.tables)
     assert not (frozenset(RLS_TABLES) & PUBLIC_REFERENCE_TABLES)
-    assert len(RLS_TABLES) == 24
+    assert len(RLS_TABLES) == 25
 
 
 def test_public_reference_tables_carry_no_tenant_ownership_column() -> None:

@@ -1,0 +1,85 @@
+# Conexões das usinas com os fabricantes de inversor (ADR-091).
+#
+# Só manual, com confirmação digitada:
+# - importar: copia MPLACAS_NEP_ACCOUNT/PASSWORD para a usina informada
+#   (transição única da conta global para a conexão por usina);
+# - rotacionar: recifra todas as conexões com a chave mais nova de
+#   MPLACAS_PROVIDER_SECRET_KEYS (depois de acrescentar uma versão nova).
+# Nenhum passo imprime login, senha ou chave.
+name: provider-accounts
+
+on:
+  workflow_dispatch:
+    inputs:
+      acao:
+        description: "importar ou rotacionar"
+        required: true
+        default: importar
+        type: choice
+        options:
+          - importar
+          - rotacionar
+      usina:
+        description: "Nome da usina (só para importar)"
+        required: false
+        default: ""
+      confirmacao:
+        description: "Digite CONEXAO para confirmar"
+        required: true
+        default: ""
+
+concurrency:
+  group: provider-accounts
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  conexao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MPLACAS_ENVIRONMENT: production
+      PYTHONPATH: ${{ github.workspace }}/src
+      ACAO: ${{ inputs.acao }}
+      USINA: ${{ inputs.usina }}
+      CONFIRMACAO: ${{ inputs.confirmacao }}
+    steps:
+      - name: Validar entrada
+        run: |
+          if [ "$CONFIRMACAO" != "CONEXAO" ]; then
+            echo "Digite exatamente CONEXAO para confirmar." >&2
+            exit 1
+          fi
+          if [ "$ACAO" = "importar" ] && [ -z "$USINA" ]; then
+            echo "Informe o nome da usina para importar." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements.lock
+      - name: Importar a conta global para a usina
+        if: inputs.acao == 'importar'
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          MPLACAS_PROVIDER_SECRET_KEYS: ${{ secrets.MPLACAS_PROVIDER_SECRET_KEYS }}
+          MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
+          MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
+        run: |
+          python -m mplacas.cloud_jobs smoke
+          python -m mplacas.cloud_jobs import-provider-account --plant-name "$USINA"
+      - name: Recifrar com a chave mais nova
+        if: inputs.acao == 'rotacionar'
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          MPLACAS_PROVIDER_SECRET_KEYS: ${{ secrets.MPLACAS_PROVIDER_SECRET_KEYS }}
+        run: |
+          python -m mplacas.cloud_jobs smoke
+          python -m mplacas.cloud_jobs rotate-provider-secrets

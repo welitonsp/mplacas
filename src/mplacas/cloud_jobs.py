@@ -158,6 +158,19 @@ def _build_parser() -> argparse.ArgumentParser:
     tariffs.add_argument("--url", default=None, help="CSV URL (defaults to ANEEL open data)")
     tariffs.set_defaults(handler=_handle_import_tariffs)
 
+    import_account = subparsers.add_parser(
+        "import-provider-account",
+        help="copy MPLACAS_NEP_ACCOUNT/PASSWORD into a plant's provider account (ADR-091)",
+    )
+    import_account.add_argument("--plant-name", required=True)
+    import_account.set_defaults(handler=_handle_import_provider_account)
+
+    rotate_secrets = subparsers.add_parser(
+        "rotate-provider-secrets",
+        help="re-encrypt provider accounts with the newest key (ADR-091)",
+    )
+    rotate_secrets.set_defaults(handler=_handle_rotate_provider_secrets)
+
     drain = subparsers.add_parser(
         "drain-collection",
         help="reprocess deferred solar collection tasks",
@@ -195,6 +208,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     watchdog.set_defaults(handler=_handle_operational_watchdog)
     return parser
+
+
+def _handle_import_provider_account(args: argparse.Namespace) -> int:
+    asyncio.run(import_provider_account(plant_name=args.plant_name))
+    return 0
+
+
+def _handle_rotate_provider_secrets(_args: argparse.Namespace) -> int:
+    asyncio.run(rotate_provider_secrets())
+    return 0
 
 
 def _handle_migrate(_args: argparse.Namespace) -> int:
@@ -851,6 +874,75 @@ def _resolve_target_date(
     timezone = ZoneInfo(timezone_name)
     current = now.astimezone(timezone) if now is not None else datetime.now(timezone)
     return (current - timedelta(days=1)).date()
+
+
+async def import_provider_account(*, plant_name: str) -> None:
+    """Copia a conta NEPViewer das variáveis de ambiente para a usina (ADR-091).
+
+    Transição única: a usina precisa existir na organização default (onde a
+    coleta antiga grava). Nunca registra login nem senha.
+    """
+    from mplacas.core.secret_box import secret_box_from_settings
+    from mplacas.providers.accounts import NEPVIEWER, ProviderAccountService, ProviderLogin
+
+    settings = get_settings()
+    if settings.nep_account is None or settings.nep_password is None:
+        raise RuntimeError("MPLACAS_NEP_ACCOUNT and MPLACAS_NEP_PASSWORD are required")
+    box = secret_box_from_settings()
+    normalized_name = plant_name.strip()
+    async with SessionFactory() as session:
+        await set_platform_context(session)
+        plants = list(
+            await session.scalars(
+                select(Plant).where(
+                    Plant.name == normalized_name,
+                    Plant.organization_id == DEFAULT_ORGANIZATION_ID,
+                )
+            )
+        )
+        if not plants:
+            raise RuntimeError("plant not found in the default organization")
+        if len(plants) > 1:
+            raise RuntimeError("plant name is ambiguous in the default organization")
+        plant = plants[0]
+        service = ProviderAccountService(session, box)
+        existing = await service.get(plant.id)
+        if existing is not None and existing.active:
+            # Transição única: nunca sobrescreve uma conexão já cadastrada.
+            raise RuntimeError("plant already has an active provider account")
+        record = await service.save(
+            plant_id=plant.id,
+            provider=NEPVIEWER,
+            credentials=ProviderLogin(
+                login=settings.nep_account,
+                password=settings.nep_password.get_secret_value(),
+            ),
+        )
+        await session.commit()
+        logger.info(
+            "provider_account_imported",
+            extra={
+                "plant_id": str(record.plant_id),
+                "provider": record.provider,
+                "key_version": record.key_version,
+            },
+        )
+
+
+async def rotate_provider_secrets() -> None:
+    """Recifra todas as conexões com a chave mais nova do chaveiro (ADR-091)."""
+    from mplacas.core.secret_box import secret_box_from_settings
+    from mplacas.providers.accounts import ProviderAccountService
+
+    box = secret_box_from_settings()
+    async with SessionFactory() as session:
+        await set_platform_context(session)
+        changed = await ProviderAccountService(session, box).rotate_all()
+        await session.commit()
+    logger.info(
+        "provider_secrets_rotated",
+        extra={"changed": changed, "key_version": box.current_version},
+    )
 
 
 async def _resolve_plant_id(plant_name: str) -> uuid.UUID:
