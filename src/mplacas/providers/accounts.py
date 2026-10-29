@@ -101,9 +101,16 @@ def _seal(
 
 
 class ProviderAccountService:
-    def __init__(self, session: AsyncSession, box: SecretBox) -> None:
+    def __init__(self, session: AsyncSession, box: SecretBox | None) -> None:
+        """``box`` pode faltar só para operações que não cifram (desligar, ler estado)."""
         self._session = session
-        self._box = box
+        self._box_or_none = box
+
+    @property
+    def _box(self) -> SecretBox:
+        if self._box_or_none is None:
+            raise ProviderAccountError("provider secret keys are required for this operation")
+        return self._box_or_none
 
     async def get(
         self, plant_id: uuid.UUID, *, for_update: bool = False
