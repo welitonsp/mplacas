@@ -23,6 +23,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { LoadingAnnouncement } from '../../components/LoadingAnnouncement'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
 import { PageHeader } from '../../components/PageHeader'
+import { ProviderConnectionSection } from '../../components/ProviderConnectionSection'
 import { RetryableError } from '../../components/RetryableError'
 import { SectionTitle } from '../../components/SectionTitle'
 
@@ -746,6 +747,7 @@ export function PlantSetupPage() {
         // checklist é recarregado.
         <div className="space-y-6" key={data.plantId}>
           <SetupChecklist setup={data} />
+          <ProviderConnectionSection plantId={data.plantId} />
           <InstallationForm setup={data} onSaved={setup.refetch} />
           <LocationForm setup={data} onSaved={setup.refetch} />
           <InvestmentForm setup={data} onSaved={setup.refetch} />

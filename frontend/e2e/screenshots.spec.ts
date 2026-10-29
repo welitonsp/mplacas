@@ -105,6 +105,15 @@ async function interceptarApi(page: import('@playwright/test').Page) {
     ['**/energy/financial-return/latest*', financialReturnUnavailablePayload],
     ['**/devices/daily-status*', deviceDailyStatusPayload],
     ['**/reports/monthly/history*', monthlyHistoryPayload],
+    ['**/plants/*/provider-account', {
+      status: 'CONECTADA',
+      provider: 'NEPVIEWER',
+      login_hint: 'cl***@example.com',
+      connected_at: '2026-10-29T18:44:00Z',
+      last_success_at: '2026-10-30T09:07:00Z',
+      last_failure_at: null,
+      devices_found: null,
+    }],
     // Cadastro parcial (4 de 7), para a captura mostrar itens feitos e pendentes.
     [
       '**/plants/*/setup',
