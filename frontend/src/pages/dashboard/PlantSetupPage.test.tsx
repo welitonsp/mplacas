@@ -47,6 +47,29 @@ interface Mocks {
   updateTechnicalConfiguration?: ReturnType<typeof vi.fn>
   updatePlantLocation?: ReturnType<typeof vi.fn>
   updateFinancialConfiguration?: ReturnType<typeof vi.fn>
+  fetchProviderAccount?: ReturnType<typeof vi.fn>
+  saveProviderAccount?: ReturnType<typeof vi.fn>
+  deleteProviderAccount?: ReturnType<typeof vi.fn>
+}
+
+const NO_CONNECTION = {
+  status: 'SEM_CONEXAO',
+  provider: null,
+  login_hint: null,
+  connected_at: null,
+  last_success_at: null,
+  last_failure_at: null,
+  devices_found: null,
+}
+
+const CONNECTED = {
+  status: 'CONECTADA',
+  provider: 'NEPVIEWER',
+  login_hint: 'cl***@example.com',
+  connected_at: '2026-10-29T18:44:00Z',
+  last_success_at: '2026-10-30T09:07:00Z',
+  last_failure_at: null,
+  devices_found: null,
 }
 
 function installApiMock(mocks: Mocks = {}) {
@@ -55,6 +78,9 @@ function installApiMock(mocks: Mocks = {}) {
     updateTechnicalConfiguration: mocks.updateTechnicalConfiguration ?? vi.fn(async () => jsonResponse({})),
     updatePlantLocation: mocks.updatePlantLocation ?? vi.fn(async () => jsonResponse({})),
     updateFinancialConfiguration: mocks.updateFinancialConfiguration ?? vi.fn(async () => jsonResponse({})),
+    fetchProviderAccount: mocks.fetchProviderAccount ?? vi.fn(async () => jsonResponse(NO_CONNECTION)),
+    saveProviderAccount: mocks.saveProviderAccount ?? vi.fn(async () => jsonResponse(CONNECTED)),
+    deleteProviderAccount: mocks.deleteProviderAccount ?? vi.fn(async () => new Response(null, { status: 204 })),
   }
   vi.doMock('../../lib/api', () => ({
     ...resolved,
@@ -242,3 +268,227 @@ describe('PlantSetupPage — o cliente informa os dados da usina', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('não tem permissão')
   })
 })
+
+describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
+  const SECRET = 's3nh4-do-inversor'
+
+  it('sem conexão, confere a conta, mostra quantos inversores achou e esquece a senha', async () => {
+    vi.resetModules()
+    const fetchProviderAccount = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(NO_CONNECTION))
+      .mockResolvedValue(jsonResponse(CONNECTED))
+    const saveProviderAccount = vi.fn(async () => jsonResponse({ ...CONNECTED, devices_found: 2 }))
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    installApiMock({ fetchProviderAccount, saveProviderAccount })
+
+    await renderPage()
+
+    expect(await screen.findByText('Nenhuma conta conectada')).toBeInTheDocument()
+    const password = screen.getByLabelText('Senha da NEPViewer')
+    expect(password).toHaveAttribute('type', 'password')
+    expect(password).toHaveAttribute('autocomplete', 'new-password')
+    expect(password).toHaveValue('')
+    fireEvent.change(screen.getByLabelText('Login da NEPViewer'), { target: { value: ' cliente@example.com ' } })
+    fireEvent.change(password, { target: { value: SECRET } })
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
+
+    await waitFor(() =>
+      expect(saveProviderAccount).toHaveBeenCalledWith(singlePlant.id, {
+        login: 'cliente@example.com',
+        password: SECRET,
+      }),
+    )
+    expect(await screen.findByText('Conta conectada. 2 inversores encontrados.')).toBeInTheDocument()
+    expect(await screen.findByText(/NEPViewer, conta cl\*\*\*@example.com/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Senha da NEPViewer')).not.toBeInTheDocument()
+    expect(document.body.innerHTML).not.toContain(SECRET)
+    for (const call of setItem.mock.calls) expect(String(call[1])).not.toContain(SECRET)
+    setItem.mockRestore()
+  })
+
+  it('mostra o motivo da recusa sem repetir o que foi digitado', async () => {
+    vi.resetModules()
+    const saveProviderAccount = vi.fn(async () => jsonResponse({ detail: 'provider_login_failed' }, 422))
+    installApiMock({ saveProviderAccount })
+
+    await renderPage()
+    await screen.findByText('Nenhuma conta conectada')
+    fireEvent.change(screen.getByLabelText('Login da NEPViewer'), { target: { value: 'cliente@example.com' } })
+    fireEvent.change(screen.getByLabelText('Senha da NEPViewer'), { target: { value: SECRET } })
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('A NEPViewer recusou o login ou a senha')
+    expect(screen.getByRole('alert')).not.toHaveTextContent(SECRET)
+  })
+
+  it('não envia sem login ou senha', async () => {
+    vi.resetModules()
+    const saveProviderAccount = vi.fn()
+    installApiMock({ saveProviderAccount })
+
+    await renderPage()
+    await screen.findByText('Nenhuma conta conectada')
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Informe o login da conta NEPViewer.')
+    expect(saveProviderAccount).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [409, 'provider_account_in_use', 'Esta conta da NEPViewer já está conectada a outra usina.'],
+    [429, 'provider_verify_rate_limited', 'Muitas tentativas seguidas.'],
+    [503, 'provider_unavailable', 'A NEPViewer não respondeu agora.'],
+    [403, 'Forbidden', 'Só o administrador da conta pode alterar a conexão.'],
+  ])('traduz o erro %s (%s)', async (status, detail, message) => {
+    vi.resetModules()
+    installApiMock({ saveProviderAccount: vi.fn(async () => jsonResponse({ detail }, status)) })
+
+    await renderPage()
+    await screen.findByText('Nenhuma conta conectada')
+    fireEvent.change(screen.getByLabelText('Login da NEPViewer'), { target: { value: 'a@b.c' } })
+    fireEvent.change(screen.getByLabelText('Senha da NEPViewer'), { target: { value: 'x' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+  })
+
+  it('conectada, mostra a última leitura e desconecta só depois de confirmar', async () => {
+    vi.resetModules()
+    const fetchProviderAccount = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(CONNECTED))
+      .mockResolvedValue(jsonResponse(NO_CONNECTION))
+    const deleteProviderAccount = vi.fn(async () => new Response(null, { status: 204 }))
+    installApiMock({ fetchProviderAccount, deleteProviderAccount })
+
+    await renderPage()
+
+    expect(await screen.findByText(/Última leitura em/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Senha da NEPViewer')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Desconectar' }))
+    expect(deleteProviderAccount).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, desconectar' }))
+
+    await waitFor(() => expect(deleteProviderAccount).toHaveBeenCalledWith(singlePlant.id))
+    expect(await screen.findByText('Conta desconectada. A produção deixa de ser buscada.')).toBeInTheDocument()
+    expect(await screen.findByText('Nenhuma conta conectada')).toBeInTheDocument()
+  })
+
+  it('com falha na última leitura, pede a senha nova', async () => {
+    vi.resetModules()
+    installApiMock({
+      fetchProviderAccount: vi.fn(async () =>
+        jsonResponse({ ...CONNECTED, status: 'FALHA', last_failure_at: '2026-10-31T09:07:00Z' }),
+      ),
+    })
+
+    await renderPage()
+
+    expect(await screen.findByText('Conectada, mas a última leitura falhou')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Trocar senha ou conta' }))
+    expect(screen.getByLabelText('Senha da NEPViewer')).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Conferir e trocar' })).toBeInTheDocument()
+  })
+
+  it('mostrar senha alterna o tipo do campo com nome claro', async () => {
+    vi.resetModules()
+    installApiMock()
+
+    await renderPage()
+    await screen.findByText('Nenhuma conta conectada')
+    const password = screen.getByLabelText('Senha da NEPViewer')
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar senha' }))
+    expect(password).toHaveAttribute('type', 'text')
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultar senha' }))
+    expect(password).toHaveAttribute('type', 'password')
+  })
+
+  it('ao trocar, o foco vai para o login; cancelar descarta a senha e devolve o foco', async () => {
+    vi.resetModules()
+    installApiMock({ fetchProviderAccount: vi.fn(async () => jsonResponse(CONNECTED)) })
+
+    await renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Trocar senha ou conta' }))
+    expect(screen.getByLabelText('Login da NEPViewer')).toHaveFocus()
+    fireEvent.change(screen.getByLabelText('Senha da NEPViewer'), { target: { value: SECRET } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar troca' }))
+
+    expect(screen.queryByLabelText('Senha da NEPViewer')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Conectada').closest('[tabindex="-1"]')).toHaveFocus())
+    fireEvent.click(screen.getByRole('button', { name: 'Trocar senha ou conta' }))
+    expect(screen.getByLabelText('Senha da NEPViewer')).toHaveValue('')
+  })
+
+  it('desconectar leva o foco à confirmação; falha mantém a confirmação aberta', async () => {
+    vi.resetModules()
+    const deleteProviderAccount = vi.fn(async () => new Response('erro', { status: 500 }))
+    installApiMock({ fetchProviderAccount: vi.fn(async () => jsonResponse(CONNECTED)), deleteProviderAccount })
+
+    await renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Desconectar' }))
+    const confirm = screen.getByRole('button', { name: 'Sim, desconectar' })
+    expect(confirm).toHaveFocus()
+    fireEvent.click(confirm)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível concluir agora.')
+    expect(screen.getByRole('button', { name: 'Sim, desconectar' })).toBeInTheDocument()
+  })
+
+  it('conta já removida em outra aba: avisa sem dizer que a usina sumiu e relê', async () => {
+    vi.resetModules()
+    const fetchProviderAccount = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(CONNECTED))
+      .mockResolvedValue(jsonResponse(NO_CONNECTION))
+    const deleteProviderAccount = vi.fn(async () =>
+      jsonResponse({ detail: 'provider_account_not_found' }, 404),
+    )
+    installApiMock({ fetchProviderAccount, deleteProviderAccount })
+
+    await renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Desconectar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, desconectar' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Esta usina já estava sem conta conectada.')
+    expect(await screen.findByText('Nenhuma conta conectada')).toBeInTheDocument()
+    expect(fetchProviderAccount).toHaveBeenCalledTimes(2)
+  })
+
+  it('erro ao buscar a conexão oferece nova tentativa', async () => {
+    vi.resetModules()
+    const fetchProviderAccount = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('falha', { status: 500 }))
+      .mockResolvedValue(jsonResponse(NO_CONNECTION))
+    installApiMock({ fetchProviderAccount })
+
+    await renderPage()
+
+    expect(await screen.findByText('Erro ao buscar a conexão com o inversor.')).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: /Tentar novamente/ })[0])
+    expect(await screen.findByText('Nenhuma conta conectada')).toBeInTheDocument()
+  })
+
+  it('o aviso de conta salva continua visível se a releitura falhar', async () => {
+    vi.resetModules()
+    const fetchProviderAccount = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(NO_CONNECTION))
+      .mockResolvedValue(new Response('falha', { status: 500 }))
+    installApiMock({
+      fetchProviderAccount,
+      saveProviderAccount: vi.fn(async () => jsonResponse({ ...CONNECTED, devices_found: 1 })),
+    })
+
+    await renderPage()
+    await screen.findByText('Nenhuma conta conectada')
+    fireEvent.change(screen.getByLabelText('Login da NEPViewer'), { target: { value: 'a@b.c' } })
+    fireEvent.change(screen.getByLabelText('Senha da NEPViewer'), { target: { value: SECRET } })
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
+
+    expect(await screen.findByText('Erro ao buscar a conexão com o inversor.')).toBeInTheDocument()
+    expect(screen.getByText('Conta conectada. 1 inversor encontrado.')).toBeInTheDocument()
+  })
+})
+

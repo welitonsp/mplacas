@@ -370,6 +370,26 @@ export async function fetchPlantSetup(plantId: string): Promise<Response> {
   return apiFetch(`/plants/${encodeURIComponent(plantId)}/setup`)
 }
 
+// Conexão com o fabricante do inversor (ADR-091). A senha só vai no corpo do
+// PUT; nunca é guardada no navegador nem volta do servidor.
+export async function fetchProviderAccount(plantId: string): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account`)
+}
+
+export async function saveProviderAccount(
+  plantId: string,
+  payload: { login: string; password: string },
+): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account`, {
+    method: 'PUT',
+    body: JSON.stringify({ provider: 'NEPVIEWER', login: payload.login, password: payload.password }),
+  })
+}
+
+export async function deleteProviderAccount(plantId: string): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account`, { method: 'DELETE' })
+}
+
 export interface TechnicalConfigurationUpdatePayload {
   dc_capacity_kwp?: string | null
   ac_capacity_kw?: string | null
