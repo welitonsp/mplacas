@@ -2,8 +2,10 @@
 
 ## Status
 
-**Proposto — 2026-10-29.** Pré-requisito para o 2º cliente (ver `claude/proximas-atualizacoes.md`).
-Decisões tomadas pelo projetista por delegação do dono; o merge deste ADR é a aprovação do plano.
+**Aceito e implementado — 2026-10-29.** Pré-requisito para o 2º cliente. Decisões tomadas pelo
+projetista por delegação do dono. Fases 1–7 entregues em #252–#258; a conta da usina do dono foi
+importada e a coleta pela conexão nova foi conferida em produção (29/10, 2 inversores) antes de
+remover o caminho antigo.
 
 ## Contexto
 
@@ -65,7 +67,7 @@ claro para entrar na API do fabricante. Hash não serve; é preciso cifra revers
 8. **Tela em "Minha usina"**: bloco "Conexão com o inversor" com o estado (conectado, última
    leitura, falha), e formulário de (re)conexão. A senha nunca volta do servidor, o campo nunca
    vem preenchido e nada vai para `localStorage`/`sessionStorage` (skill `secret-safe-ui`).
-9. **Transição sem parar a coleta.** O comando `import-provider-account --plant-name <nome>`
+9. **Transição sem parar a coleta** (histórico: usada em 29/10/2026 e removida na fase 7). O comando `import-provider-account --plant-name <nome>`
    copia `MPLACAS_NEP_ACCOUNT`/`MPLACAS_NEP_PASSWORD` para a usina indicada, uma vez, por
    `workflow_dispatch`. Enquanto nenhuma usina tiver conexão, a coleta segue pelo caminho antigo
    com aviso no log. Depois da importação confirmada, um PR final remove as variáveis `NEP_*`,
@@ -82,6 +84,10 @@ claro para entrar na API do fabricante. Hash não serve; é preciso cifra revers
 | 5 | Rotas de ADMIN, verificação antes de salvar, auditoria | reviewer |
 | 6 | Bloco "Conexão com o inversor" em Minha usina | quality-gate-reviewer |
 | 7 | Remover o caminho antigo, depois da importação | reviewer |
+
+Fase 7 (feita): `MPLACAS_NEP_ACCOUNT`/`MPLACAS_NEP_PASSWORD`, o comando `import-provider-account`
+e a coleta por nome de usina saíram; o workflow `provider-accounts` só rotaciona a chave. Usina sem
+conexão não é coletada. `MPLACAS_CLOUD_JOB_PLANT_NAME` continua para os outros jobs.
 
 Passo do dono entre as fases 2 e 4: gerar a chave e gravá-la como `MPLACAS_PROVIDER_SECRET_KEYS`
 no GitHub e no Render; rodar a importação depois da fase 4.

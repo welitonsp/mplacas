@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 
@@ -13,9 +12,7 @@ from mplacas.collection.queue import CollectionTask
 from mplacas.collection.worker import CollectionWorker, WorkerResult
 from mplacas.core.config import get_settings
 from mplacas.core.secret_box import SecretBox, secret_box_from_settings
-from mplacas.db.models import Plant
 from mplacas.db.session import SessionFactory
-from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID
 from mplacas.db.tenant_context import set_platform_context
 from mplacas.providers.accounts import ProviderAccountService
 from mplacas.providers.db_models import ProviderAccountRecord
@@ -25,7 +22,7 @@ from mplacas.services.collection import SolarCollectionService
 logger = logging.getLogger(__name__)
 
 
-def build_collection_handler(*, legacy_plant_id: uuid.UUID | None):
+def build_collection_handler():
     """Cria o handler que o worker usa para reprocessar um dia deferido.
 
     O handler roda a coleta na sessão do worker (``collect_in_session``), sem
@@ -33,16 +30,10 @@ def build_collection_handler(*, legacy_plant_id: uuid.UUID | None):
     por tarefa. Um novo provedor resiliente é montado por tarefa e fechado ao
     final, garantindo que uma tarefa não vaze estado para outra.
 
-    A credencial vem da conexão da usina da tarefa (ADR-091). Sem conexão, só
-    a usina ``legacy_plant_id`` (comparada pelo id, nunca pelo nome) ainda
-    pode usar a conta global ``NEP_*``; qualquer outra usina falha e o worker
-    reagenda.
+    A credencial vem só da conexão da usina da tarefa (ADR-091). Usina sem
+    conexão falha e o worker reagenda.
     """
     settings = get_settings()
-    legacy_account = settings.nep_account
-    legacy_password = (
-        settings.nep_password.get_secret_value() if settings.nep_password is not None else None
-    )
     base_url = str(settings.nep_base_url)
     timeout = settings.request_timeout_seconds
     box_holder: list[SecretBox] = []
@@ -52,34 +43,23 @@ def build_collection_handler(*, legacy_plant_id: uuid.UUID | None):
             box_holder.append(secret_box_from_settings())
         return box_holder[0]
 
-    async def _credentials(session: AsyncSession, task: CollectionTask) -> tuple[str, str, bool]:
+    async def handler(session: AsyncSession, task: CollectionTask) -> None:
+        # Garante a leitura de provider_accounts sob RLS mesmo se a sessão
+        # vier de outra fábrica (ver _platform_session).
+        await set_platform_context(session)
+        target = date.fromisoformat(task.target_date)
         record = await session.scalar(
             select(ProviderAccountRecord).where(
                 ProviderAccountRecord.plant_id == task.plant_id,
                 ProviderAccountRecord.active.is_(True),
             )
         )
-        if record is not None:
-            login = ProviderAccountService(session, _box()).open(record)
-            return login.login, login.password, True
-        if (
-            legacy_plant_id is None
-            or task.plant_id != legacy_plant_id
-            or legacy_account is None
-            or legacy_password is None
-        ):
+        if record is None:
             raise RuntimeError("plant has no provider account for collection")
-        return legacy_account, legacy_password, False
-
-    async def handler(session: AsyncSession, task: CollectionTask) -> None:
-        # Garante a leitura de provider_accounts sob RLS mesmo se a sessão
-        # vier de outra fábrica (ver _platform_session).
-        await set_platform_context(session)
-        target = date.fromisoformat(task.target_date)
-        account, password, per_plant = await _credentials(session, task)
+        credentials = ProviderAccountService(session, _box()).open(record)
         client, provider = build_resilient_nepviewer(
-            account=account,
-            password=password,
+            account=credentials.login,
+            password=credentials.password,
             base_url=base_url,
             timeout_seconds=timeout,
         )
@@ -110,22 +90,6 @@ async def _platform_session():
         yield session
 
 
-async def _resolve_legacy_plant_id(plant_name: str | None) -> uuid.UUID | None:
-    """Id da usina do caminho antigo, só na organização default e sem homônimo."""
-    if plant_name is None:
-        return None
-    async with _platform_session() as session:
-        ids = list(
-            await session.scalars(
-                select(Plant.id).where(
-                    Plant.name == plant_name,
-                    Plant.organization_id == DEFAULT_ORGANIZATION_ID,
-                )
-            )
-        )
-    return ids[0] if len(ids) == 1 else None
-
-
 async def _has_active_provider_accounts() -> bool:
     async with SessionFactory() as session:
         await set_platform_context(session)
@@ -137,7 +101,6 @@ async def _has_active_provider_accounts() -> bool:
 
 async def drain_collection_queue(
     *,
-    plant_name: str | None,
     max_attempts: int = 10,
     limit: int = 100,
 ) -> WorkerResult:
@@ -146,14 +109,13 @@ async def drain_collection_queue(
     Cada tarefa é isolada: uma que falhe de novo é reagendada com backoff (ou
     marcada como falha após o máximo de tentativas) sem afetar as demais.
     """
-    settings = get_settings()
-    if await _has_active_provider_accounts():
-        # Com conexões, a chave é obrigatória: falha já, em vez de reagendar.
-        secret_box_from_settings()
-    elif settings.nep_account is None or settings.nep_password is None:
-        # Nada com que coletar: falha já, em vez de reagendar cada tarefa.
-        raise RuntimeError("NEPViewer credentials must be configured for collection drain")
-    handler = build_collection_handler(legacy_plant_id=await _resolve_legacy_plant_id(plant_name))
+    if not await _has_active_provider_accounts():
+        # A coleta diária já falha visivelmente neste caso; aqui só registra.
+        logger.error("collection_drain_no_active_accounts")
+        return WorkerResult(claimed=0, completed=0, rescheduled=0, failed=0)
+    # Com conexões, a chave é obrigatória: falha já, em vez de reagendar.
+    secret_box_from_settings()
+    handler = build_collection_handler()
     worker = CollectionWorker(
         _platform_session,
         task_type=COLLECTION_TASK_TYPE,

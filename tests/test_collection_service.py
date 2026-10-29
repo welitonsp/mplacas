@@ -1,3 +1,4 @@
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -6,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from mplacas.db.base import Base
+from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
 from mplacas.db.models import DailyEnergy, DataStatus, Device, Plant
 from mplacas.providers.base import DailyEnergy as ProviderDailyEnergy
 from mplacas.providers.base import DeviceOverview, SolarDevice, SolarProvider
@@ -55,15 +57,22 @@ async def test_collection_is_transactional_and_idempotent() -> None:
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
+        plant = Plant(
+            id=uuid.uuid4(), organization_id=DEFAULT_ORGANIZATION_ID, name="Usina residencial"
+        )
+        session.add(OrganizationRecord(id=DEFAULT_ORGANIZATION_ID, name="D", slug="d", active=True))
+        await session.flush()
+        session.add(plant)
+        await session.commit()
         service = SolarCollectionService(session, FakeProvider())
         first = await service.collect(
-            plant_name="Usina residencial",
+            plant_id=plant.id,
             start=date(2026, 7, 11),
             end=date(2026, 7, 12),
             consolidate_through=date(2026, 7, 11),
         )
         second = await service.collect(
-            plant_name="Usina residencial",
+            plant_id=plant.id,
             start=date(2026, 7, 11),
             end=date(2026, 7, 12),
             consolidate_through=date(2026, 7, 11),

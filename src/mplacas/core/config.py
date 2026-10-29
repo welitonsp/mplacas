@@ -36,8 +36,6 @@ class Settings(BaseSettings):
     port: int = Field(default=8080, validation_alias="PORT")
     readiness_timeout_seconds: float = 3.0
     nep_base_url: HttpUrl = HttpUrl("https://api.nepviewer.net/v2")
-    nep_account: str | None = None
-    nep_password: SecretStr | None = None
     # Chaveiro que cifra as senhas dos fabricantes de inversor guardadas no
     # banco (ADR-091): ``1:<base64 de 32 bytes>,2:<...>``. Lido só por
     # ``core.secret_box``; sem ele, nada é cifrado nem decifrado.
@@ -119,10 +117,6 @@ class Settings(BaseSettings):
         if not self.cors_allowed_origins:
             return []
         return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
-
-    @property
-    def nep_configured(self) -> bool:
-        return bool(self.nep_account and self.nep_password)
 
     @property
     def telegram_configured(self) -> bool:

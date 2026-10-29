@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -49,6 +51,9 @@ def test_ready_returns_ready_when_database_responds(monkeypatch) -> None:
     assert body["status"] == "ready"
     assert body["database_ready"] is True
     assert "secret" not in response.text
+    # ADR-091, fase 7: a conta global saiu; o /ready diz só se o chaveiro existe.
+    assert "nepviewer_configured" not in body
+    assert isinstance(body["provider_keyring_configured"], bool)
 
 
 def test_ready_returns_503_when_database_fails(monkeypatch) -> None:
@@ -84,7 +89,7 @@ def test_ready_returns_503_on_timeout(monkeypatch) -> None:
     settings = SimpleNamespace(
         readiness_timeout_seconds=0.01,
         env="test",
-        nep_configured=False,
+        provider_secret_keys=None,
         telegram_configured=False,
         telegram_alerts_configured=False,
         climate_archive_base_url="https://example.invalid",
@@ -136,3 +141,28 @@ def test_server_uses_port_and_host(monkeypatch) -> None:
     assert captured["log_config"] is None
     assert captured["observability_shutdown"] is True
     get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(("raw", "expected"), [(None, False), ("   ", False), ("1:chave", True)])
+def test_ready_reports_keyring_only_when_it_has_content(monkeypatch, raw, expected) -> None:
+    from pydantic import SecretStr
+
+    settings = SimpleNamespace(
+        readiness_timeout_seconds=1,
+        env="test",
+        provider_secret_keys=None if raw is None else SecretStr(raw),
+        telegram_configured=False,
+        telegram_alerts_configured=False,
+        climate_archive_base_url="https://example.invalid",
+        pipeline_stale_lock_timeout_minutes=60,
+        explanation_provider_configured=False,
+        operations_api_key=None,
+        timezone="America/Sao_Paulo",
+    )
+    monkeypatch.setattr(main_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(main_module, "SessionFactory", lambda: ReadySession())
+
+    response = TestClient(app).get("/ready")
+
+    assert response.json()["provider_keyring_configured"] is expected
+    assert "chave" not in response.text

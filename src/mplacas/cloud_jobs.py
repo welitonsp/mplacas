@@ -158,13 +158,6 @@ def _build_parser() -> argparse.ArgumentParser:
     tariffs.add_argument("--url", default=None, help="CSV URL (defaults to ANEEL open data)")
     tariffs.set_defaults(handler=_handle_import_tariffs)
 
-    import_account = subparsers.add_parser(
-        "import-provider-account",
-        help="copy MPLACAS_NEP_ACCOUNT/PASSWORD into a plant's provider account (ADR-091)",
-    )
-    import_account.add_argument("--plant-name", required=True)
-    import_account.set_defaults(handler=_handle_import_provider_account)
-
     rotate_secrets = subparsers.add_parser(
         "rotate-provider-secrets",
         help="re-encrypt provider accounts with the newest key (ADR-091)",
@@ -208,11 +201,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     watchdog.set_defaults(handler=_handle_operational_watchdog)
     return parser
-
-
-def _handle_import_provider_account(args: argparse.Namespace) -> int:
-    asyncio.run(import_provider_account(plant_name=args.plant_name))
-    return 0
 
 
 def _handle_rotate_provider_secrets(_args: argparse.Namespace) -> int:
@@ -462,10 +450,8 @@ async def run_collection(
 
     Cada usina usa a própria conta do fabricante, decifrada só para a coleta
     dela; uma usina que falha não interrompe as outras, e o job termina com
-    erro listando os ids das que falharam. Enquanto nenhuma usina tiver
-    conexão, segue o caminho antigo: a conta global ``MPLACAS_NEP_*`` grava na
-    usina ``MPLACAS_CLOUD_JOB_PLANT_NAME`` (ver a nota do ADR-069 § E9 sobre
-    por que a conta global nunca é espalhada por várias usinas).
+    erro listando os ids das que falharam. Usina sem conexão não é coletada;
+    nenhuma conexão ativa é erro.
     """
     settings = get_settings()
     resolved_date = _resolve_target_date(
@@ -474,8 +460,10 @@ async def run_collection(
         now=now,
     )
     if await _count_active_provider_accounts() == 0:
-        await _run_legacy_collection(resolved_date)
-        return
+        # Falha visível (workflow vermelho), não verde silencioso: sem nenhuma
+        # conexão ativa nada é coletado e os dias se perdem (ADR-091, fase 7).
+        logger.error("cloud_job_collection_no_active_accounts")
+        raise RuntimeError("no plant has an active provider account; nothing was collected")
 
     from mplacas.core.secret_box import secret_box_from_settings
     from mplacas.providers.accounts import ProviderAccountService
@@ -487,9 +475,6 @@ async def run_collection(
         accounts = [
             (record.plant_id, record.id) for record in await service.list_active()
         ]
-    if not accounts:
-        logger.warning("cloud_job_collection_no_active_accounts")
-    await _warn_if_legacy_plant_unconnected(accounts)
     problems: list[str] = []
     for plant_id, account_id in accounts:
         logger.info(
@@ -551,31 +536,6 @@ async def _count_active_provider_accounts() -> int:
         )
 
 
-async def _warn_if_legacy_plant_unconnected(
-    accounts: list[tuple[uuid.UUID, uuid.UUID]],
-) -> None:
-    """Com conexões ativas, a usina do caminho antigo sem conexão deixa de ser coletada."""
-    plant_name = get_settings().cloud_job_plant_name
-    if not plant_name or not plant_name.strip():
-        return
-    connected = {plant_id for plant_id, _ in accounts}
-    async with SessionFactory() as session:
-        await set_platform_context(session)
-        legacy_ids = set(
-            await session.scalars(
-                select(Plant.id).where(
-                    Plant.name == plant_name.strip(),
-                    Plant.organization_id == DEFAULT_ORGANIZATION_ID,
-                )
-            )
-        )
-    for plant_id in legacy_ids - connected:
-        logger.warning(
-            "cloud_job_collection_legacy_plant_not_connected",
-            extra={"plant_id": str(plant_id)},
-        )
-
-
 async def _record_provider_outcome(
     plant_id: uuid.UUID, *, box, failure: str | None
 ) -> None:
@@ -608,28 +568,6 @@ async def _write_provider_outcome(
         else:
             await service.record_failure(record, code=failure)
         await session.commit()
-
-
-async def _run_legacy_collection(resolved_date: date) -> None:
-    """Caminho antigo: conta global NEP_* numa única usina (sai na fase 7)."""
-    settings = get_settings()
-    plant_name = settings.cloud_job_plant_name
-    if plant_name is None or not plant_name.strip():
-        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
-    plant_id = await _resolve_plant_id(plant_name)
-    logger.warning(
-        "cloud_job_collection_legacy_global_account",
-        extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
-    )
-    await run_solar_collection(
-        target_date=resolved_date,
-        plant_id=plant_id,
-        plant_name=plant_name,
-    )
-    logger.info(
-        "cloud_job_collection_completed",
-        extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
-    )
 
 
 async def run_retention() -> None:
@@ -685,10 +623,10 @@ def _validate_operational_settings() -> None:
 
     settings = get_settings()
     missing: list[str] = []
-    if not settings.nep_account or not settings.nep_account.strip():
-        missing.append("MPLACAS_NEP_ACCOUNT")
-    if settings.nep_password is None or not settings.nep_password.get_secret_value().strip():
-        missing.append("MPLACAS_NEP_PASSWORD")
+    if settings.provider_secret_keys is None or not (
+        settings.provider_secret_keys.get_secret_value().strip()
+    ):
+        missing.append("MPLACAS_PROVIDER_SECRET_KEYS")
     if settings.telegram_bot_token is None or not (
         settings.telegram_bot_token.get_secret_value().strip()
     ):
@@ -728,13 +666,8 @@ async def run_report_export_drain(*, batch_size: int = 10) -> None:
 
 
 async def run_collection_drain() -> None:
-    settings = get_settings()
-    # Só a usina do caminho antigo ainda usa a conta global; as demais tarefas
-    # usam a conexão da própria usina (ADR-091).
-    configured = settings.cloud_job_plant_name
-    plant_name = configured.strip() if configured and configured.strip() else None
     logger.info("cloud_job_collection_drain_started")
-    result = await drain_collection_queue(plant_name=plant_name)
+    result = await drain_collection_queue()
     logger.info(
         "cloud_job_collection_drain_completed",
         extra={
@@ -1007,59 +940,6 @@ def _resolve_target_date(
     timezone = ZoneInfo(timezone_name)
     current = now.astimezone(timezone) if now is not None else datetime.now(timezone)
     return (current - timedelta(days=1)).date()
-
-
-async def import_provider_account(*, plant_name: str) -> None:
-    """Copia a conta NEPViewer das variáveis de ambiente para a usina (ADR-091).
-
-    Transição única: a usina precisa existir na organização default (onde a
-    coleta antiga grava). Nunca registra login nem senha.
-    """
-    from mplacas.core.secret_box import secret_box_from_settings
-    from mplacas.providers.accounts import NEPVIEWER, ProviderAccountService, ProviderLogin
-
-    settings = get_settings()
-    if settings.nep_account is None or settings.nep_password is None:
-        raise RuntimeError("MPLACAS_NEP_ACCOUNT and MPLACAS_NEP_PASSWORD are required")
-    box = secret_box_from_settings()
-    normalized_name = plant_name.strip()
-    async with SessionFactory() as session:
-        await set_platform_context(session)
-        plants = list(
-            await session.scalars(
-                select(Plant).where(
-                    Plant.name == normalized_name,
-                    Plant.organization_id == DEFAULT_ORGANIZATION_ID,
-                )
-            )
-        )
-        if not plants:
-            raise RuntimeError("plant not found in the default organization")
-        if len(plants) > 1:
-            raise RuntimeError("plant name is ambiguous in the default organization")
-        plant = plants[0]
-        service = ProviderAccountService(session, box)
-        existing = await service.get(plant.id)
-        if existing is not None and existing.active:
-            # Transição única: nunca sobrescreve uma conexão já cadastrada.
-            raise RuntimeError("plant already has an active provider account")
-        record = await service.save(
-            plant_id=plant.id,
-            provider=NEPVIEWER,
-            credentials=ProviderLogin(
-                login=settings.nep_account,
-                password=settings.nep_password.get_secret_value(),
-            ),
-        )
-        await session.commit()
-        logger.info(
-            "provider_account_imported",
-            extra={
-                "plant_id": str(record.plant_id),
-                "provider": record.provider,
-                "key_version": record.key_version,
-            },
-        )
 
 
 async def rotate_provider_secrets() -> None:

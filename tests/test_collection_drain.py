@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -14,7 +15,10 @@ from mplacas.collection.drain import drain_collection_queue
 from mplacas.collection.job import COLLECTION_TASK_TYPE
 from mplacas.collection.queue import CollectionQueueRepository
 from mplacas.db import models as _db_models  # noqa: F401  (registra tabela plants)
+from mplacas.core.secret_box import SecretBox
 from mplacas.db.base import Base
+from mplacas.providers import db_models as _provider_models  # noqa: F401
+from mplacas.providers.accounts import NEPVIEWER, ProviderAccountService, ProviderLogin
 from mplacas.db.models import DailyEnergy as DailyEnergyRow
 from mplacas.db.models import Device
 from mplacas.providers.base import (
@@ -27,6 +31,7 @@ from mplacas.providers.base import (
 
 PLANT_ID = uuid.UUID("00000000-0000-0000-0000-0000000000dd")
 PLANT_NAME = "Usina Drain"
+KEYRING = "1:" + base64.b64encode(b"\x05" * 32).decode()
 _TEST_ENGINES = []
 
 
@@ -90,6 +95,17 @@ async def _seed_plant_and_task(factory) -> None:
         await session.commit()
 
 
+async def _connect(factory) -> None:
+    """A usina da tarefa com conexão própria (ADR-091): a fila só usa ela."""
+    async with factory() as session:
+        await ProviderAccountService(session, SecretBox.from_keyring(KEYRING)).save(
+            plant_id=PLANT_ID,
+            provider=NEPVIEWER,
+            credentials=ProviderLogin(login="operador", password="segredo-da-usina"),
+        )
+        await session.commit()
+
+
 def _patch(monkeypatch, factory, provider: SolarProvider) -> None:
     monkeypatch.setattr(drain_module, "SessionFactory", factory)
 
@@ -101,8 +117,7 @@ def _patch(monkeypatch, factory, provider: SolarProvider) -> None:
         return _NoopClient(), provider
 
     monkeypatch.setattr(drain_module, "build_resilient_nepviewer", _build)
-    monkeypatch.setenv("MPLACAS_NEP_ACCOUNT", "operador")
-    monkeypatch.setenv("MPLACAS_NEP_PASSWORD", "segredo-de-ambiente")
+    monkeypatch.setenv("MPLACAS_PROVIDER_SECRET_KEYS", KEYRING)
     from mplacas.core.config import get_settings
 
     get_settings.cache_clear()
@@ -112,9 +127,10 @@ def _patch(monkeypatch, factory, provider: SolarProvider) -> None:
 async def test_drain_reprocesses_deferred_day_and_persists(monkeypatch) -> None:
     factory = await _factory()
     await _seed_plant_and_task(factory)
+    await _connect(factory)
     _patch(monkeypatch, factory, DrainStubProvider(fail=False))
 
-    result = await drain_collection_queue(plant_name=PLANT_NAME)
+    result = await drain_collection_queue()
 
     assert result.claimed == 1
     assert result.completed == 1
@@ -145,9 +161,10 @@ async def test_drain_reprocesses_deferred_day_and_persists(monkeypatch) -> None:
 async def test_drain_reschedules_when_provider_still_failing(monkeypatch) -> None:
     factory = await _factory()
     await _seed_plant_and_task(factory)
+    await _connect(factory)
     _patch(monkeypatch, factory, DrainStubProvider(fail=True))
 
-    result = await drain_collection_queue(plant_name=PLANT_NAME, max_attempts=3)
+    result = await drain_collection_queue(max_attempts=3)
 
     assert result.claimed == 1
     assert result.completed == 0
@@ -171,12 +188,13 @@ async def test_drain_reschedules_when_provider_still_failing(monkeypatch) -> Non
 async def test_drain_marks_failed_after_max_attempts(monkeypatch) -> None:
     factory = await _factory()
     await _seed_plant_and_task(factory)
+    await _connect(factory)
     _patch(monkeypatch, factory, DrainStubProvider(fail=True))
 
     from mplacas.core.config import get_settings
 
     for _ in range(3):
-        await drain_collection_queue(plant_name=PLANT_NAME, max_attempts=3)
+        await drain_collection_queue(max_attempts=3)
         # torna a tarefa imediatamente elegivel de novo
         async with factory() as session:
             task = (await session.scalars(select(CollectionTaskRecord))).one()
@@ -192,17 +210,19 @@ async def test_drain_marks_failed_after_max_attempts(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_drain_requires_credentials(monkeypatch) -> None:
+async def test_drain_without_connected_plants_does_nothing(monkeypatch) -> None:
     factory = await _factory()
     await _seed_plant_and_task(factory)
     monkeypatch.setattr(drain_module, "SessionFactory", factory)
-    monkeypatch.delenv("MPLACAS_NEP_ACCOUNT", raising=False)
-    monkeypatch.delenv("MPLACAS_NEP_PASSWORD", raising=False)
     from mplacas.core.config import get_settings
 
     get_settings.cache_clear()
 
-    with pytest.raises(RuntimeError, match="NEPViewer credentials"):
-        await drain_collection_queue(plant_name=PLANT_NAME)
+    result = await drain_collection_queue()
+
+    assert (result.claimed, result.completed, result.rescheduled, result.failed) == (0, 0, 0, 0)
+    async with factory() as session:
+        task = (await session.scalars(select(CollectionTaskRecord))).one()
+        assert task.status is CollectionTaskStatus.PENDING
 
     get_settings.cache_clear()

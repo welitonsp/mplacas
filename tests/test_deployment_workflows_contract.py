@@ -37,8 +37,7 @@ def test_render_waits_for_ci_and_keeps_runtime_secrets_out_of_git() -> None:
         "MPLACAS_TELEGRAM_BOT_TOKEN",
         "MPLACAS_TELEGRAM_WEBHOOK_SECRET",
         "MPLACAS_TELEGRAM_ALERT_CHAT_ID",
-        "MPLACAS_NEP_ACCOUNT",
-        "MPLACAS_NEP_PASSWORD",
+        "MPLACAS_PROVIDER_SECRET_KEYS",
     ):
         pattern = rf"- key: {name}[^\n]*\n\s+sync: false"
         assert re.search(pattern, blueprint)
