@@ -37,7 +37,7 @@ export function EnergyDestinationSection({
           embedded
         />
         {selfSufficiency != null && consumption != null && (
-          <p className="mt-5 border-t border-[var(--color-border)] pt-4 text-[15px] leading-6 text-[var(--color-text-primary)]">
+          <p className="mt-5 border-t border-[var(--color-border)] pt-4 text-sm leading-6 text-[var(--color-text-primary)]">
             O sol supriu <strong>{formatNumber(selfSufficiency, 0)}%</strong> do consumo da casa
             {` (${formatNumber(consumption, 0)} kWh, estimado)`}
             {imported != null ? `; os outros ${formatNumber(imported, 0)} kWh vieram da rede.` : '.'}

@@ -216,7 +216,7 @@ export function ProductionPage() {
       {baselineNotice && !hasBaseline && (
         <p
           role="note"
-          className="mb-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-brand-primary-light)] px-4 py-3 text-[14px] leading-6 text-[var(--color-text-primary)]"
+          className="mb-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-brand-primary-light)] px-4 py-3 text-sm leading-6 text-[var(--color-text-primary)]"
         >
           {baselineNotice}
         </p>
@@ -280,10 +280,10 @@ export function ProductionPage() {
         className="mt-6 flex min-h-[56px] items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4 shadow-[var(--shadow-card)] transition-colors duration-150 hover:border-[var(--color-gray-300)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none"
       >
         <span className="flex flex-col gap-0.5">
-          <span className="text-[15px] font-semibold text-[var(--color-text-primary)]">Detalhes técnicos</span>
+          <span className="text-sm font-semibold text-[var(--color-text-primary)]">Detalhes técnicos</span>
           <span className="text-[13px] text-[var(--color-text-secondary)]">Performance (PR), perdas, calor e inversores</span>
         </span>
-        <span aria-hidden="true" className="text-[var(--color-gray-400)]">›</span>
+        <span aria-hidden="true" className="text-lg text-[var(--color-gray-500)]">›</span>
       </Link>
       <MethodologyLink subtitle="Placas × distribuidora e a conferência dos créditos" />
     </>

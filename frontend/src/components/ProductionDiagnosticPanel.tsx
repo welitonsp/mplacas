@@ -341,18 +341,18 @@ export function ProductionDiagnosticPanel({
         <span className="text-[13px] text-[var(--color-text-secondary)]">{owner}</span>
       </div>
 
-      <h2 className="mt-2 text-[22px] font-semibold leading-tight text-[var(--color-text-primary)]">{diagnosis.title}</h2>
-      <p className="mt-1.5 max-w-3xl text-[15px] leading-6 text-[var(--color-text-secondary)]">{diagnosis.cause}</p>
+      <h2 className="mt-2 text-2xl font-semibold leading-tight text-[var(--color-text-primary)]">{diagnosis.title}</h2>
+      <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[var(--color-text-secondary)]">{diagnosis.cause}</p>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <dl className="grid gap-5 sm:grid-cols-2">
           <div>
             <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Impacto</dt>
-            <dd className="mt-1 text-[15px] leading-6 text-[var(--color-text-primary)]">{diagnosis.impact}</dd>
+            <dd className="mt-1 text-sm leading-6 text-[var(--color-text-primary)]">{diagnosis.impact}</dd>
           </div>
           <div>
             <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Próxima ação</dt>
-            <dd className="mt-1 text-[15px] leading-6 text-[var(--color-text-primary)]">{diagnosis.action}</dd>
+            <dd className="mt-1 text-sm leading-6 text-[var(--color-text-primary)]">{diagnosis.action}</dd>
           </div>
         </dl>
 
@@ -364,7 +364,7 @@ export function ProductionDiagnosticPanel({
           {diagnosis.signals.map((signal) => (
             <div key={signal.label} className="min-w-0">
               <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">{signal.label}</p>
-              <p className={`mt-0.5 text-[15px] font-semibold ${signal.tone === 'neutral' ? 'text-[var(--color-text-primary)]' : SEVERITY_TEXT[signal.tone]}`}>
+              <p className={`mt-0.5 text-sm font-semibold ${signal.tone === 'neutral' ? 'text-[var(--color-text-primary)]' : SEVERITY_TEXT[signal.tone]}`}>
                 {signal.value}
               </p>
             </div>
@@ -375,7 +375,7 @@ export function ProductionDiagnosticPanel({
       <div className="mt-6 border-t border-[var(--color-border)] pt-5">
         {/* "Evidências usadas" saiu em 2026-08-27 (R-1): repetia os sinais. */}
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">Plano de produção</h3>
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Plano de produção</h3>
           {alertSignal && (
             <p className="flex gap-1.5 text-[13px] text-[var(--color-text-secondary)]">
               <span>Critério de alerta</span>
@@ -398,7 +398,7 @@ export function ProductionDiagnosticPanel({
                 {index + 1}
               </span>
               <span className="min-w-0">
-                <span className="block text-[15px] font-semibold text-[var(--color-text-primary)]">{step.title}</span>
+                <span className="block text-sm font-semibold text-[var(--color-text-primary)]">{step.title}</span>
                 <span className="mt-0.5 block text-[13px] leading-5 text-[var(--color-text-secondary)]">{step.detail}</span>
               </span>
             </li>

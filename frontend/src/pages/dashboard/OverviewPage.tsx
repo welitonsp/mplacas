@@ -180,9 +180,9 @@ export function OverviewPage() {
 
         {data && (
           <details ref={diagnosticsRef} className="group rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-            <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-card)] px-5 text-[15px] font-semibold text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] [&::-webkit-details-marker]:hidden">
+            <summary className="flex min-h-[52px] cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--radius-card)] px-5 text-sm font-semibold text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] [&::-webkit-details-marker]:hidden">
               {`Diagnósticos e evolução do ciclo ${cycleLabel}`}
-              <span aria-hidden="true" className="text-[var(--color-gray-400)] transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none">
+              <span aria-hidden="true" className="text-[var(--color-gray-500)] transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none">
                 ›
               </span>
             </summary>

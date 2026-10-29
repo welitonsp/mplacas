@@ -16,7 +16,7 @@ function RowContent({ todo, icon: Icon }: { todo: HomeTodo; icon: LucideIcon }) 
     <>
       <Icon aria-hidden="true" className="h-5 w-5 shrink-0 text-[var(--color-brand-primary)]" />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[15px] font-semibold text-[var(--color-text-primary)]">{todo.title}</span>
+        <span className="text-sm font-semibold text-[var(--color-text-primary)]">{todo.title}</span>
         <span className="text-[13px] leading-5 text-[var(--color-text-secondary)]">{todo.detail}</span>
       </span>
       <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--color-gray-400)]" />
@@ -41,7 +41,7 @@ export function HomeTodoList({
 }) {
   return (
     <section aria-labelledby="home-todo-heading" className="flex flex-col gap-2.5">
-      <h2 id="home-todo-heading" className="font-display text-[18px] font-semibold text-[var(--color-text-primary)]">
+      <h2 id="home-todo-heading" className="font-display text-lg font-semibold text-[var(--color-text-primary)]">
         Precisa de você
       </h2>
 
@@ -66,7 +66,7 @@ export function HomeTodoList({
       {todos.length === 0 && setupStatus === 'ready' && (
         <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5">
           <ClipboardCheck aria-hidden="true" className="h-5 w-5 shrink-0 text-[var(--color-success-text)]" />
-          <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">Nada pendente.</p>
+          <p className="text-sm font-semibold text-[var(--color-text-primary)]">Nada pendente.</p>
         </div>
       )}
 

@@ -304,13 +304,13 @@ export function ProductionHistorySection({
               tela. Ficam só os sinais que o gráfico não mostra. */}
           <div className="min-w-0">
             <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Tendência do recorte</dt>
-            <dd className={`mt-1 text-[17px] font-semibold ${SIGNAL_TEXT[averageTrend.tone]}`}>{averageTrend.label}</dd>
+            <dd className={`mt-1 text-lg font-semibold ${SIGNAL_TEXT[averageTrend.tone]}`}>{averageTrend.label}</dd>
             <dd className="text-xs leading-5 text-[var(--color-text-secondary)]">{averageTrend.detail}</dd>
           </div>
 
           <div className="min-w-0">
             <dt className="text-[13px] font-medium text-[var(--color-text-secondary)]">Gatilho de alerta</dt>
-            <dd className={`mt-1 text-[17px] font-semibold ${SIGNAL_TEXT[alertSignal.tone]}`}>{alertSignal.label}</dd>
+            <dd className={`mt-1 text-lg font-semibold ${SIGNAL_TEXT[alertSignal.tone]}`}>{alertSignal.label}</dd>
             <dd className="text-xs leading-5 text-[var(--color-text-secondary)]">{alertSignal.detail}</dd>
           </div>
         </dl>

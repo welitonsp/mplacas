@@ -78,7 +78,7 @@ export function HomeSavingsCard({
       className="flex flex-col gap-3.5 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] sm:p-6"
     >
       <div className="flex items-baseline justify-between gap-3">
-        <h2 id="home-savings-heading" className="text-[14px] font-medium text-[var(--color-text-secondary)]">
+        <h2 id="home-savings-heading" className="text-sm font-medium text-[var(--color-text-secondary)]">
           Você economizou em {cycle}
         </h2>
         <span className="shrink-0 rounded-full bg-[var(--color-gray-100)] px-2 py-0.5 text-xs font-semibold text-[var(--color-chart-reference)]">
@@ -87,7 +87,7 @@ export function HomeSavingsCard({
       </div>
 
       {savings == null ? (
-        <p className="text-[15px] leading-6 text-[var(--color-text-secondary)]">
+        <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
           {indicators.savings_unavailable_reason
             ? savingsUnavailableMessage(indicators.savings_unavailable_reason)
             : 'Economia ainda não disponível para este ciclo.'}
@@ -101,13 +101,13 @@ export function HomeSavingsCard({
             <dl className="grid grid-cols-2 gap-3">
               <div>
                 <dt className="text-xs text-[var(--color-text-secondary)]">Sem a usina</dt>
-                <dd className="text-[16px] font-semibold tabular-nums text-[var(--color-text-secondary)] line-through">
+                <dd className="text-sm font-semibold tabular-nums text-[var(--color-text-secondary)] line-through">
                   {formatCurrency(withoutSolar)}
                 </dd>
               </div>
               <div>
                 <dt className="text-xs text-[var(--color-text-secondary)]">Você pagou</dt>
-                <dd className="text-[16px] font-semibold tabular-nums text-[var(--color-text-primary)]">{formatCurrency(paid)}</dd>
+                <dd className="text-sm font-semibold tabular-nums text-[var(--color-text-primary)]">{formatCurrency(paid)}</dd>
               </div>
             </dl>
           )}

@@ -95,8 +95,9 @@ const DIRECTION_OPTIONS: ReadonlyArray<{ degrees: string; label: string }> = [
 ]
 const CUSTOM_DIRECTION = 'custom'
 
+// `min-h-[44px]`: os campos tinham 41 px (auditoria visual, item 15).
 const INPUT_CLASS =
-  'w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[15px] text-[var(--color-text-primary)] placeholder-[var(--color-gray-500)] transition-colors duration-150 focus:border-[var(--color-brand-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-primary)] disabled:opacity-50 motion-reduce:transition-none'
+  'min-h-[44px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder-[var(--color-gray-500)] transition-colors duration-150 focus:border-[var(--color-brand-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-brand-primary)] disabled:opacity-50 motion-reduce:transition-none'
 
 const PRIMARY_BUTTON =
   'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-[var(--color-brand-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-on-brand)] shadow-sm transition-colors duration-200 hover:bg-[var(--color-brand-primary-dark)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none'
@@ -182,7 +183,7 @@ function SetupChecklist({ setup }: { setup: PlantSetup }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-[13px] font-medium text-[var(--color-text-secondary)]">Cadastro da usina</p>
-          <p className="mt-1 font-display text-[24px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+          <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-[var(--color-text-primary)]">
             {setup.completed} de {setup.total} itens informados
           </p>
         </div>
@@ -214,7 +215,7 @@ function SetupChecklist({ setup }: { setup: PlantSetup }) {
                 }`}
               />
               <div className="min-w-0 flex-1">
-                <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+                <p className="text-sm font-semibold text-[var(--color-text-primary)]">
                   {copy.title}
                   <span className="sr-only">{item.done ? ': informado' : ': pendente'}</span>
                 </p>
@@ -223,7 +224,7 @@ function SetupChecklist({ setup }: { setup: PlantSetup }) {
               {!item.done && (
                 <a
                   href={`#${copy.anchor}`}
-                  className="shrink-0 rounded-md px-2 py-1 text-[13px] font-semibold text-[var(--color-brand-primary)] underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
+                  className="inline-flex min-h-[44px] shrink-0 items-center rounded-md px-3 text-[13px] font-semibold text-[var(--color-brand-primary)] underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
                 >
                   Informar
                 </a>
@@ -680,7 +681,7 @@ function BillsStatus({ setup }: { setup: PlantSetup }) {
       <Card className="sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+            <p className="text-sm font-semibold text-[var(--color-text-primary)]">
               {setup.confirmedBills === 1 ? '1 fatura confirmada' : `${setup.confirmedBills} faturas confirmadas`}
               {setup.pendingBills > 0 &&
                 ` · ${setup.pendingBills === 1 ? '1 aguardando' : `${setup.pendingBills} aguardando`} conferência`}

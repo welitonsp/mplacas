@@ -227,6 +227,44 @@ async function textosPequenos(page: import('@playwright/test').Page, minimoPx = 
   }, { minimo: minimoPx, ignorar })
 }
 
+/**
+ * Controles do painel com menos de 44 px de altura (auditoria visual, itens 5
+ * e 15; mínimo da skill `wcag-aa` do projeto). Fica de fora o que a WCAG 2.5.8
+ * também isenta: link dentro de frase (`<p>`, `<li>`, `<dd>`), elemento
+ * visualmente escondido (`sr-only`, 1 px) e o que está dentro de ilustração.
+ */
+async function controlesPequenos(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const achados: string[] = []
+    for (const el of Array.from(document.querySelectorAll('button, a[href], input:not([type=hidden]), select, textarea, summary'))) {
+      const caixa = el.getBoundingClientRect()
+      const estilo = getComputedStyle(el)
+      if (caixa.width <= 1 || caixa.height <= 1 || estilo.visibility === 'hidden' || estilo.display === 'none') continue
+      if (el.closest('.sr-only, [role="img"]')) continue
+      if (el.tagName === 'A' && el.closest('p, li, dd') && estilo.display === 'inline') continue
+      if (caixa.height < 44) achados.push(`${Math.round(caixa.width)}x${Math.round(caixa.height)} ${(el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 30)}`)
+    }
+    return achados
+  })
+}
+
+/** Tamanhos de letra distintos entre os textos visíveis (escala: até 7 por tela). */
+async function tamanhosDeLetra(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const tamanhos = new Set<string>()
+    const percurso = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+    let no: Node | null
+    while ((no = percurso.nextNode())) {
+      const el = no.parentElement
+      if (!el || !(no.textContent ?? '').trim()) continue
+      const caixa = el.getBoundingClientRect()
+      if (caixa.width <= 1 || caixa.height <= 1 || el.closest('.sr-only, [role="img"]')) continue
+      tamanhos.add(getComputedStyle(el).fontSize)
+    }
+    return [...tamanhos].sort((a, b) => parseFloat(a) - parseFloat(b))
+  })
+}
+
 async function autenticar(page: import('@playwright/test').Page) {
   await page.goto('/login')
   await page.getByLabel(/usuári|usuario/i).fill('operador')
@@ -354,6 +392,8 @@ test.describe('captura das telas', () => {
       }
 
       expect(await textosPequenos(page), `texto abaixo de 12 px em ${modulo.nome}`).toEqual([])
+      expect(await controlesPequenos(page), `controle abaixo de 44 px em ${modulo.nome}`).toEqual([])
+      expect((await tamanhosDeLetra(page)).length, `tamanhos de letra em ${modulo.nome}`).toBeLessThanOrEqual(7)
 
       await page.screenshot({
         path: `e2e/capturas/${info.project.name}/painel-${modulo.nome}.png`,

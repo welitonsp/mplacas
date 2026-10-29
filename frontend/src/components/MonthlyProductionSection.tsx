@@ -247,7 +247,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
     <div className="min-w-0">
       <dt className="text-xs text-[var(--color-text-secondary)]">{label}</dt>
       <dd className="mt-0.5">
-        <span className="block whitespace-nowrap text-[15px] font-semibold tabular-nums text-[var(--color-text-primary)]">{value}</span>
+        <span className="block whitespace-nowrap text-sm font-semibold tabular-nums text-[var(--color-text-primary)]">{value}</span>
         {hint && <span className="block text-xs text-[var(--color-text-secondary)]">{hint}</span>}
       </dd>
     </div>
@@ -262,7 +262,7 @@ function CycleRow({ cycle }: { cycle: MonthlyProductionCycle }) {
   return (
     <li className="flex flex-col gap-3 border-t border-[var(--color-border)] py-5 first:border-t-0 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
           {formatCycleLabel(cycle.referenceMonth)}
           {period && <span className="ml-2 text-[13px] font-normal text-[var(--color-text-secondary)]">{period}</span>}
         </h3>
@@ -362,10 +362,10 @@ function Summary({ cycles }: { cycles: MonthlyProductionCycle[] }) {
         <Icon size={20} strokeWidth={2.25} />
       </span>
       <div className="min-w-0">
-        <p className={`font-display text-[20px] font-semibold leading-7 ${tone === 'neutral' ? 'text-[var(--color-text-primary)]' : TONE_TEXT[tone]}`}>
+        <p className={`font-display text-lg font-semibold leading-7 ${tone === 'neutral' ? 'text-[var(--color-text-primary)]' : TONE_TEXT[tone]}`}>
           {title}
         </p>
-        <p className="mt-0.5 text-[14px] leading-5 text-[var(--color-text-secondary)]">{detail}</p>
+        <p className="mt-0.5 text-sm leading-5 text-[var(--color-text-secondary)]">{detail}</p>
       </div>
     </div>
   )

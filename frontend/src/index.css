@@ -239,6 +239,27 @@
   --color-gray-950: #f6f8fa;
 }
 
+/* Escala tipográfica do painel (refinamento ADR-077, auditoria visual de
+   28/10/2026, item 14). Antes cada tela usava de 9 a 12 tamanhos (11, 12, 13,
+   14, 15, 16, 17, 18, 19, 20, 22, 24, 28, 32, 34, 40). Agora são 8 degraus:
+     12 legenda (`text-xs`) · 13 apoio (`text-[13px]`) · 15 corpo (`text-sm`,
+     `text-base`) · 18 título (`text-lg`, `text-xl`) · 24 número médio
+     (`text-2xl`) · 28 número grande (`text-3xl`, `text-[28px]`) · 34 título da
+     página (`text-[34px]`) · 40 só o valor de economia do Início.
+   Os nomes padrão do Tailwind foram reapontados para a escala, para que as
+   classes que o app já usa caiam nos degraus sem reescrever cada componente.
+   O teste `typeScale.test.ts` reprova tamanho arbitrário fora da escala. */
+@theme {
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: calc(1.375 / 0.9375);
+  --text-base: 0.9375rem;
+  --text-base--line-height: calc(1.5 / 0.9375);
+  --text-xl: 1.125rem;
+  --text-xl--line-height: calc(1.75 / 1.125);
+  --text-3xl: 1.75rem;
+  --text-3xl--line-height: calc(2.25 / 1.75);
+}
+
 /* Utilitários semânticos para o Tailwind: `bg-card`, `bg-page`, `text-ink`,
    `text-muted`, `border-line`, `text-brand-ink`, `font-display` etc. Nenhum nome
    repete uma variável de `:root` — repetir criaria referência circular. `inline` faz a classe

@@ -47,10 +47,10 @@ export function HomeStatusCard({ status }: { status: HomeStatus }) {
         <Icon className="h-5 w-5" strokeWidth={2.4} />
       </span>
       <div className="min-w-0">
-        <h2 className={`font-display text-[18px] font-semibold leading-snug sm:text-[20px] ${tone.text}`}>
+        <h2 className={`font-display text-lg font-semibold leading-snug sm:text-lg ${tone.text}`}>
           {status.title}
         </h2>
-        <p className={`mt-0.5 text-[14px] leading-5 ${tone.text}`}>{status.detail}</p>
+        <p className={`mt-0.5 text-sm leading-5 ${tone.text}`}>{status.detail}</p>
       </div>
     </section>
   )

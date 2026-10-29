@@ -50,7 +50,7 @@ export function SummaryTile({
   return (
     <article className="flex min-w-0 flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)] sm:p-5">
       <div className="text-[13px] font-medium leading-5 text-[var(--color-text-secondary)]">{label}</div>
-      <div className="mt-1.5 font-display text-[24px] font-semibold leading-tight tracking-[-0.02em] tabular-nums text-[var(--color-text-primary)] sm:text-[28px]">
+      <div className="mt-1.5 font-display text-2xl font-semibold leading-tight tracking-[-0.02em] tabular-nums text-[var(--color-text-primary)] sm:text-[28px]">
         {value}
       </div>
       <div className="mt-auto pt-3">

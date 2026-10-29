@@ -13,8 +13,8 @@ import { DASHBOARD_FINANCIAL_PATH } from '../../routes'
 function Rule({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="border-t border-[var(--color-border)] py-4 first:border-t-0 first:pt-0 last:pb-0">
-      <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">{title}</h3>
-      <div className="mt-1 text-[14px] leading-6 text-[var(--color-text-secondary)]">{children}</div>
+      <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</h3>
+      <div className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{children}</div>
     </div>
   )
 }
