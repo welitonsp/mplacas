@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -36,7 +37,7 @@ class CollectionWorker:
 
     def __init__(
         self,
-        session_factory: Callable[[], AsyncSession],
+        session_factory: Callable[[], AbstractAsyncContextManager[AsyncSession]],
         *,
         task_type: str,
         handler: TaskHandler,

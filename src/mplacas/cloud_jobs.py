@@ -458,35 +458,167 @@ async def run_collection(
     target_date: str | None,
     now: datetime | None = None,
 ) -> None:
-    """Collect daily solar production from the single configured NEPViewer account.
+    """Coleta a produção diária de cada usina com conexão ativa (ADR-091).
 
-    Deliberately **not** fanned out across the organization's plants (ADR-069
-    § E9 scoped the fan-out to ``run_daily_pipeline`` and
-    ``run_operational_watchdog``, which only read data already attributed to
-    a plant in the database). Collection is different: ``list_devices()``
-    returns the flat device list of one external NEPViewer account
-    (``MPLACAS_NEP_ACCOUNT``/``MPLACAS_NEP_PASSWORD``, both singular settings
-    with no per-plant credential), with no field distinguishing which
-    physical plant a device belongs to (see ``providers.base.SolarDevice``).
-    Looping this over every plant of the organization would not collect N
-    independent telemetry streams -- it would write the same single
-    account's devices and daily energy into every plant row once per
-    iteration, corrupting production data for any plant that is not the one
-    this account actually measures. ``MPLACAS_CLOUD_JOB_PLANT_NAME`` keeps
-    naming that one physical plant, exactly as before.
+    Cada usina usa a própria conta do fabricante, decifrada só para a coleta
+    dela; uma usina que falha não interrompe as outras, e o job termina com
+    erro listando os ids das que falharam. Enquanto nenhuma usina tiver
+    conexão, segue o caminho antigo: a conta global ``MPLACAS_NEP_*`` grava na
+    usina ``MPLACAS_CLOUD_JOB_PLANT_NAME`` (ver a nota do ADR-069 § E9 sobre
+    por que a conta global nunca é espalhada por várias usinas).
     """
     settings = get_settings()
-    plant_name = settings.cloud_job_plant_name
-    if plant_name is None or not plant_name.strip():
-        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
-    plant_id = await _resolve_plant_id(plant_name)
     resolved_date = _resolve_target_date(
         target_date=target_date,
         timezone_name=settings.timezone,
         now=now,
     )
-    logger.info(
-        "cloud_job_collection_started",
+    if await _count_active_provider_accounts() == 0:
+        await _run_legacy_collection(resolved_date)
+        return
+
+    from mplacas.core.secret_box import secret_box_from_settings
+    from mplacas.providers.accounts import ProviderAccountService
+
+    box = secret_box_from_settings()
+    async with SessionFactory() as session:
+        await set_platform_context(session)
+        service = ProviderAccountService(session, box)
+        accounts = [
+            (record.plant_id, record.id) for record in await service.list_active()
+        ]
+    if not accounts:
+        logger.warning("cloud_job_collection_no_active_accounts")
+    await _warn_if_legacy_plant_unconnected(accounts)
+    problems: list[str] = []
+    for plant_id, account_id in accounts:
+        logger.info(
+            "cloud_job_collection_started",
+            extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
+        )
+        try:
+            async with SessionFactory() as session:
+                await set_platform_context(session)
+                record = await ProviderAccountService(session, box).get(plant_id)
+                if record is None or not record.active or record.id != account_id:
+                    logger.info(
+                        "cloud_job_collection_plant_skipped",
+                        extra={"plant_id": str(plant_id), "reason": "account_changed"},
+                    )
+                    continue  # desligada ou trocada durante o job
+                credentials = ProviderAccountService(session, box).open(record)
+            result = await run_solar_collection(
+                target_date=resolved_date,
+                plant_id=plant_id,
+                credentials=credentials,
+            )
+        except Exception as exc:  # noqa: BLE001 - isola a falha por usina
+            await _record_provider_outcome(plant_id, box=box, failure=type(exc).__name__)
+            problems.append(str(plant_id))
+            logger.error(
+                "cloud_job_collection_plant_failed",
+                extra={"plant_id": str(plant_id), "error_code": type(exc).__name__},
+            )
+            continue
+        if result is None:
+            await _record_provider_outcome(plant_id, box=box, failure="ProviderDeferred")
+        else:
+            await _record_provider_outcome(plant_id, box=box, failure=None)
+        logger.info(
+            "cloud_job_collection_completed",
+            extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
+        )
+    if problems:
+        raise RuntimeError(
+            f"collection failed for {len(problems)} plant(s): {', '.join(problems)}"
+        )
+
+
+async def _count_active_provider_accounts() -> int:
+    from sqlalchemy import func
+
+    from mplacas.providers.db_models import ProviderAccountRecord
+
+    async with SessionFactory() as session:
+        await set_platform_context(session)
+        return int(
+            await session.scalar(
+                select(func.count())
+                .select_from(ProviderAccountRecord)
+                .where(ProviderAccountRecord.active.is_(True))
+            )
+            or 0
+        )
+
+
+async def _warn_if_legacy_plant_unconnected(
+    accounts: list[tuple[uuid.UUID, uuid.UUID]],
+) -> None:
+    """Com conexões ativas, a usina do caminho antigo sem conexão deixa de ser coletada."""
+    plant_name = get_settings().cloud_job_plant_name
+    if not plant_name or not plant_name.strip():
+        return
+    connected = {plant_id for plant_id, _ in accounts}
+    async with SessionFactory() as session:
+        await set_platform_context(session)
+        legacy_ids = set(
+            await session.scalars(
+                select(Plant.id).where(
+                    Plant.name == plant_name.strip(),
+                    Plant.organization_id == DEFAULT_ORGANIZATION_ID,
+                )
+            )
+        )
+    for plant_id in legacy_ids - connected:
+        logger.warning(
+            "cloud_job_collection_legacy_plant_not_connected",
+            extra={"plant_id": str(plant_id)},
+        )
+
+
+async def _record_provider_outcome(
+    plant_id: uuid.UUID, *, box, failure: str | None
+) -> None:
+    """Grava o resultado na conexão (só o nome do erro), em transação própria.
+
+    Nunca interrompe a coleta das outras usinas: se a gravação falhar, só registra.
+    """
+    try:
+        await _write_provider_outcome(plant_id, box=box, failure=failure)
+    except Exception as exc:  # noqa: BLE001 - o resultado é informativo
+        logger.error(
+            "cloud_job_collection_outcome_not_recorded",
+            extra={"plant_id": str(plant_id), "error_code": type(exc).__name__},
+        )
+
+
+async def _write_provider_outcome(
+    plant_id: uuid.UUID, *, box, failure: str | None
+) -> None:
+    from mplacas.providers.accounts import ProviderAccountService
+
+    async with SessionFactory() as session:
+        await set_platform_context(session)
+        service = ProviderAccountService(session, box)
+        record = await service.get(plant_id)
+        if record is None or not record.active:
+            return
+        if failure is None:
+            await service.record_success(record)
+        else:
+            await service.record_failure(record, code=failure)
+        await session.commit()
+
+
+async def _run_legacy_collection(resolved_date: date) -> None:
+    """Caminho antigo: conta global NEP_* numa única usina (sai na fase 7)."""
+    settings = get_settings()
+    plant_name = settings.cloud_job_plant_name
+    if plant_name is None or not plant_name.strip():
+        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
+    plant_id = await _resolve_plant_id(plant_name)
+    logger.warning(
+        "cloud_job_collection_legacy_global_account",
         extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
     )
     await run_solar_collection(
@@ -597,9 +729,10 @@ async def run_report_export_drain(*, batch_size: int = 10) -> None:
 
 async def run_collection_drain() -> None:
     settings = get_settings()
-    plant_name = settings.cloud_job_plant_name
-    if plant_name is None or not plant_name.strip():
-        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
+    # Só a usina do caminho antigo ainda usa a conta global; as demais tarefas
+    # usam a conexão da própria usina (ADR-091).
+    configured = settings.cloud_job_plant_name
+    plant_name = configured.strip() if configured and configured.strip() else None
     logger.info("cloud_job_collection_drain_started")
     result = await drain_collection_queue(plant_name=plant_name)
     logger.info(
