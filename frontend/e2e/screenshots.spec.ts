@@ -311,6 +311,15 @@ test.describe('captura das telas', () => {
     // Piso de 12 px também na landing (PR 10 do refinamento). A prévia
     // ilustrativa do painel (`role="img"`) é ilustração, não texto de leitura.
     expect(await textosPequenos(page, 12, '.dashboard-mockup')).toEqual([])
+    // Identidade da ADR-077 na landing (ADR-090): nenhum rótulo em CAIXA ALTA
+    // por CSS e a ação primária no marinho do tema escuro do painel.
+    const emCaixaAlta = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.site-shell *'))
+        .filter((el) => getComputedStyle(el).textTransform === 'uppercase' && (el.textContent ?? '').trim())
+        .map((el) => (el.textContent ?? '').trim().slice(0, 30)),
+    )
+    expect(emCaixaAlta).toEqual([])
+    await expect(page.locator('.hero-actions .button--primary')).toHaveCSS('background-color', 'rgb(122, 174, 219)')
     // O item "Avaliar minha usina" do menu é só do celular (`.site-nav__mobile-cta`).
     if (!info.project.use.isMobile) {
       await expect(page.locator('.site-nav__mobile-cta')).toBeHidden()

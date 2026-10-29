@@ -71,9 +71,9 @@ const capabilities = [
 ];
 
 const evidence = [
-  { value: "D+1", label: "consolidação diária", icon: Clock3 },
-  { value: "4", label: "formatos de relatório", icon: FileCheck2 },
-  { value: "Rastreável", label: "fonte, unidade e período por métrica", icon: ShieldCheck },
+  { value: "D+1", label: "Consolidação diária", icon: Clock3 },
+  { value: "4", label: "Formatos de relatório", icon: FileCheck2 },
+  { value: "Rastreável", label: "Fonte, unidade e período por métrica", icon: ShieldCheck },
 ];
 
 function Brand({ compact = false }: { compact?: boolean }) {
@@ -204,28 +204,28 @@ export default function Home() {
             <div className="hero-meta">
               <span>01 / 04</span>
               <span className="hero-meta__line" />
-              <span>observatório solar</span>
+              <span>Observatório solar</span>
             </div>
           </div>
-          <div className="hero-bottom-marker"><span>role para explorar</span><ChevronDown size={16} /></div>
+          <div className="hero-bottom-marker"><span>Role para explorar</span><ChevronDown size={16} /></div>
         </section>
 
         <section className="evidence-strip" aria-label="Indicadores de produto">
           <div className="site-container evidence-strip__inner">
             <div className="evidence-intro"><span className="evidence-intro__index">MPL / 01</span><span>Uma camada de<br /><strong>clareza operacional.</strong></span></div>
             {evidence.map(({ value, label, icon: Icon }) => <div className="evidence-item" key={label}><Icon size={17} /><strong>{value}</strong><span>{label}</span></div>)}
-            <div className="evidence-mark"><Waves size={30} strokeWidth={1.2} /><span>energia<br />em contexto</span></div>
+            <div className="evidence-mark"><Waves size={30} strokeWidth={1.2} /><span>Energia<br />em contexto</span></div>
           </div>
         </section>
 
         <section className="intro-section site-container" id="como-funciona">
-          <div className="intro-section__aside"><SectionLabel>A pergunta por trás da conta</SectionLabel><span className="vertical-note">01 — ORIENTAR</span></div>
+          <div className="intro-section__aside"><SectionLabel>A pergunta por trás da conta</SectionLabel><span className="vertical-note">01 — Orientar</span></div>
           <div className="intro-section__copy">
             <h2>Produção, consumo e fatura contam partes da mesma história. <em>A MPlacas ajuda a juntá-las.</em></h2>
             <p>Em vez de olhar cada número isoladamente, veja os dados organizados por ciclo: o que foi produzido, consumido, importado ou injetado — e o que merece uma investigação mais cuidadosa.</p>
             <a className="text-link" href="#leituras">Ver o que você acompanha <ArrowUpRight size={16} /></a>
           </div>
-          <div className="intro-section__stamp"><Sparkles size={18} /><span>clareza<br />é um recurso</span></div>
+          <div className="intro-section__stamp"><Sparkles size={18} /><span>Clareza<br />é um recurso</span></div>
         </section>
 
         <section className="capabilities-section" id="leituras">
@@ -245,17 +245,17 @@ export default function Home() {
 
         <section className="product-section site-container">
           <div className="product-section__copy"><SectionLabel>Da pergunta à evidência</SectionLabel><h2>Veja sua usina além do <em>portal do inversor.</em></h2><p>Uma leitura executiva reúne produção, consumo, saúde da usina e fatura. Em cada métrica, ficam visíveis a unidade, a fonte, o período e a qualidade do dado.</p><div className="product-checks"><span><Check size={15} /> produção e consumo no mesmo ciclo</span><span><Check size={15} /> alertas com severidade e próxima ação</span><span><Check size={15} /> histórico e relatórios exportáveis</span></div><a className="text-link" href={contactHref}>Quero entender minha usina <ArrowRight size={16} /></a></div>
-          <div className="product-section__visual"><div className="visual-annotation visual-annotation--top"><span>leitura executiva</span><span className="visual-annotation__rule" /></div><DashboardMockup /><div className="visual-annotation visual-annotation--bottom"><span className="visual-annotation__rule" /><span>exemplo ilustrativo</span></div></div>
+          <div className="product-section__visual"><div className="visual-annotation visual-annotation--top"><span>Leitura executiva</span><span className="visual-annotation__rule" /></div><DashboardMockup /><div className="visual-annotation visual-annotation--bottom"><span className="visual-annotation__rule" /><span>Exemplo ilustrativo</span></div></div>
         </section>
 
         <section className="split-story split-story--energy">
-          <div className="split-story__image split-story__image--energy"><span className="image-caption">02 — MOSTRAR / luz depois da chuva</span></div>
+          <div className="split-story__image split-story__image--energy"><span className="image-caption">02 — Mostrar / luz depois da chuva</span></div>
           <div className="split-story__content"><SectionLabel>Produção com contexto</SectionLabel><h2>O número que você vê é só o começo da história.</h2><p>Quando a série histórica se encontra com o clima e a fatura, o desvio deixa de ser um susto e vira uma pergunta boa: o que mudou no ambiente, no equipamento ou no ciclo?</p><div className="story-stat"><strong>+8,4%</strong><span>variação de exemplo<br />contra a mediana de 30 dias</span></div><a className="text-link" href="#confiabilidade">Entender a evidência <ArrowUpRight size={16} /></a></div>
         </section>
 
         <section className="split-story split-story--climate">
           <div className="split-story__content"><SectionLabel>Explicação assistida</SectionLabel><h2>Clima, telemetria e fatura na mesma conversa.</h2><p>A MPlacas combina motores determinísticos com explicações assistidas por IA ancoradas em evidências normalizadas. A IA ajuda a explicar; os indicadores continuam sendo calculados por regras explícitas.</p><div className="quote-card"><CloudSun size={21} /><p>“A produção ficou abaixo do esperado no início do ciclo, mas recuperou após a janela de nebulosidade.”</p><span>exemplo de explicação com grounding</span></div></div>
-          <div className="split-story__image split-story__image--climate"><span className="image-caption">03 — INTERPRETAR / clima em perspectiva</span></div>
+          <div className="split-story__image split-story__image--climate"><span className="image-caption">03 — Interpretar / clima em perspectiva</span></div>
         </section>
 
         <section className="faq-section" id="duvidas">
@@ -300,12 +300,12 @@ export default function Home() {
               <div className="trust-grid__item"><span className="trust-grid__number">02</span><BarChart3 size={22} /><h3>Fonte em cada métrica</h3><p>Valor, unidade, natureza, período e versão permanecem rastreáveis.</p></div>
               <div className="trust-grid__item"><span className="trust-grid__number">03</span><SunMedium size={22} /><h3>Dados ausentes visíveis</h3><p>Sem preencher lacunas com suposições ou esconder a qualidade da leitura.</p></div>
             </div>
-            <div className="trust-section__footer"><span className="trust-section__footer-line" /><span>04 — AGIR</span><strong>Da próxima pergunta à próxima ação.</strong><a className="button button--outline-light" href={contactHref}>Avaliar minha usina <ArrowUpRight size={16} /></a></div>
+            <div className="trust-section__footer"><span className="trust-section__footer-line" /><span>04 — Agir</span><strong>Da próxima pergunta à próxima ação.</strong><a className="button button--outline-light" href={contactHref}>Avaliar minha usina <ArrowUpRight size={16} /></a></div>
           </div>
         </section>
       </main>
 
-      <footer className="site-footer"><div className="site-container site-footer__inner"><div><Brand compact /><p>Inteligência energética<br />com contexto e rastreabilidade.</p></div><div className="site-footer__links"><span>mplacas / observatório solar</span><a href="mailto:oi@mplacas.com.br">oi@mplacas.com.br <ArrowUpRight size={14} /></a></div><div className="site-footer__bottom"><span>© 2026 MPlacas</span><span>Energia medida. Decisão explicada.</span><a href="#top">Voltar ao topo <ArrowUpRight size={14} /></a></div></div></footer>
+      <footer className="site-footer"><div className="site-container site-footer__inner"><div><Brand compact /><p>Inteligência energética<br />com contexto e rastreabilidade.</p></div><div className="site-footer__links"><span>MPlacas / observatório solar</span><a href="mailto:oi@mplacas.com.br">oi@mplacas.com.br <ArrowUpRight size={14} /></a></div><div className="site-footer__bottom"><span>© 2026 MPlacas</span><span>Energia medida. Decisão explicada.</span><a href="#top">Voltar ao topo <ArrowUpRight size={14} /></a></div></div></footer>
     </div>
   );
 }
