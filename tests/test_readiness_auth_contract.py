@@ -23,7 +23,7 @@ def _settings(*, env: str, jwt_configured: bool) -> SimpleNamespace:
     return SimpleNamespace(
         env=env,
         readiness_timeout_seconds=3.0,
-        nep_configured=False,
+        provider_secret_keys=None,
         telegram_configured=False,
         telegram_alerts_configured=False,
         climate_archive_base_url=None,

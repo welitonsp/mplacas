@@ -104,8 +104,6 @@ async def _connect(factory, plant_id: uuid.UUID, login: str) -> None:
 
 def _patch(monkeypatch, factory, providers: dict[str, AccountProvider], seen: list[str]):
     monkeypatch.setenv("MPLACAS_PROVIDER_SECRET_KEYS", f"1:{KEY}")
-    monkeypatch.delenv("MPLACAS_NEP_ACCOUNT", raising=False)
-    monkeypatch.delenv("MPLACAS_NEP_PASSWORD", raising=False)
     get_settings.cache_clear()
     for module in (cloud_jobs, job_module, drain_module):
         monkeypatch.setattr(module, "SessionFactory", factory)
@@ -221,21 +219,6 @@ async def test_provider_outage_defers_the_plant_to_the_queue(monkeypatch) -> Non
     assert record is not None and record.last_failure_code == "ProviderDeferred"
 
 
-async def test_connected_plants_never_fall_back_to_the_global_account(monkeypatch) -> None:
-    factory = await _factory()
-    await _connect(factory, PLANT_A, "casa@example.com")
-    seen: list[str] = []
-    _patch(monkeypatch, factory, {"casa@example.com": AccountProvider(["SN-A1"])}, seen)
-    monkeypatch.setenv("MPLACAS_NEP_ACCOUNT", "global@example.com")
-    monkeypatch.setenv("MPLACAS_NEP_PASSWORD", "senha-global@example.com")
-    monkeypatch.setenv("MPLACAS_CLOUD_JOB_PLANT_NAME", "Loja")
-    get_settings.cache_clear()
-
-    await cloud_jobs.run_collection(target_date=DAY.isoformat(), now=NOW)
-
-    assert seen == ["casa@example.com"]
-
-
 async def test_connected_plants_without_the_keyring_fail_closed(monkeypatch) -> None:
     factory = await _factory()
     await _connect(factory, PLANT_A, "casa@example.com")
@@ -247,25 +230,6 @@ async def test_connected_plants_without_the_keyring_fail_closed(monkeypatch) -> 
     with pytest.raises(Exception, match="MPLACAS_PROVIDER_SECRET_KEYS"):
         await cloud_jobs.run_collection(target_date=DAY.isoformat(), now=NOW)
     assert seen == []
-
-
-def test_service_requires_exactly_one_way_to_name_the_plant() -> None:
-    import asyncio
-
-    async def _run() -> None:
-        factory = await _factory()
-        async with factory() as session:
-            service = SolarCollectionService(session, AccountProvider([]))
-            with pytest.raises(ValueError):
-                await service.collect_in_session(start=DAY, end=DAY)
-            with pytest.raises(ValueError):
-                await service.collect_in_session(
-                    plant_id=PLANT_A, plant_name="Casa", start=DAY, end=DAY
-                )
-            with pytest.raises(CollectionPlantError):
-                await service.collect_in_session(plant_id=uuid.uuid4(), start=DAY, end=DAY)
-
-    asyncio.run(_run())
 
 
 async def test_drain_uses_the_connection_of_each_task_plant(monkeypatch) -> None:
@@ -281,7 +245,7 @@ async def test_drain_uses_the_connection_of_each_task_plant(monkeypatch) -> None
     seen: list[str] = []
     _patch(monkeypatch, factory, {"casa@example.com": AccountProvider(["SN-A1"])}, seen)
 
-    result = await drain_collection_queue(plant_name=None)
+    result = await drain_collection_queue()
 
     assert result.claimed == 2
     assert result.completed == 1
@@ -312,35 +276,6 @@ async def test_service_refuses_an_inverter_that_belongs_to_another_plant() -> No
         assert await session.scalar(select(func.count()).select_from(DailyEnergyRow)) == 0
 
 
-async def test_drain_never_uses_the_global_account_for_a_homonym_plant(monkeypatch) -> None:
-    """Outra organização com usina de mesmo nome não herda a conta global."""
-    factory = await _factory()
-    other_org = uuid.uuid4()
-    homonym = uuid.uuid4()
-    async with factory() as session:
-        session.add(OrganizationRecord(id=other_org, name="Outro", slug="outro", active=True))
-        await session.flush()
-        session.add(Plant(id=homonym, organization_id=other_org, name="Loja"))
-        await session.flush()
-        for plant_id in (homonym, PLANT_C):
-            await CollectionQueueRepository(session).enqueue(
-                plant_id=plant_id, task_type=COLLECTION_TASK_TYPE, target_date=DAY.isoformat()
-            )
-        await session.commit()
-    seen: list[str] = []
-    _patch(monkeypatch, factory, {"global@example.com": AccountProvider(["SN-L"])}, seen)
-    monkeypatch.setenv("MPLACAS_NEP_ACCOUNT", "global@example.com")
-    monkeypatch.setenv("MPLACAS_NEP_PASSWORD", "senha-global@example.com")
-    get_settings.cache_clear()
-
-    result = await drain_collection_queue(plant_name="Loja")
-
-    assert result.completed == 1
-    assert result.rescheduled == 1
-    assert seen == ["global@example.com"]
-    assert await _devices_by_plant(factory) == {PLANT_C: {"SN-L"}}
-
-
 async def test_drain_with_connections_fails_fast_without_the_keyring(monkeypatch) -> None:
     factory = await _factory()
     await _connect(factory, PLANT_A, "casa@example.com")
@@ -350,7 +285,7 @@ async def test_drain_with_connections_fails_fast_without_the_keyring(monkeypatch
     get_settings.cache_clear()
 
     with pytest.raises(Exception, match="MPLACAS_PROVIDER_SECRET_KEYS"):
-        await drain_collection_queue(plant_name=None)
+        await drain_collection_queue()
     assert seen == []
 
 
@@ -396,3 +331,35 @@ async def test_outcome_bookkeeping_failure_does_not_stop_other_plants(monkeypatc
     await cloud_jobs.run_collection(target_date=DAY.isoformat(), now=NOW)
 
     assert sorted(seen) == ["casa@example.com", "sitio@example.com"]
+
+
+async def test_task_of_a_plant_that_lost_its_connection_is_retried_then_failed(monkeypatch) -> None:
+    """Outra usina continua conectada; a tarefa da usina desconectada não usa
+    conta alheia: reagenda e, no limite de tentativas, vira falha."""
+    factory = await _factory()
+    await _connect(factory, PLANT_A, "casa@example.com")
+    async with factory() as session:
+        await CollectionQueueRepository(session).enqueue(
+            plant_id=PLANT_B, task_type=COLLECTION_TASK_TYPE, target_date=DAY.isoformat()
+        )
+        await session.commit()
+    seen: list[str] = []
+    _patch(monkeypatch, factory, {"casa@example.com": AccountProvider(["SN-A1"])}, seen)
+
+    for _ in range(2):
+        await drain_collection_queue(max_attempts=2)
+        async with factory() as session:
+            from mplacas.collection.db_models import CollectionTaskRecord
+
+            task = (await session.scalars(select(CollectionTaskRecord))).one()
+            if task.status is CollectionTaskStatus.PENDING:
+                task.available_at = task.created_at
+                await session.commit()
+
+    async with factory() as session:
+        from mplacas.collection.db_models import CollectionTaskRecord
+
+        task = (await session.scalars(select(CollectionTaskRecord))).one()
+    assert task.status is CollectionTaskStatus.FAILED
+    assert seen == []
+    assert await _devices_by_plant(factory) == {}

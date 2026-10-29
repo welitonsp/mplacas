@@ -14,6 +14,7 @@ from mplacas.collection.job import COLLECTION_TASK_TYPE, run_solar_collection
 from mplacas.collection.queue import CollectionQueueRepository
 from mplacas.db import models as _db_models  # noqa: F401  (registra tabela plants)
 from mplacas.db.base import Base
+from mplacas.providers.accounts import ProviderLogin
 from mplacas.providers.base import (
     DailyEnergy,
     DeviceOverview,
@@ -24,6 +25,7 @@ from mplacas.providers.base import (
 
 PLANT_ID = uuid.UUID("00000000-0000-0000-0000-0000000000cc")
 PLANT_NAME = "Usina Caldas"
+CREDENTIALS = ProviderLogin(login="operador", password="segredo-da-usina")
 _TEST_ENGINES = []
 
 
@@ -93,8 +95,6 @@ def _patch(monkeypatch, factory, provider: SolarProvider) -> None:
         return _NoopClient(), provider
 
     monkeypatch.setattr(job_module, "build_resilient_nepviewer", _build)
-    monkeypatch.setenv("MPLACAS_NEP_ACCOUNT", "operador")
-    monkeypatch.setenv("MPLACAS_NEP_PASSWORD", "segredo-de-ambiente")
     from mplacas.core.config import get_settings
 
     get_settings.cache_clear()
@@ -109,7 +109,7 @@ async def test_collection_job_persists_production_on_success(monkeypatch) -> Non
     result = await run_solar_collection(
         target_date=date(2026, 7, 19),
         plant_id=PLANT_ID,
-        plant_name=PLANT_NAME,
+        credentials=CREDENTIALS,
     )
 
     assert result is not None
@@ -135,7 +135,7 @@ async def test_collection_job_defers_to_queue_on_provider_failure(monkeypatch) -
     result = await run_solar_collection(
         target_date=date(2026, 7, 19),
         plant_id=PLANT_ID,
-        plant_name=PLANT_NAME,
+        credentials=CREDENTIALS,
     )
 
     assert result is None  # falha não explode; defere
@@ -151,26 +151,5 @@ async def test_collection_job_defers_to_queue_on_provider_failure(monkeypatch) -
     assert task.status is CollectionTaskStatus.PENDING
 
     from mplacas.core.config import get_settings
-
-    get_settings.cache_clear()
-
-
-@pytest.mark.asyncio
-async def test_collection_job_requires_credentials(monkeypatch) -> None:
-    factory = await _factory()
-    await _seed_plant(factory)
-    monkeypatch.setattr(job_module, "SessionFactory", factory)
-    monkeypatch.delenv("MPLACAS_NEP_ACCOUNT", raising=False)
-    monkeypatch.delenv("MPLACAS_NEP_PASSWORD", raising=False)
-    from mplacas.core.config import get_settings
-
-    get_settings.cache_clear()
-
-    with pytest.raises(RuntimeError, match="NEPViewer credentials"):
-        await run_solar_collection(
-            target_date=date(2026, 7, 19),
-            plant_id=PLANT_ID,
-            plant_name=PLANT_NAME,
-        )
 
     get_settings.cache_clear()

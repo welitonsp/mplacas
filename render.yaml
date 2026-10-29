@@ -53,10 +53,6 @@ services:
         sync: false
       - key: MPLACAS_TELEGRAM_ALERT_CHAT_ID
         sync: false
-      - key: MPLACAS_NEP_ACCOUNT
-        sync: false
-      - key: MPLACAS_NEP_PASSWORD
-        sync: false
       # Chaveiro das senhas dos inversores por usina (ADR-091).
       - key: MPLACAS_PROVIDER_SECRET_KEYS
         sync: false

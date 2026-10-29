@@ -394,8 +394,6 @@ jobs:
             -e MPLACAS_DATABASE_URL=postgresql+asyncpg://postgres@localhost:5432/postgres \
             -e MPLACAS_OPERATIONS_API_KEY=ci-operations-key \
             -e MPLACAS_JWT_SECRET=ci-00000000000000000000000000000000 \
-            -e MPLACAS_NEP_USERNAME=ci-nep-user \
-            -e MPLACAS_NEP_PASSWORD=ci-nep-password \
             "$IMAGE_NAME"
       - name: Smoke test health and readiness
         run: |

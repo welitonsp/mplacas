@@ -230,7 +230,10 @@ async def ready(response: Response) -> dict[str, object]:
         "configuration_valid": True,
         "environment": settings.env,
         "database_ready": database_ready,
-        "nepviewer_configured": settings.nep_configured,
+        "provider_keyring_configured": bool(
+            settings.provider_secret_keys is not None
+            and settings.provider_secret_keys.get_secret_value().strip()
+        ),
         "telegram_configured": settings.telegram_configured,
         "telegram_alerts_configured": settings.telegram_alerts_configured,
         "climate_provider_configured": bool(settings.climate_archive_base_url),

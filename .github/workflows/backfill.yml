@@ -126,8 +126,6 @@ jobs:
         env:
           MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
           MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
-          MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
-          MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
           MPLACAS_PROVIDER_SECRET_KEYS: ${{ secrets.MPLACAS_PROVIDER_SECRET_KEYS }}
         run: |
           falhas=0
@@ -154,8 +152,6 @@ jobs:
           MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
           MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
           MPLACAS_TELEGRAM_BOT_TOKEN: ${{ secrets.MPLACAS_TELEGRAM_BOT_TOKEN }}
-          MPLACAS_NEP_ACCOUNT: ${{ secrets.MPLACAS_NEP_ACCOUNT }}
-          MPLACAS_NEP_PASSWORD: ${{ secrets.MPLACAS_NEP_PASSWORD }}
           MPLACAS_PROVIDER_SECRET_KEYS: ${{ secrets.MPLACAS_PROVIDER_SECRET_KEYS }}
         run: |
           falhas=0

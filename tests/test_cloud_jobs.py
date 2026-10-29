@@ -12,8 +12,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import mplacas.collection.job as job_module
 from mplacas.cloud_jobs import CommandResult, main, run_migrations
-from mplacas.collection.job import COLLECTION_TASK_TYPE
-from mplacas.collection.queue import CollectionQueueRepository
 from mplacas.core.config import get_settings
 from mplacas.db import models as _db_models  # noqa: F401  (registra tabela plants)
 from mplacas.db.base import Base
@@ -87,8 +85,7 @@ def test_smoke_job_executes_read_only_database_probe(monkeypatch) -> None:
 
 def test_operational_smoke_rejects_missing_configuration(monkeypatch) -> None:
     settings = SimpleNamespace(
-        nep_account=None,
-        nep_password=None,
+        provider_secret_keys=None,
         telegram_bot_token=None,
         telegram_alert_chat_id=None,
         cloud_job_plant_name=None,
@@ -97,7 +94,7 @@ def test_operational_smoke_rejects_missing_configuration(monkeypatch) -> None:
     )
     monkeypatch.setattr(cloud_jobs, "get_settings", lambda: settings)
 
-    with pytest.raises(RuntimeError, match="MPLACAS_NEP_ACCOUNT") as exc_info:
+    with pytest.raises(RuntimeError, match="MPLACAS_PROVIDER_SECRET_KEYS") as exc_info:
         cloud_jobs._validate_operational_settings()
 
     message = str(exc_info.value)
@@ -107,8 +104,7 @@ def test_operational_smoke_rejects_missing_configuration(monkeypatch) -> None:
 
 def test_operational_smoke_accepts_complete_configuration(monkeypatch) -> None:
     settings = SimpleNamespace(
-        nep_account="account",
-        nep_password=SecretStr("password"),
+        provider_secret_keys=SecretStr("1:chave"),
         telegram_bot_token=SecretStr("token"),
         telegram_alert_chat_id="123456",
         cloud_job_plant_name="Usina",
@@ -279,9 +275,7 @@ def test_daily_pipeline_runs_all_plants_and_survives_one_failure(monkeypatch) ->
         "resolve_expected_daily_production",
         # Distinct values per plant: proves there is no single env-derived
         # value shared across plants.
-        _fake_expected_production_resolver(
-            {plant_a: Decimal("10.0"), plant_b: Decimal("25.0")}
-        ),
+        _fake_expected_production_resolver({plant_a: Decimal("10.0"), plant_b: Decimal("25.0")}),
     )
 
     with pytest.raises(RuntimeError, match="Usina A"):
@@ -446,9 +440,7 @@ def test_operational_watchdog_fails_closed(monkeypatch, snapshot, error: str) ->
 
     with pytest.raises(RuntimeError, match=error):
         cloud_jobs.asyncio.run(
-            cloud_jobs.run_operational_watchdog(
-                now=datetime(2026, 8, 2, 12, tzinfo=UTC)
-            )
+            cloud_jobs.run_operational_watchdog(now=datetime(2026, 8, 2, 12, tzinfo=UTC))
         )
     get_settings.cache_clear()
 
@@ -580,12 +572,12 @@ async def _sqlite_factory():
     return factory
 
 
-def test_run_collection_does_not_require_plant_id_env_var(monkeypatch) -> None:
-    """MPLACAS_CLOUD_JOB_PLANT_ID não é mais exigido: a usina é resolvida pelo nome."""
-    monkeypatch.delenv("MPLACAS_CLOUD_JOB_PLANT_ID", raising=False)
+def test_run_collection_without_connected_plants_fails_visibly(monkeypatch, caplog) -> None:
+    """ADR-091, fase 7: sem conexão por usina não há conta global de reserva,
+    e o job falha em vez de terminar verde sem coletar nada."""
+    import logging
+
     monkeypatch.setenv("MPLACAS_CLOUD_JOB_PLANT_NAME", "Usina Nova")
-    monkeypatch.setenv("MPLACAS_NEP_ACCOUNT", "operador")
-    monkeypatch.setenv("MPLACAS_NEP_PASSWORD", "segredo-de-ambiente")
     get_settings.cache_clear()
 
     factory = cloud_jobs.asyncio.run(_sqlite_factory())
@@ -593,68 +585,26 @@ def test_run_collection_does_not_require_plant_id_env_var(monkeypatch) -> None:
     monkeypatch.setattr(job_module, "SessionFactory", factory)
 
     def fake_build(**_kwargs):
-        class _NoopClient:
-            async def aclose(self) -> None:
-                return None
-
-        return _NoopClient(), _FailingSolarProvider()
+        raise AssertionError("no provider should be built without a connection")
 
     monkeypatch.setattr(job_module, "build_resilient_nepviewer", fake_build)
 
     now = datetime.fromisoformat("2026-07-19T00:30:00-03:00")
-    # Não deve levantar exceção alguma: nem por falta da env var, nem por FK
-    # ao enfileirar o retry da primeira coleta de uma usina que ainda não existe.
-    cloud_jobs.asyncio.run(cloud_jobs.run_collection(target_date="2026-07-18", now=now))
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.raises(RuntimeError, match="active provider account"),
+    ):
+        cloud_jobs.asyncio.run(cloud_jobs.run_collection(target_date="2026-07-18", now=now))
 
-    get_settings.cache_clear()
+    assert "cloud_job_collection_no_active_accounts" in caplog.text
 
-
-def test_run_collection_creates_plant_before_enqueueing_first_retry(monkeypatch) -> None:
-    """Reproduz o bug de produção: primeira coleta de usina nova cai no retry.
-
-    Antes da correção, `_enqueue_retry` usava um `plant_id` arbitrário (vindo
-    de env var) que nunca correspondia ao `Plant.id` real gerado ao criar a
-    usina pelo nome, violando a FK de `collection_tasks.plant_id`. Agora a
-    usina é resolvida/criada e commitada isoladamente antes de qualquer
-    tentativa de coleta, e esse `id` real é o único usado dali em diante.
-    """
-    monkeypatch.delenv("MPLACAS_CLOUD_JOB_PLANT_ID", raising=False)
-    monkeypatch.setenv("MPLACAS_CLOUD_JOB_PLANT_NAME", "Usina Nova")
-    monkeypatch.setenv("MPLACAS_NEP_ACCOUNT", "operador")
-    monkeypatch.setenv("MPLACAS_NEP_PASSWORD", "segredo-de-ambiente")
-    get_settings.cache_clear()
-
-    factory = cloud_jobs.asyncio.run(_sqlite_factory())
-    monkeypatch.setattr(cloud_jobs, "SessionFactory", factory)
-    monkeypatch.setattr(job_module, "SessionFactory", factory)
-
-    def fake_build(**_kwargs):
-        class _NoopClient:
-            async def aclose(self) -> None:
-                return None
-
-        return _NoopClient(), _FailingSolarProvider()
-
-    monkeypatch.setattr(job_module, "build_resilient_nepviewer", fake_build)
-
-    now = datetime.fromisoformat("2026-07-19T00:30:00-03:00")
-    cloud_jobs.asyncio.run(cloud_jobs.run_collection(target_date="2026-07-18", now=now))
-
-    async def _assert_state() -> None:
+    async def _no_plant_created() -> None:
         async with factory() as session:
-            plant = (
+            assert (
                 await session.execute(select(Plant).where(Plant.name == "Usina Nova"))
-            ).scalar_one()
-            due = await CollectionQueueRepository(session).due_ids(
-                task_type=COLLECTION_TASK_TYPE
-            )
-            assert len(due) == 1
-            task = await CollectionQueueRepository(session).by_id(due[0])
-            assert task is not None
-            assert task.plant_id == plant.id
-            assert task.target_date == "2026-07-18"
+            ).scalar_one_or_none() is None
 
-    cloud_jobs.asyncio.run(_assert_state())
+    cloud_jobs.asyncio.run(_no_plant_created())
     get_settings.cache_clear()
 
 
@@ -670,9 +620,7 @@ def test_list_organization_plants_orders_by_name_then_id(monkeypatch) -> None:
     async def _seed() -> None:
         async with factory() as session:
             session.add(
-                OrganizationRecord(
-                    id=other_org_id, name="Other", slug="other-org", active=True
-                )
+                OrganizationRecord(id=other_org_id, name="Other", slug="other-org", active=True)
             )
             await session.flush()
             session.add(Plant(id=high_id, organization_id=DEFAULT_ORGANIZATION_ID, name="Zulu"))
@@ -684,9 +632,7 @@ def test_list_organization_plants_orders_by_name_then_id(monkeypatch) -> None:
 
     cloud_jobs.asyncio.run(_seed())
 
-    plants = cloud_jobs.asyncio.run(
-        cloud_jobs._list_organization_plants(DEFAULT_ORGANIZATION_ID)
-    )
+    plants = cloud_jobs.asyncio.run(cloud_jobs._list_organization_plants(DEFAULT_ORGANIZATION_ID))
 
     assert plants == [(low_id, "Alpha"), (high_id, "Zulu")]
 

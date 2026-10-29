@@ -2,6 +2,8 @@
 
 ## Status
 
+> **Nota (29/10/2026):** a conta NEPViewer única/global (`MPLACAS_NEP_ACCOUNT`/`PASSWORD`) descrita aqui foi substituída pela conexão por usina da ADR-091 (removida na fase 7). A coleta agora percorre as usinas conectadas.
+
 **Implementado — 2026-08-06.** Todas as sub-etapas (A, B, C, D, E1-E9) commitadas e revisadas.
 Reviewer obrigatório aprovou E1, E2, E4, E5, E7 e E9 (E7 exigiu uma rodada de correção antes da
 aprovação final — ver commit `71c580c`). Exceção formalizada: `run_collection` em `cloud_jobs.py`

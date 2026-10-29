@@ -1,6 +1,6 @@
 ---
 name: provider-integrations
-description: Use ao construir UX de integração com provedor de telemetria solar no Mplacas (hoje NEPViewer, único, via providers/nepviewer/). Define o fluxo de conexão/descoberta e a limitação atual (conta única/global, sem distinção por usina).
+description: Use ao construir UX de integração com provedor de telemetria solar no Mplacas (hoje NEPViewer, via providers/nepviewer/). Define o fluxo de conexão por usina (ADR-091) e o que ainda não existe (outras marcas, várias contas por usina).
 ---
 
 # Provider Integrations — Mplacas
@@ -8,23 +8,26 @@ description: Use ao construir UX de integração com provedor de telemetria sola
 ## Finalidade
 Documentar o estado real da integração de provedores, para não desenhar uma UX que assume capacidade que o backend não tem hoje.
 
-## Estado real confirmado
-- Único provedor implementado: NEPViewer (`src/mplacas/providers/nepviewer/`), configurado via credenciais **únicas e globais** (`MPLACAS_NEP_ACCOUNT`/`MPLACAS_NEP_PASSWORD`), não por usina.
-- `SolarDevice` não carrega identificador de usina física — a coleta hoje não distingue múltiplas usinas na mesma conta (ver `energy-data-lineage` e a exceção documentada no ADR-069 §E9 sobre `run_collection`).
-- Não há hoje wizard de onboarding self-service de provedor na UI — a configuração é feita via variável de ambiente/infra, não pela interface.
+## Estado real confirmado (ADR-091, 29/10/2026)
+- Único provedor implementado: NEPViewer (`src/mplacas/providers/nepviewer/`).
+- **Uma conexão por usina** (`provider_accounts`, `providers/accounts.py`): login e senha cifrados com AES-256-GCM (`core/secret_box.py`), chave em `MPLACAS_PROVIDER_SECRET_KEYS`, fora do banco. Não existe mais conta global em variável de ambiente.
+- Rotas: `GET/PUT/DELETE /plants/{plant_id}/provider-account` (`providers/router.py`). PUT só ADMIN, confere a conta na NEPViewer antes de salvar, até 5 conferências por usina a cada 10 min, recusa inversor de outra usina. A senha nunca volta.
+- Tela: bloco "Conexão com o inversor" em Minha usina (`frontend/src/components/ProviderConnectionSection.tsx`).
+- Coleta (`cloud_jobs.run_collection`, `collection/drain.py`) percorre só as usinas com conexão ativa; usina sem conexão não é coletada.
+- `SolarDevice` não carrega identificador de usina física: uma conta = uma usina. O mesmo número de série em outra usina é recusado (`CollectionPlantError`).
 
 ## Quando usar
-- Antes de desenhar qualquer tela de "adicionar integração"/"conectar provedor" — confirme que o backend já suporta múltiplas contas/credenciais por organização antes de prometer isso na UI.
+- Antes de desenhar qualquer tela de integração/credencial de provedor.
 
 ## Procedimento
-1. Não construa uma UI de múltiplos provedores/múltiplas contas por usina enquanto o backend for de conta única global — isso seria promessa falsa.
-2. Se o pedido for para dar suporte a múltiplos provedores, isso é mudança de arquitetura de backend primeiro (escalar ao architect/backend), não algo que o frontend resolve sozinho.
-3. Qualquer tela nova de credencial segue `secret-safe-ui`.
+1. Marca nova de inversor = novo valor de `provider` + nova fábrica e verificador (ver `claude/integracoes-inversores.md` no projeto); a tabela, o cofre e a tela já servem.
+2. Não prometa várias contas na mesma usina, nem usina com duas marcas: o backend não suporta.
+3. Qualquer tela nova de credencial segue `secret-safe-ui`; o corpo do PUT é lido à mão no backend para nenhum erro de validação repetir a senha.
 
 ## Anti-patterns
-- Tela de "conectar novo provedor" quando o backend só suporta um, globalmente.
+- Ler a credencial fora de `ProviderAccountService` ou logar login/senha/texto cifrado.
 - Prometer descoberta automática de usina por conta quando o dado não permite distinguir usinas.
 
 ## Checklist
 - [ ] Capacidade real do backend confirmada antes de desenhar a UI
-- [ ] Nenhuma promessa de multi-conta/multi-provedor não suportada
+- [ ] Senha só entra; nunca volta em resposta, log ou auditoria

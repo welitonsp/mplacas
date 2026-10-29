@@ -41,8 +41,6 @@ Em **Settings → Secrets and variables → Actions → Secrets**, aba *Reposito
 | `MPLACAS_MIGRATION_DATABASE_URL` | URL **direta** do Neon |
 | `MPLACAS_OPERATIONS_API_KEY` | chave operacional |
 | `MPLACAS_TELEGRAM_BOT_TOKEN` | token do bot |
-| `MPLACAS_NEP_ACCOUNT` | conta NEPViewer |
-| `MPLACAS_NEP_PASSWORD` | senha NEPViewer |
 | `MPLACAS_PROVIDER_SECRET_KEYS` | chaveiro das senhas dos inversores por usina (ADR-091); gere com `python -m mplacas.core.secret_box`. Mesmo valor no GitHub e no Render. Perder a chave obriga a refazer todas as conexões |
 
 ### 1.2 Cadastrar as variables

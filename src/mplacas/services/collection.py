@@ -10,8 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.db.models import DataStatus, Device, Plant
 from mplacas.db.repositories.daily_energy import DailyEnergyRepository
-from mplacas.db.repositories.plant import PlantRepository
-from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID
 from mplacas.providers.base import SolarProvider
 
 
@@ -36,13 +34,11 @@ class SolarCollectionService:
         self._session = session
         self._provider = provider
         self._energy = DailyEnergyRepository(session)
-        self._plants = PlantRepository(session)
 
     async def collect(
         self,
         *,
-        plant_name: str | None = None,
-        plant_id: uuid.UUID | None = None,
+        plant_id: uuid.UUID,
         start: date,
         end: date,
         consolidate_through: date | None = None,
@@ -51,7 +47,6 @@ class SolarCollectionService:
         """Coleta gerenciando a própria transação (commit/rollback)."""
         try:
             result = await self.collect_in_session(
-                plant_name=plant_name,
                 plant_id=plant_id,
                 start=start,
                 end=end,
@@ -67,8 +62,7 @@ class SolarCollectionService:
     async def collect_in_session(
         self,
         *,
-        plant_name: str | None = None,
-        plant_id: uuid.UUID | None = None,
+        plant_id: uuid.UUID,
         start: date,
         end: date,
         consolidate_through: date | None = None,
@@ -82,7 +76,9 @@ class SolarCollectionService:
         if end < start:
             raise ValueError("A data final não pode ser anterior à inicial")
 
-        plant = await self._resolve_plant(plant_name=plant_name, plant_id=plant_id)
+        plant = await self._session.get(Plant, plant_id)
+        if plant is None:
+            raise CollectionPlantError("plant not found")
         devices = await self._provider.list_devices()
         received = 0
         changed = 0
@@ -116,28 +112,6 @@ class SolarCollectionService:
             devices_seen=len(devices),
             records_received=received,
             records_changed=changed,
-        )
-
-    async def _resolve_plant(
-        self, *, plant_name: str | None, plant_id: uuid.UUID | None
-    ) -> Plant:
-        """Usina pelo id (conexão por usina, ADR-091) ou pelo nome (caminho antigo)."""
-        if (plant_name is None) == (plant_id is None):
-            raise ValueError("informe plant_id ou plant_name, não os dois")
-        if plant_id is not None:
-            plant = await self._session.get(Plant, plant_id)
-            if plant is None:
-                raise CollectionPlantError("plant not found")
-            return plant
-        assert plant_name is not None
-        return await self._get_or_create_plant(plant_name)
-
-    async def _get_or_create_plant(self, name: str) -> Plant:
-        # Jobs de coleta em nuvem rodam sob configuração estática de
-        # plataforma (settings.cloud_job_plant_name), sem organização por
-        # requisição — usam a organização default legada (ADR-052/069).
-        return await self._plants.get_or_create(
-            name, organization_id=DEFAULT_ORGANIZATION_ID
         )
 
     async def _get_or_create_device(

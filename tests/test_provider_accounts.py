@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import logging
 import uuid
 
 import pytest
@@ -9,9 +8,7 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
-from mplacas import cloud_jobs
-from mplacas.core.config import get_settings
-from mplacas.core.secret_box import KEY_BYTES, SecretBox, SecretBoxUnavailableError
+from mplacas.core.secret_box import KEY_BYTES, SecretBox
 from mplacas.db.base import Base
 from mplacas.db.models import Plant
 from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
@@ -254,53 +251,6 @@ def test_mask_login(login: str, masked: str) -> None:
     assert mask_login(login) == masked
 
 
-async def test_import_command_copies_the_global_account_without_logging_it(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    factory = await _factory()
-    monkeypatch.setattr(cloud_jobs, "SessionFactory", factory)
-    monkeypatch.setenv("MPLACAS_NEP_ACCOUNT", "cliente@example.com")
-    monkeypatch.setenv("MPLACAS_NEP_PASSWORD", "s3nh4-do-inversor")
-    monkeypatch.setenv("MPLACAS_PROVIDER_SECRET_KEYS", f"1:{KEY_1}")
-    get_settings.cache_clear()
-
-    async def _no_context(_session):
-        return None
-
-    monkeypatch.setattr(cloud_jobs, "set_platform_context", _no_context)
-    try:
-        with caplog.at_level(logging.DEBUG):
-            await cloud_jobs.import_provider_account(plant_name="Casa")
-            with pytest.raises(RuntimeError, match="plant not found"):
-                await cloud_jobs.import_provider_account(plant_name="Inexistente")
-    finally:
-        get_settings.cache_clear()
-
-    async with factory() as session:
-        accounts = await ProviderAccountService(session, _box()).list_active()
-        assert [a.plant_id for a in accounts] == [PLANT_A]
-        assert (
-            ProviderAccountService(session, _box()).open(accounts[0]).password
-            == "s3nh4-do-inversor"
-        )
-    assert "s3nh4" not in caplog.text
-    assert "cliente@example.com" not in caplog.text
-
-
-async def test_import_command_fails_closed_without_the_keyring(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("MPLACAS_NEP_ACCOUNT", "cliente@example.com")
-    monkeypatch.setenv("MPLACAS_NEP_PASSWORD", "s3nh4-do-inversor")
-    monkeypatch.delenv("MPLACAS_PROVIDER_SECRET_KEYS", raising=False)
-    get_settings.cache_clear()
-    try:
-        with pytest.raises(SecretBoxUnavailableError):
-            await cloud_jobs.import_provider_account(plant_name="Casa")
-    finally:
-        get_settings.cache_clear()
-
-
 async def test_same_account_is_refused_between_adding_a_key_and_rotating() -> None:
     """Chave nova acrescentada, rotação ainda não rodou: o conflito continua visível."""
     factory = await _factory()
@@ -350,55 +300,3 @@ async def test_concurrent_connection_of_the_same_plant_becomes_a_domain_error() 
                 provider=NEPVIEWER,
                 credentials=ProviderLogin(login="outro@example.com", password="x"),
             )
-
-
-async def test_import_command_never_overwrites_an_existing_connection(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    factory = await _factory()
-    async with factory() as session:
-        await ProviderAccountService(session, _box()).save(
-            plant_id=PLANT_A,
-            provider=NEPVIEWER,
-            credentials=ProviderLogin(login="cadastrada@example.com", password="atual"),
-        )
-        await session.commit()
-    monkeypatch.setattr(cloud_jobs, "SessionFactory", factory)
-
-    async def _no_context(_session):
-        return None
-
-    monkeypatch.setattr(cloud_jobs, "set_platform_context", _no_context)
-    monkeypatch.setenv("MPLACAS_NEP_ACCOUNT", "cliente@example.com")
-    monkeypatch.setenv("MPLACAS_NEP_PASSWORD", "s3nh4-do-inversor")
-    monkeypatch.setenv("MPLACAS_PROVIDER_SECRET_KEYS", f"1:{KEY_1}")
-    get_settings.cache_clear()
-    try:
-        with pytest.raises(RuntimeError, match="already has an active"):
-            await cloud_jobs.import_provider_account(plant_name="Casa")
-    finally:
-        get_settings.cache_clear()
-
-
-async def test_import_command_refuses_an_ambiguous_plant_name(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    factory = await _factory()
-    async with factory() as session:
-        session.add(Plant(id=uuid.uuid4(), organization_id=DEFAULT_ORGANIZATION_ID, name="Casa"))
-        await session.commit()
-    monkeypatch.setattr(cloud_jobs, "SessionFactory", factory)
-
-    async def _no_context(_session):
-        return None
-
-    monkeypatch.setattr(cloud_jobs, "set_platform_context", _no_context)
-    monkeypatch.setenv("MPLACAS_NEP_ACCOUNT", "cliente@example.com")
-    monkeypatch.setenv("MPLACAS_NEP_PASSWORD", "s3nh4-do-inversor")
-    monkeypatch.setenv("MPLACAS_PROVIDER_SECRET_KEYS", f"1:{KEY_1}")
-    get_settings.cache_clear()
-    try:
-        with pytest.raises(RuntimeError, match="ambiguous"):
-            await cloud_jobs.import_provider_account(plant_name="Casa")
-    finally:
-        get_settings.cache_clear()

@@ -2,6 +2,8 @@
 
 ## Status
 
+> **Nota (29/10/2026):** a conta NEPViewer única/global (`MPLACAS_NEP_ACCOUNT`/`PASSWORD`) descrita aqui foi substituída pela conexão por usina da ADR-091 (removida na fase 7). A coleta agora percorre as usinas conectadas.
+
 **Aceito — 2026-08-07.** A decisão aceita é a de **não implementar agora** e registrar a ordem de
 pré-requisitos e o gatilho objetivo de reabertura. Este ADR não é uma proposta pendente de
 aprovação: a decisão foi tomada pelo usuário na sessão de 2026-08-07, depois do fact-check dos dois
