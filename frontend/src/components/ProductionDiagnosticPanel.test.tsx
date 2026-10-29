@@ -63,9 +63,13 @@ describe('ProductionDiagnosticPanel', () => {
 
     expect(screen.getByRole('heading', { level: 2, name: 'Diagnóstico: perda recorrente de produção' })).toBeInTheDocument()
     expect(screen.getByText('Confiança alta')).toBeInTheDocument()
-    expect(screen.getByText(/2 dias seguidos abaixo do esperado/)).toBeInTheDocument()
-    expect(screen.getByText(/pior dia em 29\/07\/2026/)).toBeInTheDocument()
-    expect(screen.getByText(/Perda estimada de 10 kWh no período analisado/)).toBeInTheDocument()
+    expect(screen.getByText(/A queda se repete em dias seguidos/)).toBeInTheDocument()
+    expect(screen.getByText(/Cada dia a mais nessa situação aumenta a perda estimada ao lado/)).toBeInTheDocument()
+    // Cada número uma vez: data/desvio do pior dia e perdas só nos sinais.
+    const panelText = document.body.textContent ?? ''
+    expect(panelText.match(/29\/07\/2026/g)).toHaveLength(1)
+    expect(panelText.match(/10 kWh/g)).toHaveLength(1)
+    expect(panelText.match(/6 kWh/g)).toHaveLength(1)
     expect(screen.getByText(/cruzar com Técnico/)).toBeInTheDocument()
 
     expect(screen.getByText('Monitorar próximos dias')).toBeInTheDocument()
@@ -89,7 +93,7 @@ describe('ProductionDiagnosticPanel', () => {
     expect(within(playbook).getByText('Escalar se persistir')).toBeInTheDocument()
   })
 
-  it('mostra o critério de alerta de 7 dias usado pelo gráfico de produção', () => {
+  it('não repete o critério de alerta de 7 dias, que já está em "Leitura do período"', () => {
     const state = anomalyState({
       plant_id: 'plant-1',
       days_analyzed: 7,
@@ -118,10 +122,10 @@ describe('ProductionDiagnosticPanel', () => {
       />,
     )
 
-    expect(screen.getByText('Critério de alerta')).toBeInTheDocument()
-    expect(screen.getByText('Alerta crítico')).toBeInTheDocument()
-    expect(screen.getByText(/Média de 7 dias em 70% do esperado/)).toBeInTheDocument()
-    expect(screen.getByText(/Regra: 7 dias contra esperado/)).toBeInTheDocument()
+    // O gatilho de alerta (rótulo e explicação) mora em "Leitura do período",
+    // na mesma aba; o diagnóstico não o repete (ADR-077, decisão 15).
+    expect(screen.queryByText('Critério de alerta')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Regra: 7 dias contra esperado/)).not.toBeInTheDocument()
   })
 
   it('não fabrica perda quando há produção real, mas não há referência esperada', () => {
