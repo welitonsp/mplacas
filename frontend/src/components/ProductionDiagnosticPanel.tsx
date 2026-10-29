@@ -1,5 +1,4 @@
 import type { AnomalyDashboardResponse, AnomalyDailyPoint, AnomalyFetchState, Severity } from '../lib/dashboard/contracts'
-import { productionAlertSignal } from '../lib/dashboard/production-alerts'
 import type { ExpectedDailyProduction } from '../lib/dashboard/photovoltaic-contracts'
 import { baselineUnavailableMessage } from '../lib/dashboard/photovoltaic-contracts'
 import { LEVEL_RANK, levelLabel, levelSeverity, SEVERITY_BG, SEVERITY_TEXT } from '../lib/dashboard/visuals'
@@ -223,10 +222,13 @@ export function buildProductionDiagnosis({
       tone,
       title: 'Diagnóstico: perda recorrente de produção',
       confidence: 'Alta',
-      cause: `${streak} ${streak === 1 ? 'dia seguido' : 'dias seguidos'} abaixo do esperado; pior dia em ${formatFullDate(worstDay.date)} (${formatDeviation(toNumber(worstDay.deviation_percent))}).`,
+      // Texto = interpretação; números só nos sinais ao lado ("Maior desvio",
+      // "Perda estimada") e a contagem de dias no aviso do gráfico (ADR-077,
+      // decisão 15; decisão do dono delegada em 29/10/2026).
+      cause: 'A queda se repete em dias seguidos: não é um dia isolado, e por isso merece investigação.',
       impact:
         totalLoss !== null
-          ? `Perda estimada de ${formatKwh(totalLoss, 1)} no período analisado, sendo ${formatKwh(loss, 1)} no pior dia.`
+          ? 'Cada dia a mais nessa situação aumenta a perda estimada ao lado.'
           : 'Há recorrência de desvio, mas a perda em kWh não pôde ser estimada com segurança.',
       action: 'Priorizar investigação de campo e cruzar com Técnico para separar clima, sujeira, sombra, inversor ou falha de telemetria.',
       signals: buildSignals(data),
@@ -238,8 +240,11 @@ export function buildProductionDiagnosis({
       tone: levelSeverity(worstDay.level),
       title: 'Diagnóstico: desvio pontual de produção',
       confidence: 'Média',
-      cause: `O pior dia foi ${formatFullDate(worstDay.date)}, classificado como ${levelLabel(worstDay.level).toLowerCase()}.`,
-      impact: loss !== null && loss > 0 ? `Perda estimada de ${formatKwh(loss, 1)} nesse dia.` : 'O impacto em kWh ainda é baixo ou não estimável.',
+      cause: `Um dia ficou abaixo do esperado (${levelLabel(worstDay.level).toLowerCase()}), sem se repetir nos dias seguintes.`,
+      impact:
+        loss !== null && loss > 0
+          ? 'Por enquanto a perda se resume a esse dia (valor ao lado).'
+          : 'O impacto em kWh ainda é baixo ou não estimável.',
       action: 'Monitorar se o padrão se repete nos próximos dias antes de abrir ação corretiva.',
       signals: buildSignals(data),
     }
@@ -321,7 +326,6 @@ export function ProductionDiagnosticPanel({
   const window = diagnosis.window ?? defaultWindow(diagnosis.tone)
   const owner = diagnosis.owner ?? defaultOwner(diagnosis.tone)
   const playbook = diagnosis.playbook ?? defaultPlaybook(diagnosis.tone)
-  const alertSignal = anomalyState.data ? productionAlertSignal(anomalyState.data.daily) : null
 
   // Visual (ADR-077, etapa 4): mesma gramática do painel de decisão da Visão
   // Geral — rótulo + texto em vez de caixas dentro de caixas, sinais como
@@ -376,18 +380,10 @@ export function ProductionDiagnosticPanel({
         {/* "Evidências usadas" saiu em 2026-08-27 (R-1): repetia os sinais. */}
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Plano de produção</h3>
-          {alertSignal && (
-            <p className="flex gap-1.5 text-[13px] text-[var(--color-text-secondary)]">
-              <span>Critério de alerta</span>
-              <span className={`font-semibold ${SEVERITY_TEXT[alertSignal.tone]}`}>{alertSignal.label}</span>
-            </p>
-          )}
         </div>
-        {alertSignal && (
-          <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
-            {alertSignal.detail} Regra: 7 dias contra esperado; sem baseline, 7 dias contra a janela anterior.
-          </p>
-        )}
+        {/* "Critério de alerta" saiu daqui: o mesmo gatilho, com a mesma
+            explicação, já está em "Leitura do período" logo acima (ADR-077,
+            decisão 15 — decisão do dono delegada em 29/10/2026). */}
 
         <ol aria-label="Plano operacional de produção" className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-3">
           {playbook.map((step, index) => (
