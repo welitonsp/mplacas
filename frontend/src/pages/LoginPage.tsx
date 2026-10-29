@@ -7,18 +7,21 @@ import { warmUpApi } from '../lib/api'
 
 const SLOW_START_HINT_MS = 6_000
 
+// Mesmas perguntas das abas do painel (ADR-083) e o mesmo tom do Início
+// ("Está tudo bem?"): o login fala com o dono da usina, não com um operador.
+// Antes: "Operação diária", "Diagnóstico técnico", "leitura executiva".
 const BENEFITS = [
   {
-    title: 'Operação diária',
-    description: 'Produção, consumo e economia no mesmo painel.',
+    title: 'Está tudo bem?',
+    description: 'Avisa quando a usina para de mandar leitura ou gera abaixo do esperado.',
   },
   {
-    title: 'Diagnóstico técnico',
-    description: 'Alertas de operação com contexto de causa provável.',
+    title: 'Quanto gerou',
+    description: 'Produção de cada dia e de cada ciclo, conferida com o que a distribuidora registrou.',
   },
   {
-    title: 'Decisão financeira',
-    description: 'Economia, tarifa, ROI e payback prontos para leitura executiva.',
+    title: 'Quanto economizei',
+    description: 'Sua conta com e sem a usina, e o retorno do investimento comparado ao CDI.',
   },
 ]
 
@@ -82,15 +85,10 @@ export function LoginPage() {
   }
 
   return (
+    // Sem os dois borrões decorativos (`blur-3xl`) que havia atrás do
+    // formulário: ADR-077, decisão 6 — sem decoração; fundo de página liso
+    // como no painel.
     <div className="relative min-h-screen overflow-hidden bg-[var(--color-surface-subtle)] text-[var(--color-text-primary)]">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -left-32 top-[-18rem] h-[34rem] w-[34rem] rounded-full bg-[var(--color-brand-primary)]/10 blur-3xl"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute bottom-[-16rem] right-[-10rem] h-[32rem] w-[32rem] rounded-full bg-[var(--color-energy-solar)]/15 blur-3xl"
-      />
 
       <main className="relative mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_27rem] lg:px-8 2xl:max-w-[96rem]">
         <section className="w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[0_24px_60px_-32px_rgb(14_27_42_/_0.35)] sm:p-8 lg:order-2">
@@ -104,7 +102,7 @@ export function LoginPage() {
               Entrar no MPlacas
             </h1>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
-              Use suas credenciais operacionais para abrir o painel da usina.
+              Use o usuário e a senha da sua conta.
             </p>
           </div>
 
@@ -209,7 +207,7 @@ export function LoginPage() {
             )}
 
             <p className="text-center text-xs leading-5 text-[var(--color-text-secondary)]">
-              Sessão protegida por credenciais operacionais. O backend valida permissões a cada requisição.
+              Conexão protegida. O acesso é conferido a cada consulta aos seus dados.
             </p>
           </form>
         </section>
@@ -220,18 +218,18 @@ export function LoginPage() {
           <div className="hidden items-center gap-3 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 lg:inline-flex">
             <BrandMark className="text-[var(--color-text-primary)]" />
             <span className="h-1 w-1 rounded-full bg-[var(--color-border)]" aria-hidden="true" />
-            <span className="text-xs font-medium text-[var(--color-text-secondary)]">Cockpit solar</span>
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">Sua usina solar</span>
           </div>
 
           <div className="max-w-3xl space-y-4">
             <p className="text-sm font-semibold text-[var(--color-brand-primary)]">
-              Painel operacional
+              Para quem tem energia solar
             </p>
             <h2 className="text-3xl font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-text-primary)] sm:text-5xl lg:text-[56px]">
-              Gestão de energia solar com leitura executiva.
+              Veja quanto sua usina gera e quanto você economiza.
             </h2>
             <p className="max-w-2xl text-base leading-relaxed text-[var(--color-text-secondary)] sm:text-lg">
-              Entre em um painel preparado para explicar geração, perdas, retorno financeiro e disponibilidade sem exigir garimpo de dados.
+              A produção das placas, a fatura da distribuidora e o retorno do investimento lado a lado, com a origem de cada número à vista.
             </p>
           </div>
 

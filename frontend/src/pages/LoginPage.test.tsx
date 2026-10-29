@@ -28,11 +28,20 @@ describe('LoginPage — acessibilidade e tokens de design', () => {
     renderLoginPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
-    expect(screen.getByText('Gestão de energia solar com leitura executiva.')).toBeInTheDocument()
+    expect(screen.getByText('Veja quanto sua usina gera e quanto você economiza.')).toBeInTheDocument()
     expect(screen.queryByText('Prévia do cockpit')).not.toBeInTheDocument()
     expect(screen.queryByText('92%')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Senha')).not.toHaveAttribute('placeholder')
-    expect(screen.getByText('Sessão protegida por credenciais operacionais. O backend valida permissões a cada requisição.')).toBeInTheDocument()
+    expect(screen.getByText('Conexão protegida. O acesso é conferido a cada consulta aos seus dados.')).toBeInTheDocument()
+  })
+
+  it('sem decoração (ADR-077, decisão 6) e sem jargão de operador no texto', () => {
+    const { container } = renderLoginPage()
+
+    expect(container.querySelector('[class*="blur-"]')).toBeNull()
+    for (const jargon of [/leitura executiva/i, /cockpit/i, /credenciais operacionais/i, /painel operacional/i]) {
+      expect(screen.queryByText(jargon)).not.toBeInTheDocument()
+    }
   })
 
   it('o botão "Entrar" usa os tokens de cor do projeto, não classes bg-blue-*/focus:ring-blue-*', () => {
