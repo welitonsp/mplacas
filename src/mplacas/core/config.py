@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     nep_base_url: HttpUrl = HttpUrl("https://api.nepviewer.net/v2")
     nep_account: str | None = None
     nep_password: SecretStr | None = None
+    # Chaveiro que cifra as senhas dos fabricantes de inversor guardadas no
+    # banco (ADR-091): ``1:<base64 de 32 bytes>,2:<...>``. Lido só por
+    # ``core.secret_box``; sem ele, nada é cifrado nem decifrado.
+    provider_secret_keys: SecretStr | None = Field(default=None, repr=False)
     climate_archive_base_url: HttpUrl = HttpUrl("https://archive-api.open-meteo.com/v1/archive")
     external_http_allowed_hosts: str = "api.nepviewer.net,archive-api.open-meteo.com,api.bcb.gov.br"
     # API pública de séries do Banco Central (CDI/IPCA) — painel do
@@ -351,6 +355,7 @@ class Settings(BaseSettings):
             "metrics_enabled": self.metrics_enabled,
             "metrics_export_interval_seconds": self.metrics_export_interval_seconds,
             "operational_auth_configured": self.operations_api_key is not None,
+            "provider_secret_keys_configured": self.provider_secret_keys is not None,
             "jwt_auth_configured": self.jwt_configured,
             "auth_login_max_attempts": self.auth_login_max_attempts,
             "external_http_allowed_host_count": len(self.external_http_allowed_host_set),

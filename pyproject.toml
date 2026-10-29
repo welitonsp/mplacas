@@ -24,6 +24,8 @@ dependencies = [
   # Piso 2.15: corrige PYSEC-2026-4140..4152 e 4183 (assina os tokens de acesso).
   "pyjwt>=2.15,<3",
   "argon2-cffi>=23.1,<26",
+  # Cifra as senhas dos fabricantes de inversor (AES-256-GCM, ADR-091).
+  "cryptography>=50.0,<51",
   "tzdata>=2025.2",
   "opentelemetry-api>=1.44,<2",
   "opentelemetry-sdk>=1.44,<2",
