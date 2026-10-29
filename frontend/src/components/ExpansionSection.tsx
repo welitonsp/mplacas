@@ -79,44 +79,71 @@ function MoneyBlock({ money }: { money: ExpansionMoney | null }) {
     )
   }
   const scenario = money.valuesByYear.find((value) => value.scenario)
+  const firstYear = money.valuesByYear[0]?.year ?? money.requestYear
+  const hasScenario = money.valuesByYear.length > 1
+  // Pares rótulo → valor no lugar de um parágrafo com 4 números (auditoria
+  // visual de 28/10/2026, item 9). Mesmo conteúdo, mesmos valores do backend.
   return (
-    <div className="space-y-2">
-      <p className="text-[15px] leading-6 text-[var(--color-text-primary)]">
-        Economia estimada de <strong>≈ {formatCurrency(money.monthlySavingFirstYearBrl)} por mês</strong> pela regra
-        de {money.valuesByYear[0]?.year ?? money.requestYear}
-        {money.valuesByYear.length > 1
-          ? `, caindo para ≈ ${formatCurrency(money.monthlySavingScenarioBrl)} por mês a partir de ${
-              scenario?.year ?? 2029
-            }, porque a energia da parte nova paga uma fatia crescente do Fio B.`
-          : ' (cenário com Fio B integral).'}
-      </p>
-      <table className="w-full max-w-md text-left text-[13px] tabular-nums">
+    <div className="space-y-3">
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+        <div>
+          <dt className="text-[13px] text-[var(--color-text-secondary)]">
+            Economia estimada pela regra de {firstYear}
+            {hasScenario ? '' : ' (cenário com Fio B integral)'}
+          </dt>
+          <dd className="font-display text-[20px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+            ≈ {formatCurrency(money.monthlySavingFirstYearBrl)} por mês
+          </dd>
+        </div>
+        {hasScenario && (
+          <div>
+            <dt className="text-[13px] text-[var(--color-text-secondary)]">A partir de {scenario?.year ?? 2029} (cenário)</dt>
+            <dd className="font-display text-[20px] font-semibold tabular-nums text-[var(--color-text-primary)]">
+              ≈ {formatCurrency(money.monthlySavingScenarioBrl)} por mês
+            </dd>
+          </div>
+        )}
+      </dl>
+      {/* Tabela e nota legal recolhidas: os dois valores que decidem estão nos
+          pares acima; o ano a ano é o "porquê" (auditoria visual, item 9). */}
+      <details className="group">
+        <summary className="flex min-h-[44px] cursor-pointer items-center text-[13px] font-semibold text-[var(--color-brand-primary)]">
+          {hasScenario ? 'Por que cai: Fio B ano a ano' : 'Fio B ano a ano'}
+        </summary>
+      {hasScenario && (
+        <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
+          A energia da parte nova paga uma fatia crescente do Fio B:
+        </p>
+      )}
+      <table className="mt-2 w-full text-left text-[13px] tabular-nums">
         <caption className="sr-only">Valor de 1 kWh da parte nova, por ano</caption>
         <thead className="text-[var(--color-text-secondary)]">
           <tr>
-            <th scope="col" className="py-1 font-medium">Ano</th>
-            <th scope="col" className="py-1 font-medium">Fio B pago</th>
-            <th scope="col" className="py-1 font-medium">Valor de 1 kWh</th>
+            <th scope="col" className="py-1.5 font-medium">Ano</th>
+            <th scope="col" className="py-1.5 font-medium">Fio B pago</th>
+            <th scope="col" className="py-1.5 text-right font-medium">Valor de 1 kWh</th>
           </tr>
         </thead>
         <tbody className="text-[var(--color-text-primary)]">
           {money.valuesByYear.map((value) => (
             <tr key={value.year} className="border-t border-[var(--color-border)]">
-              <td className="py-1">
+              <td className="py-1.5">
                 {value.year}
                 {value.scenario ? '+ (cenário)' : ''}
               </td>
-              <td className="py-1">{formatNumber((toNumber(value.wireBShare) ?? 0) * 100, 0)}%</td>
-              <td className="py-1">{formatCurrency(value.valueBrlKwh)}</td>
+              <td className="py-1.5">{formatNumber((toNumber(value.wireBShare) ?? 0) * 100, 0)}%</td>
+              <td className="py-1.5 text-right">{formatCurrency(value.valueBrlKwh)}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
-        Pela Lei 14.300, a parte ampliada pedida agora paga 60% do Fio B em 2026, 75% em 2027 e 90% em 2028. De 2029 em
-        diante a regra ainda será definida pela ANEEL: usamos Fio B integral como cenário, não como fato. Bandeira
-        tarifária fica de fora. Valores a preços do último ciclo, sem reajuste da tarifa.
+      {/* Os percentuais por ano já estão na tabela; a nota diz só a regra. */}
+      <p className="mt-2 text-[13px] leading-5 text-[var(--color-text-secondary)]">
+        Pela Lei 14.300, a parte ampliada pedida agora paga a fatia do Fio B da tabela até 2028. De 2029 em diante a
+        regra ainda será definida pela ANEEL: usamos Fio B integral como cenário, não como fato. Bandeira tarifária fica
+        de fora. Valores a preços do último ciclo, sem reajuste da tarifa.
       </p>
+      </details>
     </div>
   )
 }
@@ -136,6 +163,18 @@ const PAYBACK_UNAVAILABLE: Record<string, string> = {
     'A ampliação passa do limite do inversor atual e a proposta informada não inclui inversor novo. Informe uma proposta com inversor para calcular o retorno.',
   MARKET_DATA_UNAVAILABLE:
     'Não foi possível obter o IPCA e o CDI do Banco Central agora. O retorno volta assim que os índices forem atualizados.',
+}
+
+// Premissas do prazo de retorno. Moram em "Premissas da estimativa" (não mais
+// abaixo da proposta): são premissa, não resultado.
+function paybackPremise(payback: ExpansionPayback): string {
+  return (
+    'Prazo de retorno: conta a partir de hoje, sem o tempo de instalação e homologação; inclui 0,5% ao ano de ' +
+    'manutenção e perda de 0,5% ao ano das placas' +
+    (payback.includesInverter ? ', mais a troca do inversor novo no ano 12 (15% da proposta)' : '') +
+    '; sem bandeira tarifária.' +
+    (payback.indicesAsOfMonth ? ` Índices do Banco Central até ${formatCycleLabel(payback.indicesAsOfMonth)}.` : '')
+  )
 }
 
 function PaybackBlock({
@@ -203,53 +242,63 @@ function PaybackBlock({
       {payback.proposalBrl !== null && !editing && (
         <>
           {reason === null ? (
-            <p className="text-[15px] leading-6 text-[var(--color-text-primary)]">
-              {payback.paybackMonthsWithIpca == null ? (
-                <>
-                  Com a proposta de {formatCurrency(payback.proposalBrl)}, a ampliação <strong>não se paga em 25 anos</strong>{' '}
-                  nas premissas atuais.
-                </>
-              ) : (
-                <>
-                  Com a proposta de {formatCurrency(payback.proposalBrl)}, o retorno estimado é de{' '}
-                  <strong>{duration(payback.paybackMonthsWithIpca)}</strong>, com a tarifa reajustada pelo IPCA (
-                  {formatNumber((toNumber(payback.tariffGrowthPerYear) ?? 0) * 100, 1)}% ao ano). Sem nenhum reajuste:{' '}
-                  {duration(payback.paybackMonthsNoGrowth)}.
-                </>
-              )}{' '}
-              Comparando com deixar o dinheiro no CDI ({formatNumber((toNumber(payback.cdiPerYear) ?? 0) * 100, 1)}% ao
-              ano, líquido de IR no resgate):{' '}
-              {payback.paybackMonthsVsCdi == null ? 'não supera o CDI em 25 anos' : duration(payback.paybackMonthsVsCdi)}.
-            </p>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-3">
+              <div>
+                <dt className="text-[13px] text-[var(--color-text-secondary)]">
+                  Retorno com a tarifa reajustada pelo IPCA (
+                  {formatNumber((toNumber(payback.tariffGrowthPerYear) ?? 0) * 100, 1)}% ao ano)
+                </dt>
+                <dd className="font-display text-[20px] font-semibold text-[var(--color-text-primary)]">
+                  {payback.paybackMonthsWithIpca == null ? 'não se paga em 25 anos' : duration(payback.paybackMonthsWithIpca)}
+                </dd>
+              </div>
+              {payback.paybackMonthsWithIpca != null && (
+                <div>
+                  <dt className="text-[13px] text-[var(--color-text-secondary)]">Sem nenhum reajuste da tarifa</dt>
+                  <dd className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+                    {duration(payback.paybackMonthsNoGrowth)}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-[13px] text-[var(--color-text-secondary)]">
+                  Comparado a deixar o dinheiro no CDI ({formatNumber((toNumber(payback.cdiPerYear) ?? 0) * 100, 1)}% ao
+                  ano, líquido de IR)
+                </dt>
+                <dd className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+                  {payback.paybackMonthsVsCdi == null ? 'não supera o CDI em 25 anos' : duration(payback.paybackMonthsVsCdi)}
+                </dd>
+              </div>
+            </dl>
           ) : (
             <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
               {PAYBACK_UNAVAILABLE[reason] ?? 'Retorno indisponível.'}
             </p>
           )}
-          <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
-            Proposta de {formatCurrency(payback.proposalBrl)}
-            {payback.includesInverter ? ', com inversor' : ', sem inversor'}
-            {payback.recordedOn ? `, informada em ${payback.recordedOn.split('-').reverse().join('/')}` : ''}. Conta a
-            partir de hoje, sem o tempo de instalação e homologação; inclui 0,5% ao ano de manutenção e perda de 0,5% ao
-            ano das placas{payback.includesInverter ? ', mais a troca do inversor novo no ano 12 (15% da proposta)' : ''};
-            sem bandeira tarifária.
-            {payback.indicesAsOfMonth ? ` Índices do Banco Central até ${formatCycleLabel(payback.indicesAsOfMonth)}.` : ''}{' '}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-[13px] font-medium text-[var(--color-text-primary)]">
+              Proposta de {formatCurrency(payback.proposalBrl)}
+              {payback.includesInverter ? ', com inversor' : ', sem inversor'}
+              {payback.recordedOn ? `, informada em ${payback.recordedOn.split('-').reverse().join('/')}` : ''}
+            </p>
+            {/* Ações como botões de verdade, com alvo de 44 px (antes: links
+                de 20 px colados um no outro, abaixo do mínimo da WCAG 2.5.8). */}
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="font-semibold text-[var(--color-brand-primary)] underline"
+              className="inline-flex min-h-[44px] items-center px-2 text-[13px] font-semibold text-[var(--color-brand-primary)] underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
             >
               Alterar
-            </button>{' '}
+            </button>
             <button
               type="button"
               onClick={() => void save(null)}
               disabled={busy}
-              className="font-semibold text-[var(--color-brand-primary)] underline disabled:opacity-50"
+              className="inline-flex min-h-[44px] items-center px-2 text-[13px] font-semibold text-[var(--color-brand-primary)] underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] disabled:opacity-50"
             >
               Remover
             </button>
-          </p>
+          </div>
         </>
       )}
       {editing && (
@@ -410,8 +459,9 @@ export function ExpansionContent({
             )}
             {assessment.extraKwp ? (
               <p className="text-[15px] leading-6 text-[var(--color-text-primary)]">
-                Uma ampliação de <strong>cerca de {formatNumber(assessment.extraKwp, 1)} kWp</strong> cobriria essa
-                falta — {INVERTER[assessment.inverterStatus]}
+                {/* O tamanho (≈ N kWp) já está no cartão "Ampliação estimada" acima:
+                    aqui só o que ele significa (ADR-077, decisão 15). */}
+                A ampliação estimada acima cobriria essa falta e {INVERTER[assessment.inverterStatus]}
                 {assessment.dcAcRatioAfter ? ` (placas ÷ inversor = ${formatNumber(assessment.dcAcRatioAfter, 2)})` : ''}.
               </p>
             ) : assessment.reasons.includes('INSTALLED_POWER_UNKNOWN') ? (
@@ -439,7 +489,12 @@ export function ExpansionContent({
             )}
           </>
         )}
-        {warnings.length > 0 && (
+        {warnings.length === 1 && (
+          <p aria-label="Aviso da análise" className="text-[13px] leading-5 text-[var(--color-warning-text)]">
+            {warnings[0]}
+          </p>
+        )}
+        {warnings.length > 1 && (
           <ul
             aria-label="Avisos da análise"
             className="list-disc space-y-1 pl-5 text-[13px] leading-5 text-[var(--color-warning-text)]"
@@ -449,11 +504,9 @@ export function ExpansionContent({
             ))}
           </ul>
         )}
-      </Card>
-
-      <Card className="sm:p-6">
-        <details>
-          <summary className="cursor-pointer text-[13px] font-semibold text-[var(--color-text-primary)]">
+        {/* Premissas dentro do mesmo cartão (antes: cartão próprio só com o resumo). */}
+        <details className="border-t border-[var(--color-border)] pt-1">
+          <summary className="flex min-h-[44px] cursor-pointer items-center text-[13px] font-semibold text-[var(--color-text-primary)]">
             Premissas da estimativa
           </summary>
           <ul className="mt-3 space-y-1.5 text-[13px] leading-5 text-[var(--color-text-secondary)]">
@@ -469,6 +522,10 @@ export function ExpansionContent({
                 inclinação das atuais; em outra parte do telhado o rendimento muda.
               </li>
             )}
+            {status === 'AMPLIAR' &&
+              assessment.payback &&
+              assessment.payback.proposalBrl !== null &&
+              assessment.payback.unavailableReason === null && <li>{paybackPremise(assessment.payback)}</li>}
             <li>
               Ampliar exige novo pedido de conexão à distribuidora e pode exigir aumento do padrão de entrada. Acima de
               75 kW a usina deixa de ser microgeração.
@@ -477,7 +534,8 @@ export function ExpansionContent({
         </details>
       </Card>
 
-      <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
+
+      <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
         Estimativa feita a partir das suas faturas e da produção medida. Não é garantia de economia: tarifas, bandeiras
         e regras do Fio B podem mudar. Compare mais de uma proposta antes de decidir. A conta completa está em “Como calculamos”, no fim da página.
       </p>
@@ -508,7 +566,7 @@ export function ExpansionSection({ plantId, refreshKey = 0 }: { plantId: string;
       {resource.error ? (
         <RetryableError message={resource.error} onRetry={resource.refetch} />
       ) : resource.data === null ? (
-        <div className="h-40 animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)]" aria-hidden="true" />
+        <div className="h-40 animate-pulse rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]" aria-hidden="true" />
       ) : (
         <ExpansionContent assessment={resource.data} plantId={plantId} onChanged={resource.refetch} />
       )}

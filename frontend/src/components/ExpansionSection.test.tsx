@@ -71,7 +71,10 @@ describe('ExpansionContent (ADR-089)', () => {
     renderContent()
     expect(screen.getByText(/deixou de cobrir em média 30 kWh por mês/)).toBeInTheDocument()
     expect(screen.getByText(/307 kWh no início do período/)).toBeInTheDocument()
-    expect(screen.getByText(/cerca de 0,3 kWp/)).toBeInTheDocument()
+    // O tamanho aparece uma vez: no cartão "Ampliação estimada" (ADR-077,
+    // decisão 15), não de novo na frase.
+    expect(screen.getAllByText(/0,3 kWp/)).toHaveLength(1)
+    expect(screen.getByText('≈ 0,3 kWp')).toBeInTheDocument()
     expect(screen.getByText(/cabe no inversor atual/)).toBeInTheDocument()
     expect(screen.getByText(/R\$\s21,50 por mês/)).toBeInTheDocument()
     expect(screen.getByText('2029+ (cenário)')).toBeInTheDocument()
@@ -157,6 +160,20 @@ describe('retorno da proposta (ADR-089, etapa 2)', () => {
     expect(screen.getByText(/7 anos e 4 meses/)).toBeInTheDocument()
     expect(screen.getByText(/não supera o CDI em 25 anos/)).toBeInTheDocument()
     expect(screen.getByText(/informada em 28\/10\/2026/)).toBeInTheDocument()
+  })
+
+  it('a premissa do prazo de retorno fica em "Premissas da estimativa", não abaixo da proposta', () => {
+    renderContent({ payback: paybackReady })
+    const premise = screen.getByText(/Prazo de retorno: conta a partir de hoje/)
+    expect(premise.closest('details')?.querySelector('summary')?.textContent).toBe('Premissas da estimativa')
+  })
+
+  it('ações da proposta e o resumo das premissas têm alvo de 44 px (WCAG 2.5.8)', () => {
+    renderContent({ payback: paybackReady })
+    for (const name of ['Alterar', 'Remover']) {
+      expect(screen.getByRole('button', { name }).className).toMatch(/min-h-\[44px\]/)
+    }
+    expect(screen.getByText('Premissas da estimativa').closest('summary')?.className).toMatch(/min-h-\[44px\]/)
   })
 
   it.each([
