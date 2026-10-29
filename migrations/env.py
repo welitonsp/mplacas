@@ -28,6 +28,7 @@ from mplacas.organizations import (  # noqa: F401
     invitation_db_models as organization_invitation_models,
 )
 from mplacas.photovoltaic import db_models as photovoltaic_models  # noqa: F401
+from mplacas.providers import db_models as provider_models  # noqa: F401
 from mplacas.reports import db_models as report_models  # noqa: F401
 
 config = context.config

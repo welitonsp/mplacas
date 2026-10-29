@@ -684,3 +684,31 @@ def test_plant_expansion_proposal_migration_matches_orm() -> None:
     assert "ck_plants_expansion_proposal_positive" in source
     assert "UPDATE " not in source.upper()  # sem backfill
     assert 'drop_column("expansion_proposal_brl")' in source
+
+
+def test_provider_accounts_migration_matches_orm() -> None:
+    from mplacas.providers.db_models import ProviderAccountRecord
+
+    source = (
+        ROOT / "migrations" / "versions" / "20261029_0051_add_provider_accounts.py"
+    ).read_text(encoding="utf-8")
+    table = ProviderAccountRecord.__table__
+    constraint_names = {constraint.name for constraint in table.constraints}
+
+    assert 'revision = "20261029_0051"' in source
+    assert 'down_revision = "20261028_0050"' in source
+    for name in (
+        "uq_provider_accounts_plant",
+        "uq_provider_accounts_provider_fingerprint",
+        "ck_provider_accounts_key_version",
+        "ck_provider_accounts_secret_only_when_active",
+    ):
+        assert name in constraint_names
+        assert name in source
+    assert table.c.ciphertext.nullable is True
+    assert table.c.login_hint.nullable is False
+    # Nenhuma coluna guarda login ou senha em claro.
+    assert not {"login", "password", "secret"} & set(table.c.keys())
+    assert 'ondelete="CASCADE"' in source
+    assert "FORCE ROW LEVEL SECURITY" in source
+    assert "drop_table(TABLE)" in source

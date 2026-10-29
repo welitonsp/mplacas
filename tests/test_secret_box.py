@@ -266,3 +266,13 @@ def test_settings_without_keyring_fail_closed(monkeypatch: pytest.MonkeyPatch) -
             secret_box_from_settings()
     finally:
         get_settings.cache_clear()
+
+
+def test_fingerprint_candidates_cover_every_key_version() -> None:
+    value = "cliente@example.com"
+    old = _box(f"1:{KEY_1}").fingerprint(value, purpose="NEPVIEWER")
+    both = _box(f"1:{KEY_1},2:{KEY_2}")
+
+    candidates = both.fingerprint_candidates(value, purpose="NEPVIEWER")
+
+    assert candidates == {old, both.fingerprint(value, purpose="NEPVIEWER")}

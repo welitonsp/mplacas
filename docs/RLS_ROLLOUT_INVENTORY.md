@@ -7,7 +7,7 @@ Data do inventário: 2026-08-02. Fonte executável: `mplacas.db.rls_inventory`.
 | Classe | Tabelas | Regra planejada |
 |---|---|---|
 | Organização direta | `organizations`, `plants`, `api_credentials`, `auth_sessions`, `operational_users`, `user_invitations`, `audit_events` | `id` ou `organization_id` igual ao tenant transacional; auditoria histórica/plataforma pode permanecer nula |
-| Planta | `alert_delivery_records`, `collection_tasks`, `daily_climate_observations`, `daily_pv_loss_assessments`, `daily_pv_performance_results`, `daily_solar_model_results`, `devices`, `monthly_report_snapshots`, `outbox_events`, `pipeline_executions`, `report_export_tasks`, `seasonal_pv_baseline_results`, `utility_bills` | ownership resolvido por `plants.organization_id`; entregas históricas sem planta ficam visíveis apenas à plataforma |
+| Planta | `alert_delivery_records`, `collection_tasks`, `daily_climate_observations`, `daily_pv_loss_assessments`, `daily_pv_performance_results`, `daily_solar_model_results`, `devices`, `monthly_report_snapshots`, `outbox_events`, `pipeline_executions`, `provider_accounts` (política ligada na `20261029_0051`, ADR-091), `report_export_tasks`, `seasonal_pv_baseline_results`, `utility_bills` | ownership resolvido por `plants.organization_id`; entregas históricas sem planta ficam visíveis apenas à plataforma |
 | Dispositivo | `daily_energy` | `daily_energy.device_id -> devices.plant_id -> plants.organization_id` |
 | Energia diária | `daily_energy_versions` | `daily_energy_versions -> daily_energy -> devices -> plants` |
 | Plataforma | `job_runs`, `login_rate_limits` | somente bypass explícito e role PostgreSQL autorizada |
