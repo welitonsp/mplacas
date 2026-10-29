@@ -378,3 +378,81 @@ h2 { margin: 0; color: var(--navy); font: 600 clamp(2.55rem, 4.6vw, 4.7rem)/.98 
     animation-iteration-count: 1 !important;
   }
 }
+
+/* ── Acessibilidade (refinamento ADR-077, auditoria visual de 28/10/2026) ────
+   Só tamanho, contraste e alvo de toque. Paleta, imagens e layout da landing
+   continuam os mesmos (ela tem identidade própria, fora da ADR-077).
+   Fica no FIM do arquivo de propósito: vence as regras acima e as das media
+   queries, com a mesma especificidade.
+   A prévia ilustrativa do painel (`.dashboard-mockup`, `role="img"` com
+   "Prévia ilustrativa…") fica fora: é ilustração, não texto de leitura. */
+
+/* Cinza de texto: #647579 dava 4,35:1 no creme (e 4,0:1 no creme escuro);
+   #52636a dá 5,2:1 ou mais nos dois. */
+.site-shell { --muted: #52636a; }
+
+/* Piso de 12 px (havia rótulos de 9, 10 e 11 px). */
+.site-shell .hero-note,
+.site-shell .hero-meta,
+.site-shell .hero-bottom-marker,
+.site-shell .evidence-intro__index,
+.site-shell .evidence-item span,
+.site-shell .evidence-mark span,
+.site-shell .vertical-note,
+.site-shell .intro-section__stamp,
+.site-shell .capability-card__top,
+.site-shell .image-caption,
+.site-shell .story-stat span,
+.site-shell .quote-card span,
+.site-shell .faq-cta > div > span,
+.site-shell .trust-grid__number,
+.site-shell .trust-section__footer,
+.site-shell .site-footer__links span,
+.site-shell .site-footer__bottom { font-size: 12px; }
+
+/* Texto claro sobre fundo escuro: opacidades de .33 a .58 davam 2,7 a 5,8:1;
+   .7 dá 6,9:1 ou mais sobre o marinho e o fundo do rodapé. */
+.site-shell .hero-note,
+.site-shell .hero-meta,
+.site-shell .hero-bottom-marker,
+.site-shell .evidence-item span,
+.site-shell .evidence-mark span,
+.site-shell .quote-card span,
+.site-shell .trust-grid__number,
+.site-shell .trust-section__footer,
+.site-shell .site-footer__links span,
+.site-shell .site-footer__bottom { color: rgba(238, 244, 235, .7); }
+.site-shell .site-footer__bottom a { color: rgba(238, 244, 235, .82); }
+
+/* Texto cinza/âmbar sobre fundo claro: #889594 (2,8:1), #74827f (3,3:1) e o
+   âmbar (1,8:1) passam ao cinza de texto. O ícone do selo continua âmbar. */
+.site-shell .vertical-note,
+.site-shell .story-stat span,
+.site-shell .capability-card__top { color: var(--muted); }
+.site-shell .intro-section__stamp span { color: var(--muted); }
+
+/* Destaque em verde-água nos títulos: sobre fundo claro dava 2,15:1; o
+   verde-água escuro da própria paleta dá 3,7:1 (título é texto grande: 3:1).
+   Nos fundos escuros continua o verde-água claro. */
+.site-shell h2 em { color: var(--teal-dark); }
+.site-shell .split-story--climate h2 em,
+.site-shell .trust-section h2 em,
+.site-shell .faq-cta h2 em { color: var(--teal); }
+
+/* Botões: `.site-shell a { color: inherit }` (especificidade 0,1,1) vencia a
+   cor dos botões (0,1,0), e "Quero avaliar minha usina" saía com texto claro
+   sobre verde-água — 2,1:1. A cor pretendida dá 6,9:1. */
+.site-shell .button--primary { color: var(--navy); }
+.site-shell .button--outline-light { color: var(--teal); }
+.site-shell .button--outline-light:hover { color: var(--navy); }
+
+/* Alvo de toque de no mínimo 24 px (WCAG 2.5.8): links do menu no desktop
+   tinham 12 px de altura; os do rodapé, 14 px. */
+/* `:not(.site-nav__mobile-cta)`: esse item só existe no menu do celular e
+   precisa continuar `display: none` no desktop. */
+.site-shell .site-nav a:not(.site-nav__mobile-cta),
+.site-shell .site-footer a { display: inline-flex; align-items: center; min-height: 24px; }
+/* Menu do celular (mesmo corte de `.menu-toggle` acima): itens de 48 px. */
+@media (max-width: 640px) {
+  .site-shell .site-nav a { display: flex; min-height: 48px; }
+}

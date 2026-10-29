@@ -206,8 +206,8 @@ async function interceptarApi(page: import('@playwright/test').Page) {
  * 28/10/2026). O painel tem piso de 12 px; esta guarda impede que um
  * `text-[11px]` volte sem ninguém notar. Devolve amostras legíveis para o erro.
  */
-async function textosPequenos(page: import('@playwright/test').Page, minimoPx = 12) {
-  return page.evaluate((minimo) => {
+async function textosPequenos(page: import('@playwright/test').Page, minimoPx = 12, ignorar?: string) {
+  return page.evaluate(({ minimo, ignorar }) => {
     const achados: string[] = []
     const percurso = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
     let no: Node | null
@@ -219,11 +219,12 @@ async function textosPequenos(page: import('@playwright/test').Page, minimoPx = 
       const estilo = getComputedStyle(el)
       if (caixa.width === 0 || caixa.height === 0 || estilo.visibility === 'hidden' || estilo.display === 'none') continue
       if (el.closest('.sr-only')) continue
+      if (ignorar && el.closest(ignorar)) continue
       const tamanho = parseFloat(estilo.fontSize)
       if (tamanho < minimo) achados.push(`${tamanho}px: ${texto.slice(0, 40)}`)
     }
     return achados
-  }, minimoPx)
+  }, { minimo: minimoPx, ignorar })
 }
 
 async function autenticar(page: import('@playwright/test').Page) {
@@ -269,6 +270,13 @@ test.describe('captura das telas', () => {
     // o quadro em que o texto ainda está no fallback (`font-display: swap`).
     await page.evaluate(() => document.fonts.ready)
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    // Piso de 12 px também na landing (PR 10 do refinamento). A prévia
+    // ilustrativa do painel (`role="img"`) é ilustração, não texto de leitura.
+    expect(await textosPequenos(page, 12, '.dashboard-mockup')).toEqual([])
+    // O item "Avaliar minha usina" do menu é só do celular (`.site-nav__mobile-cta`).
+    if (!info.project.use.isMobile) {
+      await expect(page.locator('.site-nav__mobile-cta')).toBeHidden()
+    }
 
     await page.screenshot({
       path: `e2e/capturas/${info.project.name}/publica.png`,
