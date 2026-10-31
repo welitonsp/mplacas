@@ -390,6 +390,68 @@ export async function deleteProviderAccount(plantId: string): Promise<Response> 
   return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account`, { method: 'DELETE' })
 }
 
+// Primeira conexão (ADR-093 § 7): a usina nasce da conta da marca. Mesmo
+// corpo do PUT da conexão; a senha só vai no corpo e nunca volta.
+export async function connectFirstPlant(payload: {
+  provider: 'NEPVIEWER' | 'GROWATT'
+  login: string
+  password: string
+}): Promise<Response> {
+  return apiFetch('/plants/connect', {
+    method: 'POST',
+    body: JSON.stringify({ provider: payload.provider, login: payload.login, password: payload.password }),
+  })
+}
+
+// Quem está logado (ADR-093): papel, organização e se é o dono da plataforma.
+export async function fetchMe(): Promise<Response> {
+  return apiFetch('/auth/me')
+}
+
+// Clientes do dono da plataforma (ADR-093). O token do convite volta só na
+// criação/reenvio e nunca é guardado no navegador.
+export async function fetchClients(): Promise<Response> {
+  return apiFetch('/platform/clients')
+}
+
+export async function createClient(payload: { name: string; admin_username: string }): Promise<Response> {
+  return apiFetch('/platform/clients', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function reinviteClient(organizationId: string): Promise<Response> {
+  return apiFetch(`/platform/clients/${encodeURIComponent(organizationId)}/invitation`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+// Convite (tela /convite, sem login). O token vai no corpo — nunca na URL
+// enviada ao servidor — com o mesmo prazo do login.
+async function publicPost(path: string, body: unknown): Promise<Response> {
+  const deadline = withTimeout(AUTH_TIMEOUT_MS)
+  try {
+    return await fetch(`${API_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: deadline.signal,
+    })
+  } catch (error) {
+    if (deadline.timedOut()) throw new RequestTimeoutError(path, AUTH_TIMEOUT_MS)
+    throw error
+  } finally {
+    deadline.clear()
+  }
+}
+
+export async function inspectInvitation(token: string): Promise<Response> {
+  return publicPost('/auth/invitations/inspect', { token })
+}
+
+export async function acceptInvitation(token: string, password: string): Promise<Response> {
+  return publicPost('/auth/invitations/accept', { token, password })
+}
+
 export interface TechnicalConfigurationUpdatePayload {
   dc_capacity_kwp?: string | null
   ac_capacity_kw?: string | null

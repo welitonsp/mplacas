@@ -16,6 +16,8 @@ interface PlantContextValue {
   loading: boolean
   error: string | null
   selectPlant: (id: string) => void
+  // Recarrega a lista (ex.: logo depois da primeira conexão criar a usina).
+  reload: () => void
 }
 
 const PlantContext = createContext<PlantContextValue | null>(null)
@@ -50,6 +52,8 @@ export function PlantProvider({ children }: { children: React.ReactNode }) {
   const [plantId, setPlantId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [generation, setGeneration] = useState(0)
+  const reload = useCallback(() => setGeneration((value) => value + 1), [])
 
   useEffect(() => {
     let cancelled = false
@@ -83,7 +87,7 @@ export function PlantProvider({ children }: { children: React.ReactNode }) {
     // já atualiza `plantId`/query string/`localStorage` diretamente, sem
     // precisar de uma nova busca de `/plants`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [generation])
 
   const selectPlant = useCallback(
     (id: string) => {
@@ -102,8 +106,8 @@ export function PlantProvider({ children }: { children: React.ReactNode }) {
   )
 
   const value = useMemo(
-    () => ({ plantId, plants, loading, error, selectPlant }),
-    [plantId, plants, loading, error, selectPlant]
+    () => ({ plantId, plants, loading, error, selectPlant, reload }),
+    [plantId, plants, loading, error, selectPlant, reload]
   )
 
   return <PlantContext.Provider value={value}>{children}</PlantContext.Provider>

@@ -1,11 +1,18 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { AuthProvider } from './contexts/AuthContext'
+import { MeProvider } from './contexts/MeContext'
 import { PlantProvider } from './contexts/PlantContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
-import { DASHBOARD_MODULE_SEGMENTS, DASHBOARD_ROOT_PATH, LEGACY_MODULE_REDIRECTS } from './routes'
+import {
+  DASHBOARD_MODULE_SEGMENTS,
+  DASHBOARD_ROOT_PATH,
+  INVITATION_PATH,
+  LEGACY_MODULE_REDIRECTS,
+} from './routes'
 
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })))
+const InvitePage = lazy(() => import('./pages/InvitePage').then((module) => ({ default: module.InvitePage })))
 const PublicHomePage = lazy(() => import('./pages/PublicHomePage').then((module) => ({ default: module.default })))
 const DashboardLayout = lazy(() =>
   import('./pages/dashboard/DashboardLayout').then((module) => ({ default: module.DashboardLayout }))
@@ -34,6 +41,9 @@ const TechnicalPage = lazy(() =>
 )
 const MethodologyPage = lazy(() =>
   import('./pages/dashboard/MethodologyPage').then((module) => ({ default: module.MethodologyPage }))
+)
+const ClientsPage = lazy(() =>
+  import('./pages/dashboard/ClientsPage').then((module) => ({ default: module.ClientsPage }))
 )
 const PlantSetupPage = lazy(() =>
   import('./pages/dashboard/PlantSetupPage').then((module) => ({ default: module.PlantSetupPage }))
@@ -64,6 +74,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<PublicHomePage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path={INVITATION_PATH} element={<InvitePage />} />
             {/* Rota de layout aninhada (ADR-072, Decisão 1): `PlantProvider`
                 monta uma única vez aqui, não dentro de cada rota filha — é o
                 que garante que não remonta (nem refaz `GET /plants`) ao
@@ -73,7 +84,9 @@ export function App() {
               element={
                 <ProtectedRoute>
                   <PlantProvider>
-                    <DashboardLayout />
+                    <MeProvider>
+                      <DashboardLayout />
+                    </MeProvider>
                   </PlantProvider>
                 </ProtectedRoute>
               }
@@ -87,6 +100,7 @@ export function App() {
               <Route path={DASHBOARD_MODULE_SEGMENTS.financial} element={<FinancialPage />} />
               <Route path={DASHBOARD_MODULE_SEGMENTS.methodology} element={<MethodologyPage />} />
               <Route path={DASHBOARD_MODULE_SEGMENTS.setup} element={<PlantSetupPage />} />
+              <Route path={DASHBOARD_MODULE_SEGMENTS.clients} element={<ClientsPage />} />
               {/* URLs da organização anterior: redirecionam, nunca 404. */}
               {LEGACY_MODULE_REDIRECTS.map(({ segment, to }) => (
                 <Route key={segment} path={segment} element={<LegacyModuleRedirect to={to} />} />

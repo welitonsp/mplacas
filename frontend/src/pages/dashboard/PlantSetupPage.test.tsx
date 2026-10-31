@@ -269,6 +269,25 @@ describe('PlantSetupPage — o cliente informa os dados da usina', () => {
   })
 })
 
+describe('PlantSetupPage — dados estimados na conexão (ADR-093 § 7)', () => {
+  it('item estimado pede conferência e nunca vira "Tudo pronto"', async () => {
+    vi.resetModules()
+    const items = ITEM_KEYS.map((key) => ({ key, done: true, needs_review: key === 'ORIENTATION' }))
+    installApiMock({
+      fetchPlantSetup: vi.fn(async () =>
+        jsonResponse(setupPayload({ items, completed: ITEM_KEYS.length }, ITEM_KEYS)),
+      ),
+    })
+
+    await renderPage()
+    const list = await screen.findByRole('list', { name: 'Itens do cadastro' })
+    expect(within(list).getByText(': estimado, confira')).toBeInTheDocument()
+    expect(within(list).getByRole('link', { name: 'Conferir' })).toBeInTheDocument()
+    expect(screen.getByText('1 item foi estimado pelo sistema: confira.')).toBeInTheDocument()
+    expect(screen.queryByText('Tudo pronto: o sistema tem o que precisa.')).not.toBeInTheDocument()
+  })
+})
+
 describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
   const SECRET = 's3nh4-do-inversor'
 

@@ -20,6 +20,8 @@ export type ModuleTechnology =
 export interface PlantSetupItem {
   key: PlantSetupItemKey
   done: boolean
+  // ADR-093 § 7: preenchido por estimativa na conexão — feito, mas confira.
+  needsReview: boolean
 }
 
 export interface PlantSetup {
@@ -113,7 +115,9 @@ export function parsePlantSetup(payload: unknown): PlantSetup {
     const key = requireString(raw, 'key')
     if (!(ITEM_KEYS as readonly string[]).includes(key)) fail('items[].key')
     if (typeof raw.done !== 'boolean') fail('items[].done')
-    return { key: key as PlantSetupItemKey, done: raw.done }
+    const review = raw.needs_review
+    if (review != null && typeof review !== 'boolean') fail('items[].needs_review')
+    return { key: key as PlantSetupItemKey, done: raw.done, needsReview: review === true }
   })
   const technology = nullableString(technical, 'module_technology')
   if (technology !== null && !(TECHNOLOGIES as readonly string[]).includes(technology)) {
