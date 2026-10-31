@@ -8,6 +8,7 @@ rate-limit counter survives the error response.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -31,7 +32,9 @@ from mplacas.core.jwt import (
 from mplacas.core.security import OperationsRole
 from mplacas.credentials.service import CredentialError, UserService
 from mplacas.db.session import SessionFactory
-from mplacas.db.tenant_context import set_platform_context
+from mplacas.core.tenancy import ReadPrincipal, is_platform_operator
+from mplacas.credentials.db_models import OperationalUserRecord
+from mplacas.db.tenant_context import set_platform_context, set_principal_context
 from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.organizations.invitation_db_models import UserInvitationRecord
 from mplacas.organizations.invitation_service import (
@@ -368,4 +371,40 @@ async def accept_invitation(
     return TokenResponse(
         access_token=encode_access_token(user.id, user.organization_id, user.role),
         refresh_token=refresh_token,
+    )
+
+
+class MeResponse(BaseModel):
+    username: str | None
+    role: str
+    organization_id: str | None
+    organization_name: str | None
+    is_platform_operator: bool
+
+
+@router.get("/me", response_model=MeResponse)
+async def me(principal: ReadPrincipal) -> MeResponse:
+    """Quem está logado (ADR-093): a tela mostra "Clientes" só ao operador e
+    esconde escrita de quem não é ADMIN. Nunca devolve segredo nem token."""
+    username: str | None = None
+    organization_name: str | None = None
+    async with SessionFactory() as session:
+        await set_principal_context(session, principal)
+        if principal.credential_id.startswith("user:"):
+            try:
+                user_id = uuid.UUID(principal.credential_id.removeprefix("user:"))
+            except ValueError:
+                user_id = None
+            if user_id is not None:
+                user = await session.get(OperationalUserRecord, user_id)
+                username = user.name if user is not None else None
+        if principal.organization_id is not None:
+            organization = await session.get(OrganizationRecord, principal.organization_id)
+            organization_name = organization.name if organization is not None else None
+    return MeResponse(
+        username=username,
+        role=principal.role.value,
+        organization_id=str(principal.organization_id) if principal.organization_id else None,
+        organization_name=organization_name,
+        is_platform_operator=is_platform_operator(principal),
     )

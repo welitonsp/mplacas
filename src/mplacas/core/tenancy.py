@@ -422,5 +422,33 @@ async def require_organization_admin(
     return principal
 
 
+async def require_platform_operator(
+    principal: Annotated[OperationsPrincipal, Depends(_admin_principal)],
+) -> OperationsPrincipal:
+    """Operador da plataforma (ADR-093): a chave de operação **ou** um ADMIN da
+    organização default (a do dono). Qualquer outro principal recebe 403.
+
+    Usado só pelas rotas do dono (``/platform/clients``); as rotas de inquilino
+    continuam com ``require_platform_admin`` / ``require_organization_admin``.
+    """
+    from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID
+
+    if principal.organization_id is None or principal.organization_id == DEFAULT_ORGANIZATION_ID:
+        return principal
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="this operation requires a platform operator",
+    )
+
+
+def is_platform_operator(principal: OperationsPrincipal) -> bool:
+    from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID
+
+    return principal.can_admin() and (
+        principal.organization_id is None or principal.organization_id == DEFAULT_ORGANIZATION_ID
+    )
+
+
 PlatformPrincipal = Annotated[OperationsPrincipal, Depends(require_platform_admin)]
+PlatformOperator = Annotated[OperationsPrincipal, Depends(require_platform_operator)]
 OrgAdminPrincipal = Annotated[OperationsPrincipal, Depends(require_organization_admin)]

@@ -17,6 +17,7 @@ from mplacas.core.config import get_settings
 from mplacas.credentials.router import router as credentials_router
 from mplacas.credentials.router import users_router
 from mplacas.providers.router import router as provider_accounts_router
+from mplacas.clients.router import router as clients_router
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context
 from mplacas.devices.router import router as devices_router
@@ -181,6 +182,7 @@ app.include_router(orchestration_router)
 app.include_router(organizations_router)
 app.include_router(plants_router)
 app.include_router(provider_accounts_router)
+app.include_router(clients_router)
 app.include_router(reports_router)
 app.include_router(photovoltaic_router)
 app.include_router(devices_router)
