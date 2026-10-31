@@ -55,6 +55,25 @@ class DeviceOverview:
 
 
 @dataclass(frozen=True, slots=True)
+class PlantProfile:
+    """O que a marca informa sobre a usina, lido na conexão (ADR-093 § 7).
+
+    Tudo é opcional: cada marca informa uma parte, e campo que não veio (ou
+    veio fora do plausível) fica ``None`` — nunca é inventado aqui.
+    """
+
+    name: str | None = None
+    installed_power_kwp: Decimal | None = None
+    latitude: Decimal | None = None
+    longitude: Decimal | None = None
+    city: str | None = None
+    commissioned_on: date | None = None
+    timezone: str | None = None
+    # True quando latitude/longitude vieram da geocodificação da cidade, não da marca.
+    location_estimated: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class DailyEnergy:
     production_date: date
     energy_kwh: Decimal

@@ -6,6 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     Date,
@@ -109,6 +110,11 @@ class Plant(Base):
         Boolean, nullable=True
     )
     expansion_proposal_recorded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # ADR-093 § 7: campos que o sistema preencheu sozinho na conexão, com a
+    # origem — ``BRAND`` (veio do app da marca) ou ``ESTIMATE`` (estimado, ex.:
+    # inclinação ≈ latitude). Quando o dono edita o campo, a marca some: o
+    # valor passa a ser dele. ``None`` = nada preenchido automaticamente.
+    auto_filled: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

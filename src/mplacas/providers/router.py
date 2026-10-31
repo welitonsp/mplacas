@@ -4,6 +4,12 @@
 - ``PUT`` (ADMIN da organização) confere a conta no fabricante antes de
   guardar: senha errada nunca é salva. A senha só entra; nunca volta.
 - ``DELETE`` (ADMIN) desliga e apaga o texto cifrado.
+- ``POST /plants/connect`` (ADMIN, organização ainda sem usina): primeira
+  conexão do cliente — confere a conta, **cria a usina** e a preenche com o
+  que a marca informa (ADR-093 § 7).
+
+Ao conectar, campos vazios da usina são preenchidos com o cadastro da marca
+(``plants.autofill``); o que o dono informou nunca é sobrescrito.
 
 Usina de outra organização responde 404 (convenção de ``core.tenancy``).
 Nenhuma resposta, log ou evento de auditoria contém login ou senha.
@@ -15,6 +21,7 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -25,8 +32,9 @@ from sqlalchemy import func, select
 from mplacas.audit.db_models import AuditEventRecord
 from mplacas.audit.repository import AuditEventRepository
 from mplacas.core.secret_box import SecretBox, SecretBoxError, secret_box_from_settings
-from mplacas.core.tenancy import AdminPlantPath, ReadPlantPath, ScopedPlant
-from mplacas.db.models import Device
+from mplacas.core.principal import OperationsPrincipal
+from mplacas.core.tenancy import AdminPlantPath, AdminPrincipal, ReadPlantPath
+from mplacas.db.models import Device, Plant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context, set_principal_context
 from mplacas.providers.accounts import (
@@ -38,7 +46,10 @@ from mplacas.providers.accounts import (
     ProviderLogin,
     SUPPORTED_PROVIDERS,
 )
+from mplacas.organizations.db_models import OrganizationRecord
+from mplacas.plants.autofill import fill_plant_from_profile, locate_profile
 from mplacas.providers.base import (
+    PlantProfile,
     ProviderError,
     ProviderRateLimitedError,
     ProviderUnavailableError,
@@ -65,7 +76,11 @@ _SUPPORTED = SUPPORTED_PROVIDERS
 # virar um testador de senhas da NEPViewer.
 VERIFY_LIMIT = 5
 VERIFY_WINDOW = timedelta(minutes=10)
-_VERIFY_ACTIONS = ("provider_account.saved", "provider_account.verify_failed")
+_VERIFY_ACTIONS = (
+    "provider_account.saved",
+    "provider_account.verify_failed",
+    "plant.created_from_connection",
+)
 
 
 def _parse_body(raw: bytes) -> tuple[str, ProviderLogin]:
@@ -99,23 +114,41 @@ class ProviderAccountView(BaseModel):
     devices_found: int | None = None
 
 
-Verifier = Callable[[str, ProviderLogin], Awaitable[list[str]]]
+@dataclass(frozen=True, slots=True)
+class ProviderInspection:
+    """O que a conferência da conta trouxe: aparelhos e o cadastro da usina."""
+
+    serials: list[str]
+    profile: PlantProfile | None = field(default=None)
 
 
-async def verify_with_provider(provider: str, credentials: ProviderLogin) -> list[str]:
-    """Entra na conta da marca e lista os aparelhos (uma tentativa, sem retry).
+Verifier = Callable[[str, ProviderLogin], Awaitable[ProviderInspection]]
 
-    NEPViewer devolve números de série de inversores; Growatt, as usinas da
-    conta (``GW-PLANT-<id>``, ADR-092).
+
+async def verify_with_provider(provider: str, credentials: ProviderLogin) -> ProviderInspection:
+    """Entra na conta da marca, lista os aparelhos e lê o cadastro da usina.
+
+    Uma sessão só (um login, sem retry): a Growatt bloqueia por excesso de
+    logins. NEPViewer devolve números de série de inversores; Growatt, as
+    usinas da conta (``GW-PLANT-<id>``, ADR-092). O cadastro é melhor esforço:
+    se falhar, a conexão segue sem ele.
     """
     if provider not in SUPPORTED_PROVIDERS:
         raise ProviderAccountError("unsupported provider")
     client = build_client(provider, account=credentials.login, password=credentials.password)
     try:
         devices = await client.list_devices()
+        try:
+            profile = await client.plant_profile()
+        except Exception as exc:  # noqa: BLE001 — cadastro é bônus; nunca derruba a conexão
+            logger.info(
+                "provider_plant_profile_unavailable",
+                extra={"provider": provider, "error_code": type(exc).__name__},
+            )
+            profile = None
     finally:
         await client.aclose()
-    return [device.serial_number for device in devices]
+    return ProviderInspection([device.serial_number for device in devices], profile)
 
 
 # Ponto de troca para testes: nunca chama o fabricante real fora de produção.
@@ -174,25 +207,16 @@ async def put_provider_account(request: Request, scoped: AdminPlantPath) -> Prov
     box = _box()
     await _enforce_verify_limit(scoped.plant_id)
 
-    try:
-        serials = await verify_provider_account(provider, credentials)
-    except ProviderRateLimitedError:
-        # A marca bloqueou por excesso de logins (Growatt 507): esperar, não insistir.
-        await _audit_refusal(request, scoped, provider, "provider_rate_limited")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
-    except ProviderUnavailableError:
-        await _audit_refusal(request, scoped, provider, "provider_unavailable")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
-    except ProviderError:
-        # Senha errada volta como envelope de erro (não 401), na NEPViewer e na Growatt;
-        # auth e formato inesperado viram o mesmo "login recusado", sem
-        # repetir a mensagem do fabricante.
-        await _audit_refusal(request, scoped, provider, "provider_login_failed")
-        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_login_failed") from None
+    async def refuse(reason: str) -> None:
+        await _audit_refusal(request, scoped.principal, "plant", scoped.plant_id, provider, reason)
+
+    inspection = await _inspect(provider, credentials, refuse)
+    serials = inspection.serials
 
     if await _inverter_in_another_plant(provider, serials, scoped.plant_id):
-        await _audit_refusal(request, scoped, provider, "provider_inverter_in_another_plant")
+        await refuse("provider_inverter_in_another_plant")
         raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant")
+    profile = await locate_profile(inspection.profile)  # rede fora da transação
 
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
@@ -203,7 +227,7 @@ async def put_provider_account(request: Request, scoped: AdminPlantPath) -> Prov
             )
         except ProviderAccountConflictError:
             await session.rollback()
-            await _audit_refusal(request, scoped, provider, "provider_account_in_use")
+            await refuse("provider_account_in_use")
             raise _error(status.HTTP_409_CONFLICT, "provider_account_in_use") from None
         except ProviderAccountNotFoundError:
             raise _error(status.HTTP_404_NOT_FOUND, "plant not found") from None
@@ -212,13 +236,19 @@ async def put_provider_account(request: Request, scoped: AdminPlantPath) -> Prov
                 status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_account_invalid"
             ) from None
         await service.record_success(record)
+        plant = await session.get(Plant, scoped.plant_id)
+        filled = fill_plant_from_profile(plant, profile) if plant is not None else {}
         await AuditEventRepository(session).record(
             request,
             action="provider_account.saved",
             resource_type="plant",
             resource_id=str(scoped.plant_id),
             outcome="SUCCEEDED",
-            details={"provider": record.provider, "devices_found": len(serials)},
+            details={
+                "provider": record.provider,
+                "devices_found": len(serials),
+                "auto_filled": sorted(filled),
+            },
         )
         view = _view(record, devices_found=len(serials))
         await session.commit()
@@ -229,7 +259,158 @@ async def put_provider_account(request: Request, scoped: AdminPlantPath) -> Prov
     return view
 
 
-async def _enforce_verify_limit(plant_id: uuid.UUID) -> None:
+class FirstConnectionResult(BaseModel):
+    plant_id: uuid.UUID
+    plant_name: str
+    connection: ProviderAccountView
+    # campo → "BRAND" (veio da marca) ou "ESTIMATE" (estimado); a tela pede conferência
+    auto_filled: dict[str, str]
+
+
+DEFAULT_PLANT_NAME = "Minha usina"
+
+
+@router.post(
+    "/connect",
+    response_model=FirstConnectionResult,
+    status_code=status.HTTP_201_CREATED,
+)
+async def connect_first_plant(
+    request: Request, principal: AdminPrincipal
+) -> FirstConnectionResult:
+    """Primeira conexão do cliente: a usina nasce da conta da marca (ADR-093 § 7).
+
+    Só para organização que ainda não tem usina — depois disso, a conexão é
+    trocada pela rota da própria usina. O teto de conferências conta por
+    organização, como o da usina conta por usina.
+    """
+    organization_id = principal.organization_id
+    if organization_id is None:
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "organization_required")
+    # Escopo de usina não se aplica aqui: todo principal de organização carrega
+    # o escopo "usinas da organização", que é vazio enquanto ela não tem usina —
+    # e a rota só roda nesse caso, então não há usina fora do escopo a proteger.
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > _MAX_BODY_BYTES:
+        raise _error(status.HTTP_413_CONTENT_TOO_LARGE, "provider_account_body_too_large")
+    provider, credentials = _parse_body(await request.body())
+    box = _box()
+    if await _organization_has_plant(principal):
+        raise _error(status.HTTP_409_CONFLICT, "plant_already_exists")
+    await _enforce_verify_limit(organization_id, resource_type="organization")
+
+    async def refuse(reason: str) -> None:
+        await _audit_refusal(
+            request, principal, "organization", organization_id, provider, reason
+        )
+
+    inspection = await _inspect(provider, credentials, refuse)
+    if await _inverter_in_another_plant(provider, inspection.serials, None):
+        await refuse("provider_inverter_in_another_plant")
+        raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant")
+    profile = await locate_profile(inspection.profile)  # rede antes de travar a organização
+
+    async with SessionFactory() as session:
+        await set_principal_context(session, principal)
+        organization = await session.get(
+            OrganizationRecord, organization_id, with_for_update=True
+        )
+        if organization is None:
+            raise _error(status.HTTP_404_NOT_FOUND, "organization_not_found")
+        # rechecagem com a organização travada: dois cliques não criam duas usinas
+        if await session.scalar(
+            select(Plant.id).where(Plant.organization_id == organization_id).limit(1)
+        ):
+            raise _error(status.HTTP_409_CONFLICT, "plant_already_exists")
+        plant = Plant(organization_id=organization_id, name=DEFAULT_PLANT_NAME)
+        session.add(plant)
+        await session.flush()
+        filled = fill_plant_from_profile(plant, profile, set_name=True)
+        if organization.default_plant_id is None:
+            organization.default_plant_id = plant.id
+        service = ProviderAccountService(session, box)
+        try:
+            record = await service.save(
+                plant_id=plant.id, provider=provider, credentials=credentials
+            )
+        except ProviderAccountConflictError:
+            await session.rollback()
+            await refuse("provider_account_in_use")
+            raise _error(status.HTTP_409_CONFLICT, "provider_account_in_use") from None
+        except ProviderAccountError:
+            raise _error(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_account_invalid"
+            ) from None
+        await service.record_success(record)
+        audit = AuditEventRepository(session)
+        await audit.record(
+            request,
+            action="plant.created_from_connection",
+            resource_type="organization",
+            resource_id=str(organization_id),
+            outcome="SUCCEEDED",
+            details={
+                "plant_id": str(plant.id),
+                "provider": provider,
+                "auto_filled": sorted(filled),
+            },
+        )
+        await audit.record(
+            request,
+            action="provider_account.saved",
+            resource_type="plant",
+            resource_id=str(plant.id),
+            outcome="SUCCEEDED",
+            details={"provider": provider, "devices_found": len(inspection.serials)},
+        )
+        result = FirstConnectionResult(
+            plant_id=plant.id,
+            plant_name=plant.name,
+            connection=_view(record, devices_found=len(inspection.serials)),
+            auto_filled=dict(plant.auto_filled or {}),
+        )
+        await session.commit()
+    logger.info(
+        "plant_created_from_connection",
+        extra={"plant_id": str(result.plant_id), "auto_filled": sorted(result.auto_filled)},
+    )
+    return result
+
+
+async def _organization_has_plant(principal: OperationsPrincipal) -> bool:
+    async with SessionFactory() as session:
+        await set_principal_context(session, principal)
+        found = await session.scalar(
+            select(Plant.id).where(Plant.organization_id == principal.organization_id).limit(1)
+        )
+    return found is not None
+
+
+async def _inspect(
+    provider: str,
+    credentials: ProviderLogin,
+    refuse: Callable[[str], Awaitable[None]],
+) -> ProviderInspection:
+    try:
+        return await verify_provider_account(provider, credentials)
+    except ProviderRateLimitedError:
+        # A marca bloqueou por excesso de logins (Growatt 507): esperar, não insistir.
+        await refuse("provider_rate_limited")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
+    except ProviderUnavailableError:
+        await refuse("provider_unavailable")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
+    except ProviderError:
+        # Senha errada volta como envelope de erro (não 401), na NEPViewer e na Growatt;
+        # auth e formato inesperado viram o mesmo "login recusado", sem
+        # repetir a mensagem do fabricante.
+        await refuse("provider_login_failed")
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_login_failed") from None
+
+
+async def _enforce_verify_limit(
+    plant_id: uuid.UUID, *, resource_type: str = "plant"
+) -> None:
     since = datetime.now(UTC) - VERIFY_WINDOW
     async with SessionFactory() as session:
         await set_platform_context(session)
@@ -238,7 +419,7 @@ async def _enforce_verify_limit(plant_id: uuid.UUID) -> None:
             .select_from(AuditEventRecord)
             .where(
                 AuditEventRecord.action.in_(_VERIFY_ACTIONS),
-                AuditEventRecord.resource_type == "plant",
+                AuditEventRecord.resource_type == resource_type,
                 AuditEventRecord.resource_id == str(plant_id),
                 AuditEventRecord.created_at >= since,
             )
@@ -248,7 +429,7 @@ async def _enforce_verify_limit(plant_id: uuid.UUID) -> None:
 
 
 async def _inverter_in_another_plant(
-    provider: str, serials: list[str], plant_id: uuid.UUID
+    provider: str, serials: list[str], plant_id: uuid.UUID | None
 ) -> bool:
     """Confere em todas as organizações (contexto de plataforma), não só na do
     chamador: o RLS de ``devices`` esconderia o inversor de outro cliente. Só
@@ -257,27 +438,31 @@ async def _inverter_in_another_plant(
         return False
     async with SessionFactory() as session:
         await set_platform_context(session)
-        taken = await session.scalar(
-            select(Device.id)
-            .where(
-                Device.provider == provider,
-                Device.serial_number.in_(serials),
-                Device.plant_id != plant_id,
-            )
-            .limit(1)
+        query = select(Device.id).where(
+            Device.provider == provider, Device.serial_number.in_(serials)
         )
+        if plant_id is not None:
+            query = query.where(Device.plant_id != plant_id)
+        taken = await session.scalar(query.limit(1))
     return taken is not None
 
 
-async def _audit_refusal(request: Request, scoped: ScopedPlant, provider: str, reason: str) -> None:
+async def _audit_refusal(
+    request: Request,
+    principal: OperationsPrincipal,
+    resource_type: str,
+    resource_id: uuid.UUID,
+    provider: str,
+    reason: str,
+) -> None:
     """Recusa também vai para a auditoria (sem login nem senha) e conta no teto."""
     async with SessionFactory() as session:
-        await set_principal_context(session, scoped.principal)
+        await set_principal_context(session, principal)
         await AuditEventRepository(session).record(
             request,
             action="provider_account.verify_failed",
-            resource_type="plant",
-            resource_id=str(scoped.plant_id),
+            resource_type=resource_type,
+            resource_id=str(resource_id),
             outcome="FAILED",
             details={"provider": provider, "reason": reason},
         )

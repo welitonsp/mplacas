@@ -162,6 +162,8 @@ class PlantSetupItemKey(str, enum.Enum):
 class PlantSetupItem(BaseModel):
     key: PlantSetupItemKey
     done: bool
+    # ADR-093 § 7: preenchido por estimativa — "feito", mas o dono precisa conferir.
+    needs_review: bool = False
 
 
 class PlantSetupView(BaseModel):
@@ -181,3 +183,6 @@ class PlantSetupView(BaseModel):
     items: tuple[PlantSetupItem, ...]
     completed: int
     total: int
+    # ADR-093 § 7: campo → "BRAND" (veio do app da marca) ou "ESTIMATE"
+    # (estimado). A tela pede para o dono conferir; editar remove a marca.
+    auto_filled: dict[str, str] = Field(default_factory=dict)

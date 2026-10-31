@@ -25,10 +25,12 @@ from mplacas.providers.base import (
     ProviderIncompleteDataError,
     ProviderRateLimitedError,
     ProviderSchemaError,
+    PlantProfile,
     ProviderUnavailableError,
     SolarDevice,
     SolarProvider,
 )
+from mplacas.providers.profile import parse_coordinate, parse_kwp, parse_text
 
 DEFAULT_BASE_URL = "https://openapi.growatt.com"
 PLANT_PREFIX = "GW-PLANT-"
@@ -148,6 +150,7 @@ class GrowattClient(SolarProvider):
         params: dict[str, str] | None = None,
         data: dict[str, str] | None = None,
         login: bool = False,
+        envelope: str = "back",
     ) -> dict[str, Any]:
         try:
             response = await self._client.request(method, path, params=params, data=data)
@@ -174,7 +177,11 @@ class GrowattClient(SolarProvider):
             body = response.json()
         except ValueError as exc:
             raise ProviderSchemaError("Growatt retornou conteúdo não JSON") from exc
-        back = body.get("back") if isinstance(body, dict) else None
+        if not envelope:
+            if not isinstance(body, dict):
+                raise ProviderSchemaError("Growatt retornou envelope incompatível")
+            return body
+        back = body.get(envelope) if isinstance(body, dict) else None
         if not isinstance(back, dict):
             raise ProviderSchemaError("Growatt retornou envelope incompatível")
         return back
@@ -223,6 +230,41 @@ class GrowattClient(SolarProvider):
             )
             for row in await self._plants()
         ]
+
+    async def plant_profile(self) -> PlantProfile | None:
+        """Dados cadastrados na Growatt da maior usina da conta (ADR-093 § 7).
+
+        ``newPlantAPI.do?op=getPlant`` devolve o cadastro sem o envelope
+        ``back``. Campo ausente ou estranho vira ``None``; a usina é a de maior
+        potência quando a conta tem mais de uma.
+        """
+        plants = await self._plants()
+        if not plants:
+            return None
+        chosen = max(plants, key=lambda row: parse_kwp(row.get("nominalPower"), unit="W") or 0)
+        body = await self._request(
+            "GET",
+            "/newPlantAPI.do",
+            params={"op": "getPlant", "plantId": str(chosen["plantId"])},
+            envelope="",
+        )
+        for wrapper in ("obj", "back", "data"):
+            if isinstance(body.get(wrapper), dict):
+                body = body[wrapper]
+                break
+        return PlantProfile(
+            name=parse_text(body.get("plantName")) or parse_text(chosen.get("plantName")),
+            installed_power_kwp=parse_kwp(body.get("nominalPower"), unit="W")
+            or parse_kwp(chosen.get("nominalPower"), unit="W"),
+            latitude=parse_coordinate(body.get("plant_lat"), limit=90),
+            longitude=parse_coordinate(body.get("plant_lng"), limit=180),
+            city=parse_text(body.get("city")),
+            # ``createDateText`` é a data do cadastro na nuvem Growatt, não a da
+            # ligação da usina: não alimenta ``commissioned_on`` (regime da Lei
+            # 14.300 e retorno do investimento dependem da data real).
+            commissioned_on=None,
+            timezone=None,
+        )
 
     async def get_overview(self, serial_number: str) -> DeviceOverview:
         plant_id = _plant_id(serial_number)
