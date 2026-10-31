@@ -130,9 +130,7 @@ async def test_reschedule_applies_backoff_then_fails_after_max_attempts() -> Non
     async with factory() as session:
         repository = CollectionQueueRepository(session)
         await repository.reschedule(task_id, error_code="timeout", now=base, max_attempts=3)
-        final = await repository.reschedule(
-            task_id, error_code="timeout", now=base, max_attempts=3
-        )
+        final = await repository.reschedule(task_id, error_code="timeout", now=base, max_attempts=3)
         await session.commit()
     assert final is CollectionTaskStatus.FAILED
 
@@ -144,12 +142,8 @@ async def test_worker_isolates_failures_between_tasks() -> None:
         await _seed_plant(session, PLANT_A)
         await _seed_plant(session, PLANT_B)
         repository = CollectionQueueRepository(session)
-        await repository.enqueue(
-            plant_id=PLANT_A, task_type=TASK_TYPE, target_date="2026-07-19"
-        )
-        await repository.enqueue(
-            plant_id=PLANT_B, task_type=TASK_TYPE, target_date="2026-07-19"
-        )
+        await repository.enqueue(plant_id=PLANT_A, task_type=TASK_TYPE, target_date="2026-07-19")
+        await repository.enqueue(plant_id=PLANT_B, task_type=TASK_TYPE, target_date="2026-07-19")
         await session.commit()
 
     async def handler(session, task: CollectionTask) -> None:
@@ -221,11 +215,47 @@ async def test_stale_processing_task_is_reclaimable() -> None:
 
     async with factory() as session:
         repository = CollectionQueueRepository(session)
-        due = await repository.due_ids(
-            task_type=TASK_TYPE, stale_after=timedelta(minutes=15)
-        )
+        due = await repository.due_ids(task_type=TASK_TYPE, stale_after=timedelta(minutes=15))
         assert task_id in due
-        reclaimed = await repository.claim(
-            task_id, stale_after=timedelta(minutes=15)
-        )
+        reclaimed = await repository.claim(task_id, stale_after=timedelta(minutes=15))
         assert reclaimed is not None
+
+
+def test_blocked_or_refused_login_waits_at_least_an_hour_before_retrying() -> None:
+    """ADR-092: bloqueio do fabricante e senha recusada não voltam em 60 s."""
+    from mplacas.collection.worker import SLOW_RETRY_SECONDS, slow_retry_seconds
+    from mplacas.providers.base import (
+        ProviderAuthError,
+        ProviderRateLimitedError,
+        ProviderUnavailableError,
+    )
+
+    assert slow_retry_seconds(ProviderRateLimitedError("507")) == SLOW_RETRY_SECONDS == 3600
+    assert slow_retry_seconds(ProviderAuthError("x")) == 3600
+    assert slow_retry_seconds(ProviderUnavailableError("x")) == 0
+    assert slow_retry_seconds(None) == 0
+
+
+@pytest.mark.asyncio
+async def test_reschedule_honours_the_minimum_delay() -> None:
+    factory = await _factory()
+    async with factory() as session:
+        await _seed_plant(session, PLANT_A)
+        enqueued = await CollectionQueueRepository(session).enqueue(
+            plant_id=PLANT_A, task_type=TASK_TYPE, target_date="2026-07-19"
+        )
+        await session.commit()
+        task_id = enqueued.task.id
+
+    base = datetime(2026, 7, 19, 12, 0, tzinfo=UTC)
+    async with factory() as session:
+        await CollectionQueueRepository(session).reschedule(
+            task_id, error_code="ProviderRateLimitedError", now=base, min_delay_seconds=3600
+        )
+        await session.commit()
+        task = await CollectionQueueRepository(session).by_id(task_id)
+    assert task is not None
+    scheduled = (
+        task.available_at if task.available_at.tzinfo else task.available_at.replace(tzinfo=UTC)
+    )
+    assert (scheduled - base).total_seconds() == 3600

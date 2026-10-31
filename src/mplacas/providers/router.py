@@ -24,7 +24,6 @@ from sqlalchemy import func, select
 
 from mplacas.audit.db_models import AuditEventRecord
 from mplacas.audit.repository import AuditEventRepository
-from mplacas.core.config import get_settings
 from mplacas.core.secret_box import SecretBox, SecretBoxError, secret_box_from_settings
 from mplacas.core.tenancy import AdminPlantPath, ReadPlantPath, ScopedPlant
 from mplacas.db.models import Device
@@ -37,10 +36,15 @@ from mplacas.providers.accounts import (
     ProviderAccountNotFoundError,
     ProviderAccountService,
     ProviderLogin,
+    SUPPORTED_PROVIDERS,
 )
-from mplacas.providers.base import ProviderError, ProviderUnavailableError
+from mplacas.providers.base import (
+    ProviderError,
+    ProviderRateLimitedError,
+    ProviderUnavailableError,
+)
 from mplacas.providers.db_models import ProviderAccountRecord
-from mplacas.providers.nepviewer.client import NepViewerClient
+from mplacas.providers.factory import build_client
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +60,7 @@ ConnectionStatus = Literal["SEM_CONEXAO", "CONECTADA", "FALHA"]
 # FastAPI repete o valor recebido (``input``) em erros de tipo, campo faltando
 # ou campo a mais — e um ``passwd`` digitado errado devolveria a senha.
 _MAX_BODY_BYTES = 4096
-_SUPPORTED = frozenset({NEPVIEWER})
+_SUPPORTED = SUPPORTED_PROVIDERS
 # Teto de conferências de login por usina (sucesso ou recusa), para a rota não
 # virar um testador de senhas da NEPViewer.
 VERIFY_LIMIT = 5
@@ -98,23 +102,24 @@ class ProviderAccountView(BaseModel):
 Verifier = Callable[[str, ProviderLogin], Awaitable[list[str]]]
 
 
-async def verify_nepviewer(provider: str, credentials: ProviderLogin) -> list[str]:
-    """Entra na conta e lista os números de série dos inversores (uma tentativa)."""
-    if provider != NEPVIEWER:
+async def verify_with_provider(provider: str, credentials: ProviderLogin) -> list[str]:
+    """Entra na conta da marca e lista os aparelhos (uma tentativa, sem retry).
+
+    NEPViewer devolve números de série de inversores; Growatt, as usinas da
+    conta (``GW-PLANT-<id>``, ADR-092).
+    """
+    if provider not in SUPPORTED_PROVIDERS:
         raise ProviderAccountError("unsupported provider")
-    settings = get_settings()
-    async with NepViewerClient(
-        account=credentials.login,
-        password=credentials.password,
-        base_url=str(settings.nep_base_url),
-        timeout_seconds=settings.request_timeout_seconds,
-    ) as client:
+    client = build_client(provider, account=credentials.login, password=credentials.password)
+    try:
         devices = await client.list_devices()
+    finally:
+        await client.aclose()
     return [device.serial_number for device in devices]
 
 
-# Ponto de troca para testes: nunca chama a NEPViewer real fora de produção.
-verify_provider_account: Verifier = verify_nepviewer
+# Ponto de troca para testes: nunca chama o fabricante real fora de produção.
+verify_provider_account: Verifier = verify_with_provider
 
 
 def _view(
@@ -171,11 +176,15 @@ async def put_provider_account(request: Request, scoped: AdminPlantPath) -> Prov
 
     try:
         serials = await verify_provider_account(provider, credentials)
+    except ProviderRateLimitedError:
+        # A marca bloqueou por excesso de logins (Growatt 507): esperar, não insistir.
+        await _audit_refusal(request, scoped, provider, "provider_rate_limited")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
     except ProviderUnavailableError:
         await _audit_refusal(request, scoped, provider, "provider_unavailable")
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
     except ProviderError:
-        # Senha errada na NEPViewer volta como envelope de erro (não 401);
+        # Senha errada volta como envelope de erro (não 401), na NEPViewer e na Growatt;
         # auth e formato inesperado viram o mesmo "login recusado", sem
         # repetir a mensagem do fabricante.
         await _audit_refusal(request, scoped, provider, "provider_login_failed")

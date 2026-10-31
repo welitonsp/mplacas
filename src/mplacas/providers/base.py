@@ -20,6 +20,14 @@ class ProviderUnavailableError(ProviderError):
     """Serviço externo temporariamente indisponível."""
 
 
+class ProviderRateLimitedError(ProviderError):
+    """O provedor recusou por excesso de tentativas (ex.: Growatt ``507``).
+
+    Não é repetido pela camada de retry: insistir agrava o bloqueio. A coleta
+    do dia vai para a fila de nova tentativa, como uma indisponibilidade.
+    """
+
+
 class ProviderIncompleteDataError(ProviderError):
     """O provedor respondeu, mas sem os dados esperados para o intervalo.
 

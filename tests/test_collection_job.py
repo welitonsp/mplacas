@@ -87,14 +87,14 @@ async def _seed_plant(factory) -> None:
 def _patch(monkeypatch, factory, provider: SolarProvider) -> None:
     monkeypatch.setattr(job_module, "SessionFactory", factory)
 
-    def _build(**_kwargs):
+    def _build(_provider, **_kwargs):
         class _NoopClient:
             async def aclose(self) -> None:
                 return None
 
         return _NoopClient(), provider
 
-    monkeypatch.setattr(job_module, "build_resilient_nepviewer", _build)
+    monkeypatch.setattr(job_module, "build_resilient_provider", _build)
     from mplacas.core.config import get_settings
 
     get_settings.cache_clear()
@@ -110,15 +110,14 @@ async def test_collection_job_persists_production_on_success(monkeypatch) -> Non
         target_date=date(2026, 7, 19),
         plant_id=PLANT_ID,
         credentials=CREDENTIALS,
+        provider="NEPVIEWER",
     )
 
     assert result is not None
     assert result.records_received == 1
 
     async with factory() as session:
-        due = await CollectionQueueRepository(session).due_ids(
-            task_type=COLLECTION_TASK_TYPE
-        )
+        due = await CollectionQueueRepository(session).due_ids(task_type=COLLECTION_TASK_TYPE)
     assert due == ()  # sucesso não enfileira retry
 
     from mplacas.core.config import get_settings
@@ -136,6 +135,7 @@ async def test_collection_job_defers_to_queue_on_provider_failure(monkeypatch) -
         target_date=date(2026, 7, 19),
         plant_id=PLANT_ID,
         credentials=CREDENTIALS,
+        provider="NEPVIEWER",
     )
 
     assert result is None  # falha não explode; defere
@@ -153,3 +153,41 @@ async def test_collection_job_defers_to_queue_on_provider_failure(monkeypatch) -
     from mplacas.core.config import get_settings
 
     get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", ["rate", "auth"])
+async def test_blocked_or_refused_login_is_queued_for_later_and_reported(
+    monkeypatch, error
+) -> None:
+    """ADR-092: depois de bloqueio (Growatt 507) ou senha recusada, o dia só
+    volta à fila daqui a 1 h — nunca na drenagem logo em seguida — e a falha
+    sobe para a conexão aparecer como falha."""
+    from datetime import UTC, datetime, timedelta
+
+    from mplacas.providers.base import ProviderAuthError, ProviderRateLimitedError
+
+    exc = ProviderRateLimitedError("507") if error == "rate" else ProviderAuthError("recusado")
+
+    class BlockedProvider(StubProvider):
+        async def list_devices(self):
+            raise exc
+
+    factory = await _factory()
+    await _seed_plant(factory)
+    _patch(monkeypatch, factory, BlockedProvider(fail=False))
+
+    with pytest.raises(type(exc)):
+        await run_solar_collection(
+            target_date=date(2026, 7, 19),
+            plant_id=PLANT_ID,
+            credentials=CREDENTIALS,
+            provider="GROWATT",
+        )
+
+    async with factory() as session:
+        repository = CollectionQueueRepository(session)
+        assert await repository.due_ids(task_type=COLLECTION_TASK_TYPE) == ()
+        later = datetime.now(UTC) + timedelta(minutes=61)
+        due_later = await repository.due_ids(task_type=COLLECTION_TASK_TYPE, now=later)
+    assert len(due_later) == 1

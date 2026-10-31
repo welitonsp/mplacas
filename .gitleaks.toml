@@ -45,4 +45,15 @@ o valor é literal no código, existe só para satisfazer o comprimento mínimo 
 32 bytes exigido por MPLACAS_JWT_SECRET, e nunca corresponde a um segredo de
 produção (esses vivem no cofre de segredos, conforme docs/runbook-producao.md).
 """
-regexes = ['''^test-jwt-secret-at-least-32-bytes-long$''']
+regexes = [
+  '''^test-jwt-secret-at-least-32-bytes-long$''',
+  # Hosts públicos da lista de saída HTTP (MPLACAS_EXTERNAL_HTTP_ALLOWED_HOSTS):
+  # "openapi.growatt.com,archive-api..." casa com a regra genérica por causa de
+  # "api" seguido de vírgula, mas é endereço público, não segredo (ADR-092).
+  '''^archive-api\.open-meteo\.com$''',
+  # Repasse de variável no código (`password=credentials.password`), não valor.
+  '''^password=credentials\.password$''',
+  # Senha sintética do teste do cliente Growatt no primeiro commit do PR #259
+  # (o teste já usa outro literal; o commit antigo fica no histórico do PR).
+  '''^s3nh4-growatt$''',
+]

@@ -473,10 +473,11 @@ async def run_collection(
         await set_platform_context(session)
         service = ProviderAccountService(session, box)
         accounts = [
-            (record.plant_id, record.id) for record in await service.list_active()
+            (record.plant_id, record.id, record.provider)
+            for record in await service.list_active()
         ]
     problems: list[str] = []
-    for plant_id, account_id in accounts:
+    for plant_id, account_id, brand in accounts:
         logger.info(
             "cloud_job_collection_started",
             extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
@@ -496,6 +497,7 @@ async def run_collection(
                 target_date=resolved_date,
                 plant_id=plant_id,
                 credentials=credentials,
+                provider=brand,
             )
         except Exception as exc:  # noqa: BLE001 - isola a falha por usina
             await _record_provider_outcome(plant_id, box=box, failure=type(exc).__name__)

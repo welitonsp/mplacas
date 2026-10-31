@@ -92,25 +92,33 @@ async def _factory():
     return factory
 
 
-async def _connect(factory, plant_id: uuid.UUID, login: str) -> None:
+async def _connect(factory, plant_id: uuid.UUID, login: str, provider: str = NEPVIEWER) -> None:
     async with factory() as session:
         await ProviderAccountService(session, SecretBox.from_keyring(f"1:{KEY}")).save(
             plant_id=plant_id,
-            provider=NEPVIEWER,
+            provider=provider,
             credentials=ProviderLogin(login=login, password=f"senha-{login}"),
         )
         await session.commit()
 
 
-def _patch(monkeypatch, factory, providers: dict[str, AccountProvider], seen: list[str]):
+def _patch(
+    monkeypatch,
+    factory,
+    providers: dict[str, AccountProvider],
+    seen: list[str],
+    brands: dict[str, str] | None = None,
+):
+    brands = {} if brands is None else brands
     monkeypatch.setenv("MPLACAS_PROVIDER_SECRET_KEYS", f"1:{KEY}")
     get_settings.cache_clear()
     for module in (cloud_jobs, job_module, drain_module):
         monkeypatch.setattr(module, "SessionFactory", factory)
 
-    def _build(*, account: str, password: str, **_kwargs):
+    def _build(provider, *, account: str, password: str, **_kwargs):
         assert password == f"senha-{account}"
         seen.append(account)
+        brands[account] = provider
 
         class _Client:
             async def aclose(self) -> None:
@@ -118,8 +126,8 @@ def _patch(monkeypatch, factory, providers: dict[str, AccountProvider], seen: li
 
         return _Client(), providers[account]
 
-    monkeypatch.setattr(job_module, "build_resilient_nepviewer", _build)
-    monkeypatch.setattr(drain_module, "build_resilient_nepviewer", _build)
+    monkeypatch.setattr(job_module, "build_resilient_provider", _build)
+    monkeypatch.setattr(drain_module, "build_resilient_provider", _build)
 
 
 async def _devices_by_plant(factory) -> dict[uuid.UUID, set[str]]:
@@ -269,7 +277,12 @@ async def test_service_refuses_an_inverter_that_belongs_to_another_plant() -> No
         session.add(Device(plant_id=PLANT_C, provider="NEPVIEWER", serial_number="SN-X"))
         await session.commit()
         with pytest.raises(CollectionPlantError, match="another plant"):
-            await SolarCollectionService(session, AccountProvider(["SN-X"])).collect(
+            await SolarCollectionService(
+                session,
+                AccountProvider(["SN-X"]),
+                provider_name="NEPVIEWER",
+                energy_source="NEPVIEWER_V2",
+            ).collect(
                 plant_id=PLANT_A, start=DAY, end=DAY
             )
     async with factory() as session:
@@ -363,3 +376,43 @@ async def test_task_of_a_plant_that_lost_its_connection_is_retried_then_failed(m
     assert task.status is CollectionTaskStatus.FAILED
     assert seen == []
     assert await _devices_by_plant(factory) == {}
+
+
+async def test_each_brand_records_its_own_provider_and_source(monkeypatch) -> None:
+    """ADR-092: NEPViewer e Growatt lado a lado, cada uma com a sua marca gravada."""
+    from mplacas.db.models import DailyEnergy as EnergyRow
+
+    factory = await _factory()
+    await _connect(factory, PLANT_A, "casa@example.com")
+    await _connect(factory, PLANT_B, "sitio-growatt", provider="GROWATT")
+    seen: list[str] = []
+    brands: dict[str, str] = {}
+    _patch(
+        monkeypatch,
+        factory,
+        {
+            "casa@example.com": AccountProvider(["SN-1"]),
+            # Mesmo número em marcas diferentes não colide.
+            "sitio-growatt": AccountProvider(["SN-1"]),
+        },
+        seen,
+        brands,
+    )
+
+    await cloud_jobs.run_collection(target_date=DAY.isoformat(), now=NOW)
+
+    assert brands == {"casa@example.com": "NEPVIEWER", "sitio-growatt": "GROWATT"}
+    async with factory() as session:
+        rows = (
+            await session.execute(
+                select(Device.plant_id, Device.provider, EnergyRow.source).join(
+                    EnergyRow, EnergyRow.device_id == Device.id
+                )
+            )
+        ).all()
+    assert sorted((str(p), prov, src) for p, prov, src in rows) == sorted(
+        [
+            (str(PLANT_A), "NEPVIEWER", "NEPVIEWER_V2"),
+            (str(PLANT_B), "GROWATT", "GROWATT_CLASSIC"),
+        ]
+    )

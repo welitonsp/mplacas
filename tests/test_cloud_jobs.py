@@ -584,10 +584,10 @@ def test_run_collection_without_connected_plants_fails_visibly(monkeypatch, capl
     monkeypatch.setattr(cloud_jobs, "SessionFactory", factory)
     monkeypatch.setattr(job_module, "SessionFactory", factory)
 
-    def fake_build(**_kwargs):
+    def fake_build(_provider, **_kwargs):
         raise AssertionError("no provider should be built without a connection")
 
-    monkeypatch.setattr(job_module, "build_resilient_nepviewer", fake_build)
+    monkeypatch.setattr(job_module, "build_resilient_provider", fake_build)
 
     now = datetime.fromisoformat("2026-07-19T00:30:00-03:00")
     with (

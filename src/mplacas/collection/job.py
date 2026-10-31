@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from mplacas.collection.queue import CollectionQueueRepository
-from mplacas.core.config import get_settings
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context
 from mplacas.providers.accounts import ProviderLogin
-from mplacas.providers.base import ProviderError
-from mplacas.providers.nepviewer.factory import build_resilient_nepviewer
+from mplacas.collection.worker import SLOW_RETRY_SECONDS
+from mplacas.providers.base import ProviderAuthError, ProviderError, ProviderRateLimitedError
+from mplacas.providers.factory import ENERGY_SOURCES, build_resilient_provider
 from mplacas.services.collection import CollectionResult, SolarCollectionService
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ async def run_solar_collection(
     target_date: date,
     plant_id,
     credentials: ProviderLogin,
+    provider: str,
 ) -> CollectionResult | None:
     """Coleta a produção diária de uma usina com a conexão dela (ADR-091).
 
@@ -30,17 +31,18 @@ async def run_solar_collection(
     incompleta, a coleta do dia é enfileirada para nova tentativa posterior,
     em vez de falhar em definitivo.
     """
-    settings = get_settings()
-    client, provider = build_resilient_nepviewer(
-        account=credentials.login,
-        password=credentials.password,
-        base_url=str(settings.nep_base_url),
-        timeout_seconds=settings.request_timeout_seconds,
+    client, solar_provider = build_resilient_provider(
+        provider, account=credentials.login, password=credentials.password
     )
     try:
         async with SessionFactory() as session:
             await set_platform_context(session)
-            service = SolarCollectionService(session, provider)
+            service = SolarCollectionService(
+                session,
+                solar_provider,
+                provider_name=provider,
+                energy_source=ENERGY_SOURCES[provider],
+            )
             result = await service.collect(
                 plant_id=plant_id,
                 start=target_date,
@@ -58,6 +60,24 @@ async def run_solar_collection(
             },
         )
         return result
+    except (ProviderRateLimitedError, ProviderAuthError) as exc:
+        # Bloqueio do fabricante ou senha recusada: o dia volta à fila só daqui
+        # a 1 h (nunca na drenagem logo em seguida) e a falha sobe para a
+        # conexão aparecer como "falha" em Minha usina (ADR-092).
+        await _enqueue_retry(
+            plant_id=plant_id,
+            target_date=target_date,
+            available_after=timedelta(seconds=SLOW_RETRY_SECONDS),
+        )
+        logger.warning(
+            "solar_collection_job_blocked",
+            extra={
+                "plant_id": str(plant_id),
+                "target_date": target_date.isoformat(),
+                "error_code": type(exc).__name__,
+            },
+        )
+        raise
     except ProviderError as exc:
         await _enqueue_retry(plant_id=plant_id, target_date=target_date)
         logger.warning(
@@ -73,12 +93,15 @@ async def run_solar_collection(
         await client.aclose()
 
 
-async def _enqueue_retry(*, plant_id, target_date: date) -> None:
+async def _enqueue_retry(
+    *, plant_id, target_date: date, available_after: timedelta | None = None
+) -> None:
     async with SessionFactory() as session:
         await set_platform_context(session)
         await CollectionQueueRepository(session).enqueue(
             plant_id=plant_id,
             task_type=COLLECTION_TASK_TYPE,
             target_date=target_date.isoformat(),
+            available_after=available_after,
         )
         await session.commit()

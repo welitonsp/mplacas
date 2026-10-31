@@ -16,9 +16,10 @@ dependencies = [
   "alembic>=1.14,<2",
   "asyncpg>=0.30,<1",
   "aiosqlite>=0.21,<1",
-  # Piso 6.21.2: corrige CVE-2026-115572/115580/115585 (pypdf processa faturas
-  # recebidas de clientes; antes, 6.19.0 para PYSEC-2026-4153..4160).
-  "pypdf>=6.21.2,<7",
+  # Piso 6.21.4: corrige CVE-2026-119203..119209 (pypdf processa faturas
+  # recebidas de clientes; antes, 6.21.2 para CVE-2026-115572/115580/115585 e
+  # 6.19.0 para PYSEC-2026-4153..4160).
+  "pypdf>=6.21.4,<7",
   "reportlab>=4.4,<6",
   "xlsxwriter>=3.2,<4",
   # Piso 2.15: corrige PYSEC-2026-4140..4152 e 4183 (assina os tokens de acesso).

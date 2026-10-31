@@ -1,9 +1,12 @@
 import { FormEvent, useEffect, useId, useRef, useState } from 'react'
 import { deleteProviderAccount, fetchProviderAccount, saveProviderAccount } from '../lib/api'
 import {
+  brandLabel,
   parseProviderAccount,
+  PROVIDER_BRANDS,
   providerAccountErrorMessage,
   type ProviderAccount,
+  type ProviderBrand,
 } from '../lib/dashboard/provider-account-contracts'
 import { usePlantResource } from '../hooks/usePlantResource'
 import { Card } from './Card'
@@ -15,7 +18,9 @@ import { SectionTitle } from './SectionTitle'
 // da usina todo dia. Regras de segurança (skill secret-safe-ui):
 // - a senha só existe no estado deste componente, nunca em storage, URL ou log;
 // - o campo nunca vem preenchido e é limpo depois de salvar;
-// - o servidor confere a conta na NEPViewer antes de guardar e nunca devolve
+// - o cliente escolhe a marca (NEPViewer ou Growatt, ADR-092) e digita o mesmo
+//   usuário e senha do app do celular;
+// - o servidor confere a conta no fabricante antes de guardar e nunca devolve
 //   login completo nem senha — a tela mostra só a dica mascarada.
 
 const INPUT_CLASS =
@@ -48,8 +53,8 @@ function StatusSummary({ account }: { account: ProviderAccount }) {
       <div>
         <p className="text-sm font-semibold text-[var(--color-text-primary)]">Nenhuma conta conectada</p>
         <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
-          Sem a conta do inversor, o sistema não consegue buscar a produção da usina. Use o login e a senha
-          do aplicativo NEPViewer.
+          Sem a conta do inversor, o sistema não consegue buscar a produção da usina. Escolha a marca e use o
+          mesmo usuário e senha do aplicativo do celular.
         </p>
       </div>
     )
@@ -61,12 +66,15 @@ function StatusSummary({ account }: { account: ProviderAccount }) {
       <p className="text-sm font-semibold text-[var(--color-text-primary)]">
         {account.status === 'FALHA' ? 'Conectada, mas a última leitura falhou' : 'Conectada'}
         {account.loginHint && (
-          <span className="font-normal text-[var(--color-text-secondary)]"> · NEPViewer, conta {account.loginHint}</span>
+          <span className="font-normal text-[var(--color-text-secondary)]">
+            {' '}
+            · {brandLabel(account.provider)}, conta {account.loginHint}
+          </span>
         )}
       </p>
       <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
         {account.status === 'FALHA'
-          ? `A leitura de ${lastFailure ?? 'hoje'} não deu certo. Se a senha mudou no aplicativo NEPViewer, informe a nova abaixo.`
+          ? `A leitura de ${lastFailure ?? 'hoje'} não deu certo. Se a senha mudou no aplicativo ${brandLabel(account.provider)}, informe a nova abaixo.`
           : lastSuccess
             ? `Última leitura em ${lastSuccess}.`
             : 'A primeira leitura acontece na próxima coleta, de madrugada.'}
@@ -78,17 +86,21 @@ function StatusSummary({ account }: { account: ProviderAccount }) {
 function ConnectForm({
   plantId,
   connected,
+  initialBrand,
   focusOnMount,
   onSaved,
 }: {
   plantId: string
   connected: boolean
+  initialBrand: ProviderBrand
   focusOnMount: boolean
   onSaved: (message: string) => void
 }) {
   const ids = useId()
   const loginId = `${ids}-login`
   const passwordId = `${ids}-password`
+  const [brand, setBrand] = useState<ProviderBrand>(initialBrand)
+  const brandInfo = PROVIDER_BRANDS.find((item) => item.value === brand) ?? PROVIDER_BRANDS[0]
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -106,18 +118,18 @@ function ConnectForm({
     event.preventDefault()
     setFeedback(null)
     if (!login.trim()) {
-      setFeedback({ tone: 'error', message: 'Informe o login da conta NEPViewer.' })
+      setFeedback({ tone: 'error', message: `Informe o usuário do app ${brandInfo.label}.` })
       return
     }
     if (!password) {
-      setFeedback({ tone: 'error', message: 'Informe a senha da conta NEPViewer.' })
+      setFeedback({ tone: 'error', message: `Informe a senha do app ${brandInfo.label}.` })
       return
     }
     setSaving(true)
     try {
-      const response = await saveProviderAccount(plantId, { login: login.trim(), password })
+      const response = await saveProviderAccount(plantId, { provider: brand, login: login.trim(), password })
       if (!response.ok) {
-        setFeedback({ tone: 'error', message: await providerAccountErrorMessage(response) })
+        setFeedback({ tone: 'error', message: await providerAccountErrorMessage(response, brand) })
         return
       }
       const account = parseProviderAccount(await response.json())
@@ -127,8 +139,10 @@ function ConnectForm({
       // A mensagem sobe para a seção: o formulário fecha depois de salvar.
       onSaved(
         found === 0
-          ? 'Conta conectada, mas a NEPViewer não mostra nenhum inversor nela. Confira se é a conta certa.'
-          : `Conta conectada. ${found === 1 ? '1 inversor encontrado' : `${found} inversores encontrados`}.`,
+          ? `Conta conectada, mas a ${brandInfo.label} não mostra nenhuma usina ou inversor nela. Confira se é a conta certa.`
+          : brand === 'GROWATT'
+            ? `Conta conectada. ${found === 1 ? '1 usina encontrada' : `${found} usinas encontradas`} na Growatt.`
+            : `Conta conectada. ${found === 1 ? '1 inversor encontrado' : `${found} inversores encontrados`}.`,
       )
     } catch {
       setFeedback({ tone: 'error', message: 'Não foi possível concluir agora. Tente novamente.' })
@@ -139,10 +153,41 @@ function ConnectForm({
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5" aria-label="Conectar a conta do inversor">
+      <fieldset>
+        <legend className="mb-2 text-[13px] font-semibold text-[var(--color-text-primary)]">
+          Marca do inversor
+        </legend>
+        <div className="flex flex-wrap gap-2">
+          {PROVIDER_BRANDS.map((item) => {
+            const checked = item.value === brand
+            return (
+              <label
+                key={item.value}
+                className={`inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none focus-within:ring-2 focus-within:ring-[var(--color-brand-primary)] ${
+                  checked
+                    ? 'border-[var(--color-brand-primary)] bg-[var(--color-surface-subtle)] text-[var(--color-text-primary)]'
+                    : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)]'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name={`${ids}-brand`}
+                  value={item.value}
+                  checked={checked}
+                  onChange={() => setBrand(item.value)}
+                  disabled={saving}
+                  className="h-4 w-4 accent-[var(--color-brand-primary)]"
+                />
+                {item.label}
+              </label>
+            )
+          })}
+        </div>
+      </fieldset>
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div className="min-w-0">
           <label htmlFor={loginId} className="mb-1 block text-[13px] font-semibold text-[var(--color-text-primary)]">
-            Login da NEPViewer
+            Usuário do app {brandInfo.label}
           </label>
           <input
             ref={loginRef}
@@ -154,13 +199,13 @@ function ConnectForm({
             value={login}
             onChange={(e) => setLogin(e.target.value)}
             disabled={saving}
-            placeholder="E-mail ou usuário do aplicativo"
+            placeholder={`O mesmo do app ${brandInfo.app}`}
             className={INPUT_CLASS}
           />
         </div>
         <div className="min-w-0">
           <label htmlFor={passwordId} className="mb-1 block text-[13px] font-semibold text-[var(--color-text-primary)]">
-            Senha da NEPViewer
+            Senha do app {brandInfo.label}
           </label>
           <div className="relative">
             <input
@@ -185,8 +230,8 @@ function ConnectForm({
         </div>
       </div>
       <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
-        O sistema confere a conta na NEPViewer antes de salvar. A senha fica guardada cifrada e não aparece de
-        novo para ninguém.
+        O sistema confere a conta na {brandInfo.label} antes de salvar. A senha fica guardada cifrada e não
+        aparece de novo para ninguém.
       </p>
       {feedback && (
         <div
@@ -201,9 +246,9 @@ function ConnectForm({
         </div>
       )}
       <button type="submit" className={PRIMARY_BUTTON} disabled={saving} aria-busy={saving}>
-        {saving ? 'Conferindo na NEPViewer...' : connected ? 'Conferir e trocar' : 'Conferir e conectar'}
+        {saving ? `Conferindo na ${brandInfo.label}...` : connected ? 'Conferir e trocar' : 'Conferir e conectar'}
       </button>
-      <LoadingAnnouncement active={saving} message="Conferindo a conta na NEPViewer, aguarde." />
+      <LoadingAnnouncement active={saving} message={`Conferindo a conta na ${brandInfo.label}, aguarde.`} />
     </form>
   )
 }
@@ -246,7 +291,7 @@ export function ProviderConnectionSection({ plantId }: { plantId: string }) {
     try {
       const response = await deleteProviderAccount(plantId)
       if (!response.ok) {
-        const message = await providerAccountErrorMessage(response)
+        const message = await providerAccountErrorMessage(response, account?.provider ?? null)
         setNotice({ tone: 'error', message })
         if (response.status === 404) {
           setConfirmingRemoval(false)
@@ -362,6 +407,7 @@ export function ProviderConnectionSection({ plantId }: { plantId: string }) {
                   <ConnectForm
                     plantId={plantId}
                     connected={connected}
+                    initialBrand={account.provider === 'GROWATT' ? 'GROWATT' : 'NEPVIEWER'}
                     focusOnMount={editing}
                     onSaved={(message) => {
                       setEditing(false)
