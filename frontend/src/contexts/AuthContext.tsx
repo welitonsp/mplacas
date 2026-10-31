@@ -9,6 +9,9 @@ interface AuthContextValue {
   isAuthenticated: boolean
   username: string | null
   login: (username: string, password: string) => Promise<void>
+  // Entra com a sessão que o servidor acabou de abrir (aceite de convite,
+  // ADR-093): os tokens ficam só em memória, como no login.
+  adoptSession: (accessToken: string, refreshToken: string, username: string) => void
   logout: () => void
 }
 
@@ -111,8 +114,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUsername(username)
   }, [])
 
+  const adoptSession = useCallback((accessToken: string, refreshToken: string, name: string) => {
+    // Mesma limpeza do logout para a sessão anterior desta aba (ex.: o dono
+    // testando o próprio convite): seleção de usina e refresh token antigos.
+    const previous = refreshTokenRef.current
+    if (previous && previous !== refreshToken) {
+      void fetch(`${API_URL}/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: previous }),
+        keepalive: true,
+      }).catch(() => undefined)
+    }
+    safeStorage.remove(SELECTED_PLANT_STORAGE_KEY)
+    TokenStore.set(accessToken)
+    refreshTokenRef.current = refreshToken
+    setIsAuthenticated(true)
+    setUsername(name)
+  }, [])
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, username, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, username, login, adoptSession, logout }}>
       {children}
     </AuthContext.Provider>
   )

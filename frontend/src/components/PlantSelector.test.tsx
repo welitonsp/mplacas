@@ -20,6 +20,7 @@ function setPlant(overrides: Partial<ReturnType<typeof usePlant>> = {}) {
     loading: false,
     error: null,
     selectPlant: vi.fn(),
+    reload: vi.fn(),
     ...overrides,
   })
 }

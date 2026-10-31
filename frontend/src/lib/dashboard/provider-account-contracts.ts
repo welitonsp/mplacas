@@ -81,6 +81,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   provider_account_in_use: 'Esta conta da {marca} já está conectada a outra usina.',
   provider_verify_rate_limited: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.',
   provider_account_not_found: 'Esta usina já estava sem conta conectada.',
+  plant_already_exists: 'Esta conta já tem uma usina. Abrindo...',
   provider_secret_keys_not_configured:
     'O servidor ainda não está pronto para guardar a senha. Fale com o suporte.',
 }

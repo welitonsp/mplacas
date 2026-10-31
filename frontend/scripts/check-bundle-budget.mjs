@@ -138,6 +138,33 @@ const BUDGETS = [
     limitKb: 5,
   },
   {
+    // Entrada de clientes por convite (ADR-093, decisão do dono 31/10/2026):
+    // telas novas, cada uma carregada só por quem precisa dela.
+    name: 'InvitePage',
+    match: /^InvitePage-.*\.js$/,
+    limitKb: 4,
+    // medido em 2026-10-31: 2,50 kB
+  },
+  {
+    name: 'ClientsPage',
+    match: /^ClientsPage-.*\.js$/,
+    limitKb: 4,
+    // medido em 2026-10-31: 2,80 kB (só o dono da plataforma carrega)
+  },
+  {
+    // Formulário marca + usuário/senha do app, usado em Minha usina e na
+    // primeira conexão (ADR-091/093).
+    name: 'BrandLoginForm',
+    match: /^BrandLoginForm-.*\.js$/,
+    limitKb: 4,
+    // medido em 2026-10-31: 2,73 kB
+  },
+  {
+    name: 'FirstConnectionPanel',
+    match: /^FirstConnectionPanel-.*\.js$/,
+    limitKb: 3,
+  },
+  {
     // Página pública (`PublicHomePage`), entrou depois deste gate e por isso
     // não tinha categoria. JS e CSS juntos porque é uma superfície só, e
     // porque a landing traz CSS próprio de peso comparável ao script.
@@ -163,9 +190,15 @@ const BUDGETS = [
 // própria — a decisão vira explícita em vez de silenciosa.
 const CATCH_ALL = {
   name: 'demais chunks (soma)',
-  limitKb: 42,
+  limitKb: 45,
   // medido em 2026-08-14: ~34,3 kB somando tudo que não casa com as regras
   // acima. Teto com folga deliberada, não espelho da medição.
+  //
+  // Teto revisado de 42 para 45 kB em 2026-10-31 (ADR-093, entrada de
+  // clientes): as telas novas têm categoria própria acima, mas importam
+  // `RetryableError`, `useModuleTitle`, `Card` e o contrato do onboarding, que
+  // o empacotador passou a separar em chunks compartilhados (antes iam
+  // embutidos nos módulos). Medido antes: 41,36 kB; depois: 44,62 kB.
 }
 // ---------------------------------------------------------------------------
 

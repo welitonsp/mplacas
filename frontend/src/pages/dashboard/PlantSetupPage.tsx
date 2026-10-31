@@ -1,6 +1,6 @@
 import { FormEvent, ReactNode, useState } from 'react'
 import { Link } from 'react-router'
-import { CheckCircle2, Circle } from 'lucide-react'
+import { CheckCircle2, Circle, CircleAlert } from 'lucide-react'
 import {
   fetchPlantSetup,
   updateFinancialConfiguration,
@@ -179,6 +179,8 @@ function FeedbackLine({ feedback }: { feedback: Feedback }) {
 function SetupChecklist({ setup }: { setup: PlantSetup }) {
   const percent = setup.total > 0 ? Math.round((setup.completed / setup.total) * 100) : 0
   const complete = setup.completed === setup.total
+  // ADR-093 § 7: item estimado conta como feito, mas não como "pronto".
+  const toReview = setup.items.filter((item) => item.needsReview).length
   return (
     <Card className="sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -189,7 +191,11 @@ function SetupChecklist({ setup }: { setup: PlantSetup }) {
           </p>
         </div>
         <p className="text-[13px] text-[var(--color-text-secondary)]">
-          {complete ? 'Tudo pronto: o sistema tem o que precisa.' : 'Cada item libera uma parte do sistema.'}
+          {toReview > 0
+            ? `${toReview === 1 ? '1 item foi estimado' : `${toReview} itens foram estimados`} pelo sistema: confira.`
+            : complete
+              ? 'Tudo pronto: o sistema tem o que precisa.'
+              : 'Cada item libera uma parte do sistema.'}
         </p>
       </div>
       <div
@@ -206,28 +212,42 @@ function SetupChecklist({ setup }: { setup: PlantSetup }) {
       <ul className="mt-5 divide-y divide-[var(--color-border)]" aria-label="Itens do cadastro">
         {setup.items.map((item) => {
           const copy = ITEM_COPY[item.key]
-          const Icon = item.done ? CheckCircle2 : Circle
+          const Icon = item.needsReview ? CircleAlert : item.done ? CheckCircle2 : Circle
           return (
             <li key={item.key} className="flex items-start gap-3 py-3">
               <Icon
                 aria-hidden="true"
                 className={`mt-0.5 h-5 w-5 shrink-0 ${
-                  item.done ? 'text-[var(--color-success)]' : 'text-[var(--color-gray-400)]'
+                  item.needsReview
+                    ? 'text-[var(--color-warning)]'
+                    : item.done
+                      ? 'text-[var(--color-success)]'
+                      : 'text-[var(--color-gray-400)]'
                 }`}
               />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-[var(--color-text-primary)]">
                   {copy.title}
-                  <span className="sr-only">{item.done ? ': informado' : ': pendente'}</span>
+                  <span className="sr-only">
+                    {item.needsReview ? ': estimado, confira' : item.done ? ': informado' : ': pendente'}
+                  </span>
+                  {item.needsReview && (
+                    <span
+                      aria-hidden="true"
+                      className="ml-2 inline-flex items-center rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-xs font-semibold text-[var(--color-warning-text)]"
+                    >
+                      Estimado — confira
+                    </span>
+                  )}
                 </p>
                 <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">Libera: {copy.unlocks}</p>
               </div>
-              {!item.done && (
+              {(!item.done || item.needsReview) && (
                 <a
                   href={`#${copy.anchor}`}
                   className="inline-flex min-h-[44px] shrink-0 items-center rounded-md px-3 text-[13px] font-semibold text-[var(--color-brand-primary)] underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)]"
                 >
-                  Informar
+                  {item.needsReview ? 'Conferir' : 'Informar'}
                 </a>
               )}
             </li>

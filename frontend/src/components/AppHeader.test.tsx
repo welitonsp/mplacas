@@ -59,6 +59,7 @@ function setAuth(overrides: Partial<ReturnType<typeof useAuth>> = {}) {
     isAuthenticated: true,
     username: 'maria',
     login: vi.fn(),
+    adoptSession: vi.fn(),
     logout: vi.fn(),
     ...overrides,
   })
@@ -71,6 +72,7 @@ function setPlant(overrides: Partial<ReturnType<typeof usePlant>> = {}) {
     loading: false,
     error: null,
     selectPlant: vi.fn(),
+    reload: vi.fn(),
     ...overrides,
   })
 }

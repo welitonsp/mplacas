@@ -21,6 +21,8 @@ const MONEY_SEGMENT = 'dinheiro'
 const METHODOLOGY_SEGMENT = 'dinheiro/como-calculamos'
 // "Minha usina": onde o cliente informa os dados da própria usina.
 const SETUP_SEGMENT = 'minha-usina'
+// "Clientes" (ADR-093): só o dono da plataforma vê — convida e acompanha clientes.
+const CLIENTS_SEGMENT = 'clientes'
 
 export const DASHBOARD_MODULE_SEGMENTS = {
   overview: HOME_SEGMENT,
@@ -29,6 +31,7 @@ export const DASHBOARD_MODULE_SEGMENTS = {
   financial: MONEY_SEGMENT,
   methodology: METHODOLOGY_SEGMENT,
   setup: SETUP_SEGMENT,
+  clients: CLIENTS_SEGMENT,
 } as const
 
 export const DASHBOARD_OVERVIEW_PATH = `${DASHBOARD_ROOT_PATH}/${HOME_SEGMENT}` as const
@@ -37,6 +40,10 @@ export const DASHBOARD_TECHNICAL_PATH = `${DASHBOARD_ROOT_PATH}/${TECHNICAL_SEGM
 export const DASHBOARD_FINANCIAL_PATH = `${DASHBOARD_ROOT_PATH}/${MONEY_SEGMENT}` as const
 export const DASHBOARD_METHODOLOGY_PATH = `${DASHBOARD_ROOT_PATH}/${METHODOLOGY_SEGMENT}` as const
 export const DASHBOARD_SETUP_PATH = `${DASHBOARD_ROOT_PATH}/${SETUP_SEGMENT}` as const
+export const DASHBOARD_CLIENTS_PATH = `${DASHBOARD_ROOT_PATH}/${CLIENTS_SEGMENT}` as const
+
+// Tela pública do convite (ADR-093): o token vem no fragmento `#token=`.
+export const INVITATION_PATH = '/convite'
 
 // URLs da organização anterior (5 abas). Continuam funcionando — favorito,
 // link no e-mail do relatório mensal, aba aberta — e redirecionam para a aba

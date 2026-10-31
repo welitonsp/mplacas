@@ -16,6 +16,7 @@ vi.mocked(useAuth).mockReturnValue({
   isAuthenticated: true,
   username: null,
   login: vi.fn(),
+  adoptSession: vi.fn(),
   logout: vi.fn(),
 })
 
@@ -25,6 +26,7 @@ vi.mocked(usePlant).mockReturnValue({
   loading: false,
   error: null,
   selectPlant: vi.fn(),
+  reload: vi.fn(),
 })
 
 describe('AppShell — slot subnav (ADR-072, Etapa 1)', () => {
