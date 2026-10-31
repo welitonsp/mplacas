@@ -28,6 +28,15 @@ from mplacas.providers.base import (
 import mplacas.cloud_jobs as cloud_jobs
 
 _TEST_ENGINES = []
+_REAL_LIST_CONNECTED = cloud_jobs._list_connected_client_plants
+
+
+@pytest.fixture(autouse=True)
+def _no_connected_client_plants(monkeypatch):
+    async def none() -> list:
+        return []
+
+    monkeypatch.setattr(cloud_jobs, "_list_connected_client_plants", none)
 
 
 @pytest.fixture(autouse=True)
@@ -349,6 +358,156 @@ def test_daily_pipeline_runs_plant_without_derivable_expectation_but_skips_alert
     get_settings.cache_clear()
 
 
+def test_daily_pipeline_runs_connected_client_plant_without_alerts(monkeypatch) -> None:
+    """ADR-093: usina de cliente com conexão ativa entra na análise diária,
+    mas sem expectativa — o alerta (chat do dono) não recebe dado de cliente."""
+    owner_plant = uuid.UUID("00000000-0000-0000-0000-0000000000e5")
+    client_plant = uuid.UUID("00000000-0000-0000-0000-0000000000f6")
+    _set_daily_pipeline_env(monkeypatch)
+    calls: list[dict[str, object]] = []
+
+    async def fake_runtime(*args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace()
+
+    async def fake_list_plants(_organization_id):
+        return [(owner_plant, "Usina Dono")]
+
+    async def fake_connected():
+        # a do dono também tem conexão: não pode rodar duas vezes
+        return [(client_plant, "Usina Cliente"), (owner_plant, "Usina Dono")]
+
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", lambda: FakeSession())
+    monkeypatch.setattr(cloud_jobs, "run_ledger_backed_daily_pipeline", fake_runtime)
+    monkeypatch.setattr(cloud_jobs, "_list_organization_plants", fake_list_plants)
+    monkeypatch.setattr(cloud_jobs, "_list_connected_client_plants", fake_connected)
+    monkeypatch.setattr(
+        cloud_jobs,
+        "resolve_expected_daily_production",
+        _fake_expected_production_resolver(
+            {owner_plant: Decimal("12.0"), client_plant: Decimal("30.0")}
+        ),
+    )
+
+    cloud_jobs.asyncio.run(
+        cloud_jobs.run_daily_pipeline(
+            target_date="2026-07-15",
+            now=datetime.fromisoformat("2026-07-16T00:30:00-03:00"),
+        )
+    )
+
+    assert [c["plant_id"] for c in calls] == [owner_plant, client_plant]
+    assert calls[0]["expected_daily_production_kwh"] == Decimal("12.0")
+    assert calls[1]["expected_daily_production_kwh"] is None
+    get_settings.cache_clear()
+
+
+def test_operational_watchdog_covers_connected_client_plant(monkeypatch) -> None:
+    owner_plant = uuid.uuid4()
+    client_plant = uuid.uuid4()
+    now = datetime(2026, 8, 2, 12, tzinfo=UTC)
+    seen: list[uuid.UUID] = []
+
+    async def fake_list_plants(_organization_id):
+        return [(owner_plant, "Usina Dono")]
+
+    async def fake_connected():
+        return [(client_plant, "Usina Cliente")]
+
+    async def fake_latest(*args, **kwargs):
+        seen.append(kwargs.get("plant_id", args[-1] if args else None))
+        return SimpleNamespace(
+            execution_id=uuid.uuid4(),
+            status=PipelineExecutionStatus.SUCCEEDED,
+            started_at=now - timedelta(hours=2),
+            finished_at=now - timedelta(hours=1),
+        )
+
+    monkeypatch.setattr(cloud_jobs, "_list_organization_plants", fake_list_plants)
+    monkeypatch.setattr(cloud_jobs, "_list_connected_client_plants", fake_connected)
+    monkeypatch.setattr(cloud_jobs, "get_latest_pipeline_execution", fake_latest)
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", lambda: FakeSession())
+
+    cloud_jobs.asyncio.run(cloud_jobs.run_operational_watchdog(now=now))
+    assert len(seen) == 2
+    get_settings.cache_clear()
+
+
+def test_operational_watchdog_waits_for_client_plant_first_run(monkeypatch) -> None:
+    """ADR-093: usina de cliente sem histórico ainda não é falha; a do dono é."""
+    owner_plant = uuid.uuid4()
+    client_plant = uuid.uuid4()
+    now = datetime(2026, 8, 2, 12, tzinfo=UTC)
+    fresh = SimpleNamespace(
+        execution_id=uuid.uuid4(),
+        status=PipelineExecutionStatus.SUCCEEDED,
+        started_at=now - timedelta(hours=2),
+        finished_at=now - timedelta(hours=1),
+    )
+
+    async def fake_list_plants(_organization_id):
+        return [(owner_plant, "Usina Dono")]
+
+    async def fake_connected():
+        return [(client_plant, "Usina Cliente")]
+
+    history = {owner_plant: fresh, client_plant: None}
+
+    async def fake_latest(_session, *, plant_id):
+        return history[plant_id]
+
+    monkeypatch.setattr(cloud_jobs, "_list_organization_plants", fake_list_plants)
+    monkeypatch.setattr(cloud_jobs, "_list_connected_client_plants", fake_connected)
+    monkeypatch.setattr(cloud_jobs, "get_latest_pipeline_execution", fake_latest)
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", lambda: FakeSession())
+
+    cloud_jobs.asyncio.run(cloud_jobs.run_operational_watchdog(now=now))
+
+    history[owner_plant] = None
+    with pytest.raises(RuntimeError, match="Usina Dono"):
+        cloud_jobs.asyncio.run(cloud_jobs.run_operational_watchdog(now=now))
+    get_settings.cache_clear()
+
+
+def test_daily_pipeline_client_plant_failure_does_not_stop_owner(monkeypatch) -> None:
+    owner_plant = uuid.uuid4()
+    client_plant = uuid.uuid4()
+    _set_daily_pipeline_env(monkeypatch)
+    calls: list[uuid.UUID] = []
+
+    async def fake_runtime(*args, **kwargs):
+        calls.append(kwargs["plant_id"])
+        if kwargs["plant_id"] == client_plant:
+            raise RuntimeError("provider down")
+        return SimpleNamespace()
+
+    async def fake_list_plants(_organization_id):
+        return [(owner_plant, "Usina Dono")]
+
+    async def fake_connected():
+        return [(client_plant, "Usina Cliente")]
+
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", lambda: FakeSession())
+    monkeypatch.setattr(cloud_jobs, "run_ledger_backed_daily_pipeline", fake_runtime)
+    monkeypatch.setattr(cloud_jobs, "_list_organization_plants", fake_list_plants)
+    monkeypatch.setattr(cloud_jobs, "_list_connected_client_plants", fake_connected)
+    monkeypatch.setattr(
+        cloud_jobs,
+        "resolve_expected_daily_production",
+        _fake_expected_production_resolver({owner_plant: Decimal("5"), client_plant: None}),
+    )
+
+    with pytest.raises(RuntimeError, match="Usina Cliente"):
+        cloud_jobs.asyncio.run(
+            cloud_jobs.run_daily_pipeline(
+                target_date="2026-07-15",
+                now=datetime.fromisoformat("2026-07-16T00:30:00-03:00"),
+            )
+        )
+    assert calls == [owner_plant, client_plant]
+    get_settings.cache_clear()
+
+
 def test_daily_pipeline_help() -> None:
     with pytest.raises(SystemExit) as exc:
         main(["daily-pipeline", "--help"])
@@ -635,6 +794,53 @@ def test_list_organization_plants_orders_by_name_then_id(monkeypatch) -> None:
     plants = cloud_jobs.asyncio.run(cloud_jobs._list_organization_plants(DEFAULT_ORGANIZATION_ID))
 
     assert plants == [(low_id, "Alpha"), (high_id, "Zulu")]
+
+
+def test_list_connected_client_plants_only_active_outside_default(monkeypatch) -> None:
+    """ADR-093: entra a usina de cliente com conexão ativa — sem conexão,
+    conexão desativada ou usina do dono ficam de fora."""
+    from mplacas.providers.db_models import ProviderAccountRecord
+
+    factory = cloud_jobs.asyncio.run(_sqlite_factory())
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", factory)
+    client_org = uuid.uuid4()
+    connected = uuid.uuid4()
+    disconnected = uuid.uuid4()
+    no_account = uuid.uuid4()
+    owner = uuid.uuid4()
+
+    def _account(plant_id: uuid.UUID, active: bool) -> ProviderAccountRecord:
+        return ProviderAccountRecord(
+            plant_id=plant_id,
+            provider="GROWATT",
+            login_hint="c***",
+            account_fingerprint=uuid.uuid4().hex if active else None,
+            ciphertext=b"x" if active else None,
+            key_version=1 if active else None,
+            active=active,
+        )
+
+    async def _seed() -> None:
+        async with factory() as session:
+            session.add(OrganizationRecord(id=client_org, name="Cli", slug="cli", active=True))
+            await session.flush()
+            session.add_all(
+                [
+                    Plant(id=connected, organization_id=client_org, name="Ligada"),
+                    Plant(id=disconnected, organization_id=client_org, name="Desligada"),
+                    Plant(id=no_account, organization_id=client_org, name="Sem Conta"),
+                    Plant(id=owner, organization_id=DEFAULT_ORGANIZATION_ID, name="Dono"),
+                ]
+            )
+            await session.flush()
+            session.add_all(
+                [_account(connected, True), _account(disconnected, False), _account(owner, True)]
+            )
+            await session.commit()
+
+    cloud_jobs.asyncio.run(_seed())
+
+    assert cloud_jobs.asyncio.run(_REAL_LIST_CONNECTED()) == [(connected, "Ligada")]
 
 
 def test_daily_pipeline_cli_exits_non_zero_on_partial_failure(monkeypatch) -> None:

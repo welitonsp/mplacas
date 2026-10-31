@@ -375,16 +375,34 @@ async def run_operational_watchdog(*, now: datetime | None = None) -> None:
     plant has been checked.
     """
     current_time = now or datetime.now(UTC)
-    plants = await _list_organization_plants(DEFAULT_ORGANIZATION_ID)
+    plants = await _list_pipeline_plants()
     if not plants:
         raise RuntimeError("no plants found for the default organization")
 
     problems: list[str] = []
-    for plant_id, plant_name in plants:
+    for plant_id, plant_name, is_owner_plant in plants:
         try:
             await _check_plant_pipeline_health(
                 plant_id=plant_id, current_time=current_time
             )
+        except _NoPipelineHistoryError:
+            if not is_owner_plant:
+                # ADR-093: usina de cliente recém-conectada ainda não passou pela
+                # primeira análise diária — não é falha, é espera.
+                logger.info(
+                    "cloud_job_operational_watchdog_client_plant_waiting_first_run",
+                    extra={"plant_id": str(plant_id)},
+                )
+                continue
+            logger.error(
+                "cloud_job_operational_watchdog_plant_unhealthy",
+                extra={
+                    "plant_id": str(plant_id),
+                    "plant_name": plant_name,
+                    "error_code": _NoPipelineHistoryError.__name__,
+                },
+            )
+            problems.append(f"{plant_name} ({plant_id}): daily pipeline has no execution history")
         except RuntimeError as exc:
             logger.error(
                 "cloud_job_operational_watchdog_plant_unhealthy",
@@ -402,6 +420,10 @@ async def run_operational_watchdog(*, now: datetime | None = None) -> None:
         )
 
 
+class _NoPipelineHistoryError(RuntimeError):
+    """A usina ainda não tem nenhuma execução da análise diária."""
+
+
 async def _check_plant_pipeline_health(
     *, plant_id: uuid.UUID, current_time: datetime
 ) -> None:
@@ -409,7 +431,7 @@ async def _check_plant_pipeline_health(
         await set_platform_context(session)
         latest = await get_latest_pipeline_execution(session, plant_id=plant_id)
     if latest is None:
-        raise RuntimeError("daily pipeline has no execution history")
+        raise _NoPipelineHistoryError("daily pipeline has no execution history")
     if latest.status == PipelineExecutionStatus.FAILED:
         raise RuntimeError("latest daily pipeline execution failed")
     if latest.status == PipelineExecutionStatus.RUNNING:
@@ -752,12 +774,12 @@ async def run_daily_pipeline(
         timeout_seconds=settings.request_timeout_seconds,
     )
 
-    plants = await _list_organization_plants(DEFAULT_ORGANIZATION_ID)
+    plants = await _list_pipeline_plants()
     if not plants:
         raise RuntimeError("no plants found for the default organization")
 
     failures: list[str] = []
-    for plant_id, plant_name in plants:
+    for plant_id, plant_name, is_owner_plant in plants:
         logger.info(
             "cloud_job_daily_pipeline_started",
             extra={
@@ -774,7 +796,13 @@ async def run_daily_pipeline(
                         session, plant_id=plant_id, today=resolved_date
                     )
                     expected_daily_production_kwh: Decimal | None
-                    if resolution.expected is None:
+                    if not is_owner_plant:
+                        # ADR-093: a análise roda para a usina do cliente, mas o
+                        # alerta vai pelo chat de plataforma (o do dono) — dado
+                        # de cliente não vai para lá. Sem expectativa, o passo
+                        # de alerta é pulado e o resto da análise segue.
+                        expected_daily_production_kwh = None
+                    elif resolution.expected is None:
                         # Do not skip the plant: only alert dispatch depends
                         # on the expectation. Climate/POA, performance and
                         # seasonal baseline must still run so the baseline
@@ -977,6 +1005,44 @@ async def _resolve_plant_id(plant_name: str) -> uuid.UUID:
         plant_id = plant.id
         await session.commit()
     return plant_id
+
+
+async def _list_pipeline_plants() -> list[tuple[uuid.UUID, str, bool]]:
+    """Usinas da análise diária e do vigia (ADR-093).
+
+    As da organização default (a do dono) **mais** as de qualquer organização
+    com conexão ativa ao fabricante — sem conexão não há produção para
+    analisar. O terceiro campo diz se a usina é do dono (alerta pelo chat de
+    plataforma) ou de cliente (alerta pulado). Ordem estável: dono primeiro,
+    depois nome e id.
+    """
+    owner = await _list_organization_plants(DEFAULT_ORGANIZATION_ID)
+    owner_ids = {plant_id for plant_id, _ in owner}
+    connected = await _list_connected_client_plants()
+    return [(plant_id, name, True) for plant_id, name in owner] + [
+        (plant_id, name, False) for plant_id, name in connected if plant_id not in owner_ids
+    ]
+
+
+async def _list_connected_client_plants() -> list[tuple[uuid.UUID, str]]:
+    """Usinas fora da organização default com conexão ativa ao fabricante."""
+    from mplacas.providers.db_models import ProviderAccountRecord
+
+    async with SessionFactory() as session:
+        await set_platform_context(session)
+        rows = (
+            await session.execute(
+                select(Plant.id, Plant.name)
+                .join(ProviderAccountRecord, ProviderAccountRecord.plant_id == Plant.id)
+                .where(
+                    ProviderAccountRecord.active.is_(True),
+                    Plant.organization_id != DEFAULT_ORGANIZATION_ID,
+                )
+                .distinct()
+                .order_by(Plant.name, Plant.id)
+            )
+        ).all()
+    return [(row[0], row[1]) for row in rows]
 
 
 async def _list_organization_plants(
