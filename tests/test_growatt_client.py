@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from datetime import date
 from decimal import Decimal
 from urllib.parse import parse_qs
@@ -21,7 +20,7 @@ from mplacas.providers.growatt.client import GrowattClient, hash_password, plant
 from mplacas.providers.resilient import ResilientSolarProvider, RetryPolicy
 
 LOGIN = "rogerio"
-PASSWORD = "s3nh4-growatt"
+PASSWORD = "senha-do-app"
 
 
 def _ok(back: dict) -> httpx.Response:
@@ -69,12 +68,10 @@ def _client(fake) -> GrowattClient:
 
 
 def test_password_uses_the_app_format() -> None:
-    digest = hashlib.md5(PASSWORD.encode(), usedforsecurity=False).hexdigest()
-    hashed = hash_password(PASSWORD)
-
-    assert len(hashed) == 32
-    assert all(hashed[i] != "0" for i in range(0, 32, 2))
-    assert [hashed[i] for i in range(1, 32, 2)] == [digest[i] for i in range(1, 32, 2)]
+    # Vetores fixos: MD5 de "abc" é 900150983cd24fb0d6963f7d28e17f72; o app troca
+    # o "0" da posição par 2 por "c". O outro vetor não muda nas posições pares.
+    assert hash_password("abc") == "90c150983cd24fb0d6963f7d28e17f72"
+    assert hash_password(PASSWORD) == "8f26828bc65243c69050663dbdee99e0"
 
 
 async def test_login_sends_user_agent_and_hashed_password_never_the_plain_one() -> None:
