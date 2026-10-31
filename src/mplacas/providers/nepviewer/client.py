@@ -13,6 +13,7 @@ from mplacas.providers.base import (
     ProviderIncompleteDataError,
     ProviderSchemaError,
     ProviderUnavailableError,
+    PlantProfile,
     SolarDevice,
     SolarProvider,
 )
@@ -144,6 +145,16 @@ class NepViewerClient(SolarProvider):
                 )
             )
         return devices
+
+    async def plant_profile(self) -> PlantProfile | None:
+        """A NEPViewer só informa a cidade de cada inversor (ADR-093 § 7).
+
+        Potência e coordenadas não vêm na API usada aqui; a cidade é
+        geocodificada depois, fora do cliente.
+        """
+        devices = await self.list_devices()
+        city = next((device.city.strip() for device in devices if device.city), None)
+        return PlantProfile(city=city or None)
 
     async def get_overview(self, serial_number: str) -> DeviceOverview:
         data = await self._post("device/statistics/overview", {"sn": serial_number})

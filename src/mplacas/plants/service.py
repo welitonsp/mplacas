@@ -20,6 +20,7 @@ from mplacas.billing.db_models import BillStatus, UtilityBillRecord
 from mplacas.core.authorization import PlantScope
 from mplacas.db.models import Device, Plant
 from mplacas.organizations.db_models import OrganizationRecord
+from mplacas.plants import autofill
 from mplacas.plants.schemas import (
     DevicePowerConfigurationView,
     ModuleTechnology,
@@ -158,6 +159,14 @@ class PlantService:
                 if payload.module_technology is not None
                 else None
             )
+        # ADR-093 § 7: o que o dono enviou deixa de ser "preenchido automaticamente".
+        edited = {
+            autofill.DC_CAPACITY: "dc_capacity_kwp" in plant_fields,
+            autofill.TILT: "array_tilt_degrees" in plant_fields,
+            autofill.AZIMUTH: "array_azimuth_degrees" in plant_fields,
+            autofill.MODULE_TECHNOLOGY: "module_technology" in plant_fields,
+        }
+        autofill.forget_auto_filled(plant, *(key for key, hit in edited.items() if hit))
 
         if "devices" in payload.model_fields_set and payload.devices is not None:
             requested_ids = {item.device_id for item in payload.devices}
@@ -253,7 +262,22 @@ class PlantService:
             PlantSetupItemKey.INVESTMENT: plant.investment_amount_brl is not None,
             PlantSetupItemKey.CONFIRMED_BILL: confirmed > 0,
         }
-        items = tuple(PlantSetupItem(key=key, done=done_by_key[key]) for key in PlantSetupItemKey)
+        estimated = {
+            field
+            for field, origin in (plant.auto_filled or {}).items()
+            if origin == autofill.ESTIMATE
+        }
+        review_by_key = {
+            PlantSetupItemKey.LOCATION: autofill.LOCATION in estimated,
+            PlantSetupItemKey.ORIENTATION: bool({autofill.TILT, autofill.AZIMUTH} & estimated),
+            PlantSetupItemKey.MODULE_TECHNOLOGY: autofill.MODULE_TECHNOLOGY in estimated,
+        }
+        items = tuple(
+            PlantSetupItem(
+                key=key, done=done_by_key[key], needs_review=review_by_key.get(key, False)
+            )
+            for key in PlantSetupItemKey
+        )
         return PlantSetupView(
             plant_id=plant.id,
             name=plant.name,
@@ -266,11 +290,13 @@ class PlantService:
             items=items,
             completed=sum(1 for item in items if item.done),
             total=len(items),
+            auto_filled=dict(plant.auto_filled or {}),
         )
 
     async def update_location(self, plant: Plant, payload: PlantLocationUpdateRequest) -> None:
         plant.latitude = payload.latitude
         plant.longitude = payload.longitude
+        autofill.forget_auto_filled(plant, autofill.LOCATION)
         await self._session.flush()
 
     async def _default_plant_ids(

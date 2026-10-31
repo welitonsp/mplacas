@@ -712,3 +712,19 @@ def test_provider_accounts_migration_matches_orm() -> None:
     assert 'ondelete="CASCADE"' in source
     assert "FORCE ROW LEVEL SECURITY" in source
     assert "drop_table(TABLE)" in source
+
+
+def test_plant_auto_filled_migration_matches_orm() -> None:
+    from mplacas.db.models import Plant
+
+    source = (
+        ROOT / "migrations" / "versions" / "20261031_0052_add_plant_auto_filled.py"
+    ).read_text(encoding="utf-8")
+    column = Plant.__table__.c.auto_filled
+
+    assert 'revision = "20261031_0052"' in source
+    assert 'down_revision = "20261029_0051"' in source
+    assert column.nullable is True
+    assert 'add_column("plants", sa.Column("auto_filled", sa.JSON(), nullable=True))' in source
+    assert 'drop_column("plants", "auto_filled")' in source
+    assert "UPDATE " not in source.upper()  # sem backfill

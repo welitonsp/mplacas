@@ -549,6 +549,44 @@ def test_setup_reflects_what_the_owner_filled_in(tenancy_setup, client: TestClie
     assert body["financial"]["investment_amount_brl"] == "11200.00"
 
 
+def test_setup_flags_estimated_items_for_review(tenancy_setup, client: TestClient) -> None:
+    """ADR-093 § 7: estimado conta como feito, mas pede conferência; editar limpa."""
+    factory, _, _, token_a_admin, _, _ = tenancy_setup
+    headers = {"Authorization": f"Bearer {token_a_admin}"}
+
+    async def _autofill() -> None:
+        async with factory() as session:
+            plant = await session.get(Plant, PLANT_A)
+            plant.latitude, plant.longitude = Decimal("-17.74"), Decimal("-48.62")
+            plant.array_tilt_degrees, plant.array_azimuth_degrees = Decimal(18), Decimal(0)
+            plant.module_technology = "MONOCRYSTALLINE_SILICON"
+            plant.auto_filled = {
+                "location": "BRAND",
+                "array_tilt_degrees": "ESTIMATE",
+                "array_azimuth_degrees": "ESTIMATE",
+                "module_technology": "ESTIMATE",
+            }
+            await session.commit()
+
+    asyncio.run(_autofill())
+    body = client.get(f"/plants/{PLANT_A}/setup", headers=headers).json()
+    review = {item["key"]: item["needs_review"] for item in body["items"]}
+    assert review["LOCATION"] is False  # veio da marca
+    assert review["ORIENTATION"] is True
+    assert review["MODULE_TECHNOLOGY"] is True
+    assert body["auto_filled"]["array_tilt_degrees"] == "ESTIMATE"
+
+    assert client.patch(
+        f"/plants/{PLANT_A}/technical-configuration",
+        headers=headers,
+        json={"array_tilt_degrees": "12", "array_azimuth_degrees": "10"},
+    ).status_code == 200
+    body = client.get(f"/plants/{PLANT_A}/setup", headers=headers).json()
+    review = {item["key"]: item["needs_review"] for item in body["items"]}
+    assert review["ORIENTATION"] is False
+    assert review["MODULE_TECHNOLOGY"] is True
+
+
 def test_setup_is_tenant_scoped(tenancy_setup, client: TestClient) -> None:
     _, _, _, _, _, token_b_admin = tenancy_setup
     response = client.get(

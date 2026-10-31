@@ -25,7 +25,13 @@ from mplacas.main import app
 from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.providers import db_models as _provider_models  # noqa: F401
 from mplacas.providers.accounts import ProviderAccountService, ProviderLogin
-from mplacas.providers.base import ProviderAuthError, ProviderSchemaError, ProviderUnavailableError
+from mplacas.providers.base import (
+    PlantProfile,
+    ProviderAuthError,
+    ProviderSchemaError,
+    ProviderUnavailableError,
+)
+from mplacas.providers.router import ProviderInspection
 from mplacas.providers.db_models import ProviderAccountRecord
 
 KEY = base64.b64encode(b"\x09" * KEY_BYTES).decode()
@@ -61,16 +67,22 @@ async def _setup():
 
 
 class FakeVerifier:
-    def __init__(self, serials=("SN-1",), error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        serials=("SN-1",),
+        error: Exception | None = None,
+        profile: PlantProfile | None = None,
+    ) -> None:
         self.serials = list(serials)
         self.error = error
+        self.profile = profile
         self.calls: list[ProviderLogin] = []
 
-    async def __call__(self, provider: str, credentials: ProviderLogin) -> list[str]:
+    async def __call__(self, provider: str, credentials: ProviderLogin) -> ProviderInspection:
         self.calls.append(credentials)
         if self.error is not None:
             raise self.error
-        return self.serials
+        return ProviderInspection(self.serials, self.profile)
 
 
 @pytest.fixture
@@ -409,9 +421,9 @@ def test_growatt_connection_uses_the_chosen_brand(env) -> None:
     client, factory, tokens, verifier = env
     calls: list[str] = []
 
-    async def _verify(provider: str, credentials: ProviderLogin) -> list[str]:
+    async def _verify(provider: str, credentials: ProviderLogin) -> ProviderInspection:
         calls.append(provider)
-        return ["GW-PLANT-777"]
+        return ProviderInspection(["GW-PLANT-777"])
 
     import mplacas.providers.router as router_module
 
@@ -441,3 +453,187 @@ def test_brand_rate_limit_asks_to_wait(env) -> None:
     assert response.status_code == 503
     assert response.json() == {"detail": "provider_rate_limited"}
     assert asyncio.run(_records(factory)) == []
+
+
+# --- ADR-093 § 7: a usina nasce da conexão e se preenche sozinha -------------
+
+from datetime import date  # noqa: E402
+from decimal import Decimal  # noqa: E402
+
+CONNECT = "/plants/connect"
+PROFILE = PlantProfile(
+    name="Usina do Rogério",
+    installed_power_kwp=Decimal("5.4"),
+    latitude=Decimal("-17.744100"),
+    longitude=Decimal("-48.625200"),
+    city="Caldas Novas",
+    commissioned_on=date(2021, 3, 15),
+)
+
+
+def _empty_org(factory) -> uuid.UUID:
+    org_id = uuid.uuid4()
+
+    async def _seed() -> None:
+        async with factory() as session:
+            session.add(
+                OrganizationRecord(id=org_id, name="Novo", slug=f"n-{org_id.hex[:8]}", active=True)
+            )
+            await session.commit()
+
+    asyncio.run(_seed())
+    return org_id
+
+
+def _token(org_id: uuid.UUID, role: OperationsRole = OperationsRole.ADMIN) -> dict[str, str]:
+    return _auth(encode_access_token(uuid.uuid4(), org_id, role.value))
+
+
+async def _plants_of(factory, org_id) -> list[Plant]:
+    async with factory() as session:
+        return list(await session.scalars(select(Plant).where(Plant.organization_id == org_id)))
+
+
+async def _org(factory, org_id) -> OrganizationRecord:
+    async with factory() as session:
+        return await session.get(OrganizationRecord, org_id)
+
+
+def test_first_connection_creates_and_fills_the_plant(env) -> None:
+    client, factory, _tokens, verifier = env
+    verifier.serials = ["GW-PLANT-777"]
+    verifier.profile = PROFILE
+    org_id = _empty_org(factory)
+
+    response = client.post(
+        CONNECT, json=_body(provider="GROWATT", login="rogerio"), headers=_token(org_id)
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["plant_name"] == "Usina do Rogério"
+    assert body["connection"]["status"] == "CONECTADA"
+    assert body["auto_filled"]["dc_capacity_kwp"] == "BRAND"
+    assert body["auto_filled"]["array_tilt_degrees"] == "ESTIMATE"
+    assert "commissioned_on" not in body["auto_filled"]
+    assert PASSWORD not in response.text
+
+    plants = asyncio.run(_plants_of(factory, org_id))
+    assert len(plants) == 1
+    plant = plants[0]
+    assert plant.installed_power_kwp == Decimal("5.400")
+    assert plant.commissioned_on is None
+    assert asyncio.run(_org(factory, org_id)).default_plant_id == plant.id
+    assert asyncio.run(_records(factory))[-1].plant_id == plant.id
+
+    actions = [event.action for event in asyncio.run(_audit(factory))]
+    assert "plant.created_from_connection" in actions
+    assert all(PASSWORD not in repr(e.details) for e in asyncio.run(_audit(factory)))
+
+
+def test_first_connection_without_profile_uses_default_name(env) -> None:
+    client, factory, _tokens, verifier = env
+    org_id = _empty_org(factory)
+
+    response = client.post(CONNECT, json=_body(), headers=_token(org_id))
+
+    assert response.status_code == 201
+    assert response.json()["plant_name"] == "Minha usina"
+    assert response.json()["auto_filled"] == {}
+
+
+def test_first_connection_refused_when_org_already_has_a_plant(env) -> None:
+    client, _factory, tokens, verifier = env
+    response = client.post(CONNECT, json=_body(), headers=_auth(tokens["a_admin"]))
+    assert response.status_code == 409
+    assert response.json()["detail"] == "plant_already_exists"
+    assert verifier.calls == []  # nem chega a entrar na marca
+
+
+def test_first_connection_wrong_password_creates_nothing(env) -> None:
+    client, factory, _tokens, verifier = env
+    verifier.error = ProviderAuthError("recusado")
+    org_id = _empty_org(factory)
+
+    response = client.post(CONNECT, json=_body(), headers=_token(org_id))
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "provider_login_failed"
+    assert asyncio.run(_plants_of(factory, org_id)) == []
+    refusal = [e for e in asyncio.run(_audit(factory)) if e.action.endswith("verify_failed")]
+    assert refusal[-1].resource_type == "organization"
+    assert refusal[-1].resource_id == str(org_id)
+
+
+def test_first_connection_is_rate_limited_per_organization(env) -> None:
+    client, factory, _tokens, verifier = env
+    verifier.error = ProviderAuthError("recusado")
+    org_id = _empty_org(factory)
+    for _ in range(provider_router.VERIFY_LIMIT):
+        client.post(CONNECT, json=_body(), headers=_token(org_id))
+
+    response = client.post(CONNECT, json=_body(), headers=_token(org_id))
+
+    assert response.status_code == 429
+
+
+def test_first_connection_requires_org_admin(env) -> None:
+    client, factory, _tokens, verifier = env
+    org_id = _empty_org(factory)
+    assert (
+        client.post(CONNECT, json=_body(), headers=_token(org_id, OperationsRole.READ)).status_code
+        == 403
+    )
+    assert client.post(CONNECT, json=_body()).status_code == 401
+
+
+def test_first_connection_refuses_inverter_of_another_plant(env) -> None:
+    client, factory, tokens, verifier = env
+    # a usina A já está com o inversor SN-1
+    assert client.put(URL, json=_body(), headers=_auth(tokens["a_admin"])).status_code == 200
+
+    async def _seed_device() -> None:
+        async with factory() as session:
+            session.add(Device(plant_id=PLANT_A, provider="NEPVIEWER", serial_number="SN-1"))
+            await session.commit()
+
+    asyncio.run(_seed_device())
+    org_id = _empty_org(factory)
+
+    response = client.post(CONNECT, json=_body(login="outro@example.com"), headers=_token(org_id))
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "provider_inverter_in_another_plant"
+    assert asyncio.run(_plants_of(factory, org_id)) == []
+
+
+def test_reconnecting_fills_only_empty_fields(env) -> None:
+    client, factory, tokens, verifier = env
+    verifier.profile = PROFILE
+
+    async def _set_power() -> None:
+        async with factory() as session:
+            plant = await session.get(Plant, PLANT_A)
+            plant.installed_power_kwp = Decimal("7.2")
+            await session.commit()
+
+    asyncio.run(_set_power())
+
+    response = client.put(URL, json=_body(), headers=_auth(tokens["a_admin"]))
+
+    assert response.status_code == 200
+
+    async def _plant() -> Plant:
+        async with factory() as session:
+            return await session.get(Plant, PLANT_A)
+
+    plant = asyncio.run(_plant())
+    assert plant.name == "Casa"  # nome da usina existente não muda
+    assert plant.installed_power_kwp == Decimal("7.200")  # o que o dono informou fica
+    assert plant.latitude == Decimal("-17.744100")
+    assert plant.auto_filled == {
+        "location": "BRAND",
+        "array_tilt_degrees": "ESTIMATE",
+        "array_azimuth_degrees": "ESTIMATE",
+        "module_technology": "ESTIMATE",
+    }
