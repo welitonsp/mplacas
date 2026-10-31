@@ -53,23 +53,42 @@ export function parseProviderAccount(payload: unknown): ProviderAccount {
   }
 }
 
+// Marcas que o cliente pode escolher (ADR-091/092). O rótulo é o nome do app
+// que o dono conhece; o valor é o que o backend espera.
+export type ProviderBrand = 'NEPVIEWER' | 'GROWATT'
+
+export const PROVIDER_BRANDS: ReadonlyArray<{ value: ProviderBrand; label: string; app: string }> = [
+  { value: 'NEPVIEWER', label: 'NEPViewer', app: 'NEPViewer' },
+  { value: 'GROWATT', label: 'Growatt', app: 'ShinePhone (Growatt)' },
+]
+
+export function brandLabel(provider: string | null | undefined): string {
+  return PROVIDER_BRANDS.find((brand) => brand.value === provider)?.label ?? 'fabricante'
+}
+
 // Mensagens por código de erro do backend (`detail`). Nenhuma repete o que o
-// usuário digitou.
+// usuário digitou. `{marca}` vira o nome da marca escolhida.
 const ERROR_MESSAGES: Record<string, string> = {
-  provider_login_failed: 'A NEPViewer recusou o login ou a senha. Confira e tente de novo.',
-  provider_login_invalid: 'Informe o login da conta NEPViewer.',
-  provider_password_invalid: 'Informe a senha da conta NEPViewer.',
-  provider_unavailable: 'A NEPViewer não respondeu agora. Tente de novo em alguns minutos.',
+  provider_login_failed: 'A {marca} recusou o usuário ou a senha. Confira e tente de novo.',
+  provider_login_invalid: 'Informe o usuário do app {marca}.',
+  provider_password_invalid: 'Informe a senha do app {marca}.',
+  provider_unavailable: 'A {marca} não respondeu agora. Tente de novo em alguns minutos.',
+  provider_rate_limited:
+    'A {marca} bloqueou novas tentativas por um tempo. Espere cerca de uma hora e tente de novo.',
+  provider_unsupported: 'Esta marca ainda não é aceita.',
   provider_inverter_in_another_plant:
     'Algum inversor desta conta já está ligado a outra usina. Fale com o suporte.',
-  provider_account_in_use: 'Esta conta da NEPViewer já está conectada a outra usina.',
+  provider_account_in_use: 'Esta conta da {marca} já está conectada a outra usina.',
   provider_verify_rate_limited: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.',
   provider_account_not_found: 'Esta usina já estava sem conta conectada.',
   provider_secret_keys_not_configured:
     'O servidor ainda não está pronto para guardar a senha. Fale com o suporte.',
 }
 
-export async function providerAccountErrorMessage(response: Response): Promise<string> {
+export async function providerAccountErrorMessage(
+  response: Response,
+  provider: string | null = null,
+): Promise<string> {
   if (response.status === 403) return 'Só o administrador da conta pode alterar a conexão.'
   let code: unknown
   try {
@@ -77,7 +96,9 @@ export async function providerAccountErrorMessage(response: Response): Promise<s
   } catch {
     code = undefined
   }
-  if (typeof code === 'string' && code in ERROR_MESSAGES) return ERROR_MESSAGES[code]
+  if (typeof code === 'string' && code in ERROR_MESSAGES) {
+    return ERROR_MESSAGES[code].split('{marca}').join(brandLabel(provider))
+  }
   if (response.status === 404) return 'Usina não encontrada.'
   return 'Não foi possível concluir agora. Tente novamente.'
 }

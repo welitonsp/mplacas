@@ -12,6 +12,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mplacas.collection.db_models import CollectionTaskStatus
 from mplacas.collection.queue import CollectionQueueRepository, CollectionTask
 from mplacas.observability.operations import observe_operation
+from mplacas.providers.base import ProviderAuthError, ProviderRateLimitedError
+
+# Bloqueio por excesso de login ou senha recusada: tentar de novo logo agrava o
+# bloqueio do fabricante (Growatt 507) ou soma logins errados. Espera 1 h.
+SLOW_RETRY_SECONDS = 3600
+
+
+def slow_retry_seconds(exc: Exception | None) -> int:
+    if isinstance(exc, (ProviderRateLimitedError, ProviderAuthError)):
+        return SLOW_RETRY_SECONDS
+    return 0
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +138,7 @@ class CollectionWorker:
                 error_code=error_code,
                 now=now,
                 max_attempts=self._max_attempts,
+                min_delay_seconds=slow_retry_seconds(exc),
             )
             await session.commit()
         logger.warning(

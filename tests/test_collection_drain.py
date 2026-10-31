@@ -109,14 +109,14 @@ async def _connect(factory) -> None:
 def _patch(monkeypatch, factory, provider: SolarProvider) -> None:
     monkeypatch.setattr(drain_module, "SessionFactory", factory)
 
-    def _build(**_kwargs):
+    def _build(_provider, **_kwargs):
         class _NoopClient:
             async def aclose(self) -> None:
                 return None
 
         return _NoopClient(), provider
 
-    monkeypatch.setattr(drain_module, "build_resilient_nepviewer", _build)
+    monkeypatch.setattr(drain_module, "build_resilient_provider", _build)
     monkeypatch.setenv("MPLACAS_PROVIDER_SECRET_KEYS", KEYRING)
     from mplacas.core.config import get_settings
 

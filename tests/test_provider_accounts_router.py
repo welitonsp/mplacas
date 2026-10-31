@@ -403,3 +403,41 @@ def test_status_requires_authentication(env) -> None:
     client, *_ = env
 
     assert client.get(URL).status_code == 401
+
+
+def test_growatt_connection_uses_the_chosen_brand(env) -> None:
+    client, factory, tokens, verifier = env
+    calls: list[str] = []
+
+    async def _verify(provider: str, credentials: ProviderLogin) -> list[str]:
+        calls.append(provider)
+        return ["GW-PLANT-777"]
+
+    import mplacas.providers.router as router_module
+
+    original = router_module.verify_provider_account
+    router_module.verify_provider_account = _verify
+    try:
+        response = client.put(
+            URL, json=_body(provider="GROWATT", login="rogerio"), headers=_auth(tokens["a_admin"])
+        )
+    finally:
+        router_module.verify_provider_account = original
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "GROWATT"
+    assert calls == ["GROWATT"]
+    assert asyncio.run(_records(factory))[0].provider == "GROWATT"
+
+
+def test_brand_rate_limit_asks_to_wait(env) -> None:
+    from mplacas.providers.base import ProviderRateLimitedError
+
+    client, factory, tokens, verifier = env
+    verifier.error = ProviderRateLimitedError("507")
+
+    response = client.put(URL, json=_body(provider="GROWATT"), headers=_auth(tokens["a_admin"]))
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "provider_rate_limited"}
+    assert asyncio.run(_records(factory)) == []

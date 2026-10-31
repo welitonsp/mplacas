@@ -79,7 +79,10 @@ class CollectionQueueRepository:
         plant_id: uuid.UUID,
         task_type: str,
         target_date: str,
+        available_after: timedelta | None = None,
     ) -> EnqueuedCollectionTask:
+        """``available_after`` adia a primeira nova tentativa (ex.: 1 h depois de
+        um bloqueio do fabricante, ADR-092), em vez de liberar na hora."""
         task_type = _required(task_type, "type", 80)
         target_date = _required(target_date, "target date", 10)
         key = deduplication_key(
@@ -101,6 +104,8 @@ class CollectionQueueRepository:
             "status": CollectionTaskStatus.PENDING,
             "attempt_count": 0,
         }
+        if available_after is not None:
+            values["available_at"] = datetime.now(UTC) + available_after
         dialect = self._session.sync_session.get_bind().dialect.name
         if dialect == "postgresql":
             statement = (
@@ -199,6 +204,7 @@ class CollectionQueueRepository:
         error_code: str,
         now: datetime | None = None,
         max_attempts: int = 10,
+        min_delay_seconds: int = 0,
     ) -> CollectionTaskStatus:
         if max_attempts < 1:
             raise ValueError("collection max attempts must be positive")
@@ -211,9 +217,9 @@ class CollectionQueueRepository:
             record.status = CollectionTaskStatus.FAILED
             record.processed_at = current_time
         else:
-            delay_seconds = min(
-                _MAX_BACKOFF_SECONDS,
-                60 * (2 ** (record.attempt_count - 1)),
+            delay_seconds = max(
+                min_delay_seconds,
+                min(_MAX_BACKOFF_SECONDS, 60 * (2 ** (record.attempt_count - 1))),
             )
             record.status = CollectionTaskStatus.PENDING
             record.available_at = current_time + timedelta(seconds=delay_seconds)

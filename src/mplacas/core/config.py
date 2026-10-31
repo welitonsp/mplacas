@@ -36,12 +36,16 @@ class Settings(BaseSettings):
     port: int = Field(default=8080, validation_alias="PORT")
     readiness_timeout_seconds: float = 3.0
     nep_base_url: HttpUrl = HttpUrl("https://api.nepviewer.net/v2")
+    # API clássica da Growatt (a do app ShinePhone), ADR-092.
+    growatt_base_url: HttpUrl = HttpUrl("https://openapi.growatt.com")
     # Chaveiro que cifra as senhas dos fabricantes de inversor guardadas no
     # banco (ADR-091): ``1:<base64 de 32 bytes>,2:<...>``. Lido só por
     # ``core.secret_box``; sem ele, nada é cifrado nem decifrado.
     provider_secret_keys: SecretStr | None = Field(default=None, repr=False)
     climate_archive_base_url: HttpUrl = HttpUrl("https://archive-api.open-meteo.com/v1/archive")
-    external_http_allowed_hosts: str = "api.nepviewer.net,archive-api.open-meteo.com,api.bcb.gov.br"
+    external_http_allowed_hosts: str = (
+        "api.nepviewer.net,openapi.growatt.com,archive-api.open-meteo.com,api.bcb.gov.br"
+    )
     # API pública de séries do Banco Central (CDI/IPCA) — painel do
     # investidor (ADR-079). Conferida contra a lista acima em tempo de
     # execução: se o host não estiver liberado, o painel mostra "indicadores

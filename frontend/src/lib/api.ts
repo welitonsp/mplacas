@@ -378,11 +378,11 @@ export async function fetchProviderAccount(plantId: string): Promise<Response> {
 
 export async function saveProviderAccount(
   plantId: string,
-  payload: { login: string; password: string },
+  payload: { provider: 'NEPVIEWER' | 'GROWATT'; login: string; password: string },
 ): Promise<Response> {
   return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account`, {
     method: 'PUT',
-    body: JSON.stringify({ provider: 'NEPVIEWER', login: payload.login, password: payload.password }),
+    body: JSON.stringify({ provider: payload.provider, login: payload.login, password: payload.password }),
   })
 }
 

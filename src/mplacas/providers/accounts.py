@@ -22,7 +22,8 @@ from mplacas.db.models import Plant
 from mplacas.providers.db_models import ProviderAccountRecord
 
 NEPVIEWER = "NEPVIEWER"
-SUPPORTED_PROVIDERS = frozenset({NEPVIEWER})
+GROWATT = "GROWATT"
+SUPPORTED_PROVIDERS = frozenset({NEPVIEWER, GROWATT})
 _MAX_LOGIN = 254
 _MAX_PASSWORD = 256
 _MAX_FAILURE_CODE = 80

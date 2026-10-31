@@ -285,23 +285,24 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
     await renderPage()
 
     expect(await screen.findByText('Nenhuma conta conectada')).toBeInTheDocument()
-    const password = screen.getByLabelText('Senha da NEPViewer')
+    const password = screen.getByLabelText('Senha do app NEPViewer')
     expect(password).toHaveAttribute('type', 'password')
     expect(password).toHaveAttribute('autocomplete', 'new-password')
     expect(password).toHaveValue('')
-    fireEvent.change(screen.getByLabelText('Login da NEPViewer'), { target: { value: ' cliente@example.com ' } })
+    fireEvent.change(screen.getByLabelText('Usuário do app NEPViewer'), { target: { value: ' cliente@example.com ' } })
     fireEvent.change(password, { target: { value: SECRET } })
     fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
 
     await waitFor(() =>
       expect(saveProviderAccount).toHaveBeenCalledWith(singlePlant.id, {
+        provider: 'NEPVIEWER',
         login: 'cliente@example.com',
         password: SECRET,
       }),
     )
     expect(await screen.findByText('Conta conectada. 2 inversores encontrados.')).toBeInTheDocument()
     expect(await screen.findByText(/NEPViewer, conta cl\*\*\*@example.com/)).toBeInTheDocument()
-    expect(screen.queryByLabelText('Senha da NEPViewer')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Senha do app NEPViewer')).not.toBeInTheDocument()
     expect(document.body.innerHTML).not.toContain(SECRET)
     for (const call of setItem.mock.calls) expect(String(call[1])).not.toContain(SECRET)
     setItem.mockRestore()
@@ -314,11 +315,11 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
 
     await renderPage()
     await screen.findByText('Nenhuma conta conectada')
-    fireEvent.change(screen.getByLabelText('Login da NEPViewer'), { target: { value: 'cliente@example.com' } })
-    fireEvent.change(screen.getByLabelText('Senha da NEPViewer'), { target: { value: SECRET } })
+    fireEvent.change(screen.getByLabelText('Usuário do app NEPViewer'), { target: { value: 'cliente@example.com' } })
+    fireEvent.change(screen.getByLabelText('Senha do app NEPViewer'), { target: { value: SECRET } })
     fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('A NEPViewer recusou o login ou a senha')
+    expect(await screen.findByRole('alert')).toHaveTextContent('A NEPViewer recusou o usuário ou a senha')
     expect(screen.getByRole('alert')).not.toHaveTextContent(SECRET)
   })
 
@@ -331,7 +332,7 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
     await screen.findByText('Nenhuma conta conectada')
     fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Informe o login da conta NEPViewer.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Informe o usuário do app NEPViewer.')
     expect(saveProviderAccount).not.toHaveBeenCalled()
   })
 
@@ -346,8 +347,8 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
 
     await renderPage()
     await screen.findByText('Nenhuma conta conectada')
-    fireEvent.change(screen.getByLabelText('Login da NEPViewer'), { target: { value: 'a@b.c' } })
-    fireEvent.change(screen.getByLabelText('Senha da NEPViewer'), { target: { value: 'x' } })
+    fireEvent.change(screen.getByLabelText('Usuário do app NEPViewer'), { target: { value: 'a@b.c' } })
+    fireEvent.change(screen.getByLabelText('Senha do app NEPViewer'), { target: { value: 'x' } })
     fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
@@ -365,7 +366,7 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
     await renderPage()
 
     expect(await screen.findByText(/Última leitura em/)).toBeInTheDocument()
-    expect(screen.queryByLabelText('Senha da NEPViewer')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Senha do app NEPViewer')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Desconectar' }))
     expect(deleteProviderAccount).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Sim, desconectar' }))
@@ -387,7 +388,7 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
 
     expect(await screen.findByText('Conectada, mas a última leitura falhou')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Trocar senha ou conta' }))
-    expect(screen.getByLabelText('Senha da NEPViewer')).toHaveValue('')
+    expect(screen.getByLabelText('Senha do app NEPViewer')).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Conferir e trocar' })).toBeInTheDocument()
   })
 
@@ -397,7 +398,7 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
 
     await renderPage()
     await screen.findByText('Nenhuma conta conectada')
-    const password = screen.getByLabelText('Senha da NEPViewer')
+    const password = screen.getByLabelText('Senha do app NEPViewer')
     fireEvent.click(screen.getByRole('button', { name: 'Mostrar senha' }))
     expect(password).toHaveAttribute('type', 'text')
     fireEvent.click(screen.getByRole('button', { name: 'Ocultar senha' }))
@@ -410,14 +411,14 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
 
     await renderPage()
     fireEvent.click(await screen.findByRole('button', { name: 'Trocar senha ou conta' }))
-    expect(screen.getByLabelText('Login da NEPViewer')).toHaveFocus()
-    fireEvent.change(screen.getByLabelText('Senha da NEPViewer'), { target: { value: SECRET } })
+    expect(screen.getByLabelText('Usuário do app NEPViewer')).toHaveFocus()
+    fireEvent.change(screen.getByLabelText('Senha do app NEPViewer'), { target: { value: SECRET } })
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar troca' }))
 
-    expect(screen.queryByLabelText('Senha da NEPViewer')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Senha do app NEPViewer')).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('Conectada').closest('[tabindex="-1"]')).toHaveFocus())
     fireEvent.click(screen.getByRole('button', { name: 'Trocar senha ou conta' }))
-    expect(screen.getByLabelText('Senha da NEPViewer')).toHaveValue('')
+    expect(screen.getByLabelText('Senha do app NEPViewer')).toHaveValue('')
   })
 
   it('desconectar leva o foco à confirmação; falha mantém a confirmação aberta', async () => {
@@ -483,12 +484,76 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
 
     await renderPage()
     await screen.findByText('Nenhuma conta conectada')
-    fireEvent.change(screen.getByLabelText('Login da NEPViewer'), { target: { value: 'a@b.c' } })
-    fireEvent.change(screen.getByLabelText('Senha da NEPViewer'), { target: { value: SECRET } })
+    fireEvent.change(screen.getByLabelText('Usuário do app NEPViewer'), { target: { value: 'a@b.c' } })
+    fireEvent.change(screen.getByLabelText('Senha do app NEPViewer'), { target: { value: SECRET } })
     fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
 
     expect(await screen.findByText('Erro ao buscar a conexão com o inversor.')).toBeInTheDocument()
     expect(screen.getByText('Conta conectada. 1 inversor encontrado.')).toBeInTheDocument()
+  })
+
+  it('escolhe a Growatt e conecta com usuário e senha do app, sem token', async () => {
+    vi.resetModules()
+    const fetchProviderAccount = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(NO_CONNECTION))
+      .mockResolvedValue(jsonResponse({ ...CONNECTED, provider: 'GROWATT', login_hint: 'ro***io' }))
+    const saveProviderAccount = vi.fn(async () =>
+      jsonResponse({ ...CONNECTED, provider: 'GROWATT', login_hint: 'ro***io', devices_found: 1 }),
+    )
+    installApiMock({ fetchProviderAccount, saveProviderAccount })
+
+    await renderPage()
+    await screen.findByText('Nenhuma conta conectada')
+    const group = screen.getByRole('group', { name: 'Marca do inversor' })
+    expect(within(group).getByRole('radio', { name: 'NEPViewer' })).toBeChecked()
+    fireEvent.click(within(group).getByRole('radio', { name: 'Growatt' }))
+    expect(screen.getByLabelText('Usuário do app Growatt')).toHaveAttribute(
+      'placeholder',
+      'O mesmo do app ShinePhone (Growatt)',
+    )
+    fireEvent.change(screen.getByLabelText('Usuário do app Growatt'), { target: { value: 'rogerio' } })
+    fireEvent.change(screen.getByLabelText('Senha do app Growatt'), { target: { value: SECRET } })
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
+
+    await waitFor(() =>
+      expect(saveProviderAccount).toHaveBeenCalledWith(singlePlant.id, {
+        provider: 'GROWATT',
+        login: 'rogerio',
+        password: SECRET,
+      }),
+    )
+    expect(await screen.findByText('Conta conectada. 1 usina encontrada na Growatt.')).toBeInTheDocument()
+    expect(await screen.findByText(/Growatt, conta ro\*\*\*io/)).toBeInTheDocument()
+  })
+
+  it('bloqueio da Growatt pede para esperar, com o nome da marca', async () => {
+    vi.resetModules()
+    installApiMock({
+      saveProviderAccount: vi.fn(async () => jsonResponse({ detail: 'provider_rate_limited' }, 503)),
+    })
+
+    await renderPage()
+    await screen.findByText('Nenhuma conta conectada')
+    fireEvent.click(screen.getByRole('radio', { name: 'Growatt' }))
+    fireEvent.change(screen.getByLabelText('Usuário do app Growatt'), { target: { value: 'rogerio' } })
+    fireEvent.change(screen.getByLabelText('Senha do app Growatt'), { target: { value: 'x' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('A Growatt bloqueou novas tentativas por um tempo.')
+  })
+
+  it('ao trocar uma conexão Growatt, a marca já vem marcada', async () => {
+    vi.resetModules()
+    installApiMock({
+      fetchProviderAccount: vi.fn(async () => jsonResponse({ ...CONNECTED, provider: 'GROWATT' })),
+    })
+
+    await renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Trocar senha ou conta' }))
+
+    expect(screen.getByRole('radio', { name: 'Growatt' })).toBeChecked()
+    expect(screen.getByLabelText('Senha do app Growatt')).toHaveValue('')
   })
 })
 

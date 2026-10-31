@@ -30,9 +30,21 @@ class CollectionResult:
 class SolarCollectionService:
     """Sincroniza dispositivos e produção diária de forma idempotente e transacional."""
 
-    def __init__(self, session: AsyncSession, provider: SolarProvider) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        provider: SolarProvider,
+        *,
+        provider_name: str,
+        energy_source: str,
+    ) -> None:
+        """``provider_name`` vai para ``devices.provider`` e ``energy_source`` para
+        ``daily_energy.source`` (ADR-092): o mesmo número de série em marcas
+        diferentes não se confunde."""
         self._session = session
         self._provider = provider
+        self._provider_name = provider_name
+        self._energy_source = energy_source
         self._energy = DailyEnergyRepository(session)
 
     async def collect(
@@ -105,6 +117,7 @@ class SolarCollectionService:
                     production_date=row.production_date,
                     energy_kwh=Decimal(row.energy_kwh),
                     status=status,
+                    source=self._energy_source,
                 )
                 changed += int(was_changed)
 
@@ -119,7 +132,7 @@ class SolarCollectionService:
     ) -> Device:
         result = await self._session.execute(
             select(Device).where(
-                Device.provider == "NEPVIEWER",
+                Device.provider == self._provider_name,
                 Device.serial_number == serial_number,
             )
         )
@@ -127,7 +140,7 @@ class SolarCollectionService:
         if device is None:
             device = Device(
                 plant_id=plant.id,
-                provider="NEPVIEWER",
+                provider=self._provider_name,
                 serial_number=serial_number,
                 model_name=model_name,
             )

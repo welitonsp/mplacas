@@ -64,7 +64,9 @@ async def test_collection_is_transactional_and_idempotent() -> None:
         await session.flush()
         session.add(plant)
         await session.commit()
-        service = SolarCollectionService(session, FakeProvider())
+        service = SolarCollectionService(
+            session, FakeProvider(), provider_name="NEPVIEWER", energy_source="NEPVIEWER_V2"
+        )
         first = await service.collect(
             plant_id=plant.id,
             start=date(2026, 7, 11),

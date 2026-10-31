@@ -10,13 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mplacas.collection.job import COLLECTION_TASK_TYPE
 from mplacas.collection.queue import CollectionTask
 from mplacas.collection.worker import CollectionWorker, WorkerResult
-from mplacas.core.config import get_settings
 from mplacas.core.secret_box import SecretBox, secret_box_from_settings
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context
 from mplacas.providers.accounts import ProviderAccountService
 from mplacas.providers.db_models import ProviderAccountRecord
-from mplacas.providers.nepviewer.factory import build_resilient_nepviewer
+from mplacas.providers.factory import ENERGY_SOURCES, build_resilient_provider
 from mplacas.services.collection import SolarCollectionService
 
 logger = logging.getLogger(__name__)
@@ -33,9 +32,6 @@ def build_collection_handler():
     A credencial vem só da conexão da usina da tarefa (ADR-091). Usina sem
     conexão falha e o worker reagenda.
     """
-    settings = get_settings()
-    base_url = str(settings.nep_base_url)
-    timeout = settings.request_timeout_seconds
     box_holder: list[SecretBox] = []
 
     def _box() -> SecretBox:
@@ -57,14 +53,16 @@ def build_collection_handler():
         if record is None:
             raise RuntimeError("plant has no provider account for collection")
         credentials = ProviderAccountService(session, _box()).open(record)
-        client, provider = build_resilient_nepviewer(
-            account=credentials.login,
-            password=credentials.password,
-            base_url=base_url,
-            timeout_seconds=timeout,
+        client, solar_provider = build_resilient_provider(
+            record.provider, account=credentials.login, password=credentials.password
         )
         try:
-            service = SolarCollectionService(session, provider)
+            service = SolarCollectionService(
+                session,
+                solar_provider,
+                provider_name=record.provider,
+                energy_source=ENERGY_SOURCES[record.provider],
+            )
             await service.collect_in_session(
                 plant_id=task.plant_id,
                 start=target,

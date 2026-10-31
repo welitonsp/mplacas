@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseProviderAccount, providerAccountErrorMessage } from './provider-account-contracts'
+import { brandLabel, parseProviderAccount, providerAccountErrorMessage } from './provider-account-contracts'
 
 const BASE = {
   status: 'CONECTADA',
@@ -45,5 +45,16 @@ describe('providerAccountErrorMessage', () => {
         new Response(JSON.stringify({ detail: [{ input: 'segredo' }] }), { status: 422 }),
       ),
     ).not.toContain('segredo')
+  })
+})
+
+describe('mensagens por marca', () => {
+  it('usa o nome da marca escolhida', async () => {
+    const response = () => new Response(JSON.stringify({ detail: 'provider_login_failed' }), { status: 422 })
+    expect(await providerAccountErrorMessage(response(), 'GROWATT')).toBe(
+      'A Growatt recusou o usuário ou a senha. Confira e tente de novo.',
+    )
+    expect(await providerAccountErrorMessage(response(), 'NEPVIEWER')).toContain('A NEPViewer recusou')
+    expect(brandLabel('OUTRA')).toBe('fabricante')
   })
 })
