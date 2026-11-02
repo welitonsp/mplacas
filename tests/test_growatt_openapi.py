@@ -322,3 +322,25 @@ async def test_probe_maps_which_reads_the_token_reaches_without_content(caplog) 
     errors = [r for r in caplog.records if r.message == "growatt_openapi_error"]
     assert errors and errors[0].error_code == 10011
     assert TOKEN not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_probe_reuses_the_plant_list_already_read() -> None:
+    """A Growatt devolve 10012 para ``plant/list`` repetida em pouco tempo."""
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url.path)
+        if request.url.path == "/v1/plant/list":
+            if asked.count("/v1/plant/list") > 1:
+                return _envelope(10012, "error_frequently_access")
+            return _ok({"count": 1, "plants": [{"plant_id": 7}]})
+        return _envelope(10011, "error_permission_denied")
+
+    client = _client(handler)
+    await client.list_devices()
+    result = await client.probe()
+    await client.aclose()
+    assert asked.count("/v1/plant/list") == 1
+    assert result["plant/list"] == "ok:1"
+    assert result["plant/energy"] == "ProviderAuthError"

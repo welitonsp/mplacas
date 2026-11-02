@@ -948,25 +948,20 @@ async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> Pro
     return result
 
 
-async def _log_token_probe(login: str, token: str, plant_id: uuid.UUID) -> None:
+async def _log_token_probe(client: object, plant_id: uuid.UUID) -> None:
     """Registra quais leituras o token Growatt alcança, sem conteúdo (ADR-094).
 
-    O token lista as usinas mas a produção vem com 10011; este mapa mostra por
-    onde é possível ler. Nunca falha a requisição original.
+    Usa o MESMO cliente da importação, que já leu a lista de usinas: a Growatt
+    recusa ``plant/list`` repetida em pouco tempo (10012). Nunca falha a
+    requisição original.
     """
-    probe_client = build_client(GROWATT_TOKEN, account=login, password=token)
+    if not isinstance(client, GrowattOpenApiClient):
+        return
     try:
-        if not isinstance(probe_client, GrowattOpenApiClient):
-            return
         # teto total: o diagnóstico não pode segurar a resposta ao cliente
-        result = await asyncio.wait_for(probe_client.probe(), timeout=15)
+        result = await asyncio.wait_for(client.probe(), timeout=15)
     except Exception as exc:  # diagnóstico nunca derruba a resposta
         result = {"probe": type(exc).__name__}
-    finally:
-        try:
-            await probe_client.aclose()
-        except Exception:  # noqa: BLE001 - idem
-            pass
     logger.info("growatt_token_probe", extra={"plant_id": str(plant_id), "probe": result})
 
 
@@ -1063,7 +1058,7 @@ async def import_production_history(
         reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
         await refuse(reason)
         if provider == GROWATT_TOKEN:
-            await _log_token_probe(credentials.login, credentials.password, scoped.plant_id)
+            await _log_token_probe(client, scoped.plant_id)
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
     except ProviderError:
         await refuse("provider_unavailable")

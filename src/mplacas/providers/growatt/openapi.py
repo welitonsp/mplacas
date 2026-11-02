@@ -74,6 +74,7 @@ class GrowattOpenApiClient(SolarProvider):
             transport=transport,
             follow_redirects=False,
         )
+        self._plants_cache: list[dict[str, Any]] | None = None
 
     def __repr__(self) -> str:
         return "GrowattOpenApiClient(token=<hidden>)"
@@ -130,6 +131,11 @@ class GrowattOpenApiClient(SolarProvider):
         return body.get("data")
 
     async def _plants(self) -> list[dict[str, Any]]:
+        # A Growatt só aceita ``plant/list`` de tempos em tempos (10012,
+        # "error_frequently_access", visto em 02/11/2026): reaproveita a lista
+        # já lida por este cliente.
+        if self._plants_cache is not None:
+            return self._plants_cache
         plants: list[dict[str, Any]] = []
         for page in range(1, _MAX_PAGES + 1):
             data = await self._get(
@@ -145,6 +151,7 @@ class GrowattOpenApiClient(SolarProvider):
                 plants.append(row)
             total = _code(data.get("count"))
             if not rows or total is None or len(plants) >= total:
+                self._plants_cache = plants
                 return plants
         # Nunca truncar em silêncio: faltariam usinas (e produção) na conta.
         raise ProviderSchemaError("Conta Growatt com usinas demais para listar")
