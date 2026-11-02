@@ -411,6 +411,23 @@ export async function connectFirstPlant(payload: {
   })
 }
 
+// Assistente de primeiro acesso (ADR-096): a prévia lê a usina na marca sem
+// salvar e devolve um bilhete cifrado; a confirmação salva com esse bilhete.
+export async function previewFirstPlant(payload: {
+  provider: 'NEPVIEWER' | 'GROWATT' | 'GROWATT_TOKEN'
+  login: string
+  password: string
+}): Promise<Response> {
+  return apiFetch('/plants/connect/preview', {
+    method: 'POST',
+    body: JSON.stringify({ provider: payload.provider, login: payload.login, password: payload.password }),
+  })
+}
+
+export async function confirmFirstPlant(ticket: string, plant: Record<string, string | null>): Promise<Response> {
+  return apiFetch('/plants/connect/confirm', { method: 'POST', body: JSON.stringify({ ticket, plant }) })
+}
+
 // Quem está logado (ADR-093): papel, organização e se é o dono da plataforma.
 export async function fetchMe(): Promise<Response> {
   return apiFetch('/auth/me')

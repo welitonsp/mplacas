@@ -123,6 +123,60 @@ export function parseFirstConnection(payload: unknown): FirstConnection {
   }
 }
 
+// --- POST /plants/connect/preview (ADR-096) ----------------------------------
+
+export interface PlantDraft {
+  name: string
+  installedPowerKwp: string | null
+  latitude: string | null
+  longitude: string | null
+  city: string | null
+  arrayTiltDegrees: string | null
+  arrayAzimuthDegrees: string | null
+  moduleTechnology: string | null
+}
+
+export interface ConnectPreview {
+  provider: string
+  devicesFound: number
+  plant: PlantDraft
+  origins: Record<string, AutoFillOrigin>
+  // Bilhete cifrado (só o servidor abre). Fica só na memória do assistente.
+  ticket: string
+  expiresAt: string
+}
+
+export function parseConnectPreview(payload: unknown): ConnectPreview {
+  if (!isRecord(payload)) fail('preview')
+  const plant = payload.plant
+  const origins = payload.origins
+  if (!isRecord(plant) || !isRecord(origins)) fail('preview')
+  const devices = payload.devices_found
+  if (typeof devices !== 'number' || !Number.isInteger(devices) || devices < 0) fail('devices_found')
+  const parsedOrigins: Record<string, AutoFillOrigin> = {}
+  for (const [field, origin] of Object.entries(origins)) {
+    if (origin !== 'BRAND' && origin !== 'ESTIMATE') fail('origins')
+    parsedOrigins[field] = origin
+  }
+  return {
+    provider: requireString(payload, 'provider'),
+    devicesFound: devices,
+    plant: {
+      name: requireString(plant, 'name'),
+      installedPowerKwp: nullableString(plant, 'installed_power_kwp'),
+      latitude: nullableString(plant, 'latitude'),
+      longitude: nullableString(plant, 'longitude'),
+      city: nullableString(plant, 'city'),
+      arrayTiltDegrees: nullableString(plant, 'array_tilt_degrees'),
+      arrayAzimuthDegrees: nullableString(plant, 'array_azimuth_degrees'),
+      moduleTechnology: nullableString(plant, 'module_technology'),
+    },
+    origins: parsedOrigins,
+    ticket: requireString(payload, 'ticket'),
+    expiresAt: requireString(payload, 'expires_at'),
+  }
+}
+
 // Rótulo de cada campo preenchido sozinho, na língua do dono da usina.
 export const AUTO_FILL_LABELS: Record<string, string> = {
   name: 'Nome da usina',

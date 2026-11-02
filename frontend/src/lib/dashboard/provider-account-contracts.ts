@@ -113,6 +113,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   provider_account_not_found: 'Esta usina já estava sem conta conectada.',
   provider_account_unreadable:
     'Não foi possível ler a conexão guardada. Conecte de novo com “Trocar senha ou conta”.',
+  connect_ticket_invalid: 'A leitura da usina expirou. Conecte de novo para ler os dados atualizados.',
   plant_already_exists: 'Esta conta já tem uma usina. Abrindo...',
   provider_secret_keys_not_configured:
     'O servidor ainda não está pronto para guardar a senha. Fale com o suporte.',

@@ -17,6 +17,7 @@ Nenhuma resposta, log ou evento de auditoria contém login ou senha.
 
 from __future__ import annotations
 
+import enum
 import json
 import re
 import secrets
@@ -25,10 +26,11 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, select
 
 from mplacas.audit.db_models import AuditEventRecord
@@ -52,6 +54,8 @@ from mplacas.providers.accounts import (
 )
 from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.plants.autofill import fill_plant_from_profile, locate_profile
+from mplacas.plants.schemas import ModuleTechnology
+from mplacas.providers.connect_ticket import ConnectTicketError, issue_ticket, open_ticket
 from mplacas.providers.base import (
     PlantProfile,
     ProviderAuthError,
@@ -84,6 +88,7 @@ VERIFY_LIMIT = 5
 VERIFY_WINDOW = timedelta(minutes=10)
 _VERIFY_ACTIONS = (
     "provider_account.saved",
+    "plant.connect_previewed",
     "provider_account.verify_failed",
     "plant.created_from_connection",
 )
@@ -407,6 +412,315 @@ async def connect_first_plant(
     logger.info(
         "plant_created_from_connection",
         extra={"plant_id": str(result.plant_id), "auto_filled": sorted(result.auto_filled)},
+    )
+    return result
+
+
+# --- Assistente de primeiro acesso (ADR-096): prévia → revisar → salvar ----
+
+_DRAFT_FIELDS = (
+    "name",
+    "installed_power_kwp",
+    "latitude",
+    "longitude",
+    "array_tilt_degrees",
+    "array_azimuth_degrees",
+    "module_technology",
+)
+# Campo do rascunho → chave de ``plants.auto_filled`` (``plants.autofill``).
+_ORIGIN_KEYS = {
+    "name": "name",
+    "installed_power_kwp": "dc_capacity_kwp",
+    "latitude": "location",
+    "longitude": "location",
+    "array_tilt_degrees": "array_tilt_degrees",
+    "array_azimuth_degrees": "array_azimuth_degrees",
+    "module_technology": "module_technology",
+}
+
+
+class PlantDraft(BaseModel):
+    """A usina montada na prévia, ainda não salva. Valores como texto."""
+
+    name: str
+    installed_power_kwp: str | None
+    latitude: str | None
+    longitude: str | None
+    city: str | None
+    array_tilt_degrees: str | None
+    array_azimuth_degrees: str | None
+    module_technology: str | None
+
+
+class ConnectPreview(BaseModel):
+    provider: str
+    devices_found: int
+    plant: PlantDraft
+    # campo → "BRAND" (veio da marca) | "ESTIMATE" (estimado)
+    origins: dict[str, str]
+    ticket: str
+    expires_at: datetime
+
+
+class PlantConfirmation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("name must not be blank")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def _location_pair(self) -> PlantConfirmation:
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("latitude and longitude go together")
+        return self
+    installed_power_kwp: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=3)
+    latitude: Decimal | None = Field(default=None, ge=-90, le=90, max_digits=9, decimal_places=6)
+    longitude: Decimal | None = Field(
+        default=None, ge=-180, le=180, max_digits=9, decimal_places=6
+    )
+    array_tilt_degrees: Decimal | None = Field(
+        default=None, ge=0, le=90, max_digits=5, decimal_places=2
+    )
+    array_azimuth_degrees: Decimal | None = Field(
+        default=None, ge=0, lt=360, max_digits=5, decimal_places=2
+    )
+    module_technology: ModuleTechnology | None = None
+
+
+class ConnectConfirmation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Sem limites aqui de propósito: erro de validação do pydantic repete o
+    # valor recebido; tamanho e formato do bilhete são conferidos em open_ticket.
+    ticket: str
+    plant: PlantConfirmation
+
+
+def _text(value: object, places: str | None = None) -> str | None:
+    """Rascunho como texto, já no formato que a confirmação aceita (casas)."""
+    if value is None:
+        return None
+    if places is not None and isinstance(value, Decimal):
+        return str(value.quantize(Decimal(places)))
+    return str(value)
+
+
+@router.post("/connect/preview", response_model=ConnectPreview)
+async def preview_first_plant(
+    request: Request, response: Response, principal: AdminPrincipal
+) -> ConnectPreview:
+    """Passo 2 do assistente: confere a conta, lê a usina na marca e monta o
+    rascunho — sem salvar nada. Devolve o bilhete cifrado para o passo 3."""
+    response.headers["Cache-Control"] = "no-store"
+    organization_id = principal.organization_id
+    if organization_id is None:
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "organization_required")
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > _MAX_BODY_BYTES:
+        raise _error(status.HTTP_413_CONTENT_TOO_LARGE, "provider_account_body_too_large")
+    provider, credentials = _parse_body(await request.body())
+    box = _box()
+    if await _organization_has_plant(principal):
+        raise _error(status.HTTP_409_CONFLICT, "plant_already_exists")
+    await _enforce_verify_limit(organization_id, resource_type="organization")
+
+    async def refuse(reason: str) -> None:
+        await _audit_refusal(request, principal, "organization", organization_id, provider, reason)
+
+    inspection = await _inspect(provider, credentials, refuse)
+    if provider == GROWATT_TOKEN:
+        credentials = _token_login(credentials)
+    if await _inverter_in_another_plant(provider, inspection.serials, None):
+        await refuse("provider_inverter_in_another_plant")
+        raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant")
+    profile = await locate_profile(inspection.profile)
+
+    # Rascunho numa usina que nunca vai para o banco (só para aplicar as regras).
+    draft_plant = Plant(organization_id=organization_id, name=DEFAULT_PLANT_NAME)
+    filled = fill_plant_from_profile(draft_plant, profile, set_name=True)
+    draft = PlantDraft(
+        name=(draft_plant.name or DEFAULT_PLANT_NAME)[:120],
+        installed_power_kwp=_text(draft_plant.installed_power_kwp, "0.001"),
+        latitude=_text(draft_plant.latitude, "0.000001"),
+        longitude=_text(draft_plant.longitude, "0.000001"),
+        city=profile.city if profile else None,
+        array_tilt_degrees=_text(draft_plant.array_tilt_degrees, "0.01"),
+        array_azimuth_degrees=_text(draft_plant.array_azimuth_degrees, "0.01"),
+        module_technology=draft_plant.module_technology,
+    )
+    values = {field: getattr(draft, field) for field in _DRAFT_FIELDS}
+    try:
+        ticket, expires_at = issue_ticket(
+            box,
+            organization_id=organization_id,
+            holder=principal.credential_id,
+            provider=provider,
+        credentials=credentials,
+            serials=inspection.serials,
+            draft=values,
+            origins=filled,
+        )
+    except ConnectTicketError:
+        # Conta com aparelhos demais para caber no bilhete: falha clara na prévia.
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_account_too_large") from None
+    async with SessionFactory() as session:
+        await set_principal_context(session, principal)
+        await AuditEventRepository(session).record(
+            request,
+            action="plant.connect_previewed",
+            resource_type="organization",
+            resource_id=str(organization_id),
+            outcome="SUCCEEDED",
+            details={"provider": provider, "devices_found": len(inspection.serials)},
+        )
+        await session.commit()
+    return ConnectPreview(
+        provider=provider,
+        devices_found=len(inspection.serials),
+        plant=draft,
+        origins=filled,
+        ticket=ticket,
+        expires_at=expires_at,
+    )
+
+
+def _same(value: object, drafted: str | None) -> bool:
+    if value is None or drafted is None:
+        return value is None and drafted is None
+    if isinstance(value, Decimal):
+        try:
+            return value == Decimal(drafted)
+        except ArithmeticError:
+            return False
+    if isinstance(value, enum.Enum):
+        return str(value.value) == drafted
+    return str(value) == drafted
+
+
+@router.post(
+    "/connect/confirm",
+    response_model=FirstConnectionResult,
+    status_code=status.HTTP_201_CREATED,
+)
+async def confirm_first_plant(
+    request: Request, payload: ConnectConfirmation, principal: AdminPrincipal
+) -> FirstConnectionResult:
+    """Passo 3 do assistente: "Salvar usina" com o que o cliente revisou.
+
+    Abre o bilhete (sem consultar a marca de novo), cria a usina com os valores
+    confirmados e guarda a conexão. Campo que o cliente mudou deixa de ser
+    "automático"; o que ele manteve guarda a origem (marca ou estimativa).
+    """
+    organization_id = principal.organization_id
+    if organization_id is None:
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "organization_required")
+    box = _box()
+
+    async def refuse(provider: str, reason: str) -> None:
+        await _audit_refusal(request, principal, "organization", organization_id, provider, reason)
+
+    try:
+        ticket = open_ticket(
+            box, payload.ticket, organization_id=organization_id, holder=principal.credential_id
+        )
+    except ConnectTicketError:
+        # Vencido, adulterado ou de outra pessoa: fica na auditoria (sem o bilhete).
+        await refuse("unknown", "connect_ticket_invalid")
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "connect_ticket_invalid") from None
+    if await _inverter_in_another_plant(ticket.provider, ticket.serials, None):
+        await refuse(ticket.provider, "provider_inverter_in_another_plant")
+        raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant")
+    confirmed = payload.plant
+    origins: dict[str, str] = {}
+    for field_name in _DRAFT_FIELDS:
+        key = _ORIGIN_KEYS[field_name]
+        origin = ticket.origins.get(key)
+        if origin and _same(getattr(confirmed, field_name), ticket.draft.get(field_name)):
+            origins.setdefault(key, origin)
+        elif origin:
+            origins[key] = ""  # mudado pelo cliente: o valor é dele
+    auto_filled = {key: origin for key, origin in origins.items() if origin}
+
+    async with SessionFactory() as session:
+        await set_principal_context(session, principal)
+        organization = await session.get(
+            OrganizationRecord, organization_id, with_for_update=True
+        )
+        if organization is None:
+            raise _error(status.HTTP_404_NOT_FOUND, "organization_not_found")
+        if await session.scalar(
+            select(Plant.id).where(Plant.organization_id == organization_id).limit(1)
+        ):
+            raise _error(status.HTTP_409_CONFLICT, "plant_already_exists")
+        plant = Plant(
+            organization_id=organization_id,
+            name=confirmed.name,
+            installed_power_kwp=confirmed.installed_power_kwp,
+            latitude=confirmed.latitude,
+            longitude=confirmed.longitude,
+            array_tilt_degrees=confirmed.array_tilt_degrees,
+            array_azimuth_degrees=confirmed.array_azimuth_degrees,
+            module_technology=(
+                confirmed.module_technology.value if confirmed.module_technology else None
+            ),
+            auto_filled=auto_filled or None,
+        )
+        session.add(plant)
+        await session.flush()
+        if organization.default_plant_id is None:
+            organization.default_plant_id = plant.id
+        service = ProviderAccountService(session, box)
+        try:
+            record = await service.save(
+                plant_id=plant.id, provider=ticket.provider, credentials=ticket.credentials
+            )
+        except ProviderAccountConflictError:
+            await session.rollback()
+            await refuse(ticket.provider, "provider_account_in_use")
+            raise _error(status.HTTP_409_CONFLICT, "provider_account_in_use") from None
+        except ProviderAccountError:
+            raise _error(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_account_invalid"
+            ) from None
+        await service.record_success(record)
+        audit = AuditEventRepository(session)
+        await audit.record(
+            request,
+            action="plant.created_from_connection",
+            resource_type="organization",
+            resource_id=str(organization_id),
+            outcome="SUCCEEDED",
+            details={
+                "plant_id": str(plant.id),
+                "provider": ticket.provider,
+                "auto_filled": sorted(auto_filled),
+                "edited_by_owner": sorted(key for key, origin in origins.items() if not origin),
+            },
+        )
+        await audit.record(
+            request,
+            action="provider_account.saved",
+            resource_type="plant",
+            resource_id=str(plant.id),
+            outcome="SUCCEEDED",
+            details={"provider": ticket.provider, "devices_found": len(ticket.serials)},
+        )
+        result = FirstConnectionResult(
+            plant_id=plant.id,
+            plant_name=plant.name,
+            connection=_view(record, devices_found=len(ticket.serials)),
+            auto_filled=auto_filled,
+        )
+        await session.commit()
+    logger.info(
+        "plant_created_from_connection",
+        extra={"plant_id": str(result.plant_id), "auto_filled": sorted(auto_filled)},
     )
     return result
 

@@ -822,3 +822,191 @@ def test_refresh_profile_has_its_own_limit_and_never_blocks_saving(env, monkeypa
     assert client.post(path, headers=_auth(tokens["a_admin"])).status_code == 429
     # trocar a senha continua possível
     assert client.put(URL, json=_body(), headers=_auth(tokens["a_admin"])).status_code == 200
+
+
+# --- ADR-096: assistente de primeiro acesso (prévia → confirmar) --------------
+
+PREVIEW = "/plants/connect/preview"
+CONFIRM = "/plants/connect/confirm"
+
+
+_HEADERS: dict[uuid.UUID, dict[str, str]] = {}
+
+
+def _same_admin(org_id):
+    """O mesmo ADMIN na prévia e na confirmação (o bilhete é dele)."""
+    return _HEADERS.setdefault(org_id, _token(org_id))
+
+
+def _preview(client, org_id, **body):
+    return client.post(PREVIEW, json=_body(**body), headers=_same_admin(org_id))
+
+
+def test_preview_builds_the_plant_and_saves_nothing(env) -> None:
+    client, factory, _tokens, verifier = env
+    verifier.serials = ["GW-PLANT-777"]
+    verifier.profile = PROFILE
+    org_id = _empty_org(factory)
+
+    response = _preview(client, org_id, provider="GROWATT", login="rogerio")
+
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    assert body["plant"]["name"] == "Usina do Rogério"
+    assert body["plant"]["installed_power_kwp"] == "5.400"
+    assert body["plant"]["city"] == "Caldas Novas"
+    assert body["origins"]["dc_capacity_kwp"] == "BRAND"
+    assert body["origins"]["array_tilt_degrees"] == "ESTIMATE"
+    assert body["ticket"].startswith("v1.")
+    assert PASSWORD not in response.text and "rogerio" not in body["ticket"]
+    assert asyncio.run(_plants_of(factory, org_id)) == []
+    assert [r for r in asyncio.run(_records(factory)) if r.plant_id != PLANT_A] == []
+
+
+def test_confirm_saves_reviewed_plant_and_keeps_origin_only_if_unchanged(env) -> None:
+    client, factory, _tokens, verifier = env
+    verifier.serials = ["GW-PLANT-777"]
+    verifier.profile = PROFILE
+    org_id = _empty_org(factory)
+    preview = _preview(client, org_id, provider="GROWATT", login="rogerio").json()
+    calls_after_preview = len(verifier.calls)
+    plant = {**preview["plant"]}
+    plant.pop("city")
+    plant["name"] = "Sítio do Rogério"  # cliente corrigiu o nome
+    plant["array_tilt_degrees"] = "12"  # e a inclinação
+
+    response = client.post(
+        CONFIRM, json={"ticket": preview["ticket"], "plant": plant}, headers=_same_admin(org_id)
+    )
+
+    assert response.status_code == 201, response.text
+    assert len(verifier.calls) == calls_after_preview  # a marca não é consultada de novo
+    created = asyncio.run(_plants_of(factory, org_id))[0]
+    assert created.name == "Sítio do Rogério"
+    assert created.installed_power_kwp == Decimal("5.400")
+    assert created.array_tilt_degrees == Decimal("12.00")
+    assert created.auto_filled == {
+        "dc_capacity_kwp": "BRAND",
+        "location": "BRAND",
+        "array_azimuth_degrees": "ESTIMATE",
+        "module_technology": "ESTIMATE",
+    }
+    assert asyncio.run(_org(factory, org_id)).default_plant_id == created.id
+    record = [r for r in asyncio.run(_records(factory)) if r.plant_id == created.id][0]
+    assert record.provider == "GROWATT" and record.active
+
+
+def test_confirm_refuses_tampered_or_foreign_ticket(env) -> None:
+    client, factory, _tokens, verifier = env
+    org_a = _empty_org(factory)
+    org_b = _empty_org(factory)
+    preview = _preview(client, org_a).json()
+    plant = {k: v for k, v in preview["plant"].items() if k != "city"}
+
+    foreign = client.post(
+        CONFIRM, json={"ticket": preview["ticket"], "plant": plant}, headers=_same_admin(org_b)
+    )
+    tampered = client.post(
+        CONFIRM,
+        json={"ticket": preview["ticket"][:-4] + "AAAA", "plant": plant},
+        headers=_same_admin(org_a),
+    )
+    assert foreign.status_code == 422 and foreign.json()["detail"] == "connect_ticket_invalid"
+    assert tampered.status_code == 422
+    assert asyncio.run(_plants_of(factory, org_b)) == []
+
+
+def test_confirm_twice_creates_one_plant(env) -> None:
+    client, factory, _tokens, verifier = env
+    org_id = _empty_org(factory)
+    preview = _preview(client, org_id).json()
+    plant = {k: v for k, v in preview["plant"].items() if k != "city"}
+    body = {"ticket": preview["ticket"], "plant": plant}
+    assert client.post(CONFIRM, json=body, headers=_same_admin(org_id)).status_code == 201
+    assert client.post(CONFIRM, json=body, headers=_same_admin(org_id)).status_code == 409
+    assert len(asyncio.run(_plants_of(factory, org_id))) == 1
+
+
+def test_expired_ticket_is_refused() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from mplacas.core.secret_box import SecretBox
+    from mplacas.providers.connect_ticket import ConnectTicketError, issue_ticket, open_ticket
+
+    box = SecretBox.from_keyring(f"1:{KEY}")
+    org = uuid.uuid4()
+    past = datetime.now(UTC) - timedelta(hours=1)
+    ticket, _ = issue_ticket(
+        box,
+        organization_id=org,
+        holder="user:x",
+        provider="NEPVIEWER",
+        credentials=ProviderLogin(login="a", password="b"),
+        serials=[],
+        draft={},
+        origins={},
+        now=past,
+    )
+    with pytest.raises(ConnectTicketError):
+        open_ticket(box, ticket, organization_id=org, holder="user:x")
+
+
+def test_preview_with_wrong_password_creates_nothing(env) -> None:
+    client, factory, _tokens, verifier = env
+    verifier.error = ProviderAuthError("recusado")
+    org_id = _empty_org(factory)
+    response = _preview(client, org_id)
+    assert response.status_code == 422
+    assert response.json()["detail"] == "provider_login_failed"
+    assert asyncio.run(_plants_of(factory, org_id)) == []
+
+
+def test_ticket_belongs_to_the_admin_who_previewed(env) -> None:
+    client, factory, _tokens, verifier = env
+    org_id = _empty_org(factory)
+    preview = _preview(client, org_id).json()
+    plant = {k: v for k, v in preview["plant"].items() if k != "city"}
+    other_admin = _token(org_id)  # outro usuário da mesma organização
+    response = client.post(
+        CONFIRM, json={"ticket": preview["ticket"], "plant": plant}, headers=other_admin
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "connect_ticket_invalid"
+
+
+def test_invalid_confirmation_never_echoes_the_ticket(env) -> None:
+    client, factory, _tokens, verifier = env
+    org_id = _empty_org(factory)
+    preview = _preview(client, org_id).json()
+    plant = {k: v for k, v in preview["plant"].items() if k != "city"}
+    for bad in (
+        {**plant, "name": "   "},
+        {**plant, "latitude": "-17.7", "longitude": None},
+        {**plant, "installed_power_kwp": "-1"},
+        {**plant, "extra": "x"},
+    ):
+        response = client.post(
+            CONFIRM, json={"ticket": preview["ticket"], "plant": bad}, headers=_same_admin(org_id)
+        )
+        assert response.status_code == 422
+        assert preview["ticket"] not in response.text
+    assert asyncio.run(_plants_of(factory, org_id)) == []
+
+
+def test_draft_values_are_accepted_back_as_they_are(env) -> None:
+    """Coordenada com muitas casas vinda da marca não pode travar o Salvar."""
+    from dataclasses import replace
+
+    client, factory, _tokens, verifier = env
+    verifier.profile = replace(
+        PROFILE, latitude=Decimal("-17.74412345678"), longitude=Decimal("-48.62519999")
+    )
+    org_id = _empty_org(factory)
+    preview = _preview(client, org_id).json()
+    assert preview["plant"]["latitude"] == "-17.744123"
+    plant = {k: v for k, v in preview["plant"].items() if k != "city"}
+    response = client.post(
+        CONFIRM, json={"ticket": preview["ticket"], "plant": plant}, headers=_same_admin(org_id)
+    )
+    assert response.status_code == 201, response.text

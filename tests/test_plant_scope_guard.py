@@ -172,6 +172,14 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
     # organizations: gestão de organização em si (nome/slug/ativação), não de
     # usina — escopado por AdminPrincipal/PlatformPrincipal (core.tenancy), que
     # discriminam plataforma vs. organização, mas nunca resolvem um plant_id.
+    ("POST", "/plants/connect/preview"): (
+        "ADR-096: prévia da primeira conexão — a usina ainda não existe;"
+        " AdminPrincipal da organização, nada é salvo."
+    ),
+    ("POST", "/plants/connect/confirm"): (
+        "ADR-096: cria a usina na própria organização do chamador (bilhete"
+        " amarrado à organização), rechecado com a organização travada."
+    ),
     ("POST", "/plants/connect"): (
         "ADR-093 § 7: primeira conexão cria a usina — ainda não existe usina para"
         " escopar. AdminPrincipal da organização; só roda se a organização não"

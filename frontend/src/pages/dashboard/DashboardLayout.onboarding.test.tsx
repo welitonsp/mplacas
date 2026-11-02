@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 
 vi.mock('../../env', () => ({ API_URL: 'https://api.example.test' }))
-vi.mock('../../lib/api', () => ({ connectFirstPlant: vi.fn() }))
+vi.mock('../../lib/api', () => ({ previewFirstPlant: vi.fn(), confirmFirstPlant: vi.fn() }))
 vi.mock('../../components/AppShell', () => ({
   AppShell: ({ children, subnav }: { children: React.ReactNode; subnav: React.ReactNode }) => (
     <div>
@@ -40,7 +40,7 @@ describe('DashboardLayout — conta sem usina (ADR-093 § 7)', () => {
     plantValue = { plants: [], loading: false, error: null, reload: vi.fn() }
     meValue = { me: ADMIN, loading: false }
     renderAt('/dashboard/inicio')
-    expect(await screen.findByRole('heading', { name: 'Conecte sua usina' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Cadastrar minha usina' })).toBeInTheDocument()
     expect(screen.queryByText('módulo início')).not.toBeInTheDocument()
   })
 

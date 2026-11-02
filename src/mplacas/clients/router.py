@@ -366,6 +366,7 @@ _ACTIVITY_ACTIONS = {
     "platform.client_reactivated",
     "invitations.accept",
     "invitations.access_reset",
+    "plant.connect_previewed",
     "plant.created_from_connection",
     "provider_account.saved",
     "provider_account.profile_refreshed",

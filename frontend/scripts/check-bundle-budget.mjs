@@ -165,7 +165,10 @@ const BUDGETS = [
   {
     name: 'FirstConnectionPanel',
     match: /^FirstConnectionPanel-.*\.js$/,
-    limitKb: 3,
+    limitKb: 6,
+    // Teto de 3 para 6 kB em 2026-11-02 (ADR-096): virou o assistente de 3
+    // passos (conectar, leitura, revisar e salvar). Carregado só por conta sem
+    // usina, uma vez na vida do cliente. Medido: 4,41 kB.
   },
   {
     // Página pública (`PublicHomePage`), entrou depois deste gate e por isso
