@@ -5,18 +5,23 @@ from __future__ import annotations
 import httpx
 
 from mplacas.core.config import get_settings
-from mplacas.providers.accounts import GROWATT, NEPVIEWER
+from mplacas.providers.accounts import GROWATT, GROWATT_TOKEN, NEPVIEWER
 from mplacas.providers.growatt.client import GrowattClient
+from mplacas.providers.growatt.openapi import GrowattOpenApiClient
 from mplacas.providers.nepviewer.client import NepViewerClient
 from mplacas.providers.resilient import ResilientSolarProvider, RetryPolicy
 
 
 # Origem gravada em ``daily_energy.source`` para cada marca.
-ENERGY_SOURCES = {NEPVIEWER: "NEPVIEWER_V2", GROWATT: "GROWATT_CLASSIC"}
+ENERGY_SOURCES = {
+    NEPVIEWER: "NEPVIEWER_V2",
+    GROWATT: "GROWATT_CLASSIC",
+    GROWATT_TOKEN: "GROWATT_OPENAPI_V1",
+}
 
 
 # Clientes crus: implementam ``SolarProvider`` e precisam de ``aclose()``.
-ClosableProvider = NepViewerClient | GrowattClient
+ClosableProvider = NepViewerClient | GrowattClient | GrowattOpenApiClient
 
 
 def build_client(
@@ -41,6 +46,14 @@ def build_client(
             account=account,
             password=password,
             base_url=str(settings.growatt_base_url),
+            timeout_seconds=settings.request_timeout_seconds,
+            transport=transport,
+        )
+    if provider == GROWATT_TOKEN:
+        # O token da OpenAPI é guardado no lugar da senha (ADR-094).
+        return GrowattOpenApiClient(
+            token=password,
+            base_url=str(settings.growatt_openapi_url),
             timeout_seconds=settings.request_timeout_seconds,
             transport=transport,
         )

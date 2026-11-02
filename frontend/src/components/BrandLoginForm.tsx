@@ -45,6 +45,8 @@ export function BrandLoginForm({
   const passwordId = `${ids}-password`
   const [brand, setBrand] = useState<ProviderBrand>(initialBrand)
   const brandInfo = PROVIDER_BRANDS.find((item) => item.value === brand) ?? PROVIDER_BRANDS[0]
+  const tokenMode = brandInfo.mode === 'token'
+  const tokenHelpId = `${ids}-token-help`
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -61,17 +63,28 @@ export function BrandLoginForm({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFeedback(null)
-    if (!login.trim()) {
-      setFeedback({ tone: 'error', message: `Informe o usuário do app ${brandInfo.label}.` })
-      return
-    }
-    if (!password) {
-      setFeedback({ tone: 'error', message: `Informe a senha do app ${brandInfo.label}.` })
-      return
+    if (tokenMode) {
+      if (!password.trim()) {
+        setFeedback({ tone: 'error', message: 'Cole o token da API gerado no app ShinePhone.' })
+        return
+      }
+    } else {
+      if (!login.trim()) {
+        setFeedback({ tone: 'error', message: `Informe o usuário do app ${brandInfo.label}.` })
+        return
+      }
+      if (!password) {
+        setFeedback({ tone: 'error', message: `Informe a senha do app ${brandInfo.label}.` })
+        return
+      }
     }
     setSaving(true)
     try {
-      const error = await onSubmit({ provider: brand, login: login.trim(), password })
+      const error = await onSubmit(
+        tokenMode
+          ? { provider: brand, login: '', password: password.trim() }
+          : { provider: brand, login: login.trim(), password },
+      )
       if (error) {
         setFeedback({ tone: 'error', message: error })
         return
@@ -108,16 +121,60 @@ export function BrandLoginForm({
                   name={`${ids}-brand`}
                   value={item.value}
                   checked={checked}
-                  onChange={() => setBrand(item.value)}
+                  onChange={() => {
+                    // Senha de uma marca nunca fica no campo da outra (nem o token).
+                    setBrand(item.value)
+                    setPassword('')
+                    setShowPassword(false)
+                    setFeedback(null)
+                  }}
                   disabled={saving}
                   className="h-4 w-4 accent-[var(--color-brand-primary)]"
                 />
-                {item.label}
+                {item.option}
               </label>
             )
           })}
         </div>
       </fieldset>
+      {tokenMode ? (
+        <div className="space-y-3">
+          <div className="min-w-0">
+            <label htmlFor={passwordId} className="mb-1 block text-[13px] font-semibold text-[var(--color-text-primary)]">
+              Token da API (app ShinePhone)
+            </label>
+            <div className="relative">
+              <input
+                ref={loginRef}
+                id={passwordId}
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={saving}
+                aria-describedby={tokenHelpId}
+                className={`${INPUT_CLASS} pr-32`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-controls={passwordId}
+                disabled={saving}
+                className="absolute inset-y-0 right-0 flex min-h-[44px] min-w-[112px] items-center justify-center rounded-lg px-3 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors duration-150 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] disabled:opacity-50 motion-reduce:transition-none"
+              >
+                {showPassword ? 'Ocultar token' : 'Mostrar token'}
+              </button>
+            </div>
+          </div>
+          <p id={tokenHelpId} className="text-xs leading-5 text-[var(--color-text-secondary)]">
+            Onde achar: no app ShinePhone, abra a aba “Me”, toque no seu nome de usuário e em “API Token”. Se
+            não aparecer nenhum, toque em “Reopen” para gerar. Use o token gerado no app (o do site às vezes não
+            funciona).
+          </p>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div className="min-w-0">
           <label htmlFor={loginId} className="mb-1 block text-[13px] font-semibold text-[var(--color-text-primary)]">
@@ -163,9 +220,10 @@ export function BrandLoginForm({
           </div>
         </div>
       </div>
+      )}
       <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
-        O sistema confere a conta na {brandInfo.label} antes de salvar. A senha fica guardada cifrada e não
-        aparece de novo para ninguém.
+        O sistema confere a conta na {brandInfo.label} antes de salvar. {tokenMode ? 'O token' : 'A senha'} fica
+        guardad{tokenMode ? 'o' : 'a'} cifrad{tokenMode ? 'o' : 'a'} e não aparece de novo para ninguém.
       </p>
       {feedback && (
         <div

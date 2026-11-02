@@ -3,6 +3,7 @@ import { deleteProviderAccount, fetchProviderAccount, saveProviderAccount } from
 import {
   brandLabel,
   parseProviderAccount,
+  isGrowatt,
   providerAccountErrorMessage,
   type ProviderAccount,
   type ProviderBrand,
@@ -96,7 +97,7 @@ function ConnectForm({
     onSaved(
       found === 0
         ? `Conta conectada, mas a ${label} não mostra nenhuma usina ou inversor nela. Confira se é a conta certa.`
-        : credentials.provider === 'GROWATT'
+        : isGrowatt(credentials.provider)
           ? `Conta conectada. ${found === 1 ? '1 usina encontrada' : `${found} usinas encontradas`} na Growatt.`
           : `Conta conectada. ${found === 1 ? '1 inversor encontrado' : `${found} inversores encontrados`}.`,
     )
@@ -268,7 +269,11 @@ export function ProviderConnectionSection({ plantId }: { plantId: string }) {
                   <ConnectForm
                     plantId={plantId}
                     connected={connected}
-                    initialBrand={account.provider === 'GROWATT' ? 'GROWATT' : 'NEPVIEWER'}
+                    initialBrand={
+                      account.provider === 'GROWATT' || account.provider === 'GROWATT_TOKEN'
+                        ? account.provider
+                        : 'NEPVIEWER'
+                    }
                     focusOnMount={editing}
                     onSaved={(message) => {
                       setEditing(false)

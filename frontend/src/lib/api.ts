@@ -378,7 +378,7 @@ export async function fetchProviderAccount(plantId: string): Promise<Response> {
 
 export async function saveProviderAccount(
   plantId: string,
-  payload: { provider: 'NEPVIEWER' | 'GROWATT'; login: string; password: string },
+  payload: { provider: 'NEPVIEWER' | 'GROWATT' | 'GROWATT_TOKEN'; login: string; password: string },
 ): Promise<Response> {
   return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account`, {
     method: 'PUT',
@@ -393,7 +393,7 @@ export async function deleteProviderAccount(plantId: string): Promise<Response> 
 // Primeira conexão (ADR-093 § 7): a usina nasce da conta da marca. Mesmo
 // corpo do PUT da conexão; a senha só vai no corpo e nunca volta.
 export async function connectFirstPlant(payload: {
-  provider: 'NEPVIEWER' | 'GROWATT'
+  provider: 'NEPVIEWER' | 'GROWATT' | 'GROWATT_TOKEN'
   login: string
   password: string
 }): Promise<Response> {

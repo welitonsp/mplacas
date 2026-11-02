@@ -55,12 +55,38 @@ export function parseProviderAccount(payload: unknown): ProviderAccount {
 
 // Marcas que o cliente pode escolher (ADR-091/092). O rótulo é o nome do app
 // que o dono conhece; o valor é o que o backend espera.
-export type ProviderBrand = 'NEPVIEWER' | 'GROWATT'
+export type ProviderBrand = 'NEPVIEWER' | 'GROWATT' | 'GROWATT_TOKEN'
 
-export const PROVIDER_BRANDS: ReadonlyArray<{ value: ProviderBrand; label: string; app: string }> = [
-  { value: 'NEPVIEWER', label: 'NEPViewer', app: 'NEPViewer' },
-  { value: 'GROWATT', label: 'Growatt', app: 'ShinePhone (Growatt)' },
+// `label`: nome da marca nas mensagens ("A Growatt recusou..."); `option`: o
+// texto do botão de escolha; `mode`: usuário e senha do app, ou token da API
+// oficial (Growatt, ADR-094 — o login por senha passou a ser bloqueado).
+export const PROVIDER_BRANDS: ReadonlyArray<{
+  value: ProviderBrand
+  label: string
+  option: string
+  app: string
+  mode: 'login' | 'token'
+}> = [
+  { value: 'NEPVIEWER', label: 'NEPViewer', option: 'NEPViewer', app: 'NEPViewer', mode: 'login' },
+  {
+    value: 'GROWATT_TOKEN',
+    label: 'Growatt',
+    option: 'Growatt — token (recomendado)',
+    app: 'ShinePhone (Growatt)',
+    mode: 'token',
+  },
+  {
+    value: 'GROWATT',
+    label: 'Growatt',
+    option: 'Growatt — usuário e senha',
+    app: 'ShinePhone (Growatt)',
+    mode: 'login',
+  },
 ]
+
+export function isGrowatt(provider: string | null | undefined): boolean {
+  return provider === 'GROWATT' || provider === 'GROWATT_TOKEN'
+}
 
 export function brandLabel(provider: string | null | undefined): string {
   return PROVIDER_BRANDS.find((brand) => brand.value === provider)?.label ?? 'fabricante'
@@ -70,6 +96,10 @@ export function brandLabel(provider: string | null | undefined): string {
 // usuário digitou. `{marca}` vira o nome da marca escolhida.
 const ERROR_MESSAGES: Record<string, string> = {
   provider_login_failed: 'A {marca} recusou o usuário ou a senha. Confira e tente de novo.',
+  provider_token_failed: 'A Growatt recusou o token. Gere um novo no app ShinePhone e cole de novo.',
+  provider_token_invalid: 'Cole o token da API gerado no app ShinePhone.',
+  provider_login_blocked:
+    'A {marca} bloqueou o login por usuário e senha vindo do nosso servidor — não é a sua senha. Use a opção “Growatt — token (recomendado)”.',
   provider_login_invalid: 'Informe o usuário do app {marca}.',
   provider_password_invalid: 'Informe a senha do app {marca}.',
   provider_unavailable: 'A {marca} não respondeu agora. Tente de novo em alguns minutos.',

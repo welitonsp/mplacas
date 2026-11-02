@@ -17,7 +17,9 @@ Nenhuma resposta, log ou evento de auditoria contém login ou senha.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -38,6 +40,8 @@ from mplacas.db.models import Device, Plant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context, set_principal_context
 from mplacas.providers.accounts import (
+    GROWATT,
+    GROWATT_TOKEN,
     NEPVIEWER,
     ProviderAccountConflictError,
     ProviderAccountError,
@@ -50,6 +54,8 @@ from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.plants.autofill import fill_plant_from_profile, locate_profile
 from mplacas.providers.base import (
     PlantProfile,
+    ProviderAuthError,
+    ProviderBlockedError,
     ProviderError,
     ProviderRateLimitedError,
     ProviderUnavailableError,
@@ -97,11 +103,36 @@ def _parse_body(raw: bytes) -> tuple[str, ProviderLogin]:
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_unsupported")
     login = body.get("login")
     password = body.get("password")
+    if provider == GROWATT_TOKEN:
+        # Só o token (no campo da senha). O login é derivado depois da
+        # conferência (``_token_login``), nunca vem do token.
+        token = password.strip() if isinstance(password, str) else ""
+        # Token da OpenAPI: ASCII visível, sem espaço interno nem quebra de linha
+        # (um caractere estranho viraria erro de codificação no cabeçalho).
+        if not token or len(token) > _MAX_PASSWORD or not _TOKEN_CHARS.fullmatch(token):
+            raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_token_invalid")
+        return provider, ProviderLogin(login=TOKEN_LOGIN_PENDING, password=token)
     if not isinstance(login, str) or not login.strip() or len(login.strip()) > _MAX_LOGIN:
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_login_invalid")
     if not isinstance(password, str) or not password or len(password) > _MAX_PASSWORD:
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_password_invalid")
     return provider, ProviderLogin(login=login.strip(), password=password)
+
+
+TOKEN_LOGIN_PENDING = "growatt-token"
+_TOKEN_CHARS = re.compile(r"[!-~]+")
+
+
+def _token_login(credentials: ProviderLogin) -> ProviderLogin:
+    """Login de uma conexão por token (ADR-094): um resumo do token, nunca ele.
+
+    Estável para o mesmo token (a regra "a mesma conta não liga duas usinas"
+    usa a impressão digital do login) e independente das usinas da conta. Na
+    tela aparece mascarado ("to***3f"). A mesma usina Growatt em duas usinas
+    do MPlacas é barrada pelos aparelhos (``_inverter_in_another_plant``).
+    """
+    digest = hashlib.sha256(credentials.password.encode()).hexdigest()[:16]
+    return ProviderLogin(login=f"token-{digest}", password=credentials.password)
 
 
 class ProviderAccountView(BaseModel):
@@ -211,6 +242,8 @@ async def put_provider_account(request: Request, scoped: AdminPlantPath) -> Prov
         await _audit_refusal(request, scoped.principal, "plant", scoped.plant_id, provider, reason)
 
     inspection = await _inspect(provider, credentials, refuse)
+    if provider == GROWATT_TOKEN:
+        credentials = _token_login(credentials)
     serials = inspection.serials
 
     if await _inverter_in_another_plant(provider, serials, scoped.plant_id):
@@ -305,6 +338,8 @@ async def connect_first_plant(
         )
 
     inspection = await _inspect(provider, credentials, refuse)
+    if provider == GROWATT_TOKEN:
+        credentials = _token_login(credentials)
     if await _inverter_in_another_plant(provider, inspection.serials, None):
         await refuse("provider_inverter_in_another_plant")
         raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant")
@@ -397,15 +432,25 @@ async def _inspect(
         # A marca bloqueou por excesso de logins (Growatt 507): esperar, não insistir.
         await refuse("provider_rate_limited")
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
+    except ProviderBlockedError:
+        # Login recusado antes de olhar a senha (Growatt 403): não é a senha.
+        await refuse("provider_login_blocked")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
     except ProviderUnavailableError:
         await refuse("provider_unavailable")
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
-    except ProviderError:
+    except ProviderError as exc:
+        if provider == GROWATT_TOKEN and not isinstance(exc, ProviderAuthError):
+            # OpenAPI respondeu fora do formato (ou erro de sistema): não é o
+            # token — não mandar o cliente gerar outro à toa.
+            await refuse("provider_unavailable")
+            raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
         # Senha errada volta como envelope de erro (não 401), na NEPViewer e na Growatt;
         # auth e formato inesperado viram o mesmo "login recusado", sem
         # repetir a mensagem do fabricante.
-        await refuse("provider_login_failed")
-        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_login_failed") from None
+        reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
+        await refuse(reason)
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
 
 
 async def _enforce_verify_limit(
@@ -428,6 +473,9 @@ async def _enforce_verify_limit(
         raise _error(status.HTTP_429_TOO_MANY_REQUESTS, "provider_verify_rate_limited")
 
 
+_GROWATT_FAMILY = {GROWATT, GROWATT_TOKEN}
+
+
 async def _inverter_in_another_plant(
     provider: str, serials: list[str], plant_id: uuid.UUID | None
 ) -> bool:
@@ -438,8 +486,11 @@ async def _inverter_in_another_plant(
         return False
     async with SessionFactory() as session:
         await set_platform_context(session)
+        # As duas formas de conectar a Growatt (senha e token) leem as mesmas
+        # usinas (``GW-PLANT-<id>``): conferem juntas.
+        family = _GROWATT_FAMILY if provider in _GROWATT_FAMILY else {provider}
         query = select(Device.id).where(
-            Device.provider == provider, Device.serial_number.in_(serials)
+            Device.provider.in_(sorted(family)), Device.serial_number.in_(serials)
         )
         if plant_id is not None:
             query = query.where(Device.plant_id != plant_id)

@@ -1,0 +1,231 @@
+"""Cliente da OpenAPI V1 da Growatt (token do app ShinePhone), ADR-094.
+
+É a interface que a Growatt documenta para programas de terceiros: sem login,
+só o token no cabeçalho ``token``. O login por usuário e senha (API do app,
+``client.py``) passou a ser recusado com HTTP 403 para servidores como o nosso
+(31/10/2026); o token é o caminho recomendado.
+
+Cada usina Growatt da conta vira um "aparelho" ``GW-PLANT-<id>``, como no
+cliente clássico. Nenhuma mensagem de erro repete o token ou o texto devolvido
+pela Growatt.
+
+Envelope: ``{"error_code": 0, "error_msg": "", "data": {...}}``. Endpoints:
+``plant/list``, ``plant/details``, ``plant/data`` e ``plant/energy`` (por dia,
+no máximo 7 dias por consulta).
+"""
+
+from __future__ import annotations
+
+from datetime import date, timedelta
+from decimal import Decimal
+from typing import Any
+
+import httpx
+
+from mplacas.providers.base import (
+    DailyEnergy,
+    DeviceOverview,
+    PlantProfile,
+    ProviderAuthError,
+    ProviderIncompleteDataError,
+    ProviderRateLimitedError,
+    ProviderSchemaError,
+    ProviderUnavailableError,
+    SolarDevice,
+    SolarProvider,
+)
+from mplacas.providers.growatt.client import _kwh, _plant_id, plant_serial
+from mplacas.providers.profile import parse_coordinate, parse_kwp, parse_text
+
+DEFAULT_OPENAPI_URL = "https://openapi.growatt.com/v1/"
+# A OpenAPI aceita até 7 dias por consulta diária.
+MAX_DAYS_PER_QUERY = 7
+_PAGE_SIZE = "100"
+_MAX_PAGES = 20
+# 10011: token inválido ou sem permissão; 10012: consultas frequentes demais.
+_AUTH_CODES = {10011}
+_RATE_LIMIT_CODES = {10012}
+
+
+def _code(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+class GrowattOpenApiClient(SolarProvider):
+    def __init__(
+        self,
+        *,
+        token: str,
+        base_url: str = DEFAULT_OPENAPI_URL,
+        timeout_seconds: float = 20.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self._client = httpx.AsyncClient(
+            base_url=base_url.rstrip("/") + "/",
+            timeout=httpx.Timeout(timeout_seconds),
+            headers={"token": token, "Accept": "application/json"},
+            transport=transport,
+            follow_redirects=False,
+        )
+
+    def __repr__(self) -> str:
+        return "GrowattOpenApiClient(token=<hidden>)"
+
+    async def __aenter__(self) -> GrowattOpenApiClient:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def _get(self, path: str, params: dict[str, str]) -> Any:
+        try:
+            response = await self._client.get(path, params=params)
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise ProviderUnavailableError("Growatt indisponível ou com timeout") from exc
+        if response.status_code in {401, 403}:
+            raise ProviderAuthError("Growatt recusou o token")
+        if response.status_code == 429:
+            raise ProviderRateLimitedError("Growatt pediu para esperar")
+        if response.status_code >= 500:
+            raise ProviderUnavailableError("Growatt apresentou falha temporária")
+        if response.status_code >= 300:
+            raise ProviderSchemaError(
+                f"Resposta HTTP inesperada da Growatt: {response.status_code}"
+            )
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise ProviderSchemaError("Growatt retornou conteúdo não JSON") from exc
+        if not isinstance(body, dict):
+            raise ProviderSchemaError("Growatt retornou envelope incompatível")
+        code = _code(body.get("error_code"))
+        if code in _AUTH_CODES:
+            raise ProviderAuthError("Growatt recusou o token")
+        if code in _RATE_LIMIT_CODES:
+            raise ProviderRateLimitedError("Growatt pediu para esperar")
+        if code != 0:
+            raise ProviderSchemaError(f"Growatt respondeu com erro {code}")
+        return body.get("data")
+
+    async def _plants(self) -> list[dict[str, Any]]:
+        plants: list[dict[str, Any]] = []
+        for page in range(1, _MAX_PAGES + 1):
+            data = await self._get(
+                "plant/list",
+                {"page": str(page), "perpage": _PAGE_SIZE, "search_type": "", "search_keyword": ""},
+            )
+            rows = data.get("plants") if isinstance(data, dict) else None
+            if not isinstance(rows, list):
+                raise ProviderSchemaError("Lista de usinas Growatt ausente")
+            for row in rows:
+                if not isinstance(row, dict) or row.get("plant_id") in (None, ""):
+                    raise ProviderSchemaError("Usina Growatt sem identificador")
+                plants.append(row)
+            total = _code(data.get("count"))
+            if not rows or total is None or len(plants) >= total:
+                return plants
+        # Nunca truncar em silêncio: faltariam usinas (e produção) na conta.
+        raise ProviderSchemaError("Conta Growatt com usinas demais para listar")
+
+    async def list_devices(self) -> list[SolarDevice]:
+        return [
+            SolarDevice(
+                serial_number=plant_serial(str(row["plant_id"])),
+                model_name="Usina Growatt",
+                city=parse_text(row.get("city")),
+                last_update=None,
+            )
+            for row in await self._plants()
+        ]
+
+    async def get_overview(self, serial_number: str) -> DeviceOverview:
+        data = await self._get("plant/data", {"plant_id": _plant_id(serial_number)})
+        if not isinstance(data, dict):
+            raise ProviderSchemaError("Resumo da usina Growatt ausente")
+        # A OpenAPI informa a potência atual em kW. Campo ausente é erro, nunca zero.
+        current_kw = _kwh(data.get("current_power"), "current_power")
+        return DeviceOverview(
+            serial_number=serial_number,
+            current_power_w=current_kw * 1000,
+            today_energy_kwh=_kwh(data.get("today_energy"), "today_energy"),
+            last_update=None,
+            status=None,
+        )
+
+    async def get_daily_energy(
+        self,
+        serial_number: str,
+        start: date,
+        end: date,
+        *,
+        expect_complete: bool = False,
+    ) -> list[DailyEnergy]:
+        if end < start:
+            raise ValueError("A data final não pode ser anterior à inicial")
+        plant_id = _plant_id(serial_number)
+        result: dict[date, Decimal] = {}
+        cursor = start
+        while cursor <= end:
+            window_end = min(cursor + timedelta(days=MAX_DAYS_PER_QUERY - 1), end)
+            data = await self._get(
+                "plant/energy",
+                {
+                    "plant_id": plant_id,
+                    "start_date": cursor.isoformat(),
+                    "end_date": window_end.isoformat(),
+                    "time_unit": "day",
+                    "page": "1",
+                    "perpage": _PAGE_SIZE,
+                },
+            )
+            rows = data.get("energys") if isinstance(data, dict) else None
+            if not isinstance(rows, list):
+                raise ProviderSchemaError("Série diária Growatt ausente")
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise ProviderSchemaError("Dia Growatt inválido")
+                try:
+                    day = date.fromisoformat(str(row.get("date", ""))[:10])
+                except ValueError as exc:
+                    raise ProviderSchemaError("Data Growatt inválida") from exc
+                if not cursor <= day <= window_end or row.get("energy") in (None, ""):
+                    continue
+                result[day] = _kwh(row["energy"], "energy")
+            cursor = window_end + timedelta(days=1)
+        if expect_complete:
+            expected = {start + timedelta(days=offset) for offset in range((end - start).days + 1)}
+            if expected - set(result):
+                raise ProviderIncompleteDataError("Growatt não cobriu todos os dias solicitados")
+        return [DailyEnergy(production_date=day, energy_kwh=result[day]) for day in sorted(result)]
+
+    async def plant_profile(self) -> PlantProfile | None:
+        """Cadastro da maior usina da conta (``plant/details``), melhor esforço."""
+        plants = await self._plants()
+        if not plants:
+            return None
+        chosen = max(plants, key=lambda row: parse_kwp(row.get("peak_power"), unit="kW") or 0)
+        details = await self._get("plant/details", {"plant_id": str(chosen["plant_id"])})
+        body = details if isinstance(details, dict) else {}
+        if isinstance(body.get("plant"), dict):
+            body = body["plant"]
+
+        def pick(key: str) -> Any:
+            value = body.get(key)
+            return value if value not in (None, "") else chosen.get(key)
+
+        return PlantProfile(
+            name=parse_text(pick("name")),
+            # A OpenAPI informa ``peak_power`` em kW.
+            installed_power_kwp=parse_kwp(pick("peak_power"), unit="kW"),
+            latitude=parse_coordinate(pick("latitude"), limit=90),
+            longitude=parse_coordinate(pick("longitude"), limit=180),
+            city=parse_text(pick("city")),
+            commissioned_on=None,
+            timezone=None,
+        )
