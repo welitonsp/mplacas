@@ -9,10 +9,11 @@ rate-limit counter survives the error response.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.audit.repository import AuditEventRepository
@@ -36,7 +37,12 @@ from mplacas.core.tenancy import ReadPrincipal, is_platform_operator
 from mplacas.credentials.db_models import OperationalUserRecord
 from mplacas.db.tenant_context import set_platform_context, set_principal_context
 from mplacas.organizations.db_models import OrganizationRecord
-from mplacas.organizations.invitation_db_models import UserInvitationRecord
+from mplacas.organizations.invitation_db_models import (
+    PURPOSE_INVITE,
+    PURPOSE_RESET,
+    UserInvitationRecord,
+)
+from mplacas.auth.db_models import AuthSessionRecord
 from mplacas.organizations.invitation_service import (
     InvitationConsumeError,
     InvitationService,
@@ -74,6 +80,8 @@ class InvitationInspectResponse(BaseModel):
     username: str
     role: str
     expires_at: datetime
+    # ADR-095: "INVITE" (criar a senha) ou "RESET" (redefinir o acesso).
+    purpose: str = PURPOSE_INVITE
 
 
 class InvitationAcceptRequest(BaseModel):
@@ -296,6 +304,7 @@ async def inspect_invitation(
         username=invitation.username,
         role=invitation.role,
         expires_at=invitation.expires_at,
+        purpose=invitation.purpose,
     )
 
 
@@ -315,6 +324,9 @@ async def accept_invitation(
     invitation = await _consume_invitation_rate_limited(
         session, request, token=body.token, settings=settings
     )
+
+    if invitation.purpose == PURPOSE_RESET:
+        return await _accept_access_reset(session, request, invitation, body.password, settings)
 
     try:
         user = await UserService(session).create(
@@ -368,6 +380,60 @@ async def accept_invitation(
     )
     await session.commit()
 
+    return TokenResponse(
+        access_token=encode_access_token(user.id, user.organization_id, user.role),
+        refresh_token=refresh_token,
+    )
+
+
+async def _accept_access_reset(
+    session: AsyncSession,
+    request: Request,
+    invitation: UserInvitationRecord,
+    password: str,
+    settings: Settings,
+) -> TokenResponse:
+    """Redefinição de acesso (ADR-095): troca a senha do usuário que já existe.
+
+    Encerra todas as sessões abertas desse usuário antes de abrir a nova; a
+    mesma resposta "convite inválido" de sempre cobre usuário inexistente ou
+    desativado, sem revelar qual foi o caso.
+    """
+    user = await session.scalar(
+        select(OperationalUserRecord).where(
+            OperationalUserRecord.organization_id == invitation.organization_id,
+            OperationalUserRecord.name == invitation.username,
+            OperationalUserRecord.active.is_(True),
+        )
+    )
+    if user is None:
+        raise _invalid_invitation()
+    accepted = await InvitationService(session).mark_accepted(
+        invitation_id=invitation.id, accepted_user_id=user.id
+    )
+    if not accepted:
+        raise _invalid_invitation()
+    user.password_hash = hash_password(password)
+    await session.execute(
+        update(AuthSessionRecord)
+        .where(AuthSessionRecord.user_id == user.id, AuthSessionRecord.active.is_(True))
+        .values(active=False, revoked_at=datetime.now(UTC))
+    )
+    refresh_token = await AuthSessionService(session).create(
+        user_id=user.id,
+        organization_id=user.organization_id,
+        ttl_seconds=settings.jwt_refresh_ttl_seconds,
+    )
+    await AuditEventRepository(session).record(
+        request,
+        organization_id=invitation.organization_id,
+        action="invitations.access_reset",
+        resource_type="user_invitation",
+        resource_id=str(invitation.id),
+        outcome="SUCCEEDED",
+        details={"username": user.name, "user_id": str(user.id)},
+    )
+    await session.commit()
     return TokenResponse(
         access_token=encode_access_token(user.id, user.organization_id, user.role),
         refresh_token=refresh_token,

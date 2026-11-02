@@ -28,7 +28,7 @@ from mplacas.collection.job import run_solar_collection
 from mplacas.core.config import get_settings
 from mplacas.db.models import Plant
 from mplacas.db.repositories.plant import PlantRepository
-from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID
+from mplacas.organizations.db_models import DEFAULT_ORGANIZATION_ID, OrganizationRecord
 from mplacas.db.session import SessionFactory
 from mplacas.db.session import engine as database_engine
 from mplacas.db.tenant_context import set_platform_context
@@ -494,9 +494,18 @@ async def run_collection(
     async with SessionFactory() as session:
         await set_platform_context(session)
         service = ProviderAccountService(session, box)
+        # Cliente desativado (ADR-095) não é coletado; a conexão continua guardada.
+        inactive_plants = set(
+            await session.scalars(
+                select(Plant.id)
+                .join(OrganizationRecord, OrganizationRecord.id == Plant.organization_id)
+                .where(OrganizationRecord.active.is_(False))
+            )
+        )
         accounts = [
             (record.plant_id, record.id, record.provider)
             for record in await service.list_active()
+            if record.plant_id not in inactive_plants
         ]
     problems: list[str] = []
     for plant_id, account_id, brand in accounts:
@@ -1034,9 +1043,12 @@ async def _list_connected_client_plants() -> list[tuple[uuid.UUID, str]]:
             await session.execute(
                 select(Plant.id, Plant.name)
                 .join(ProviderAccountRecord, ProviderAccountRecord.plant_id == Plant.id)
+                .join(OrganizationRecord, OrganizationRecord.id == Plant.organization_id)
                 .where(
                     ProviderAccountRecord.active.is_(True),
                     Plant.organization_id != DEFAULT_ORGANIZATION_ID,
+                    # cliente desativado (ADR-095) sai da análise e do vigia
+                    OrganizationRecord.active.is_(True),
                 )
                 .distinct()
                 .order_by(Plant.name, Plant.id)

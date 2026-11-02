@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.core.principal import OperationsRole
 from mplacas.organizations.db_models import OrganizationRecord
-from mplacas.organizations.invitation_db_models import UserInvitationRecord
+from mplacas.organizations.invitation_db_models import PURPOSE_INVITE, UserInvitationRecord
 
 _SECRET_BYTES = 32
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -65,6 +65,7 @@ class InvitationService:
         role: OperationsRole,
         created_by_user_id: uuid.UUID | None,
         ttl_seconds: int,
+        purpose: str = PURPOSE_INVITE,
     ) -> tuple[UserInvitationRecord, str]:
         """Cria um convite e devolve o registro e o token em texto claro.
 
@@ -82,6 +83,7 @@ class InvitationService:
             organization_id=organization_id,
             username=normalized_username,
             role=role.value,
+            purpose=purpose,
             token_hash=hash_invitation_token(token),
             created_by_user_id=created_by_user_id,
             expires_at=_utc_now() + timedelta(seconds=ttl_seconds),

@@ -1,28 +1,28 @@
 // Parsers do fluxo de entrada de clientes (ADR-093): convite, quem sou eu,
 // clientes do dono e primeira conexão. Nenhum deles guarda token ou senha.
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function fail(key: string): never {
+export function fail(key: string): never {
   throw new Error(`Resposta inválida da API: ${key}`)
 }
 
-function requireString(source: Record<string, unknown>, key: string): string {
+export function requireString(source: Record<string, unknown>, key: string): string {
   const value = source[key]
   if (typeof value !== 'string' || value.trim() === '') fail(key)
   return value
 }
 
-function nullableString(source: Record<string, unknown>, key: string): string | null {
+export function nullableString(source: Record<string, unknown>, key: string): string | null {
   const value = source[key]
   if (value == null) return null
   if (typeof value !== 'string') fail(key)
   return value
 }
 
-function requireCount(source: Record<string, unknown>, key: string): number {
+export function requireCount(source: Record<string, unknown>, key: string): number {
   const value = source[key]
   if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value
   fail(key)
@@ -56,6 +56,8 @@ export interface InvitationPreview {
   organizationName: string
   username: string
   expiresAt: string
+  // ADR-095: INVITE (primeira senha) ou RESET (redefinir o acesso).
+  purpose: 'INVITE' | 'RESET'
 }
 
 export function parseInvitationPreview(payload: unknown): InvitationPreview {
@@ -64,6 +66,7 @@ export function parseInvitationPreview(payload: unknown): InvitationPreview {
     organizationName: requireString(payload, 'organization_name'),
     username: requireString(payload, 'username'),
     expiresAt: requireString(payload, 'expires_at'),
+    purpose: payload.purpose === 'RESET' ? 'RESET' : 'INVITE',
   }
 }
 
@@ -84,77 +87,6 @@ export function readInvitationToken(hash: string): string | null {
 
 export function buildInvitationLink(origin: string, token: string): string {
   return `${origin.replace(/\/$/, '')}/convite#token=${encodeURIComponent(token)}`
-}
-
-// --- /platform/clients -------------------------------------------------------
-
-export interface ClientSummary {
-  organizationId: string
-  name: string
-  active: boolean
-  createdAt: string | null
-  users: number
-  plants: number
-  connections: number
-  adminUsername: string | null
-  invitationPendingUntil: string | null
-}
-
-export function parseClients(payload: unknown): ClientSummary[] {
-  if (!isRecord(payload) || !Array.isArray(payload.items)) fail('items')
-  return payload.items.map((raw): ClientSummary => {
-    if (!isRecord(raw)) fail('items[]')
-    if (typeof raw.active !== 'boolean') fail('active')
-    return {
-      organizationId: requireString(raw, 'organization_id'),
-      name: requireString(raw, 'name'),
-      active: raw.active,
-      createdAt: nullableString(raw, 'created_at'),
-      users: requireCount(raw, 'users'),
-      plants: requireCount(raw, 'plants'),
-      connections: requireCount(raw, 'connections'),
-      adminUsername: nullableString(raw, 'admin_username'),
-      invitationPendingUntil: nullableString(raw, 'invitation_pending_until'),
-    }
-  })
-}
-
-export interface ClientInvitation {
-  organizationId: string
-  username: string
-  expiresAt: string
-  token: string
-}
-
-export function parseClientInvitation(payload: unknown): ClientInvitation {
-  if (!isRecord(payload)) fail('client')
-  const invitation = payload.invitation
-  if (!isRecord(invitation)) fail('invitation')
-  return {
-    organizationId: requireString(payload, 'organization_id'),
-    username: requireString(invitation, 'username'),
-    expiresAt: requireString(invitation, 'expires_at'),
-    token: requireString(invitation, 'token'),
-  }
-}
-
-const CLIENT_ERRORS: Record<string, string> = {
-  client_admin_username_invalid: 'Informe um e-mail válido para o cliente.',
-  client_slug_in_use: 'Já existe um cliente com esse nome. Tente de novo em instantes.',
-  client_not_found: 'Cliente não encontrado.',
-}
-
-export async function clientErrorMessage(response: Response): Promise<string> {
-  if (response.status === 403) return 'Só o dono da plataforma pode cadastrar clientes.'
-  let code: unknown
-  try {
-    code = ((await response.json()) as { detail?: unknown })?.detail
-  } catch {
-    code = undefined
-  }
-  if (typeof code === 'string' && code in CLIENT_ERRORS) return CLIENT_ERRORS[code]
-  if (response.status === 422) return 'Confira o nome e o e-mail do cliente.'
-  return 'Não foi possível concluir agora. Tente novamente.'
 }
 
 // --- POST /plants/connect ----------------------------------------------------

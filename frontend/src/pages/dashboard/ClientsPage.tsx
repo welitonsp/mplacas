@@ -5,17 +5,18 @@ import { LoadingAnnouncement } from '../../components/LoadingAnnouncement'
 import { PageHeader } from '../../components/PageHeader'
 import { RetryableError } from '../../components/RetryableError'
 import { SectionTitle } from '../../components/SectionTitle'
+import { ClientDetailPanel, StageBadge } from '../../components/ClientDetailPanel'
 import { useMe } from '../../contexts/MeContext'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
 import { createClient, fetchClients, reinviteClient } from '../../lib/api'
+import { buildInvitationLink } from '../../lib/dashboard/onboarding-contracts'
 import {
-  buildInvitationLink,
   clientErrorMessage,
   parseClientInvitation,
   parseClients,
   type ClientInvitation,
   type ClientSummary,
-} from '../../lib/dashboard/onboarding-contracts'
+} from '../../lib/dashboard/clients-contracts'
 
 // "Clientes" do dono da plataforma (ADR-093). Convidar = criar o cliente e
 // gerar um link de uso único (`/convite#token=...`), que o dono copia e manda
@@ -30,21 +31,15 @@ function formatDate(iso: string | null): string {
   return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-function clientStatus(client: ClientSummary): string {
-  if (!client.active) return 'Desativado'
-  if (client.connections > 0) return 'Usina conectada'
-  if (client.users > 0) return 'Entrou, falta conectar a usina'
-  if (client.invitationPendingUntil) return `Convite enviado (vale até ${formatDate(client.invitationPendingUntil)})`
-  return 'Convite vencido'
-}
-
 function InvitationLink({
   name,
   invitation,
+  purpose,
   onClose,
 }: {
   name: string
   invitation: ClientInvitation
+  purpose: 'INVITE' | 'RESET'
   onClose: () => void
 }) {
   const link = buildInvitationLink(window.location.origin, invitation.token)
@@ -69,11 +64,12 @@ function InvitationLink({
     <Card className="border-[var(--color-brand-primary)] sm:p-6">
       <div className="space-y-4">
         <h2 ref={headingRef} tabIndex={-1} className="text-base font-semibold text-[var(--color-text-primary)] focus:outline-none">
-          Link do convite de {name}
+          {purpose === 'RESET' ? `Link para ${name} redefinir o acesso` : `Link do convite de ${name}`}
         </h2>
         <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
-          Mande este link <strong>só para {invitation.username}</strong> (WhatsApp ou e-mail). Quem abrir primeiro cria a
-          senha. Ele vale até {formatDate(invitation.expiresAt)} e não aparece de novo depois que você fechar este aviso.
+          Mande este link <strong>só para {invitation.username}</strong> (WhatsApp ou e-mail). Quem abrir primeiro{' '}
+          {purpose === 'RESET' ? 'cria a senha nova (a antiga deixa de valer)' : 'cria a senha'}. Ele vale até{' '}
+          {formatDate(invitation.expiresAt)} e não aparece de novo depois que você fechar este aviso.
         </p>
         <label htmlFor={linkId} className="sr-only">
           Link do convite
@@ -191,7 +187,12 @@ export function ClientsPage() {
   const { me, loading: meLoading } = useMe()
   const [clients, setClients] = useState<ClientSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [shown, setShown] = useState<{ name: string; invitation: ClientInvitation } | null>(null)
+  const [shown, setShown] = useState<{
+    name: string
+    invitation: ClientInvitation
+    purpose: 'INVITE' | 'RESET'
+  } | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
   const [reinviting, setReinviting] = useState<string | null>(null)
   const [rowError, setRowError] = useState<string | null>(null)
   // Ao fechar o aviso do link, o foco volta para o formulário (WCAG 2.4.3).
@@ -224,7 +225,7 @@ export function ClientsPage() {
         setRowError(await clientErrorMessage(response))
         return
       }
-      setShown({ name: client.name, invitation: parseClientInvitation(await response.json()) })
+      setShown({ name: client.name, invitation: parseClientInvitation(await response.json()), purpose: 'INVITE' })
       void load()
     } catch {
       setRowError('Não foi possível gerar o novo convite agora.')
@@ -268,13 +269,26 @@ export function ClientsPage() {
           <InvitationLink
             name={shown.name}
             invitation={shown.invitation}
+            purpose={shown.purpose}
             onClose={() => {
               setShown(null)
-              requestAnimationFrame(() => formAreaRef.current?.focus())
+              if (!selected) requestAnimationFrame(() => formAreaRef.current?.focus())
             }}
           />
         )}
 
+        {selected ? (
+          <ClientDetailPanel
+            organizationId={selected}
+            onBack={() => {
+              setSelected(null)
+              setShown(null)
+            }}
+            onLink={(name, invitation, purpose) => setShown({ name, invitation, purpose })}
+            onChanged={() => void load()}
+          />
+        ) : (
+          <>
         <section aria-labelledby="new-client-heading">
           <SectionTitle as="h2" id="new-client-heading">
             Convidar cliente
@@ -283,7 +297,7 @@ export function ClientsPage() {
           <Card className="sm:p-6">
             <NewClientForm
               onCreated={(name, invitation) => {
-                setShown({ name, invitation })
+                setShown({ name, invitation, purpose: 'INVITE' })
                 void load()
               }}
             />
@@ -319,9 +333,14 @@ export function ClientsPage() {
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-[var(--color-text-primary)]">{client.name}</p>
                         <p className="text-[13px] text-[var(--color-text-secondary)]">
-                          {client.adminUsername ?? 'sem e-mail'} · {clientStatus(client)}
+                          {client.adminUsername ?? 'sem e-mail'}
+                          {client.lastSuccessAt ? ` · última leitura ${formatDate(client.lastSuccessAt)}` : ''}
                         </p>
+                        <div className="mt-1">
+                          <StageBadge stage={client.stage} />
+                        </div>
                       </div>
+                      <div className="flex flex-wrap gap-2">
                       {canReinvite && (
                         <button
                           type="button"
@@ -334,6 +353,18 @@ export function ClientsPage() {
                           {reinviting === client.organizationId ? 'Gerando...' : 'Novo convite'}
                         </button>
                       )}
+                      <button
+                        type="button"
+                        className={SECONDARY_BUTTON}
+                        onClick={() => {
+                          setShown(null)
+                          setSelected(client.organizationId)
+                        }}
+                        aria-label={`Abrir ficha de ${client.name}`}
+                      >
+                        Abrir ficha
+                      </button>
+                      </div>
                     </li>
                   )
                 })}
@@ -341,6 +372,8 @@ export function ClientsPage() {
             )}
           </Card>
         </section>
+          </>
+        )}
       </div>
     </>
   )

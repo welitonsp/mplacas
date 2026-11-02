@@ -418,6 +418,24 @@ export async function createClient(payload: { name: string; admin_username: stri
   return apiFetch('/platform/clients', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+export async function fetchClient(organizationId: string): Promise<Response> {
+  return apiFetch(`/platform/clients/${encodeURIComponent(organizationId)}`)
+}
+
+export async function resetClientAccess(organizationId: string): Promise<Response> {
+  return apiFetch(`/platform/clients/${encodeURIComponent(organizationId)}/access-reset`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export async function setClientActive(organizationId: string, active: boolean): Promise<Response> {
+  return apiFetch(
+    `/platform/clients/${encodeURIComponent(organizationId)}/${active ? 'reactivate' : 'deactivate'}`,
+    { method: 'POST', body: JSON.stringify({}) },
+  )
+}
+
 export async function reinviteClient(organizationId: string): Promise<Response> {
   return apiFetch(`/platform/clients/${encodeURIComponent(organizationId)}/invitation`, {
     method: 'POST',

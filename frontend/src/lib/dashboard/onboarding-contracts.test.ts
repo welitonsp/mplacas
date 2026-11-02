@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  buildInvitationLink,
-  clientErrorMessage,
-  parseClientInvitation,
-  parseClients,
-  parseFirstConnection,
-  parseMe,
-  readInvitationToken,
-} from './onboarding-contracts'
+import { clientErrorMessage, parseClientInvitation, parseClients } from './clients-contracts'
+import { buildInvitationLink, parseFirstConnection, parseMe, readInvitationToken } from './onboarding-contracts'
 import { parsePlantSetup } from './plant-setup-contracts'
 
 function json(body: unknown, status = 200): Response {
@@ -52,10 +45,14 @@ describe('parsers', () => {
           connections: 0,
           admin_username: 'r@x.com',
           invitation_pending_until: '2026-11-03T10:00:00Z',
+          stage: 'CONVIDADO',
+          last_success_at: null,
         },
       ],
     })
     expect(client.adminUsername).toBe('r@x.com')
+    expect(client.stage).toBe('CONVIDADO')
+    expect(() => parseClients({ items: [{ ...client, stage: 'OUTRO' }] })).toThrow()
     expect(() => parseClients({ items: [{ organization_id: 'o1' }] })).toThrow()
     expect(
       parseClientInvitation({

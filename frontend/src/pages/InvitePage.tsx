@@ -181,9 +181,20 @@ export function InvitePage() {
           )}
           {stage.kind === 'ready' && (
             <>
-              <h1 className="text-2xl font-bold tracking-[-0.015em]">Crie sua senha</h1>
+              <h1 className="text-2xl font-bold tracking-[-0.015em]">
+                {stage.preview.purpose === 'RESET' ? 'Crie uma senha nova' : 'Crie sua senha'}
+              </h1>
               <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
-                Você foi convidado para acompanhar <strong>{stage.preview.organizationName}</strong> no MPlacas.
+                {stage.preview.purpose === 'RESET' ? (
+                  <>
+                    Redefinição do acesso de <strong>{stage.preview.organizationName}</strong> no MPlacas. A senha
+                    antiga deixa de valer.
+                  </>
+                ) : (
+                  <>
+                    Você foi convidado para acompanhar <strong>{stage.preview.organizationName}</strong> no MPlacas.
+                  </>
+                )}{' '}
                 Seu usuário é <strong className="break-all">{stage.preview.username}</strong>.
               </p>
               <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-5">
@@ -258,11 +269,16 @@ export function InvitePage() {
                   aria-busy={saving}
                   className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[var(--radius-control)] bg-[var(--color-brand-primary)] px-4 py-3 text-sm font-semibold text-[var(--color-on-brand)] transition-colors duration-150 hover:bg-[var(--color-brand-primary-dark)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none"
                 >
-                  {saving ? 'Criando...' : 'Criar senha e entrar'}
+                  {saving
+                    ? 'Salvando...'
+                    : stage.preview.purpose === 'RESET'
+                      ? 'Salvar senha nova e entrar'
+                      : 'Criar senha e entrar'}
                 </button>
                 <LoadingAnnouncement active={saving} message="Criando sua senha, aguarde." />
                 <p className="text-center text-xs text-[var(--color-text-secondary)]">
-                  Convite válido até {formatDate(stage.preview.expiresAt)}.
+                  {stage.preview.purpose === 'RESET' ? 'Link válido' : 'Convite válido'} até{' '}
+                  {formatDate(stage.preview.expiresAt)}.
                 </p>
               </form>
             </>
