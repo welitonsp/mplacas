@@ -68,6 +68,7 @@ from mplacas.providers.base import (
 from mplacas.providers.db_models import ProviderAccountRecord
 from mplacas.core.config import get_settings
 from mplacas.providers.factory import ENERGY_SOURCES, build_client
+from mplacas.providers.growatt.openapi import GrowattOpenApiClient
 from mplacas.services.collection import CollectionPlantError, SolarCollectionService
 
 logger = logging.getLogger(__name__)
@@ -945,6 +946,24 @@ async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> Pro
     return result
 
 
+async def _log_token_probe(login: str, token: str, plant_id: uuid.UUID) -> None:
+    """Registra quais leituras o token Growatt alcança, sem conteúdo (ADR-094).
+
+    O token lista as usinas mas a produção vem com 10011; este mapa mostra por
+    onde é possível ler. Nunca falha a requisição original.
+    """
+    probe_client = build_client(GROWATT_TOKEN, account=login, password=token)
+    try:
+        if not isinstance(probe_client, GrowattOpenApiClient):
+            return
+        result = await probe_client.probe()
+    except Exception as exc:  # diagnóstico nunca derruba a resposta
+        result = {"probe": type(exc).__name__}
+    finally:
+        await probe_client.aclose()
+    logger.info("growatt_token_probe", extra={"plant_id": str(plant_id), "probe": result})
+
+
 HISTORY_DAYS = 90
 HISTORY_LIMIT = 2
 # Teto separado do da conexão: uma marca fora do ar não impede trocar a senha
@@ -1036,6 +1055,8 @@ async def import_production_history(
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
     except ProviderAuthError:
         reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
+        if provider == GROWATT_TOKEN:
+            await _log_token_probe(credentials.login, credentials.password, scoped.plant_id)
         await refuse(reason)
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
     except ProviderError:

@@ -297,3 +297,28 @@ def test_shape_never_reveals_the_value() -> None:
     assert _shape("-17.74") == "texto-numero"
     assert _shape("17°44'") == "texto-grau"
     assert _shape("Caldas Novas") == "texto"
+
+
+@pytest.mark.asyncio
+async def test_probe_maps_which_reads_the_token_reaches_without_content(caplog) -> None:
+    """02/11/2026: lista ok, produção com 10011 — o mapa mostra por onde ler."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/v1/plant/list":
+            return _ok({"count": 1, "plants": [{"plant_id": 7, "name": "Segredo da usina"}]})
+        if path == "/v1/plant/data":
+            return _ok({"today_energy": "4.1", "total_energy": "900"})
+        return _envelope(10011, "permission denied")
+
+    client = _client(handler)
+    with caplog.at_level("INFO"):
+        result = await client.probe()
+    await client.aclose()
+    assert result["plant/list"] == "ok:1"
+    assert result["plant/data"] == "ok:today_energy,total_energy"
+    assert result["plant/energy"] == "ProviderAuthError"
+    assert "Segredo" not in str(result) and "4.1" not in str(result)
+    errors = [r for r in caplog.records if r.message == "growatt_openapi_error"]
+    assert errors and errors[0].error_code == 10011
+    assert TOKEN not in caplog.text

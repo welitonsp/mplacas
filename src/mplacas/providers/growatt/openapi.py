@@ -109,6 +109,18 @@ class GrowattOpenApiClient(SolarProvider):
         if not isinstance(body, dict):
             raise ProviderSchemaError("Growatt retornou envelope incompatível")
         code = _code(body.get("error_code"))
+        if code != 0:
+            # Qual endpoint recusou e o motivo da Growatt (texto curto dela,
+            # sem token nem dado da usina): o mesmo token lista as usinas mas
+            # recebe 10011 em outros endpoints (02/11/2026).
+            logger.info(
+                "growatt_openapi_error",
+                extra={
+                    "endpoint": path,
+                    "error_code": code,
+                    "error_msg": str(body.get("error_msg") or "")[:120],
+                },
+            )
         if code in _AUTH_CODES:
             raise ProviderAuthError("Growatt recusou o token")
         if code in _RATE_LIMIT_CODES:
@@ -207,6 +219,62 @@ class GrowattOpenApiClient(SolarProvider):
             if expected - set(result):
                 raise ProviderIncompleteDataError("Growatt não cobriu todos os dias solicitados")
         return [DailyEnergy(production_date=day, energy_kwh=result[day]) for day in sorted(result)]
+
+    async def probe(self) -> dict[str, str]:
+        """Quais endpoints de leitura este token alcança (ADR-094).
+
+        Só leitura, só o resultado de cada um (``ok`` ou o tipo do erro),
+        nunca o conteúdo. Usado quando a produção é recusada para descobrir
+        por onde o token consegue ler.
+        """
+        result: dict[str, str] = {}
+        try:
+            plants = await self._plants()
+        except ProviderError as exc:
+            return {"plant/list": type(exc).__name__}
+        result["plant/list"] = f"ok:{len(plants)}"
+        if not plants:
+            return result
+        plant_id = str(plants[0]["plant_id"])
+        today = date.today()
+        checks: list[tuple[str, dict[str, str]]] = [
+            ("plant/data", {"plant_id": plant_id}),
+            ("plant/details", {"plant_id": plant_id}),
+            ("device/list", {"plant_id": plant_id, "page": "1", "perpage": _PAGE_SIZE}),
+            (
+                "plant/energy",
+                {
+                    "plant_id": plant_id,
+                    "start_date": (today - timedelta(days=6)).isoformat(),
+                    "end_date": today.isoformat(),
+                    "time_unit": "day",
+                    "page": "1",
+                    "perpage": _PAGE_SIZE,
+                },
+            ),
+            (
+                "plant/energy:month",
+                {
+                    "plant_id": plant_id,
+                    "start_date": today.replace(day=1).isoformat()[:7],
+                    "end_date": today.isoformat()[:7],
+                    "time_unit": "month",
+                    "page": "1",
+                    "perpage": _PAGE_SIZE,
+                },
+            ),
+            ("plant/power", {"plant_id": plant_id, "date": today.isoformat()}),
+        ]
+        for name, params in checks:
+            path = name.split(":")[0]
+            try:
+                data = await self._get(path, params)
+            except ProviderError as exc:
+                result[name] = type(exc).__name__
+            else:
+                keys = sorted(data)[:12] if isinstance(data, dict) else []
+                result[name] = "ok:" + ",".join(str(key) for key in keys)
+        return result
 
     async def plant_profile(self) -> PlantProfile | None:
         """Cadastro da maior usina da conta, melhor esforço (ADR-094).
