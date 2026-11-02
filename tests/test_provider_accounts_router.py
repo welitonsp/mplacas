@@ -1110,3 +1110,36 @@ def test_draft_values_are_accepted_back_as_they_are(env) -> None:
         CONFIRM, json={"ticket": preview["ticket"], "plant": plant}, headers=_same_admin(org_id)
     )
     assert response.status_code == 201, response.text
+
+
+def test_token_import_refused_probes_with_the_same_client(env, monkeypatch, caplog) -> None:
+    """02/11/2026: produção com 10011; o teste de leitura não relê a lista."""
+    import httpx
+
+    from mplacas.providers.growatt.openapi import GrowattOpenApiClient
+
+    client, _factory, tokens, verifier = env
+    body = {"provider": "GROWATT_TOKEN", "password": "abc123"}
+    assert client.put(URL, json=body, headers=_auth(tokens["a_admin"])).status_code == 200
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url.path)
+        if request.url.path == "/v1/plant/list":
+            data = {"count": 1, "plants": [{"plant_id": 1383141}]}
+            return httpx.Response(200, json={"error_code": 0, "data": data})
+        return httpx.Response(200, json={"error_code": 10011, "error_msg": "denied"})
+
+    monkeypatch.setattr(
+        provider_router,
+        "build_client",
+        lambda *a, **k: GrowattOpenApiClient(token="t", transport=httpx.MockTransport(handler)),
+    )
+    with caplog.at_level("INFO"):
+        response = client.post(f"{URL}/import-history", headers=_auth(tokens["a_admin"]))
+    assert response.status_code == 422
+    assert response.json()["detail"] == "provider_token_failed"
+    assert asked.count("/v1/plant/list") == 1
+    assert "/v1/plant/data" in asked
+    probes = [r for r in caplog.records if r.message == "growatt_token_probe"]
+    assert probes and probes[0].probe["plant/list"] == "ok:1"
