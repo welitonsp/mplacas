@@ -11,6 +11,7 @@ import { DASHBOARD_SETUP_PATH } from '../../routes'
 
 type State =
   | { kind: 'running' }
+  // `days` = registros recebidos da marca (soma por inversor), só para saber se veio algo
   | { kind: 'done'; days: number }
   | { kind: 'error'; message: string; noConnection: boolean }
   | null
@@ -29,6 +30,8 @@ const IMPORT_ERRORS: Record<string, string> = {
   provider_login_failed: 'A marca recusou o usuário ou a senha guardados. Atualize a conexão em Minha usina.',
   provider_token_failed: 'A Growatt recusou o token guardado. Gere um novo e atualize a conexão em Minha usina.',
   provider_account_unreadable: 'Não foi possível ler a conexão guardada. Conecte de novo em Minha usina.',
+  provider_login_blocked: 'A marca bloqueou o acesso vindo do nosso servidor — não é a sua senha. Tente mais tarde.',
+  history_import_error: 'Não foi possível gravar a produção agora. Tente de novo em instantes.',
   provider_inverter_in_another_plant: 'Algum inversor desta conta já está ligado a outra usina. Fale com o suporte.',
 }
 
@@ -94,15 +97,12 @@ export function HomeHistoryImport({ plantId, onImported }: { plantId: string; on
       data-testid="home-history-import"
       className="flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm"
     >
-      <p
-        role={state?.kind === 'error' ? 'alert' : 'status'}
-        className="min-w-0 flex-1 text-[var(--color-text-secondary)]"
-      >
+      <p aria-live="polite" className="min-w-0 flex-1 text-[var(--color-text-secondary)]">
         {state?.kind === 'running'
           ? 'Buscando na marca a produção dos últimos 90 dias…'
           : state?.kind === 'done'
             ? state.days > 0
-              ? `Importamos ${state.days} ${state.days === 1 ? 'dia' : 'dias'} de produção.`
+              ? 'Produção importada. Atualizando o Início…'
               : 'A marca ainda não tem produção registrada para esta usina. A coleta automática segue todos os dias.'
             : state?.kind === 'error'
               ? state.message

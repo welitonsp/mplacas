@@ -27,6 +27,7 @@ from mplacas.providers import db_models as _provider_models  # noqa: F401
 from mplacas.providers.accounts import ProviderAccountService, ProviderLogin
 from mplacas.providers.base import (
     PlantProfile,
+    ProviderBlockedError,
     ProviderAuthError,
     ProviderSchemaError,
     ProviderUnavailableError,
@@ -897,6 +898,9 @@ def test_import_history_has_its_own_limit(env, fake_collection) -> None:
     [
         (ProviderAuthError("x"), 422, "provider_login_failed"),
         (ProviderUnavailableError("x"), 503, "provider_unavailable"),
+        (ProviderSchemaError("x"), 503, "provider_unavailable"),
+        (ProviderBlockedError("x"), 503, "provider_login_blocked"),
+        (RuntimeError("db"), 503, "history_import_error"),
     ],
 )
 def test_import_history_maps_brand_errors(env, fake_collection, error, status_code, detail) -> None:

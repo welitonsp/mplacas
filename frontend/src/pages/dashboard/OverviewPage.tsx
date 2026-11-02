@@ -169,6 +169,7 @@ export function OverviewPage() {
 
         {anomalies.error === 'NOT_FOUND' && me?.role === 'ADMIN' && (
           <HomeHistoryImport
+            key={plantId}
             plantId={plantId}
             onImported={() => {
               anomalies.refetch()

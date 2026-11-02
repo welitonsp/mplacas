@@ -887,6 +887,10 @@ async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> Pro
     except ProviderRateLimitedError:
         await refuse("provider_rate_limited")
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
+    except ProviderBlockedError:
+        # bloqueio da marca não é senha errada: mesmo código da conexão
+        await refuse("provider_login_blocked")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
     except ProviderAuthError:
         reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
         await refuse(reason)
@@ -943,9 +947,11 @@ async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> Pro
 
 HISTORY_DAYS = 90
 HISTORY_LIMIT = 2
-# Falhas contam no teto da importação, mas não no da conexão: uma marca fora
-# do ar não pode impedir o cliente de trocar a senha (e vice-versa).
-_HISTORY_ACTIONS = ("provider_account.history_imported", "provider_account.history_import_failed")
+# Teto separado do da conexão: uma marca fora do ar não impede trocar a senha
+# (e vice-versa). O teto conta o início da importação, gravado ANTES de chamar a marca: duas
+# abas ou um clique duplo não passam juntos pelo teto enquanto a primeira
+# ainda está lendo os 90 dias.
+_HISTORY_ACTIONS = ("provider_account.history_import_started",)
 
 
 class HistoryImportResult(BaseModel):
@@ -994,6 +1000,17 @@ async def import_production_history(
 
     end = datetime.now(ZoneInfo(get_settings().timezone)).date() - timedelta(days=1)
     start = end - timedelta(days=HISTORY_DAYS - 1)
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        await AuditEventRepository(session).record(
+            request,
+            action="provider_account.history_import_started",
+            resource_type="plant",
+            resource_id=str(scoped.plant_id),
+            outcome="SUCCEEDED",
+            details={"provider": provider},
+        )
+        await session.commit()
     client = build_client(provider, account=credentials.login, password=credentials.password)
     try:
         # Mesmo contexto da coleta diária (collection/job.py): a usina já foi
@@ -1013,6 +1030,10 @@ async def import_production_history(
     except ProviderRateLimitedError:
         await refuse("provider_rate_limited")
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
+    except ProviderBlockedError:
+        # bloqueio da marca não é senha errada: mesmo código da conexão
+        await refuse("provider_login_blocked")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
     except ProviderAuthError:
         reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
         await refuse(reason)
@@ -1020,6 +1041,15 @@ async def import_production_history(
     except ProviderError:
         await refuse("provider_unavailable")
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
+    except Exception as exc:
+        # ex.: a coleta diária gravando o mesmo dia ao mesmo tempo. Sempre
+        # auditado; o log leva só o tipo do erro, nunca dado da conexão.
+        logger.warning(
+            "provider_history_import_error",
+            extra={"plant_id": str(scoped.plant_id), "error_code": type(exc).__name__},
+        )
+        await refuse("history_import_error")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "history_import_error") from None
     finally:
         await client.aclose()
 
