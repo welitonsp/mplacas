@@ -17,7 +17,6 @@ Nenhuma resposta, log ou evento de auditoria contém login ou senha.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import logging
@@ -121,17 +120,19 @@ def _parse_body(raw: bytes) -> tuple[str, ProviderLogin]:
 
 TOKEN_LOGIN_PENDING = "growatt-token"
 _TOKEN_CHARS = re.compile(r"[!-~]+")
+_TOKEN_LOGIN_PURPOSE = "growatt_token_login"
 
 
-def _token_login(credentials: ProviderLogin) -> ProviderLogin:
-    """Login de uma conexão por token (ADR-094): um resumo do token, nunca ele.
+def _token_login(credentials: ProviderLogin, box: SecretBox) -> ProviderLogin:
+    """Login de uma conexão por token (ADR-094): uma impressão do token, nunca ele.
 
-    Estável para o mesmo token (a regra "a mesma conta não liga duas usinas"
-    usa a impressão digital do login) e independente das usinas da conta. Na
-    tela aparece mascarado ("to***3f"). A mesma usina Growatt em duas usinas
-    do MPlacas é barrada pelos aparelhos (``_inverter_in_another_plant``).
+    HMAC com subchave do cofre (``SecretBox.fingerprint``), estável para o mesmo
+    token (mesmo que a conta ganhe usinas) e alimenta a regra "a mesma conta não
+    liga duas usinas". Na tela aparece mascarado ("to***3f"). A mesma usina
+    Growatt em duas usinas do MPlacas é barrada pelos aparelhos
+    (``_inverter_in_another_plant``).
     """
-    digest = hashlib.sha256(credentials.password.encode()).hexdigest()[:16]
+    digest = box.fingerprint(credentials.password, purpose=_TOKEN_LOGIN_PURPOSE)[:16]
     return ProviderLogin(login=f"token-{digest}", password=credentials.password)
 
 
@@ -243,7 +244,7 @@ async def put_provider_account(request: Request, scoped: AdminPlantPath) -> Prov
 
     inspection = await _inspect(provider, credentials, refuse)
     if provider == GROWATT_TOKEN:
-        credentials = _token_login(credentials)
+        credentials = _token_login(credentials, box)
     serials = inspection.serials
 
     if await _inverter_in_another_plant(provider, serials, scoped.plant_id):
@@ -339,7 +340,7 @@ async def connect_first_plant(
 
     inspection = await _inspect(provider, credentials, refuse)
     if provider == GROWATT_TOKEN:
-        credentials = _token_login(credentials)
+        credentials = _token_login(credentials, box)
     if await _inverter_in_another_plant(provider, inspection.serials, None):
         await refuse("provider_inverter_in_another_plant")
         raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant")

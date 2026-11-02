@@ -26,8 +26,8 @@ API Token → Reopen).
    `plant/energy` por dia (no máximo 7 dias por consulta, partido em janelas), `plant/data` e
    `plant/details` (cadastro para o preenchimento automático da ADR-093 § 7; `peak_power` em
    kW). Códigos: `10011` = token recusado; `10012` ou HTTP 429 = esperar.
-3. O "login" de uma conexão por token é derivado no servidor: `token-<16 primeiros hex do
-   SHA-256 do token>`. Ele é estável para o mesmo token (mesmo que a conta ganhe usinas), aparece
+3. O "login" de uma conexão por token é derivado no servidor: `token-<16 primeiros hex de um
+   HMAC do token com subchave do cofre>`. Ele é estável para o mesmo token (mesmo que a conta ganhe usinas), aparece
    mascarado na tela e alimenta a regra "a mesma conta não liga duas usinas". Nunca contém o
    token. A mesma usina Growatt em duas usinas do MPlacas é barrada pelos aparelhos
    `GW-PLANT-<id>`, que conferem senha e token juntos. O token é recusado (422) se tiver espaço
