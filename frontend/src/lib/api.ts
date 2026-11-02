@@ -386,6 +386,14 @@ export async function saveProviderAccount(
   })
 }
 
+// Relê o cadastro da usina na marca com a conexão guardada (ADR-094).
+export async function refreshPlantProfile(plantId: string): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account/refresh-profile`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
 export async function deleteProviderAccount(plantId: string): Promise<Response> {
   return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account`, { method: 'DELETE' })
 }

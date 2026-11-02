@@ -115,12 +115,30 @@ async def test_missing_day_is_incomplete_never_zero() -> None:
 
 
 @pytest.mark.asyncio
-async def test_profile_reads_details_of_biggest_plant_in_kw() -> None:
-    client = _client(FakeOpenApi())
+async def test_profile_uses_the_list_row_of_biggest_plant_in_kw() -> None:
+    fake = FakeOpenApi()
+    client = _client(fake)
+    profile = await client.plant_profile()
+    await client.aclose()
+    # a linha da lista já tem potência e cidade: os detalhes nem são pedidos
+    assert profile == PlantProfile(
+        name="Casa", installed_power_kwp=Decimal("5.400"), city="Caldas Novas"
+    )
+    assert all(call.url.path != "/v1/plant/details" for call in fake.calls)
+
+
+@pytest.mark.asyncio
+async def test_profile_completes_from_details_when_list_is_partial() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/plant/list":
+            return _ok({"count": 1, "plants": [{"plant_id": 22, "name": "Casa"}]})
+        return FakeOpenApi()(request)
+
+    client = _client(handler)
     profile = await client.plant_profile()
     await client.aclose()
     assert profile == PlantProfile(
-        name="Usina do Rogério",
+        name="Casa",
         installed_power_kwp=Decimal("5.400"),
         latitude=Decimal("-17.744100"),
         longitude=Decimal("-48.625200"),
@@ -218,3 +236,51 @@ def test_factory_builds_the_token_client_with_its_own_source() -> None:
     client = build_client("GROWATT_TOKEN", account="token-x", password=TOKEN)
     assert isinstance(client, GrowattOpenApiClient)
     assert ENERGY_SOURCES["GROWATT_TOKEN"] == "GROWATT_OPENAPI_V1"
+
+
+@pytest.mark.asyncio
+async def test_profile_uses_the_list_when_details_are_not_permitted() -> None:
+    """02/11/2026: token lista as usinas mas recebe 10011 nos detalhes."""
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url.path)
+        if request.url.path == "/v1/plant/list":
+            return _ok(
+                {
+                    "count": 1,
+                    "plants": [
+                        {
+                            "plant_id": 1383141,
+                            "name": "Usina do Rogério",
+                            "peak_power": 6.6,
+                            "city": "Caldas Novas",
+                            "latitude": "-17.74",
+                            "longitude": "-48.62",
+                        }
+                    ],
+                }
+            )
+        return _envelope(10011, "permission denied")
+
+    client = _client(handler)
+    profile = await client.plant_profile()
+    await client.aclose()
+    assert profile is not None
+    assert profile.name == "Usina do Rogério"
+    assert profile.installed_power_kwp == Decimal("6.600")
+    assert profile.latitude == Decimal("-17.740000")
+    assert "/v1/plant/details" not in asked  # a lista já bastava
+
+
+@pytest.mark.asyncio
+async def test_profile_survives_denied_details_when_list_is_partial() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/plant/list":
+            return _ok({"count": 1, "plants": [{"plant_id": 9, "name": "Sítio"}]})
+        return _envelope(10011, "permission denied")
+
+    client = _client(handler)
+    profile = await client.plant_profile()
+    await client.aclose()
+    assert profile == PlantProfile(name="Sítio")

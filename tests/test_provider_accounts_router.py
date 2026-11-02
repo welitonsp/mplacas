@@ -745,3 +745,80 @@ def test_token_login_never_derives_from_the_token(env) -> None:
     record = asyncio.run(_records(factory))[-1]
     assert record.login_hint.startswith("to***")
     assert "abc1" not in record.login_hint
+
+
+# --- ADR-094: reler o cadastro na marca --------------------------------------
+
+
+def test_refresh_profile_fills_empty_fields_and_default_name(env, monkeypatch) -> None:
+    client, factory, tokens, verifier = env
+    assert client.put(URL, json=_body(), headers=_auth(tokens["a_admin"])).status_code == 200
+
+    async def _rename_default() -> None:
+        async with factory() as session:
+            plant = await session.get(Plant, PLANT_A)
+            plant.name = "Minha usina"
+            await session.commit()
+
+    asyncio.run(_rename_default())
+
+    class FakeClient:
+        async def plant_profile(self):
+            return PROFILE
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(provider_router, "build_client", lambda *a, **k: FakeClient())
+    response = client.post(f"{URL}/refresh-profile", headers=_auth(tokens["a_admin"]))
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["plant_name"] == "Usina do Rogério"
+    assert body["auto_filled"]["dc_capacity_kwp"] == "BRAND"
+    assert "refresh" not in PASSWORD
+    assert PASSWORD not in response.text
+
+
+def test_refresh_profile_keeps_owner_name(env, monkeypatch) -> None:
+    client, _factory, tokens, verifier = env
+    client.put(URL, json=_body(), headers=_auth(tokens["a_admin"]))
+
+    class FakeClient:
+        async def plant_profile(self):
+            return PROFILE
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(provider_router, "build_client", lambda *a, **k: FakeClient())
+    response = client.post(f"{URL}/refresh-profile", headers=_auth(tokens["a_admin"]))
+    assert response.json()["plant_name"] == "Casa"
+
+
+def test_refresh_profile_requires_connection_and_admin(env) -> None:
+    client, _factory, tokens, verifier = env
+    assert (
+        client.post(f"{URL}/refresh-profile", headers=_auth(tokens["a_admin"])).status_code == 404
+    )
+    assert client.post(f"{URL}/refresh-profile", headers=_auth(tokens["a_read"])).status_code == 403
+
+
+def test_refresh_profile_has_its_own_limit_and_never_blocks_saving(env, monkeypatch) -> None:
+    client, _factory, tokens, verifier = env
+    client.put(URL, json=_body(), headers=_auth(tokens["a_admin"]))
+
+    class FakeClient:
+        async def plant_profile(self):
+            return PROFILE
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(provider_router, "build_client", lambda *a, **k: FakeClient())
+    path = f"{URL}/refresh-profile"
+    for _ in range(provider_router.REFRESH_LIMIT):
+        assert client.post(path, headers=_auth(tokens["a_admin"])).status_code == 200
+    assert client.post(path, headers=_auth(tokens["a_admin"])).status_code == 429
+    # trocar a senha continua possível
+    assert client.put(URL, json=_body(), headers=_auth(tokens["a_admin"])).status_code == 200

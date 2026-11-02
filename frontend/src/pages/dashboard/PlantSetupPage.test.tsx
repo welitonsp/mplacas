@@ -50,6 +50,7 @@ interface Mocks {
   fetchProviderAccount?: ReturnType<typeof vi.fn>
   saveProviderAccount?: ReturnType<typeof vi.fn>
   deleteProviderAccount?: ReturnType<typeof vi.fn>
+  refreshPlantProfile?: ReturnType<typeof vi.fn>
 }
 
 const NO_CONNECTION = {
@@ -81,6 +82,8 @@ function installApiMock(mocks: Mocks = {}) {
     fetchProviderAccount: mocks.fetchProviderAccount ?? vi.fn(async () => jsonResponse(NO_CONNECTION)),
     saveProviderAccount: mocks.saveProviderAccount ?? vi.fn(async () => jsonResponse(CONNECTED)),
     deleteProviderAccount: mocks.deleteProviderAccount ?? vi.fn(async () => new Response(null, { status: 204 })),
+    refreshPlantProfile:
+      mocks.refreshPlantProfile ?? vi.fn(async () => jsonResponse({ auto_filled: {}, plant_name: 'Casa do Lago' })),
   }
   vi.doMock('../../lib/api', () => ({
     ...resolved,
@@ -576,3 +579,35 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
   })
 })
 
+
+
+describe('PlantSetupPage — buscar dados da usina na marca (ADR-094)', () => {
+  it('relê o cadastro, diz o que foi preenchido e recarrega os dados', async () => {
+    vi.resetModules()
+    const fetchPlantSetup = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(setupPayload()))
+      .mockResolvedValue(
+        jsonResponse(
+          setupPayload({
+            technical: { ...setupPayload().technical, dc_capacity_kwp: '6.600' },
+          }),
+        ),
+      )
+    const refreshPlantProfile = vi.fn(async () =>
+      jsonResponse({ auto_filled: { dc_capacity_kwp: 'BRAND', location: 'BRAND' }, plant_name: 'Casa do Lago' }),
+    )
+    installApiMock({
+      fetchPlantSetup,
+      fetchProviderAccount: vi.fn(async () => jsonResponse({ ...CONNECTED, provider: 'GROWATT_TOKEN' })),
+      refreshPlantProfile,
+    })
+
+    await renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Buscar dados da usina na marca' }))
+
+    expect(await screen.findByText(/Dados lidos na Growatt: Potência dos painéis, Localização/)).toBeInTheDocument()
+    expect(refreshPlantProfile).toHaveBeenCalledWith(singlePlant.id)
+    await waitFor(() => expect(fetchPlantSetup).toHaveBeenCalledTimes(2))
+  })
+})

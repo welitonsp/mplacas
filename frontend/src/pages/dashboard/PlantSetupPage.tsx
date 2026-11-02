@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useState } from 'react'
+import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { CheckCircle2, Circle, CircleAlert } from 'lucide-react'
 import {
@@ -723,12 +723,22 @@ function BillsStatus({ setup }: { setup: PlantSetup }) {
 export function PlantSetupPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
   const headingRef = useModuleTitle('Minha usina')
+  // Remonta os formulários quando os dados relidos na marca chegam.
+  const pendingProfileRef = useRef(false)
+  const [profileVersion, setProfileVersion] = useState(0)
   const setup = usePlantResource({
     plantId,
     fetcher: fetchPlantSetup,
     parse: parsePlantSetup,
     errorMessage: 'Erro ao buscar os dados da usina.',
   })
+
+  useEffect(() => {
+    if (pendingProfileRef.current && setup.data) {
+      pendingProfileRef.current = false
+      setProfileVersion((value) => value + 1)
+    }
+  }, [setup.data])
 
   if (plantsLoading) return <MetricCardSkeletonGrid />
   if (plantsError) {
@@ -767,9 +777,18 @@ export function PlantSetupPage() {
         // checklist é recarregado.
         <div className="space-y-6" key={data.plantId}>
           <SetupChecklist setup={data} />
-          <ProviderConnectionSection plantId={data.plantId} />
-          <InstallationForm setup={data} onSaved={setup.refetch} />
-          <LocationForm setup={data} onSaved={setup.refetch} />
+          <ProviderConnectionSection
+            plantId={data.plantId}
+            onProfileRefreshed={() => {
+              pendingProfileRef.current = true
+              setup.refetch()
+            }}
+          />
+          {/* Recomeçam só depois de "Buscar dados da usina na marca" trazer os
+              dados novos — nunca depois de o próprio dono salvar (o aviso
+              "Salvo" e o que ele digitou continuam na tela). */}
+          <InstallationForm key={`installation-${profileVersion}`} setup={data} onSaved={setup.refetch} />
+          <LocationForm key={`location-${profileVersion}`} setup={data} onSaved={setup.refetch} />
           <InvestmentForm setup={data} onSaved={setup.refetch} />
           <BillsStatus setup={data} />
         </div>
