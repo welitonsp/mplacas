@@ -370,6 +370,8 @@ _ACTIVITY_ACTIONS = {
     "plant.created_from_connection",
     "provider_account.saved",
     "provider_account.profile_refreshed",
+    "provider_account.history_imported",
+    "provider_account.history_import_failed",
     "provider_account.verify_failed",
     "provider_account.removed",
 }

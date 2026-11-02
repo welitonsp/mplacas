@@ -28,6 +28,7 @@ interface ApiMockOverrides {
   fetchAnomalyHistory?: (plantId: string, days?: number) => Promise<Response>
   fetchFinancialReturn?: (plantId: string) => Promise<Response>
   fetchPlantSetup?: (plantId: string) => Promise<Response>
+  importProductionHistory?: (plantId: string) => Promise<Response>
 }
 
 function installApiMock(overrides: ApiMockOverrides = {}) {
@@ -42,6 +43,7 @@ function installApiMock(overrides: ApiMockOverrides = {}) {
     fetchPlantSetup:
       overrides.fetchPlantSetup ?? vi.fn(async () => jsonResponse(overrides.setupPayload ?? plantSetupCompletePayload)),
     fetchPlants: vi.fn(async () => [singlePlant]),
+    importProductionHistory: overrides.importProductionHistory ?? vi.fn(async () => jsonResponse({ days_received: 0 })),
     configureApi: vi.fn(),
   }))
 }
@@ -356,5 +358,78 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
     expect(fetchAnomalyHistory).toHaveBeenCalledTimes(2)
     expect(fetchFinancialReturn).toHaveBeenCalledTimes(2)
     expect(fetchPlantSetup).toHaveBeenCalledTimes(2)
+  })
+})
+
+// ADR-097: usina recém-conectada — sem fatura e sem leitura ainda.
+describe('Início de usina recém-conectada', () => {
+  afterEach(() => {
+    vi.doUnmock('../../contexts/MeContext')
+  })
+
+  function asRole(role: 'ADMIN' | 'READ_ONLY') {
+    vi.doMock('../../contexts/MeContext', () => ({
+      useMe: () => ({ me: { role }, loading: false }),
+    }))
+  }
+
+  it('sem fatura (executivo 404): estado vazio com caminho, nunca "Erro ao buscar dados"', async () => {
+    freezeToday()
+    await renderHome({ fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: 'x' }, 404)) })
+
+    const card = await screen.findByTestId('home-no-cycle')
+    expect(within(card).getByText('A economia aparece depois da primeira fatura')).toBeInTheDocument()
+    expect(within(card).getByRole('link', { name: 'Enviar a fatura em Dinheiro' })).toBeInTheDocument()
+    expect(screen.queryByText('Erro ao buscar dados.')).not.toBeInTheDocument()
+  })
+
+  it('sem leitura: o ADMIN já busca a produção na marca e o Início recarrega', async () => {
+    freezeToday()
+    let readings = 0
+    const fetchAnomalyHistory = vi.fn(async () =>
+      readings > 0 ? jsonResponse(anomalyPayload) : jsonResponse({ detail: 'x' }, 404),
+    )
+    const importProductionHistory = vi.fn(async () => {
+      readings = 1
+      return jsonResponse({ days_received: 88, days_changed: 88 })
+    })
+    asRole('ADMIN')
+    const { resetHistoryAutoImportForTests } = await import('../../components/home/HomeHistoryImport')
+    resetHistoryAutoImportForTests()
+    await renderHome({ fetchAnomalyHistory, importProductionHistory })
+
+    await waitFor(() => expect(importProductionHistory).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(fetchAnomalyHistory).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('Nenhuma leitura da usina nos últimos 90 dias')).not.toBeInTheDocument()
+  })
+
+  it('a marca sem produção: explica e oferece tentar de novo', async () => {
+    freezeToday()
+    asRole('ADMIN')
+    const importProductionHistory = vi.fn(async () => jsonResponse({ days_received: 0 }))
+    await renderHome({
+      fetchAnomalyHistory: vi.fn(async () => jsonResponse({ detail: 'x' }, 404)),
+      importProductionHistory,
+    })
+
+    const box = await screen.findByTestId('home-history-import')
+    expect(
+      await within(box).findByText(/A marca ainda não tem produção registrada/),
+    ).toBeInTheDocument()
+    fireEvent.click(within(box).getByRole('button', { name: 'Buscar produção na marca' }))
+    await waitFor(() => expect(importProductionHistory).toHaveBeenCalledTimes(2))
+  })
+
+  it('quem só lê não dispara a importação', async () => {
+    freezeToday()
+    asRole('READ_ONLY')
+    const importProductionHistory = vi.fn(async () => jsonResponse({ days_received: 5 }))
+    await renderHome({
+      fetchAnomalyHistory: vi.fn(async () => jsonResponse({ detail: 'x' }, 404)),
+      importProductionHistory,
+    })
+    await screen.findByText('Nenhuma leitura da usina nos últimos 90 dias')
+    expect(screen.queryByTestId('home-history-import')).not.toBeInTheDocument()
+    expect(importProductionHistory).not.toHaveBeenCalled()
   })
 })

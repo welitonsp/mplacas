@@ -34,6 +34,10 @@ import { HomeStatusCard } from '../../components/home/HomeStatusCard'
 import { HomeSavingsCard } from '../../components/home/HomeSavingsCard'
 import { HomeWeekCard } from '../../components/home/HomeWeekCard'
 import { HomeTodoList } from '../../components/home/HomeTodoList'
+import { HomeHistoryImport } from '../../components/home/HomeHistoryImport'
+import { useMe } from '../../contexts/MeContext'
+import { Link } from 'react-router'
+import { DASHBOARD_FINANCIAL_PATH } from '../../routes'
 
 // Aba Início (ADR-083) — responde "está tudo bem?" em uma tela de celular:
 // 1. uma frase de situação (telemetria recente + gatilho de produção);
@@ -48,17 +52,23 @@ import { HomeTodoList } from '../../components/home/HomeTodoList'
 // Quatro recursos, todos de leitura: executivo, produção diária, retorno do
 // investimento e cadastro da usina (para tarefas pendentes). Falha dos dois
 // últimos não derruba a tela: o cartão correspondente só omite a parte.
+const NO_CYCLE = 'NO_CYCLE'
+
 export function OverviewPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
   // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
   const headingRef = useModuleTitle('Início')
 
-  const executive = usePlantResource({
+  const { me } = useMe()
+  // 404 do executivo = ainda não há ciclo de fatura (usina recém-conectada):
+  // é um estado vazio esperado, não um erro para "tentar de novo".
+  const executive = usePlantResource<ReturnType<typeof parseExecutiveDashboard>, string>({
     plantId,
     fetcher: fetchExecutiveDashboard,
     parse: parseExecutiveDashboard,
-    errorMessage: 'Erro ao buscar dados.',
+    classifyError: (failure) =>
+      failure.kind === 'http' && failure.status === 404 ? NO_CYCLE : 'Erro ao buscar dados.',
   })
   const anomalies = usePlantResource<AnomalyDashboardResponse, AnomalyFetchError>({
     plantId,
@@ -146,7 +156,9 @@ export function OverviewPage() {
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0" />}
       />
 
-      {executive.error && <RetryableError message={executive.error} onRetry={refreshAll} className="mb-6" />}
+      {executive.error && executive.error !== NO_CYCLE && (
+        <RetryableError message={executive.error} onRetry={refreshAll} className="mb-6" />
+      )}
 
       <div className="flex flex-col gap-4 sm:gap-5">
         {status ? (
@@ -155,7 +167,35 @@ export function OverviewPage() {
           <div className="h-[84px] animate-pulse rounded-[var(--radius-card)] bg-[var(--color-surface-sunken)]" aria-hidden="true" />
         ) : null}
 
+        {anomalies.error === 'NOT_FOUND' && me?.role === 'ADMIN' && (
+          <HomeHistoryImport
+            plantId={plantId}
+            onImported={() => {
+              anomalies.refetch()
+              executive.refetch()
+            }}
+          />
+        )}
+
         {executive.status === 'loading' && !data && <MetricCardSkeletonGrid />}
+
+        {executive.error === NO_CYCLE && (
+          <section
+            aria-label="Economia"
+            data-testid="home-no-cycle"
+            className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)]"
+          >
+            <h2 className="font-display text-base font-semibold text-[var(--color-text-primary)]">
+              A economia aparece depois da primeira fatura
+            </h2>
+            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+              Para calcular quanto a usina economizou, precisamos de uma conta de luz confirmada.{' '}
+              <Link to={`${DASHBOARD_FINANCIAL_PATH}#faturas`} className="font-semibold text-[var(--color-brand-primary)] underline">
+                Enviar a fatura em Dinheiro
+              </Link>
+            </p>
+          </section>
+        )}
 
         <div className="grid gap-4 sm:gap-5 lg:grid-cols-2">
           {data && (

@@ -394,6 +394,15 @@ export async function refreshPlantProfile(plantId: string): Promise<Response> {
   })
 }
 
+// Importa a produção dos últimos 90 dias da marca (ADR-097), sem esperar a
+// coleta da madrugada. Usa a conexão guardada; nenhum segredo trafega aqui.
+export async function importProductionHistory(plantId: string): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account/import-history`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
 export async function deleteProviderAccount(plantId: string): Promise<Response> {
   return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account`, { method: 'DELETE' })
 }
