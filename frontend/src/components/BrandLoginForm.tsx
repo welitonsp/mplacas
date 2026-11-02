@@ -222,7 +222,7 @@ export function BrandLoginForm({
       </div>
       )}
       <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
-        O sistema confere a conta na {brandInfo.label} antes de salvar. {tokenMode ? 'O token' : 'A senha'} fica
+        O sistema confere a conta na {brandInfo.label}. {tokenMode ? 'O token' : 'A senha'} fica
         guardad{tokenMode ? 'o' : 'a'} cifrad{tokenMode ? 'o' : 'a'} e não aparece de novo para ninguém.
       </p>
       {feedback && (
