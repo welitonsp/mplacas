@@ -28,7 +28,7 @@ const IMPORT_ERRORS: Record<string, string> = {
   provider_rate_limited: 'A marca bloqueou novas consultas por um tempo. Espere cerca de uma hora e tente de novo.',
   provider_unavailable: 'A marca não respondeu agora. Tente de novo em alguns minutos.',
   provider_login_failed: 'A marca recusou o usuário ou a senha guardados. Atualize a conexão em Minha usina.',
-  provider_token_failed: 'A Growatt recusou o token guardado. Gere um novo e atualize a conexão em Minha usina.',
+  provider_token_failed: 'A Growatt não liberou a leitura da produção para este token. Já registramos o caso para análise.',
   provider_account_unreadable: 'Não foi possível ler a conexão guardada. Conecte de novo em Minha usina.',
   provider_login_blocked: 'A marca bloqueou o acesso vindo do nosso servidor — não é a sua senha. Tente mais tarde.',
   history_import_error: 'Não foi possível gravar a produção agora. Tente de novo em instantes.',
