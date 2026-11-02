@@ -526,7 +526,7 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
     await screen.findByText('Nenhuma conta conectada')
     const group = screen.getByRole('group', { name: 'Marca do inversor' })
     expect(within(group).getByRole('radio', { name: 'NEPViewer' })).toBeChecked()
-    fireEvent.click(within(group).getByRole('radio', { name: 'Growatt' }))
+    fireEvent.click(within(group).getByRole('radio', { name: 'Growatt — usuário e senha' }))
     expect(screen.getByLabelText('Usuário do app Growatt')).toHaveAttribute(
       'placeholder',
       'O mesmo do app ShinePhone (Growatt)',
@@ -554,7 +554,7 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
 
     await renderPage()
     await screen.findByText('Nenhuma conta conectada')
-    fireEvent.click(screen.getByRole('radio', { name: 'Growatt' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Growatt — usuário e senha' }))
     fireEvent.change(screen.getByLabelText('Usuário do app Growatt'), { target: { value: 'rogerio' } })
     fireEvent.change(screen.getByLabelText('Senha do app Growatt'), { target: { value: 'x' } })
     fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
@@ -571,7 +571,7 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
     await renderPage()
     fireEvent.click(await screen.findByRole('button', { name: 'Trocar senha ou conta' }))
 
-    expect(screen.getByRole('radio', { name: 'Growatt' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Growatt — usuário e senha' })).toBeChecked()
     expect(screen.getByLabelText('Senha do app Growatt')).toHaveValue('')
   })
 })

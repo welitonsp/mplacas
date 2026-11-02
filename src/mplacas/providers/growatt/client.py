@@ -26,6 +26,7 @@ from mplacas.providers.base import (
     ProviderRateLimitedError,
     ProviderSchemaError,
     PlantProfile,
+    ProviderBlockedError,
     ProviderUnavailableError,
     SolarDevice,
     SolarProvider,
@@ -156,6 +157,9 @@ class GrowattClient(SolarProvider):
             response = await self._client.request(method, path, params=params, data=data)
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             raise ProviderUnavailableError("Growatt indisponível ou com timeout") from exc
+        if response.status_code in {401, 403} and login:
+            # O login nem foi avaliado: a Growatt bloqueia a requisição (ADR-094).
+            raise ProviderBlockedError("Growatt bloqueou o login por usuário e senha")
         if response.status_code in {401, 403}:
             raise ProviderAuthError("Growatt recusou o acesso")
         if 300 <= response.status_code < 400 and login:

@@ -29,9 +29,15 @@ function renderPanel() {
 }
 
 function fill(brand: 'Growatt' | 'NEPViewer') {
-  fireEvent.click(screen.getByLabelText(brand))
+  fireEvent.click(screen.getByLabelText(brand === 'Growatt' ? 'Growatt — usuário e senha' : brand))
   fireEvent.change(screen.getByLabelText(`Usuário do app ${brand}`), { target: { value: 'rogerio' } })
   fireEvent.change(screen.getByLabelText(`Senha do app ${brand}`), { target: { value: SECRET } })
+  fireEvent.click(screen.getByRole('button', { name: 'Conferir e criar minha usina' }))
+}
+
+function fillToken(token: string) {
+  fireEvent.click(screen.getByLabelText('Growatt — token (recomendado)'))
+  fireEvent.change(screen.getByLabelText('Token da API (app ShinePhone)'), { target: { value: token } })
   fireEvent.click(screen.getByRole('button', { name: 'Conferir e criar minha usina' }))
 }
 
@@ -73,6 +79,36 @@ describe('FirstConnectionPanel (ADR-093 § 7)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ver minha usina' }))
     expect(reload).toHaveBeenCalled()
     expect(await screen.findByText('minha usina')).toBeInTheDocument()
+  })
+
+  it('Growatt por token: só o token, sem usuário, e explica onde achar', async () => {
+    connectFirstPlant.mockResolvedValue(
+      jsonResponse(
+        { plant_id: 'p1', plant_name: 'Casa', connection: { devices_found: 1 }, auto_filled: {} },
+        201,
+      ),
+    )
+    renderPanel()
+    fireEvent.click(screen.getByLabelText('Growatt — token (recomendado)'))
+    expect(screen.queryByLabelText('Usuário do app Growatt')).not.toBeInTheDocument()
+    expect(screen.getByText(/API Token/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir e criar minha usina' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cole o token')
+    expect(connectFirstPlant).not.toHaveBeenCalled()
+
+    fillToken(` ${SECRET} `)
+    expect(await screen.findByRole('heading', { name: /Casa/ })).toBeInTheDocument()
+    expect(connectFirstPlant).toHaveBeenCalledWith({ provider: 'GROWATT_TOKEN', login: '', password: SECRET })
+    expect(document.body.innerHTML).not.toContain(SECRET)
+  })
+
+  it('login por senha bloqueado aponta para o token, sem culpar a senha', async () => {
+    connectFirstPlant.mockResolvedValue(jsonResponse({ detail: 'provider_login_blocked' }, 503))
+    renderPanel()
+    fill('Growatt')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('não é a sua senha')
+    expect(alert).toHaveTextContent('token (recomendado)')
   })
 
   it('mostra a recusa da marca sem repetir o que foi digitado', async () => {

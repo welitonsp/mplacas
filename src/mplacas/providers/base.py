@@ -28,6 +28,17 @@ class ProviderRateLimitedError(ProviderError):
     """
 
 
+class ProviderBlockedError(ProviderAuthError):
+    """O fabricante recusou o próprio pedido de login, antes de olhar a senha.
+
+    Ex.: a Growatt responde HTTP 403 ao login por usuário e senha vindo de
+    servidores de terceiros (31/10/2026). Não é senha errada e insistir não
+    resolve; o caminho é o token da OpenAPI (ADR-094). Herda de
+    ``ProviderAuthError`` de propósito: a camada de retry não repete, e a
+    coleta espera 1 h (``slow_retry_seconds``), como na senha recusada.
+    """
+
+
 class ProviderIncompleteDataError(ProviderError):
     """O provedor respondeu, mas sem os dados esperados para o intervalo.
 

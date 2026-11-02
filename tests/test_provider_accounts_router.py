@@ -637,3 +637,111 @@ def test_reconnecting_fills_only_empty_fields(env) -> None:
         "array_azimuth_degrees": "ESTIMATE",
         "module_technology": "ESTIMATE",
     }
+
+
+# --- ADR-094: Growatt por token e login bloqueado ---------------------------
+
+
+def test_growatt_token_connects_without_login_and_never_stores_token_as_login(env) -> None:
+    client, factory, tokens, verifier = env
+    verifier.serials = ["GW-PLANT-777"]
+    token = "abc123teste.da.usina"
+
+    response = client.put(
+        URL, json={"provider": "GROWATT_TOKEN", "password": token}, headers=_auth(tokens["a_admin"])
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["provider"] == "GROWATT_TOKEN"
+    assert token not in response.text
+    assert verifier.calls[-1].password == token
+    record = asyncio.run(_records(factory))[-1]
+    assert record.provider == "GROWATT_TOKEN"
+    assert record.login_hint.startswith("to***")
+    assert token[:4] not in record.login_hint
+    assert all(token not in repr(e.details) for e in asyncio.run(_audit(factory)))
+
+
+def test_growatt_token_requires_the_token(env) -> None:
+    client, _factory, tokens, verifier = env
+    response = client.put(
+        URL, json={"provider": "GROWATT_TOKEN", "password": "  "}, headers=_auth(tokens["a_admin"])
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "provider_token_invalid"
+    assert verifier.calls == []
+
+
+def test_growatt_token_refused_has_its_own_reason(env) -> None:
+    client, _factory, tokens, verifier = env
+    verifier.error = ProviderAuthError("recusado")
+    response = client.put(
+        URL, json={"provider": "GROWATT_TOKEN", "password": "tok"}, headers=_auth(tokens["a_admin"])
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "provider_token_failed"
+
+
+def test_blocked_login_is_not_reported_as_wrong_password(env) -> None:
+    from mplacas.providers.base import ProviderBlockedError
+
+    client, _factory, tokens, verifier = env
+    verifier.error = ProviderBlockedError("bloqueado")
+    response = client.put(
+        URL, json=_body(provider="GROWATT", login="rogerio"), headers=_auth(tokens["a_admin"])
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "provider_login_blocked"
+
+
+@pytest.mark.parametrize("bad", ["tok en", "tok\nen", "tokén", "\u200btoken"])
+def test_growatt_token_with_strange_characters_is_refused(env, bad) -> None:
+    client, _factory, tokens, verifier = env
+    response = client.put(
+        URL, json={"provider": "GROWATT_TOKEN", "password": bad}, headers=_auth(tokens["a_admin"])
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "provider_token_invalid"
+    assert verifier.calls == []
+
+
+def test_growatt_token_unexpected_format_is_not_blamed_on_the_token(env) -> None:
+    client, _factory, tokens, verifier = env
+    verifier.error = ProviderSchemaError("formato")
+    response = client.put(
+        URL,
+        json={"provider": "GROWATT_TOKEN", "password": "abc123"},
+        headers=_auth(tokens["a_admin"]),
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "provider_unavailable"
+
+
+def test_same_growatt_plant_by_password_elsewhere_blocks_token(env) -> None:
+    client, factory, tokens, verifier = env
+
+    async def _seed() -> None:
+        async with factory() as session:
+            session.add(Device(plant_id=PLANT_B, provider="GROWATT", serial_number="GW-PLANT-777"))
+            await session.commit()
+
+    asyncio.run(_seed())
+    verifier.serials = ["GW-PLANT-777"]
+    response = client.put(
+        URL,
+        json={"provider": "GROWATT_TOKEN", "password": "abc123"},
+        headers=_auth(tokens["a_admin"]),
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "provider_inverter_in_another_plant"
+
+
+def test_token_login_never_derives_from_the_token(env) -> None:
+    client, factory, tokens, verifier = env
+    body = {"provider": "GROWATT_TOKEN", "password": "abc123teste.da.usina"}
+    response = client.put(URL, json=body, headers=_auth(tokens["a_admin"]))
+    assert response.status_code == 200
+    record = asyncio.run(_records(factory))[-1]
+    assert record.login_hint.startswith("to***")
+    assert "abc1" not in record.login_hint

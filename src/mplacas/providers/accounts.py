@@ -23,7 +23,10 @@ from mplacas.providers.db_models import ProviderAccountRecord
 
 NEPVIEWER = "NEPVIEWER"
 GROWATT = "GROWATT"
-SUPPORTED_PROVIDERS = frozenset({NEPVIEWER, GROWATT})
+# Growatt pela OpenAPI oficial (token do app ShinePhone), ADR-094. O token vai
+# no lugar da senha; o "login" é derivado no servidor (nunca é o token).
+GROWATT_TOKEN = "GROWATT_TOKEN"
+SUPPORTED_PROVIDERS = frozenset({NEPVIEWER, GROWATT, GROWATT_TOKEN})
 _MAX_LOGIN = 254
 _MAX_PASSWORD = 256
 _MAX_FAILURE_CODE = 80

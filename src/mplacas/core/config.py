@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     nep_base_url: HttpUrl = HttpUrl("https://api.nepviewer.net/v2")
     # API clássica da Growatt (a do app ShinePhone), ADR-092.
     growatt_base_url: HttpUrl = HttpUrl("https://openapi.growatt.com")
+    growatt_openapi_url: HttpUrl = HttpUrl("https://openapi.growatt.com/v1/")
     # Chaveiro que cifra as senhas dos fabricantes de inversor guardadas no
     # banco (ADR-091): ``1:<base64 de 32 bytes>,2:<...>``. Lido só por
     # ``core.secret_box``; sem ele, nada é cifrado nem decifrado.

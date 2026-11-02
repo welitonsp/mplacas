@@ -56,4 +56,6 @@ regexes = [
   # Senha sintética do teste do cliente Growatt no primeiro commit do PR #259
   # (o teste já usa outro literal; o commit antigo fica no histórico do PR).
   '''^s3nh4-growatt$''',
+  # Token falso dos testes da Growatt por token (ADR-094).
+  '''^abc123teste\.da\.usina$''',
 ]
