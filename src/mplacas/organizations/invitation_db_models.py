@@ -9,6 +9,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from mplacas.db.base import Base
 
 
+PURPOSE_INVITE = "INVITE"
+PURPOSE_RESET = "RESET"
+
+
 class UserInvitationRecord(Base):
     """Convite pendente para um usuário se juntar a uma organização.
 
@@ -30,6 +34,11 @@ class UserInvitationRecord(Base):
     )
     username: Mapped[str] = mapped_column(String(80))
     role: Mapped[str] = mapped_column(String(16))
+    # ADR-095: ``INVITE`` cria o usuário ao aceitar; ``RESET`` troca a senha
+    # de um usuário que já existe (link "Redefinir acesso" do dono).
+    purpose: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=PURPOSE_INVITE, server_default=PURPOSE_INVITE
+    )
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("operational_users.id"),

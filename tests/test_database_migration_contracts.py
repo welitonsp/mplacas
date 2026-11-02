@@ -728,3 +728,18 @@ def test_plant_auto_filled_migration_matches_orm() -> None:
     assert 'add_column("plants", sa.Column("auto_filled", sa.JSON(), nullable=True))' in source
     assert 'drop_column("plants", "auto_filled")' in source
     assert "UPDATE " not in source.upper()  # sem backfill
+
+
+def test_invitation_purpose_migration_matches_orm() -> None:
+    from mplacas.organizations.invitation_db_models import UserInvitationRecord
+
+    source = (
+        ROOT / "migrations" / "versions" / "20261102_0053_add_invitation_purpose.py"
+    ).read_text(encoding="utf-8")
+    column = UserInvitationRecord.__table__.c.purpose
+
+    assert 'revision = "20261102_0053"' in source
+    assert 'down_revision = "20261031_0052"' in source
+    assert column.nullable is False
+    assert 'server_default="INVITE"' in source
+    assert 'drop_column("user_invitations", "purpose")' in source

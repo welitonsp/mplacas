@@ -148,8 +148,11 @@ const BUDGETS = [
   {
     name: 'ClientsPage',
     match: /^ClientsPage-.*\.js$/,
-    limitKb: 4,
-    // medido em 2026-10-31: 2,80 kB (só o dono da plataforma carrega)
+    limitKb: 7,
+    // medido em 2026-10-31: 2,80 kB (só o dono da plataforma carrega).
+    // Teto de 4 para 7 kB em 2026-11-02 (ADR-095): a página virou o CRM do
+    // dono (ficha, histórico, redefinir acesso, desativar). Só o operador da
+    // plataforma baixa este chunk; nenhum cliente paga por ele.
   },
   {
     // Formulário marca + usuário/senha do app, usado em Minha usina e na

@@ -121,6 +121,14 @@ describe('InvitePage (ADR-093)', () => {
     expect(acceptInvitation).not.toHaveBeenCalled()
   })
 
+  it('link de redefinição muda o texto para senha nova', async () => {
+    inspectInvitation.mockResolvedValue(jsonResponse({ ...PREVIEW, purpose: 'RESET' }))
+    renderAt(`#token=${TOKEN}`)
+    expect(await screen.findByRole('heading', { name: 'Crie uma senha nova' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Salvar senha nova e entrar' })).toBeInTheDocument()
+    expect(screen.getByText(/A senha antiga deixa de valer/)).toBeInTheDocument()
+  })
+
   it('convite vencido ou usado vira aviso claro', async () => {
     inspectInvitation.mockResolvedValue(jsonResponse({ detail: 'invalid or expired invitation' }, 400))
     renderAt(`#token=${TOKEN}`)

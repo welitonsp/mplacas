@@ -326,3 +326,144 @@ def test_concurrent_slug_conflict_is_409(monkeypatch, tmp_path) -> None:
         headers=_KEY,
     )
     assert response.status_code == 409
+
+
+# --- ADR-095: ficha do cliente, redefinir acesso, desativar -------------------
+
+SENHA = "uma senha bem longa"
+NOVA = "outra senha bem longa"
+
+
+def _onboard(client) -> tuple[str, str]:
+    """Cria o cliente e aceita o convite; devolve (organization_id, refresh)."""
+    created = client.post(
+        "/platform/clients",
+        json={"name": "Rogério", "admin_username": "rogerio@cli.example"},
+        headers=_KEY,
+    ).json()
+    accepted = client.post(
+        "/auth/invitations/accept",
+        json={"token": created["invitation"]["token"], "password": SENHA},
+    )
+    assert accepted.status_code == 200, accepted.text
+    return created["organization_id"], accepted.json()["refresh_token"]
+
+
+def test_detail_shows_stage_and_safe_activity(monkeypatch, tmp_path) -> None:
+    client, _ = _make_client(monkeypatch, tmp_path)
+    org_id, _refresh = _onboard(client)
+
+    detail = client.get(f"/platform/clients/{org_id}", headers=_KEY)
+
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["stage"] == "ENTROU"
+    assert body["admin_username"] == "rogerio@cli.example"
+    actions = [item["action"] for item in body["activity"]]
+    assert "platform.client_created" in actions and "invitations.accept" in actions
+    assert "token" not in detail.text.lower().replace("token_", "")
+    listed = client.get("/platform/clients", headers=_KEY).json()["items"][0]
+    assert listed["stage"] == "ENTROU"
+
+
+def test_access_reset_changes_password_and_ends_old_sessions(monkeypatch, tmp_path) -> None:
+    client, _ = _make_client(monkeypatch, tmp_path)
+    org_id, old_refresh = _onboard(client)
+
+    reset = client.post(f"/platform/clients/{org_id}/access-reset", headers=_KEY)
+    assert reset.status_code == 201
+    assert reset.headers["cache-control"] == "no-store"
+    token = reset.json()["invitation"]["token"]
+
+    inspect = client.post("/auth/invitations/inspect", json={"token": token}).json()
+    assert inspect["purpose"] == "RESET"
+    assert inspect["username"] == "rogerio@cli.example"
+
+    accepted = client.post("/auth/invitations/accept", json={"token": token, "password": NOVA})
+    assert accepted.status_code == 200, accepted.text
+
+    assert client.post("/auth/refresh", json={"refresh_token": old_refresh}).status_code == 401
+    assert (
+        client.post(
+            "/auth/login", json={"username": "rogerio@cli.example", "password": SENHA}
+        ).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            "/auth/login", json={"username": "rogerio@cli.example", "password": NOVA}
+        ).status_code
+        == 200
+    )
+    # uso único
+    again = client.post("/auth/invitations/accept", json={"token": token, "password": NOVA})
+    assert again.status_code == 400
+    actions = [
+        i["action"]
+        for i in client.get(f"/platform/clients/{org_id}", headers=_KEY).json()["activity"]
+    ]
+    assert "platform.client_access_reset" in actions and "invitations.access_reset" in actions
+
+
+def test_access_reset_needs_a_user(monkeypatch, tmp_path) -> None:
+    client, _ = _make_client(monkeypatch, tmp_path)
+    created = client.post(
+        "/platform/clients",
+        json={"name": "Novo", "admin_username": "novo@cli.example"},
+        headers=_KEY,
+    ).json()
+    response = client.post(
+        f"/platform/clients/{created['organization_id']}/access-reset", headers=_KEY
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "client_has_no_user"
+
+
+def test_deactivate_blocks_login_and_reactivate_restores(monkeypatch, tmp_path) -> None:
+    client, _ = _make_client(monkeypatch, tmp_path)
+    org_id, _ = _onboard(client)
+    login = {"username": "rogerio@cli.example", "password": SENHA}
+
+    assert client.post(f"/platform/clients/{org_id}/deactivate", headers=_KEY).status_code == 200
+    assert client.post("/auth/login", json=login).status_code == 401
+    assert client.get(f"/platform/clients/{org_id}", headers=_KEY).json()["stage"] == "DESATIVADO"
+    assert client.post(f"/platform/clients/{org_id}/access-reset", headers=_KEY).status_code == 409
+
+    assert client.post(f"/platform/clients/{org_id}/reactivate", headers=_KEY).status_code == 200
+    assert client.post("/auth/login", json=login).status_code == 200
+
+
+def test_crm_routes_are_operator_only(monkeypatch, tmp_path) -> None:
+    client, _ = _make_client(monkeypatch, tmp_path)
+    org_id, _ = _onboard(client)
+    headers = _bearer(uuid.UUID(org_id))
+    for method, path in [
+        ("get", f"/platform/clients/{org_id}"),
+        ("post", f"/platform/clients/{org_id}/access-reset"),
+        ("post", f"/platform/clients/{org_id}/deactivate"),
+        ("post", f"/platform/clients/{org_id}/reactivate"),
+    ]:
+        assert getattr(client, method)(path, headers=headers).status_code == 403
+    assert (
+        client.get(f"/platform/clients/{DEFAULT_ORGANIZATION_ID}", headers=_KEY).status_code == 404
+    )
+
+
+def test_reset_link_for_deactivated_user_is_refused(monkeypatch, tmp_path) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path)
+    org_id, _ = _onboard(client)
+    token = client.post(f"/platform/clients/{org_id}/access-reset", headers=_KEY).json()[
+        "invitation"
+    ]["token"]
+
+    from mplacas.credentials.db_models import OperationalUserRecord
+
+    async def _deactivate_user() -> None:
+        async with factory() as session:
+            user = await session.scalar(select(OperationalUserRecord))
+            user.active = False
+            await session.commit()
+
+    asyncio.run(_deactivate_user())
+    response = client.post("/auth/invitations/accept", json={"token": token, "password": NOVA})
+    assert response.status_code == 400
