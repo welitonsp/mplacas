@@ -737,11 +737,11 @@ def test_same_growatt_plant_by_password_elsewhere_blocks_token(env) -> None:
     assert response.json()["detail"] == "provider_inverter_in_another_plant"
 
 
-def test_same_token_keeps_the_same_login_hint(env) -> None:
+def test_token_login_never_derives_from_the_token(env) -> None:
     client, factory, tokens, verifier = env
-    body = {"provider": "GROWATT_TOKEN", "password": "abc123"}
-    verifier.serials = ["GW-PLANT-1"]
-    first = client.put(URL, json=body, headers=_auth(tokens["a_admin"])).json()["login_hint"]
-    verifier.serials = ["GW-PLANT-1", "GW-PLANT-2"]  # conta ganhou outra usina
-    second = client.put(URL, json=body, headers=_auth(tokens["a_admin"])).json()["login_hint"]
-    assert first == second
+    body = {"provider": "GROWATT_TOKEN", "password": "abc123teste.da.usina"}
+    response = client.put(URL, json=body, headers=_auth(tokens["a_admin"]))
+    assert response.status_code == 200
+    record = asyncio.run(_records(factory))[-1]
+    assert record.login_hint.startswith("to***")
+    assert "abc1" not in record.login_hint
