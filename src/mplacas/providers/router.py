@@ -17,6 +17,8 @@ Nenhuma resposta, log ou evento de auditoria contém login ou senha.
 
 from __future__ import annotations
 
+import asyncio
+
 import enum
 import json
 import re
@@ -956,11 +958,15 @@ async def _log_token_probe(login: str, token: str, plant_id: uuid.UUID) -> None:
     try:
         if not isinstance(probe_client, GrowattOpenApiClient):
             return
-        result = await probe_client.probe()
+        # teto total: o diagnóstico não pode segurar a resposta ao cliente
+        result = await asyncio.wait_for(probe_client.probe(), timeout=15)
     except Exception as exc:  # diagnóstico nunca derruba a resposta
         result = {"probe": type(exc).__name__}
     finally:
-        await probe_client.aclose()
+        try:
+            await probe_client.aclose()
+        except Exception:  # noqa: BLE001 - idem
+            pass
     logger.info("growatt_token_probe", extra={"plant_id": str(plant_id), "probe": result})
 
 
@@ -1055,9 +1061,9 @@ async def import_production_history(
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
     except ProviderAuthError:
         reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
+        await refuse(reason)
         if provider == GROWATT_TOKEN:
             await _log_token_probe(credentials.login, credentials.password, scoped.plant_id)
-        await refuse(reason)
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
     except ProviderError:
         await refuse("provider_unavailable")
