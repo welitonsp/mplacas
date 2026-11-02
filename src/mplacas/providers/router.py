@@ -901,6 +901,28 @@ async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> Pro
         filled = fill_plant_from_profile(
             plant, profile, set_name=plant.name == DEFAULT_PLANT_NAME
         )
+        # O que a marca trouxe (sim/não por campo) e o que foi preenchido —
+        # para diagnosticar "não mostrou dados" sem registrar valores.
+        logger.info(
+            "provider_profile_refreshed",
+            extra={
+                "plant_id": str(scoped.plant_id),
+                "provider": provider,
+                "profile_has": {
+                    "name": bool(profile and profile.name),
+                    "power": bool(profile and profile.installed_power_kwp is not None),
+                    "location": bool(profile and profile.latitude is not None),
+                    "city": bool(profile and profile.city),
+                },
+                "plant_already_had": {
+                    "power": (
+                        plant.installed_power_kwp is not None and "dc_capacity_kwp" not in filled
+                    ),
+                    "location": plant.latitude is not None and "location" not in filled,
+                },
+                "auto_filled": sorted(filled),
+            },
+        )
         await AuditEventRepository(session).record(
             request,
             action="provider_account.profile_refreshed",

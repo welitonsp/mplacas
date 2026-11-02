@@ -284,3 +284,16 @@ async def test_profile_survives_denied_details_when_list_is_partial() -> None:
     profile = await client.plant_profile()
     await client.aclose()
     assert profile == PlantProfile(name="Sítio")
+
+
+def test_shape_never_reveals_the_value() -> None:
+    from mplacas.providers.growatt.openapi import _shape
+
+    assert _shape(None) == "vazio"
+    assert _shape("") == "vazio"
+    assert _shape(0) == "zero"
+    assert _shape("0.0") == "zero"
+    assert _shape(6.6) == "numero"
+    assert _shape("-17.74") == "texto-numero"
+    assert _shape("17°44'") == "texto-grau"
+    assert _shape("Caldas Novas") == "texto"

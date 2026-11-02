@@ -224,7 +224,11 @@ class GrowattOpenApiClient(SolarProvider):
         # ao formato real da Growatt sem expor dado do cliente.
         logger.info(
             "growatt_openapi_plant_fields",
-            extra={"fields": sorted(str(key) for key in chosen)[:40]},
+            extra={
+                "fields": sorted(str(key) for key in chosen)[:40],
+                # Formato de cada valor que importa, nunca o valor (ADR-094).
+                "shapes": {key: _shape(chosen.get(key)) for key in _PROFILE_KEYS},
+            },
         )
         details: dict[str, Any] = {}
         if not _complete(chosen):
@@ -257,6 +261,40 @@ class GrowattOpenApiClient(SolarProvider):
             commissioned_on=None,
             timezone=None,
         )
+
+
+_PROFILE_KEYS = (
+    "name",
+    "peak_power",
+    "city",
+    "latitude",
+    "longitude",
+    "latitude_d",
+    "latitude_f",
+    "longitude_d",
+    "longitude_f",
+)
+
+
+def _shape(value: Any) -> str:
+    """Descrição do formato sem o conteúdo: ``vazio``, ``zero``, ``numero``,
+    ``texto-numero``, ``texto-grau``, ``texto`` ou o tipo."""
+    if value is None or value == "":
+        return "vazio"
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, (int, float)):
+        return "zero" if value == 0 else "numero"
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            return "zero" if float(text.replace(",", ".")) == 0 else "texto-numero"
+        except ValueError:
+            pass
+        if any(mark in text for mark in ("°", "'", '"')):
+            return "texto-grau"
+        return "texto"
+    return type(value).__name__
 
 
 def _complete(row: dict[str, Any]) -> bool:
