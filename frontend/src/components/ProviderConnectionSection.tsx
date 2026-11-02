@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { deleteProviderAccount, fetchProviderAccount, saveProviderAccount } from '../lib/api'
+import { deleteProviderAccount, fetchProviderAccount, refreshPlantProfile, saveProviderAccount } from '../lib/api'
+import { AUTO_FILL_LABELS } from '../lib/dashboard/onboarding-contracts'
 import {
   brandLabel,
   parseProviderAccount,
@@ -115,7 +116,14 @@ function ConnectForm({
   )
 }
 
-export function ProviderConnectionSection({ plantId }: { plantId: string }) {
+export function ProviderConnectionSection({
+  plantId,
+  onProfileRefreshed,
+}: {
+  plantId: string
+  // Depois de reler o cadastro na marca, a página recarrega os dados da usina.
+  onProfileRefreshed?: () => void
+}) {
   const resource = usePlantResource({
     plantId,
     fetcher: fetchProviderAccount,
@@ -125,6 +133,7 @@ export function ProviderConnectionSection({ plantId }: { plantId: string }) {
   const [editing, setEditing] = useState(false)
   const [confirmingRemoval, setConfirmingRemoval] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [notice, setNotice] = useState<Feedback>(null)
   // Quando um botão some (troca aberta/fechada, confirmação, salvar), o foco
   // volta para o resumo da seção em vez de cair no <body> (WCAG 2.4.3).
@@ -146,6 +155,34 @@ export function ProviderConnectionSection({ plantId }: { plantId: string }) {
   const account = resource.data
   const connected = account != null && account.status !== 'SEM_CONEXAO'
   const showForm = account != null && (!connected || editing)
+
+  async function handleRefreshProfile() {
+    setRefreshing(true)
+    setNotice(null)
+    try {
+      const response = await refreshPlantProfile(plantId)
+      if (!response.ok) {
+        setNotice({ tone: 'error', message: await providerAccountErrorMessage(response, account?.provider ?? null) })
+        return
+      }
+      const body = (await response.json()) as { auto_filled?: Record<string, string> }
+      const fields = Object.keys(body.auto_filled ?? {})
+        .map((field) => AUTO_FILL_LABELS[field])
+        .filter(Boolean)
+      setNotice({
+        tone: 'success',
+        message:
+          fields.length > 0
+            ? `Dados lidos na ${brandLabel(account?.provider)}: ${fields.join(', ')}. Confira abaixo.`
+            : `Nada novo para preencher: a ${brandLabel(account?.provider)} não informa mais dados, ou eles já estão preenchidos.`,
+      })
+      onProfileRefreshed?.()
+    } catch {
+      setNotice({ tone: 'error', message: 'Não foi possível buscar os dados agora. Tente novamente.' })
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   async function handleRemove() {
     setRemoving(true)
@@ -218,6 +255,15 @@ export function ProviderConnectionSection({ plantId }: { plantId: string }) {
                       }}
                     >
                       Trocar senha ou conta
+                    </button>
+                    <button
+                      type="button"
+                      className={SECONDARY_BUTTON}
+                      onClick={handleRefreshProfile}
+                      disabled={refreshing}
+                      aria-busy={refreshing}
+                    >
+                      {refreshing ? 'Buscando...' : 'Buscar dados da usina na marca'}
                     </button>
                     {!confirmingRemoval && (
                       <button

@@ -16,6 +16,7 @@ no máximo 7 dias por consulta).
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
@@ -27,6 +28,7 @@ from mplacas.providers.base import (
     DeviceOverview,
     PlantProfile,
     ProviderAuthError,
+    ProviderError,
     ProviderIncompleteDataError,
     ProviderRateLimitedError,
     ProviderSchemaError,
@@ -36,6 +38,8 @@ from mplacas.providers.base import (
 )
 from mplacas.providers.growatt.client import _kwh, _plant_id, plant_serial
 from mplacas.providers.profile import parse_coordinate, parse_kwp, parse_text
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_OPENAPI_URL = "https://openapi.growatt.com/v1/"
 # A OpenAPI aceita até 7 dias por consulta diária.
@@ -205,27 +209,60 @@ class GrowattOpenApiClient(SolarProvider):
         return [DailyEnergy(production_date=day, energy_kwh=result[day]) for day in sorted(result)]
 
     async def plant_profile(self) -> PlantProfile | None:
-        """Cadastro da maior usina da conta (``plant/details``), melhor esforço."""
+        """Cadastro da maior usina da conta, melhor esforço (ADR-094).
+
+        A base é a própria ``plant/list``, que já traz nome, potência (kW),
+        cidade e coordenadas. ``plant/details`` só completa o que faltar: há
+        tokens que listam as usinas mas não têm permissão para os detalhes
+        (``10011``, visto em 02/11/2026), e isso não pode zerar o cadastro.
+        """
         plants = await self._plants()
         if not plants:
             return None
         chosen = max(plants, key=lambda row: parse_kwp(row.get("peak_power"), unit="kW") or 0)
-        details = await self._get("plant/details", {"plant_id": str(chosen["plant_id"])})
-        body = details if isinstance(details, dict) else {}
-        if isinstance(body.get("plant"), dict):
-            body = body["plant"]
+        # Só os nomes dos campos (nunca os valores) — para ajustar a leitura
+        # ao formato real da Growatt sem expor dado do cliente.
+        logger.info(
+            "growatt_openapi_plant_fields",
+            extra={"fields": sorted(str(key) for key in chosen)[:40]},
+        )
+        details: dict[str, Any] = {}
+        if not _complete(chosen):
+            try:
+                body = await self._get("plant/details", {"plant_id": str(chosen["plant_id"])})
+            except ProviderError as exc:
+                logger.info(
+                    "growatt_openapi_plant_details_unavailable",
+                    extra={"error_type": type(exc).__name__},
+                )
+            else:
+                if isinstance(body, dict):
+                    details = body["plant"] if isinstance(body.get("plant"), dict) else body
 
-        def pick(key: str) -> Any:
-            value = body.get(key)
-            return value if value not in (None, "") else chosen.get(key)
+        def pick(*keys: str) -> Any:
+            for source in (chosen, details):
+                for key in keys:
+                    value = source.get(key)
+                    if value not in (None, ""):
+                        return value
+            return None
 
         return PlantProfile(
-            name=parse_text(pick("name")),
+            name=parse_text(pick("name", "plant_name", "plantName")),
             # A OpenAPI informa ``peak_power`` em kW.
-            installed_power_kwp=parse_kwp(pick("peak_power"), unit="kW"),
-            latitude=parse_coordinate(pick("latitude"), limit=90),
-            longitude=parse_coordinate(pick("longitude"), limit=180),
+            installed_power_kwp=parse_kwp(pick("peak_power", "peakPower"), unit="kW"),
+            latitude=parse_coordinate(pick("latitude", "lat"), limit=90),
+            longitude=parse_coordinate(pick("longitude", "lng", "lon"), limit=180),
             city=parse_text(pick("city")),
             commissioned_on=None,
             timezone=None,
         )
+
+
+def _complete(row: dict[str, Any]) -> bool:
+    """A linha da lista já tem o essencial (potência e localização)?"""
+    has_power = parse_kwp(row.get("peak_power"), unit="kW") is not None
+    has_place = parse_coordinate(row.get("latitude"), limit=90) is not None or bool(
+        parse_text(row.get("city"))
+    )
+    return has_power and has_place

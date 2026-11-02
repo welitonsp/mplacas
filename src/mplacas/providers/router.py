@@ -452,8 +452,18 @@ async def _inspect(
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
 
 
+# "Buscar dados na marca" tem teto próprio: cliques no botão não podem
+# bloquear a troca de senha nem a conexão (que contam em ``_VERIFY_ACTIONS``).
+REFRESH_LIMIT = 3
+_REFRESH_ACTIONS = ("provider_account.profile_refreshed",)
+
+
 async def _enforce_verify_limit(
-    plant_id: uuid.UUID, *, resource_type: str = "plant"
+    plant_id: uuid.UUID,
+    *,
+    resource_type: str = "plant",
+    actions: tuple[str, ...] = _VERIFY_ACTIONS,
+    limit: int = VERIFY_LIMIT,
 ) -> None:
     since = datetime.now(UTC) - VERIFY_WINDOW
     async with SessionFactory() as session:
@@ -462,13 +472,13 @@ async def _enforce_verify_limit(
             select(func.count())
             .select_from(AuditEventRecord)
             .where(
-                AuditEventRecord.action.in_(_VERIFY_ACTIONS),
+                AuditEventRecord.action.in_(actions),
                 AuditEventRecord.resource_type == resource_type,
                 AuditEventRecord.resource_id == str(plant_id),
                 AuditEventRecord.created_at >= since,
             )
         )
-    if (attempts or 0) >= VERIFY_LIMIT:
+    if (attempts or 0) >= limit:
         raise _error(status.HTTP_429_TOO_MANY_REQUESTS, "provider_verify_rate_limited")
 
 
@@ -517,6 +527,77 @@ async def _audit_refusal(
             details={"provider": provider, "reason": reason},
         )
         await session.commit()
+
+
+class ProfileRefreshResult(BaseModel):
+    # campo → "BRAND" | "ESTIMATE" preenchido agora; vazio = nada novo
+    auto_filled: dict[str, str]
+    plant_name: str
+
+
+@router.post("/{plant_id}/provider-account/refresh-profile", response_model=ProfileRefreshResult)
+async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> ProfileRefreshResult:
+    """Relê o cadastro da usina na marca e preenche os campos vazios (ADR-094).
+
+    Usa a conexão já guardada (nada é digitado de novo). Mesmas regras da
+    conexão: nunca sobrescreve o que o dono informou; o nome só é trocado se
+    ainda for o padrão "Minha usina". Conta no mesmo teto de conferências.
+    """
+    box = _box()
+    await _enforce_verify_limit(scoped.plant_id, actions=_REFRESH_ACTIONS, limit=REFRESH_LIMIT)
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        record = await ProviderAccountService(session, box).get(scoped.plant_id)
+        if record is None or not record.active:
+            raise _error(status.HTTP_404_NOT_FOUND, "provider_account_not_found")
+        provider = record.provider
+        try:
+            credentials = ProviderAccountService(session, box).open(record)
+        except ProviderAccountError:
+            # Chave do cofre trocada sem rotação, ou texto cifrado danificado.
+            raise _error(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "provider_account_unreadable"
+            ) from None
+
+    async def refuse(reason: str) -> None:
+        await _audit_refusal(request, scoped.principal, "plant", scoped.plant_id, provider, reason)
+
+    client = build_client(provider, account=credentials.login, password=credentials.password)
+    try:
+        profile = await client.plant_profile()
+    except ProviderRateLimitedError:
+        await refuse("provider_rate_limited")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
+    except ProviderAuthError:
+        reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
+        await refuse(reason)
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
+    except ProviderError:
+        await refuse("provider_unavailable")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
+    finally:
+        await client.aclose()
+    profile = await locate_profile(profile)  # rede fora da transação
+
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        plant = await session.get(Plant, scoped.plant_id)
+        if plant is None:
+            raise _error(status.HTTP_404_NOT_FOUND, "plant not found")
+        filled = fill_plant_from_profile(
+            plant, profile, set_name=plant.name == DEFAULT_PLANT_NAME
+        )
+        await AuditEventRepository(session).record(
+            request,
+            action="provider_account.profile_refreshed",
+            resource_type="plant",
+            resource_id=str(scoped.plant_id),
+            outcome="SUCCEEDED",
+            details={"provider": provider, "auto_filled": sorted(filled)},
+        )
+        result = ProfileRefreshResult(auto_filled=filled, plant_name=plant.name)
+        await session.commit()
+    return result
 
 
 @router.delete(

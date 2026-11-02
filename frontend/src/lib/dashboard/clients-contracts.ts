@@ -132,6 +132,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
   'invitations.access_reset': 'Cliente criou uma senha nova',
   'plant.created_from_connection': 'Usina criada pela conexão com a marca',
   'provider_account.saved': 'Conexão com a marca salva',
+  'provider_account.profile_refreshed': 'Dados da usina relidos na marca',
   'provider_account.verify_failed': 'Tentativa de conexão com a marca recusada',
   'provider_account.removed': 'Conexão com a marca desligada',
 }
