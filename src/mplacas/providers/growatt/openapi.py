@@ -227,6 +227,27 @@ class GrowattOpenApiClient(SolarProvider):
                 raise ProviderIncompleteDataError("Growatt não cobriu todos os dias solicitados")
         return [DailyEnergy(production_date=day, energy_kwh=result[day]) for day in sorted(result)]
 
+    @property
+    def listed_plants(self) -> bool:
+        """``plant/list`` já respondeu neste cliente (o token é válido)."""
+        return self._plants_cache is not None
+
+    async def meter_totals(self) -> dict[str, Decimal]:
+        """Total gerado desde a instalação de cada usina, em kWh (ADR-098).
+
+        Vem da própria ``plant/list`` — a única leitura que alguns tokens
+        alcançam. Usina sem total legível fica de fora (nunca vira zero).
+        """
+        totals: dict[str, Decimal] = {}
+        for row in await self._plants():
+            try:
+                totals[plant_serial(str(row["plant_id"]))] = _kwh(
+                    row.get("total_energy"), "total_energy"
+                )
+            except ProviderSchemaError:
+                continue
+        return totals
+
     async def probe(self) -> dict[str, str]:
         """Quais endpoints de leitura este token alcança (ADR-094).
 

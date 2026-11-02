@@ -420,6 +420,20 @@ describe('Início de usina recém-conectada', () => {
     await waitFor(() => expect(importProductionHistory).toHaveBeenCalledTimes(2))
   })
 
+  it('marca sem histórico liberado: explica a leitura da madrugada, sem botão', async () => {
+    freezeToday()
+    asRole('ADMIN')
+    await renderHome({
+      fetchAnomalyHistory: vi.fn(async () => jsonResponse({ detail: 'x' }, 404)),
+      importProductionHistory: vi.fn(async () =>
+        jsonResponse({ days_received: 0, days_changed: 0, history_available: false }),
+      ),
+    })
+    const box = await screen.findByTestId('home-history-import')
+    expect(await within(box).findByText(/lê o total da usina toda madrugada/)).toBeInTheDocument()
+    expect(within(box).queryByRole('button')).not.toBeInTheDocument()
+  })
+
   it('quem só lê não dispara a importação', async () => {
     freezeToday()
     asRole('READ_ONLY')

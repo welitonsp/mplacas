@@ -188,6 +188,32 @@ class DailyEnergy(Base):
     )
 
 
+class MeterReading(Base):
+    """Total acumulado de um aparelho lido na marca numa madrugada (ADR-098).
+
+    Para contas cujo token só lê a lista de usinas: a diferença entre duas
+    noites seguidas é a produção do dia anterior.
+    """
+
+    __tablename__ = "meter_readings"
+    __table_args__ = (
+        UniqueConstraint("device_id", "reading_date", name="uq_meter_readings_device_date"),
+        CheckConstraint("total_kwh >= 0", name="ck_meter_readings_total_non_negative"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    plant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("plants.id", ondelete="CASCADE"), index=True
+    )
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
+    reading_date: Mapped[date] = mapped_column(Date)
+    total_kwh: Mapped[Decimal] = mapped_column(Numeric(14, 3))
+    source: Mapped[str] = mapped_column(String(40))
+    read_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class DailyEnergyVersion(Base):
     __tablename__ = "daily_energy_versions"
 

@@ -13,6 +13,8 @@ type State =
   | { kind: 'running' }
   // `days` = registros recebidos da marca (soma por inversor), só para saber se veio algo
   | { kind: 'done'; days: number }
+  // a marca não libera o histórico desta conta (ADR-098)
+  | { kind: 'meter' }
   | { kind: 'error'; message: string; noConnection: boolean }
   | null
 
@@ -28,7 +30,7 @@ const IMPORT_ERRORS: Record<string, string> = {
   provider_rate_limited: 'A marca bloqueou novas consultas por um tempo. Espere cerca de uma hora e tente de novo.',
   provider_unavailable: 'A marca não respondeu agora. Tente de novo em alguns minutos.',
   provider_login_failed: 'A marca recusou o usuário ou a senha guardados. Atualize a conexão em Minha usina.',
-  provider_token_failed: 'A Growatt não liberou a leitura da produção para este token. Já registramos o caso para análise.',
+  provider_token_failed: 'A Growatt recusou o token guardado. Gere um novo no app ShinePhone e atualize a conexão em Minha usina.',
   provider_account_unreadable: 'Não foi possível ler a conexão guardada. Conecte de novo em Minha usina.',
   provider_login_blocked: 'A marca bloqueou o acesso vindo do nosso servidor — não é a sua senha. Tente mais tarde.',
   history_import_error: 'Não foi possível gravar a produção agora. Tente de novo em instantes.',
@@ -73,7 +75,11 @@ export function HomeHistoryImport({ plantId, onImported }: { plantId: string; on
         })
         return
       }
-      const body = (await response.json()) as { days_received?: unknown }
+      const body = (await response.json()) as { days_received?: unknown; history_available?: unknown }
+      if (body.history_available === false) {
+        setState({ kind: 'meter' })
+        return
+      }
       const days = typeof body.days_received === 'number' ? body.days_received : 0
       setState({ kind: 'done', days })
       if (days > 0) onImportedRef.current()
@@ -104,7 +110,9 @@ export function HomeHistoryImport({ plantId, onImported }: { plantId: string; on
             ? state.days > 0
               ? 'Produção importada. Atualizando o Início…'
               : 'A marca ainda não tem produção registrada para esta usina. A coleta automática segue todos os dias.'
-            : state?.kind === 'error'
+            : state?.kind === 'meter'
+              ? 'A Growatt não libera o histórico desta conta. A partir de agora o sistema lê o total da usina toda madrugada e mostra a produção de cada dia — o primeiro dia aparece em até dois dias.'
+              : state?.kind === 'error'
               ? state.message
               : 'Busque na marca a produção dos últimos 90 dias, sem esperar a coleta automática.'}
         {state?.kind === 'error' && state.noConnection && (
@@ -116,7 +124,7 @@ export function HomeHistoryImport({ plantId, onImported }: { plantId: string; on
           </>
         )}
       </p>
-      {state?.kind !== 'running' && !(state?.kind === 'error' && state.noConnection) && (
+      {state?.kind !== 'running' && state?.kind !== 'meter' && !(state?.kind === 'error' && state.noConnection) && (
         <button
           type="button"
           onClick={() => void run()}

@@ -17,8 +17,6 @@ Nenhuma resposta, log ou evento de auditoria contém login ou senha.
 
 from __future__ import annotations
 
-import asyncio
-
 import enum
 import json
 import re
@@ -71,7 +69,11 @@ from mplacas.providers.db_models import ProviderAccountRecord
 from mplacas.core.config import get_settings
 from mplacas.providers.factory import ENERGY_SOURCES, build_client
 from mplacas.providers.growatt.openapi import GrowattOpenApiClient
-from mplacas.services.collection import CollectionPlantError, SolarCollectionService
+from mplacas.services.collection import (
+    CollectionPlantError,
+    CollectionResult,
+    SolarCollectionService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -948,23 +950,6 @@ async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> Pro
     return result
 
 
-async def _log_token_probe(client: object, plant_id: uuid.UUID) -> None:
-    """Registra quais leituras o token Growatt alcança, sem conteúdo (ADR-094).
-
-    Usa o MESMO cliente da importação, que já leu a lista de usinas: a Growatt
-    recusa ``plant/list`` repetida em pouco tempo (10012). Nunca falha a
-    requisição original.
-    """
-    if not isinstance(client, GrowattOpenApiClient):
-        return
-    try:
-        # teto total: o diagnóstico não pode segurar a resposta ao cliente
-        result = await asyncio.wait_for(client.probe(), timeout=15)
-    except Exception as exc:  # diagnóstico nunca derruba a resposta
-        result = {"probe": type(exc).__name__}
-    logger.info("growatt_token_probe", extra={"plant_id": str(plant_id), "probe": result})
-
-
 HISTORY_DAYS = 90
 HISTORY_LIMIT = 2
 # Teto separado do da conexão: uma marca fora do ar não impede trocar a senha
@@ -980,6 +965,9 @@ class HistoryImportResult(BaseModel):
     # dias com produção recebidos da marca e quantos mudaram no banco
     days_received: int
     days_changed: int
+    # False: a marca não libera o histórico desta conta; a produção diária vem
+    # da leitura do total toda madrugada (ADR-098)
+    history_available: bool = True
 
 
 @router.post("/{plant_id}/provider-account/import-history", response_model=HistoryImportResult)
@@ -1018,6 +1006,8 @@ async def import_production_history(
             action="provider_account.history_import_failed",
         )
 
+    history_available = True
+    result = CollectionResult(devices_seen=0, records_received=0, records_changed=0)
     end = datetime.now(ZoneInfo(get_settings().timezone)).date() - timedelta(days=1)
     start = end - timedelta(days=HISTORY_DAYS - 1)
     async with SessionFactory() as session:
@@ -1055,11 +1045,17 @@ async def import_production_history(
         await refuse("provider_login_blocked")
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
     except ProviderAuthError:
-        reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
-        await refuse(reason)
-        if provider == GROWATT_TOKEN:
-            await _log_token_probe(client, scoped.plant_id)
-        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
+        if isinstance(client, GrowattOpenApiClient) and client.listed_plants:
+            # Token válido (a lista respondeu), mas a Growatt não libera o
+            # histórico desta conta (10011): a produção passa a vir da leitura
+            # do total toda madrugada (ADR-098). Não é erro do cliente.
+            history_available = False
+        else:
+            reason = (
+                "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
+            )
+            await refuse(reason)
+            raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
     except ProviderError:
         await refuse("provider_unavailable")
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
@@ -1087,6 +1083,7 @@ async def import_production_history(
                 "provider": provider,
                 "days_received": result.records_received,
                 "days_changed": result.records_changed,
+                "history_available": history_available,
             },
         )
         await session.commit()
@@ -1097,6 +1094,7 @@ async def import_production_history(
             "provider": provider,
             "days_received": result.records_received,
             "days_changed": result.records_changed,
+            "history_available": history_available,
         },
     )
     return HistoryImportResult(
@@ -1104,6 +1102,7 @@ async def import_production_history(
         end_date=end,
         days_received=result.records_received,
         days_changed=result.records_changed,
+        history_available=history_available,
     )
 
 

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mplacas.db.models import DataStatus, Device, Plant
+from mplacas.db.models import DataStatus, Device, MeterReading, Plant
 from mplacas.db.repositories.daily_energy import DailyEnergyRepository
 from mplacas.providers.base import SolarProvider
 
@@ -125,6 +125,74 @@ class SolarCollectionService:
             devices_seen=len(devices),
             records_received=received,
             records_changed=changed,
+        )
+
+    async def record_meter_totals(
+        self,
+        *,
+        plant_id: uuid.UUID,
+        totals: dict[str, Decimal],
+        reading_date: date,
+    ) -> CollectionResult:
+        """Guarda o total da madrugada e deriva a produção de ontem (ADR-098).
+
+        ``reading_date`` é o dia (local) em que a leitura foi feita, de
+        madrugada, antes do sol: o total cobre tudo até o fim da véspera. Com a
+        leitura da noite anterior, a diferença é a produção de
+        ``reading_date - 1``. Sem a noite anterior (primeira leitura ou um dia
+        perdido), nada é inventado: o dia fica sem dado. Total menor ou igual
+        ao da véspera (troca de inversor, zeramento, lista ainda não
+        atualizada) também não vira produção.
+        """
+        plant = await self._session.get(Plant, plant_id)
+        if plant is None:
+            raise CollectionPlantError("plant not found")
+        derived = 0
+        changed = 0
+        day = reading_date - timedelta(days=1)
+        for serial, total in totals.items():
+            device = await self._get_or_create_device(
+                plant=plant, serial_number=serial, model_name="Usina Growatt"
+            )
+            current = await self._session.scalar(
+                select(MeterReading).where(
+                    MeterReading.device_id == device.id,
+                    MeterReading.reading_date == reading_date,
+                )
+            )
+            if current is None:
+                current = MeterReading(
+                    plant_id=plant_id,
+                    device_id=device.id,
+                    reading_date=reading_date,
+                    total_kwh=total,
+                    source=self._energy_source,
+                )
+                self._session.add(current)
+            else:
+                current.total_kwh = total
+            await self._session.flush()
+            previous = await self._session.scalar(
+                select(MeterReading).where(
+                    MeterReading.device_id == device.id,
+                    MeterReading.reading_date == day,
+                )
+            )
+            # Total igual ao da véspera quase sempre é a Growatt ainda sem
+            # atualizar a lista: não vira um dia de 0 kWh "confirmado".
+            if previous is None or total <= previous.total_kwh:
+                continue
+            _, was_changed = await self._energy.upsert(
+                device_id=device.id,
+                production_date=day,
+                energy_kwh=total - previous.total_kwh,
+                status=DataStatus.CONSOLIDATED,
+                source=self._energy_source,
+            )
+            derived += 1
+            changed += int(was_changed)
+        return CollectionResult(
+            devices_seen=len(totals), records_received=derived, records_changed=changed
         )
 
     async def _get_or_create_device(
