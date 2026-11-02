@@ -25,7 +25,8 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Literal
 
@@ -65,7 +66,9 @@ from mplacas.providers.base import (
     ProviderUnavailableError,
 )
 from mplacas.providers.db_models import ProviderAccountRecord
-from mplacas.providers.factory import build_client
+from mplacas.core.config import get_settings
+from mplacas.providers.factory import ENERGY_SOURCES, build_client
+from mplacas.services.collection import CollectionPlantError, SolarCollectionService
 
 logger = logging.getLogger(__name__)
 
@@ -828,13 +831,15 @@ async def _audit_refusal(
     resource_id: uuid.UUID,
     provider: str,
     reason: str,
+    *,
+    action: str = "provider_account.verify_failed",
 ) -> None:
     """Recusa também vai para a auditoria (sem login nem senha) e conta no teto."""
     async with SessionFactory() as session:
         await set_principal_context(session, principal)
         await AuditEventRepository(session).record(
             request,
-            action="provider_account.verify_failed",
+            action=action,
             resource_type=resource_type,
             resource_id=str(resource_id),
             outcome="FAILED",
@@ -882,6 +887,10 @@ async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> Pro
     except ProviderRateLimitedError:
         await refuse("provider_rate_limited")
         raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
+    except ProviderBlockedError:
+        # bloqueio da marca não é senha errada: mesmo código da conexão
+        await refuse("provider_login_blocked")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
     except ProviderAuthError:
         reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
         await refuse(reason)
@@ -934,6 +943,146 @@ async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> Pro
         result = ProfileRefreshResult(auto_filled=filled, plant_name=plant.name)
         await session.commit()
     return result
+
+
+HISTORY_DAYS = 90
+HISTORY_LIMIT = 2
+# Teto separado do da conexão: uma marca fora do ar não impede trocar a senha
+# (e vice-versa). O teto conta o início da importação, gravado ANTES de chamar a marca: duas
+# abas ou um clique duplo não passam juntos pelo teto enquanto a primeira
+# ainda está lendo os 90 dias.
+_HISTORY_ACTIONS = ("provider_account.history_import_started",)
+
+
+class HistoryImportResult(BaseModel):
+    start_date: date
+    end_date: date
+    # dias com produção recebidos da marca e quantos mudaram no banco
+    days_received: int
+    days_changed: int
+
+
+@router.post("/{plant_id}/provider-account/import-history", response_model=HistoryImportResult)
+async def import_production_history(
+    request: Request, scoped: AdminPlantPath
+) -> HistoryImportResult:
+    """Importa a produção dos últimos 90 dias da marca (ADR-097).
+
+    Logo depois de conectar, o painel já mostra produção — sem esperar a
+    coleta da madrugada. Idempotente (reimportar só atualiza os dias); usa a
+    conexão guardada; teto próprio de 2 importações a cada 10 minutos.
+    """
+    box = _box()
+    await _enforce_verify_limit(scoped.plant_id, actions=_HISTORY_ACTIONS, limit=HISTORY_LIMIT)
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        record = await ProviderAccountService(session, box).get(scoped.plant_id)
+        if record is None or not record.active:
+            raise _error(status.HTTP_404_NOT_FOUND, "provider_account_not_found")
+        provider = record.provider
+        try:
+            credentials = ProviderAccountService(session, box).open(record)
+        except ProviderAccountError:
+            raise _error(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "provider_account_unreadable"
+            ) from None
+
+    async def refuse(reason: str) -> None:
+        await _audit_refusal(
+            request,
+            scoped.principal,
+            "plant",
+            scoped.plant_id,
+            provider,
+            reason,
+            action="provider_account.history_import_failed",
+        )
+
+    end = datetime.now(ZoneInfo(get_settings().timezone)).date() - timedelta(days=1)
+    start = end - timedelta(days=HISTORY_DAYS - 1)
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        await AuditEventRepository(session).record(
+            request,
+            action="provider_account.history_import_started",
+            resource_type="plant",
+            resource_id=str(scoped.plant_id),
+            outcome="SUCCEEDED",
+            details={"provider": provider},
+        )
+        await session.commit()
+    client = build_client(provider, account=credentials.login, password=credentials.password)
+    try:
+        # Mesmo contexto da coleta diária (collection/job.py): a usina já foi
+        # autorizada acima (ADMIN da organização) e a checagem de inversor em
+        # outra usina precisa enxergar todas as organizações.
+        async with SessionFactory() as session:
+            await set_platform_context(session)
+            result = await SolarCollectionService(
+                session,
+                client,
+                provider_name=provider,
+                energy_source=ENERGY_SOURCES[provider],
+            ).collect(plant_id=scoped.plant_id, start=start, end=end, consolidate_through=end)
+    except CollectionPlantError:
+        await refuse("provider_inverter_in_another_plant")
+        raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant") from None
+    except ProviderRateLimitedError:
+        await refuse("provider_rate_limited")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
+    except ProviderBlockedError:
+        # bloqueio da marca não é senha errada: mesmo código da conexão
+        await refuse("provider_login_blocked")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
+    except ProviderAuthError:
+        reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
+        await refuse(reason)
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
+    except ProviderError:
+        await refuse("provider_unavailable")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
+    except Exception as exc:
+        # ex.: a coleta diária gravando o mesmo dia ao mesmo tempo. Sempre
+        # auditado; o log leva só o tipo do erro, nunca dado da conexão.
+        logger.warning(
+            "provider_history_import_error",
+            extra={"plant_id": str(scoped.plant_id), "error_code": type(exc).__name__},
+        )
+        await refuse("history_import_error")
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "history_import_error") from None
+    finally:
+        await client.aclose()
+
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        await AuditEventRepository(session).record(
+            request,
+            action="provider_account.history_imported",
+            resource_type="plant",
+            resource_id=str(scoped.plant_id),
+            outcome="SUCCEEDED",
+            details={
+                "provider": provider,
+                "days_received": result.records_received,
+                "days_changed": result.records_changed,
+            },
+        )
+        await session.commit()
+    logger.info(
+        "provider_history_imported",
+        extra={
+            "plant_id": str(scoped.plant_id),
+            "provider": provider,
+            "days_received": result.records_received,
+            "days_changed": result.records_changed,
+        },
+    )
+    return HistoryImportResult(
+        start_date=start,
+        end_date=end,
+        days_received=result.records_received,
+        days_changed=result.records_changed,
+    )
 
 
 @router.delete(

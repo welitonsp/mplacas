@@ -133,6 +133,8 @@ const ACTIVITY_LABELS: Record<string, string> = {
   'plant.created_from_connection': 'Usina criada pela conexão com a marca',
   'provider_account.saved': 'Conexão com a marca salva',
   'provider_account.profile_refreshed': 'Dados da usina relidos na marca',
+  'provider_account.history_imported': 'Produção dos últimos 90 dias importada',
+  'provider_account.history_import_failed': 'Importação da produção falhou',
   'provider_account.verify_failed': 'Tentativa de conexão com a marca recusada',
   'provider_account.removed': 'Conexão com a marca desligada',
 }

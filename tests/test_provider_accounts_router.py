@@ -27,6 +27,7 @@ from mplacas.providers import db_models as _provider_models  # noqa: F401
 from mplacas.providers.accounts import ProviderAccountService, ProviderLogin
 from mplacas.providers.base import (
     PlantProfile,
+    ProviderBlockedError,
     ProviderAuthError,
     ProviderSchemaError,
     ProviderUnavailableError,
@@ -821,6 +822,105 @@ def test_refresh_profile_has_its_own_limit_and_never_blocks_saving(env, monkeypa
         assert client.post(path, headers=_auth(tokens["a_admin"])).status_code == 200
     assert client.post(path, headers=_auth(tokens["a_admin"])).status_code == 429
     # trocar a senha continua possível
+    assert client.put(URL, json=_body(), headers=_auth(tokens["a_admin"])).status_code == 200
+
+
+# --- ADR-097: importar o histórico de produção logo depois de conectar -------
+
+
+class _FakeCollection:
+    calls: list[dict] = []
+    error: Exception | None = None
+
+    def __init__(self, session, client, *, provider_name, energy_source):
+        self.provider_name = provider_name
+
+    async def collect(self, **kwargs):
+        if _FakeCollection.error is not None:
+            raise _FakeCollection.error
+        _FakeCollection.calls.append({"provider": self.provider_name, **kwargs})
+        from mplacas.services.collection import CollectionResult
+
+        return CollectionResult(devices_seen=1, records_received=88, records_changed=88)
+
+
+class _NoopClient:
+    async def aclose(self):
+        return None
+
+
+@pytest.fixture
+def fake_collection(monkeypatch):
+    _FakeCollection.calls = []
+    _FakeCollection.error = None
+    monkeypatch.setattr(provider_router, "SolarCollectionService", _FakeCollection)
+    monkeypatch.setattr(provider_router, "build_client", lambda *a, **k: _NoopClient())
+    return _FakeCollection
+
+
+HISTORY = f"{URL}/import-history"
+
+
+def test_import_history_reads_90_days_through_yesterday(env, fake_collection) -> None:
+    client, factory, tokens, verifier = env
+    client.put(URL, json=_body(), headers=_auth(tokens["a_admin"]))
+    response = client.post(HISTORY, headers=_auth(tokens["a_admin"]))
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["days_received"] == 88
+    call = fake_collection.calls[-1]
+    assert (call["end"] - call["start"]).days == provider_router.HISTORY_DAYS - 1
+    assert call["consolidate_through"] == call["end"]
+    assert body["end_date"] == call["end"].isoformat()
+    assert PASSWORD not in response.text
+    events = asyncio.run(_audit(factory))
+    assert "provider_account.history_imported" in [e.action for e in events]
+
+
+def test_import_history_requires_connection_and_admin(env, fake_collection) -> None:
+    client, _factory, tokens, verifier = env
+    assert client.post(HISTORY, headers=_auth(tokens["a_admin"])).status_code == 404
+    assert client.post(HISTORY, headers=_auth(tokens["a_read"])).status_code == 403
+
+
+def test_import_history_has_its_own_limit(env, fake_collection) -> None:
+    client, _factory, tokens, verifier = env
+    client.put(URL, json=_body(), headers=_auth(tokens["a_admin"]))
+    for _ in range(provider_router.HISTORY_LIMIT):
+        assert client.post(HISTORY, headers=_auth(tokens["a_admin"])).status_code == 200
+    assert client.post(HISTORY, headers=_auth(tokens["a_admin"])).status_code == 429
+    assert client.put(URL, json=_body(), headers=_auth(tokens["a_admin"])).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code", "detail"),
+    [
+        (ProviderAuthError("x"), 422, "provider_login_failed"),
+        (ProviderUnavailableError("x"), 503, "provider_unavailable"),
+        (ProviderSchemaError("x"), 503, "provider_unavailable"),
+        (ProviderBlockedError("x"), 503, "provider_login_blocked"),
+        (RuntimeError("db"), 503, "history_import_error"),
+    ],
+)
+def test_import_history_maps_brand_errors(env, fake_collection, error, status_code, detail) -> None:
+    client, factory, tokens, verifier = env
+    client.put(URL, json=_body(), headers=_auth(tokens["a_admin"]))
+    fake_collection.error = error
+    response = client.post(HISTORY, headers=_auth(tokens["a_admin"]))
+    assert response.status_code == status_code
+    assert response.json()["detail"] == detail
+    actions = [e.action for e in asyncio.run(_audit(factory))]
+    assert "provider_account.history_import_failed" in actions
+
+
+def test_failed_imports_count_toward_the_limit_but_never_block_saving(env, fake_collection) -> None:
+    client, _factory, tokens, verifier = env
+    client.put(URL, json=_body(), headers=_auth(tokens["a_admin"]))
+    fake_collection.error = ProviderUnavailableError("x")
+    for _ in range(provider_router.HISTORY_LIMIT):
+        assert client.post(HISTORY, headers=_auth(tokens["a_admin"])).status_code == 503
+    assert client.post(HISTORY, headers=_auth(tokens["a_admin"])).status_code == 429
     assert client.put(URL, json=_body(), headers=_auth(tokens["a_admin"])).status_code == 200
 
 
