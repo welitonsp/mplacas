@@ -70,10 +70,10 @@ async def run_solar_collection(
         )
         return result
     except ProviderAuthError as exc:
-        meter = await _meter_fallback(
+        handled, meter = await _meter_fallback(
             exc, client=client, plant_id=plant_id, provider=provider, now=now
         )
-        if meter is not None:
+        if handled:
             return meter
         await _enqueue_retry(
             plant_id=plant_id,
@@ -133,7 +133,7 @@ async def _meter_fallback(
     plant_id,
     provider: str,
     now: datetime | None,
-) -> CollectionResult | None:
+) -> tuple[bool, CollectionResult | None]:
     """Token Growatt sem permissão de histórico: lê o total da lista (ADR-098).
 
     Só quando a própria lista de usinas funcionou (o token é válido e só o
@@ -146,24 +146,34 @@ async def _meter_fallback(
         or not isinstance(client, GrowattOpenApiClient)
         or not client.listed_plants
     ):
-        return None
+        return False, None
     local_now = (now or datetime.now(UTC)).astimezone(ZoneInfo(get_settings().timezone))
     if local_now.hour >= METER_NIGHT_UNTIL_HOUR:
         logger.info(
             "solar_meter_reading_skipped_daylight",
             extra={"plant_id": str(plant_id), "local_hour": local_now.hour},
         )
-        return CollectionResult(devices_seen=0, records_received=0, records_changed=0)
-    totals = await client.meter_totals()
-    async with SessionFactory() as session:
-        await set_platform_context(session)
-        result = await SolarCollectionService(
-            session,
-            client,
-            provider_name=provider,
-            energy_source=ENERGY_SOURCES[provider],
-        ).record_meter_totals(plant_id=plant_id, totals=totals, reading_date=local_now.date())
-        await session.commit()
+        # Nada coletado: "adiado", nunca sucesso (a conexão não fica verde à toa).
+        return True, None
+    try:
+        totals = await client.meter_totals()
+        async with SessionFactory() as session:
+            await set_platform_context(session)
+            result = await SolarCollectionService(
+                session,
+                client,
+                provider_name=provider,
+                energy_source=ENERGY_SOURCES[provider],
+            ).record_meter_totals(
+                plant_id=plant_id, totals=totals, reading_date=local_now.date()
+            )
+            await session.commit()
+    except Exception as meter_exc:
+        logger.warning(
+            "solar_meter_reading_failed",
+            extra={"plant_id": str(plant_id), "error_code": type(meter_exc).__name__},
+        )
+        raise meter_exc from None
     logger.info(
         "solar_meter_reading_recorded",
         extra={
@@ -173,7 +183,7 @@ async def _meter_fallback(
             "days_derived": result.records_received,
         },
     )
-    return result
+    return True, result
 
 
 async def _enqueue_retry(

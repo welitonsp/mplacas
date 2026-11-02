@@ -1094,6 +1094,7 @@ async def import_production_history(
             "provider": provider,
             "days_received": result.records_received,
             "days_changed": result.records_changed,
+            "history_available": history_available,
         },
     )
     return HistoryImportResult(

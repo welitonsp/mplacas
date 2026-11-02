@@ -140,8 +140,9 @@ class SolarCollectionService:
         madrugada, antes do sol: o total cobre tudo até o fim da véspera. Com a
         leitura da noite anterior, a diferença é a produção de
         ``reading_date - 1``. Sem a noite anterior (primeira leitura ou um dia
-        perdido), nada é inventado: o dia fica sem dado. Total menor que o da
-        véspera (troca de inversor, zeramento) também não vira produção.
+        perdido), nada é inventado: o dia fica sem dado. Total menor ou igual
+        ao da véspera (troca de inversor, zeramento, lista ainda não
+        atualizada) também não vira produção.
         """
         plant = await self._session.get(Plant, plant_id)
         if plant is None:
@@ -151,7 +152,7 @@ class SolarCollectionService:
         day = reading_date - timedelta(days=1)
         for serial, total in totals.items():
             device = await self._get_or_create_device(
-                plant=plant, serial_number=serial, model_name=None
+                plant=plant, serial_number=serial, model_name="Usina Growatt"
             )
             current = await self._session.scalar(
                 select(MeterReading).where(
@@ -177,7 +178,9 @@ class SolarCollectionService:
                     MeterReading.reading_date == day,
                 )
             )
-            if previous is None or total < previous.total_kwh:
+            # Total igual ao da véspera quase sempre é a Growatt ainda sem
+            # atualizar a lista: não vira um dia de 0 kWh "confirmado".
+            if previous is None or total <= previous.total_kwh:
                 continue
             _, was_changed = await self._energy.upsert(
                 device_id=device.id,

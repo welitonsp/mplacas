@@ -153,7 +153,7 @@ async def test_job_in_daylight_does_not_use_the_reading(monkeypatch) -> None:
         provider=GROWATT_TOKEN,
         now=datetime.fromisoformat("2026-11-04T10:00:00-03:00"),
     )
-    assert result is not None and result.records_received == 0
+    assert result is None  # adiado, nunca "sucesso" sem coletar
     assert await _energy(factory) == {}
 
 
@@ -194,3 +194,12 @@ async def test_meter_totals_skip_unreadable_totals_never_zero() -> None:
     await client.aclose()
     assert "GW-PLANT-2" not in totals
     assert totals == {"GW-PLANT-1": Decimal("1234.5")}
+
+
+@pytest.mark.asyncio
+async def test_unchanged_total_is_not_a_zero_day() -> None:
+    """A lista da Growatt atualiza com atraso: total igual não é 0 kWh confirmado."""
+    factory = await _factory()
+    await _record(factory, "900", date(2026, 11, 3))
+    await _record(factory, "900", date(2026, 11, 4))
+    assert await _energy(factory) == {}
