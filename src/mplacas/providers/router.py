@@ -33,13 +33,14 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.audit.db_models import AuditEventRecord
 from mplacas.audit.repository import AuditEventRepository
 from mplacas.core.secret_box import SecretBox, SecretBoxError, secret_box_from_settings
 from mplacas.core.principal import OperationsPrincipal
-from mplacas.core.tenancy import AdminPlantPath, AdminPrincipal, ReadPlantPath
-from mplacas.db.models import Device, Plant
+from mplacas.core.tenancy import AdminPlantPath, AdminPrincipal, ReadPlantPath, ScopedPlant
+from mplacas.db.models import Device, MeterReading, Plant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context, set_principal_context
 from mplacas.providers.accounts import (
@@ -298,10 +299,13 @@ async def plant_now(scoped: ReadPlantPath) -> PlantNow:
         entry = _LIVE_CACHE.get(scoped.plant_id)
         if entry is not None and entry.account_id != record.id:
             entry = None  # outra conexão
+        connected_at = max(
+            _aware(moment) for moment in (record.created_at, record.rotated_at) if moment
+        )
         if entry is not None and entry.result is not None and entry.fresh_until > now:
             return entry.result
         if entry is not None and entry.retry_after is not None and entry.retry_after > now:
-            return _stale_or_fail(entry, now)
+            return await _stale_or_fail(entry, now, scoped, connected_at)
         try:
             credentials = ProviderAccountService(session, box).open(record)
         except ProviderAccountError:
@@ -325,7 +329,7 @@ async def plant_now(scoped: ReadPlantPath) -> PlantNow:
         failed = entry or _LiveEntry(account_id=account_id, fresh_until=now)
         failed.retry_after = now + LIVE_FAILURE_TTL
         _LIVE_CACHE[scoped.plant_id] = failed
-        return _stale_or_fail(failed, now)
+        return await _stale_or_fail(failed, now, scoped, connected_at)
     finally:
         await client.aclose()
     if own:
@@ -351,9 +355,44 @@ async def plant_now(scoped: ReadPlantPath) -> PlantNow:
     return result
 
 
-def _stale_or_fail(entry: _LiveEntry, now: datetime) -> PlantNow:
+async def _stale_or_fail(
+    entry: _LiveEntry, now: datetime, scoped: ScopedPlant, connected_at: datetime
+) -> PlantNow:
     if entry.result is not None and entry.result.read_at + LIVE_STALE_LIMIT > now:
         return entry.result.model_copy(update={"stale": True})
+    # Sem leitura em memória (o Render reinicia a instância): o último total
+    # gravado à noite (ADR-098) por esta mesma conexão ainda informa, com a
+    # hora dele — somando os aparelhos da usina naquele dia fechado.
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        latest = await session.scalar(
+            select(MeterReading)
+            .where(MeterReading.plant_id == scoped.plant_id)
+            .order_by(MeterReading.reading_date.desc(), MeterReading.read_at.desc())
+            .limit(1)
+        )
+        rows = (
+            list(
+                await session.scalars(
+                    select(MeterReading).where(
+                        MeterReading.plant_id == scoped.plant_id,
+                        MeterReading.reading_date == latest.reading_date,
+                    )
+                )
+            )
+            if latest is not None
+            else []
+        )
+    if rows:
+        read_at = max(_aware(row.read_at) for row in rows)
+        if read_at >= connected_at and read_at + LIVE_STALE_LIMIT * 2 > now:
+            return PlantNow(
+                provider=GROWATT_TOKEN,
+                total_kwh=sum((row.total_kwh for row in rows), Decimal(0)),
+                current_power_kw=None,
+                read_at=read_at,
+                stale=True,
+            )
     raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable")
 
 
@@ -1088,6 +1127,50 @@ class HistoryImportResult(BaseModel):
     history_available: bool = True
 
 
+HISTORY_UNAVAILABLE_RECHECK = timedelta(hours=24)
+
+
+def _aware(moment: datetime) -> datetime:
+    """SQLite devolve datas sem fuso; o PostgreSQL, com. Tudo em UTC."""
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
+async def _history_known_unavailable(
+    session: AsyncSession, plant_id: uuid.UUID, record: ProviderAccountRecord
+) -> HistoryImportResult | None:
+    """Última importação desta mesma conexão (há menos de 24 h) já disse
+    "histórico não liberado"? Então responde de novo sem chamar a marca."""
+    if record.provider != GROWATT_TOKEN:
+        return None
+    since = max(
+        datetime.now(UTC) - HISTORY_UNAVAILABLE_RECHECK,
+        *(_aware(moment) for moment in (record.created_at, record.rotated_at) if moment),
+    )
+    event = await session.scalar(
+        select(AuditEventRecord)
+        .where(
+            AuditEventRecord.action == "provider_account.history_imported",
+            AuditEventRecord.resource_type == "plant",
+            AuditEventRecord.resource_id == str(plant_id),
+        )
+        .order_by(AuditEventRecord.created_at.desc())
+        .limit(1)
+    )
+    if event is None or _aware(event.created_at) < since:
+        return None
+    details = event.details
+    if not isinstance(details, dict) or details.get("history_available") is not False:
+        return None
+    end = datetime.now(ZoneInfo(get_settings().timezone)).date() - timedelta(days=1)
+    return HistoryImportResult(
+        start_date=end - timedelta(days=HISTORY_DAYS - 1),
+        end_date=end,
+        days_received=0,
+        days_changed=0,
+        history_available=False,
+    )
+
+
 @router.post("/{plant_id}/provider-account/import-history", response_model=HistoryImportResult)
 async def import_production_history(
     request: Request, scoped: AdminPlantPath
@@ -1099,6 +1182,16 @@ async def import_production_history(
     conexão guardada; teto próprio de 2 importações a cada 10 minutos.
     """
     box = _box()
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        record = await ProviderAccountService(session, box).get(scoped.plant_id)
+        if record is None or not record.active:
+            raise _error(status.HTTP_404_NOT_FOUND, "provider_account_not_found")
+        known = await _history_known_unavailable(session, scoped.plant_id, record)
+    if known is not None:
+        # Já sabemos que esta conexão não tem histórico (ADR-098): não gasta a
+        # cota da Growatt (10012) que "Sua usina agora" precisa (ADR-099).
+        return known
     await _enforce_verify_limit(scoped.plant_id, actions=_HISTORY_ACTIONS, limit=HISTORY_LIMIT)
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
