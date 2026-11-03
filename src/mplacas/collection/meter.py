@@ -12,7 +12,10 @@ import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
+
 from mplacas.core.config import get_settings
+from mplacas.db.models import Device
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context
 from mplacas.providers.growatt.openapi import GrowattOpenApiClient
@@ -54,6 +57,17 @@ async def record_meter_reading(
     totals = await client.meter_totals()
     async with SessionFactory() as session:
         await set_platform_context(session)
+        # Um token pode enxergar várias usinas: fica só a(s) já ligada(s) a
+        # esta usina, para nunca somar a produção de outra.
+        own = set(
+            await session.scalars(
+                select(Device.serial_number).where(
+                    Device.plant_id == plant_id, Device.provider == provider
+                )
+            )
+        )
+        if own:
+            totals = {serial: total for serial, total in totals.items() if serial in own}
         result = await SolarCollectionService(
             session,
             client,

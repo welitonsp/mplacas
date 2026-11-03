@@ -592,28 +592,38 @@ async def run_meter_readings(*, now: datetime | None = None) -> None:
                 .where(OrganizationRecord.active.is_(False))
             )
         )
-        service = ProviderAccountService(session, box)
-        targets = [
-            (record.plant_id, service.open(record))
-            for record in await service.list_active()
+        records = [
+            record
+            for record in await ProviderAccountService(session, box).list_active()
             if record.provider == GROWATT_TOKEN and record.plant_id not in inactive_plants
         ]
-    for plant_id, credentials in targets:
-        client = build_client(
-            GROWATT_TOKEN, account=credentials.login, password=credentials.password
-        )
+    failed: list[str] = []
+    for record in records:
+        client = None
         try:
+            async with SessionFactory() as session:
+                await set_platform_context(session)
+                credentials = ProviderAccountService(session, box).open(record)
+            client = build_client(
+                GROWATT_TOKEN, account=credentials.login, password=credentials.password
+            )
             if isinstance(client, GrowattOpenApiClient):
                 await record_meter_reading(
-                    client, plant_id=plant_id, provider=GROWATT_TOKEN, day=day
+                    client, plant_id=record.plant_id, provider=GROWATT_TOKEN, day=day
                 )
         except Exception as exc:  # noqa: BLE001 - isola a falha por usina
-            logger.warning(
+            failed.append(str(record.plant_id))
+            logger.error(
                 "cloud_job_meter_reading_failed",
-                extra={"plant_id": str(plant_id), "error_code": type(exc).__name__},
+                extra={"plant_id": str(record.plant_id), "error_code": type(exc).__name__},
             )
         finally:
-            await client.aclose()
+            if client is not None:
+                await client.aclose()
+    if failed:
+        # Workflow vermelho = notificação do GitHub: leitura perdida custa o dia
+        # dela e o seguinte (a produção é a diferença entre dois dias fechados).
+        raise RuntimeError(f"meter reading failed for {len(failed)} plant(s): {', '.join(failed)}")
 
 
 async def _count_active_provider_accounts() -> int:

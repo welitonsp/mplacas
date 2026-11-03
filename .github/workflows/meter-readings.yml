@@ -15,7 +15,8 @@ name: meter-readings
 
 on:
   schedule:
-    - cron: "17 1-23/6 * * *"
+    # 04:47, 10:47, 16:47 e 22:47: duas no escuro mesmo sem atraso.
+    - cron: "47 4-22/6 * * *"
       timezone: America/Sao_Paulo
   workflow_dispatch:
 

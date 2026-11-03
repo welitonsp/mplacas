@@ -274,3 +274,69 @@ async def test_meter_readings_job_reads_token_plants_in_the_dark(monkeypatch) ->
     monkeypatch.setattr(factory_module, "build_client", lambda *a, **k: _token_client())
     await cloud_jobs.run_meter_readings(now=datetime.fromisoformat("2026-11-03T21:10:00-03:00"))
     assert await _energy(factory) == {date(2026, 11, 3): Decimal("21.400")}
+
+
+async def _token_account(monkeypatch, factory):
+    import base64
+
+    from mplacas.core.secret_box import KEY_BYTES, SecretBox
+    from mplacas.providers.accounts import ProviderAccountService
+
+    key = base64.b64encode(b"\x07" * KEY_BYTES).decode()
+    monkeypatch.setenv("MPLACAS_PROVIDER_SECRET_KEYS", f"1:{key}")
+    get_settings.cache_clear()
+    async with factory() as session:
+        await ProviderAccountService(session, SecretBox.from_keyring(f"1:{key}")).save(
+            plant_id=PLANT,
+            provider=GROWATT_TOKEN,
+            credentials=ProviderLogin(login="token-x", password="tok"),
+        )
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_token_seeing_other_plants_never_adds_their_production(monkeypatch) -> None:
+    import mplacas.providers.factory as factory_module
+    from mplacas import cloud_jobs
+
+    factory = await _factory()
+    await _token_account(monkeypatch, factory)
+    await _record(factory, "900.0", date(2026, 11, 2))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        plants = [
+            {"plant_id": 1383141, "total_energy": "921.4"},
+            {"plant_id": 999, "total_energy": "50000"},
+        ]
+        return httpx.Response(200, json={"error_code": 0, "data": {"count": 2, "plants": plants}})
+
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", factory)
+    monkeypatch.setattr(meter_module, "SessionFactory", factory)
+    monkeypatch.setattr(
+        factory_module,
+        "build_client",
+        lambda *a, **k: GrowattOpenApiClient(token="t", transport=httpx.MockTransport(handler)),
+    )
+    await cloud_jobs.run_meter_readings(now=datetime.fromisoformat("2026-11-03T22:47:00-03:00"))
+    async with factory() as session:
+        readings = (await session.scalars(select(MeterReading))).all()
+    assert {r.total_kwh for r in readings} == {Decimal("900.000"), Decimal("921.400")}
+
+
+@pytest.mark.asyncio
+async def test_meter_job_fails_loudly_after_trying_every_plant(monkeypatch) -> None:
+    import mplacas.providers.factory as factory_module
+    from mplacas import cloud_jobs
+
+    factory = await _factory()
+    await _token_account(monkeypatch, factory)
+    monkeypatch.setattr(cloud_jobs, "SessionFactory", factory)
+
+    def boom(*a, **k):
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(factory_module, "build_client", boom)
+    with pytest.raises(RuntimeError, match="meter reading failed for 1 plant"):
+        await cloud_jobs.run_meter_readings(
+            now=datetime.fromisoformat("2026-11-03T22:47:00-03:00")
+        )
