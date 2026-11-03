@@ -1144,3 +1144,59 @@ def test_token_without_history_permission_is_not_an_error(env, monkeypatch) -> N
     assert asked.count("/v1/plant/list") == 1
     actions = [e.action for e in asyncio.run(_audit(factory))]
     assert "provider_account.history_import_failed" not in actions
+
+
+# --- ADR-099: a usina agora (Growatt por token) -------------------------------
+
+
+def _now_client(calls: list[str], total="9215.4", power="2.3"):
+    import httpx
+
+    from mplacas.providers.growatt.openapi import GrowattOpenApiClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        plants = [{"plant_id": 1383141, "total_energy": total, "current_power": power}]
+        return httpx.Response(200, json={"error_code": 0, "data": {"count": 1, "plants": plants}})
+
+    return GrowattOpenApiClient(token="t", transport=httpx.MockTransport(handler))
+
+
+def test_plant_now_reads_total_and_power_once_per_ten_minutes(env, monkeypatch) -> None:
+    client, _factory, tokens, verifier = env
+    body = {"provider": "GROWATT_TOKEN", "password": "abc123"}
+    assert client.put(URL, json=body, headers=_auth(tokens["a_admin"])).status_code == 200
+    provider_router._LIVE_CACHE.clear()
+    calls: list[str] = []
+    monkeypatch.setattr(provider_router, "build_client", lambda *a, **k: _now_client(calls))
+
+    first = client.get(f"{URL}/now", headers=_auth(tokens["a_read"]))
+    assert first.status_code == 200, first.text
+    assert first.json()["total_kwh"] == "9215.4"
+    assert first.json()["current_power_kw"] == "2.3"
+    assert "abc123" not in first.text
+    second = client.get(f"{URL}/now", headers=_auth(tokens["a_read"]))
+    assert second.json() == first.json()
+    assert calls == ["/v1/plant/list"]
+
+
+def test_plant_now_is_only_for_growatt_token(env) -> None:
+    client, _factory, tokens, verifier = env
+    provider_router._LIVE_CACHE.clear()
+    assert client.get(f"{URL}/now", headers=_auth(tokens["a_admin"])).status_code == 404
+    client.put(URL, json=_body(), headers=_auth(tokens["a_admin"]))
+    response = client.get(f"{URL}/now", headers=_auth(tokens["a_admin"]))
+    assert response.status_code == 404
+    assert response.json()["detail"] == "plant_now_unavailable"
+
+
+def test_plant_now_missing_field_is_none_never_zero(env, monkeypatch) -> None:
+    client, _factory, tokens, verifier = env
+    body = {"provider": "GROWATT_TOKEN", "password": "abc123"}
+    client.put(URL, json=body, headers=_auth(tokens["a_admin"]))
+    provider_router._LIVE_CACHE.clear()
+    monkeypatch.setattr(
+        provider_router, "build_client", lambda *a, **k: _now_client([], power=None)
+    )
+    response = client.get(f"{URL}/now", headers=_auth(tokens["a_admin"]))
+    assert response.json()["current_power_kw"] is None

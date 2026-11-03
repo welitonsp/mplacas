@@ -240,6 +240,82 @@ async def get_provider_account(scoped: ReadPlantPath) -> ProviderAccountView:
         return _view(record)
 
 
+# --- ADR-099: a usina agora, para contas Growatt sem histórico ---------------
+
+# A Growatt só aceita ``plant/list`` de tempos em tempos (10012): uma leitura
+# por usina a cada 10 minutos, em memória (instância única no Render).
+LIVE_TTL = timedelta(minutes=10)
+_LIVE_CACHE: dict[uuid.UUID, tuple[datetime, PlantNow]] = {}
+
+
+class PlantNow(BaseModel):
+    provider: str
+    # kWh desde a instalação e kW no momento da leitura; None = a marca não informou
+    total_kwh: Decimal | None
+    current_power_kw: Decimal | None
+    read_at: datetime
+
+
+@router.get("/{plant_id}/provider-account/now", response_model=PlantNow)
+async def plant_now(scoped: ReadPlantPath) -> PlantNow:
+    """Total gerado e potência agora, lidos na marca (ADR-099).
+
+    Só para conexões Growatt por token: é o que a lista de usinas informa
+    quando o histórico não é liberado. Outras marcas = 404 (a tela some).
+    """
+    cached = _LIVE_CACHE.get(scoped.plant_id)
+    now = datetime.now(UTC)
+    if cached is not None and cached[0] > now:
+        return cached[1]
+    box = _box()
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
+        record = await ProviderAccountService(session, box).get(scoped.plant_id)
+        if record is None or not record.active or record.provider != GROWATT_TOKEN:
+            raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable")
+        try:
+            credentials = ProviderAccountService(session, box).open(record)
+        except ProviderAccountError:
+            raise _error(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "provider_account_unreadable"
+            ) from None
+        own = set(
+            await session.scalars(
+                select(Device.serial_number).where(
+                    Device.plant_id == scoped.plant_id, Device.provider == GROWATT_TOKEN
+                )
+            )
+        )
+    client = build_client(GROWATT_TOKEN, account=credentials.login, password=credentials.password)
+    try:
+        if not isinstance(client, GrowattOpenApiClient):
+            raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable")
+        readings = await client.plant_now()
+    except ProviderRateLimitedError:
+        if cached is not None:
+            return cached[1]  # a última leitura vale mais que um erro
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
+    except ProviderError:
+        if cached is not None:
+            return cached[1]
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
+    finally:
+        await client.aclose()
+    mine = [value for serial, value in readings.items() if not own or serial in own]
+    if not mine:
+        raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable")
+    totals = [total for total, _ in mine if total is not None]
+    powers = [power for _, power in mine if power is not None]
+    result = PlantNow(
+        provider=GROWATT_TOKEN,
+        total_kwh=sum(totals, Decimal(0)) if totals else None,
+        current_power_kw=sum(powers, Decimal(0)) if powers else None,
+        read_at=now,
+    )
+    _LIVE_CACHE[scoped.plant_id] = (now + LIVE_TTL, result)
+    return result
+
+
 @router.put("/{plant_id}/provider-account", response_model=ProviderAccountView)
 async def put_provider_account(request: Request, scoped: AdminPlantPath) -> ProviderAccountView:
     declared = request.headers.get("content-length")

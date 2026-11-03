@@ -41,6 +41,7 @@ function installApiMock() {
     fetchExecutiveDashboard: vi.fn(async () => jsonResponse(executivePayload)),
     fetchAnomalyHistory: vi.fn(async () => jsonResponse(anomalyPayload)),
     fetchFinancialReturn: vi.fn(async () => jsonResponse(financialReturnUnavailablePayload)),
+    fetchPlantNow: vi.fn(async () => jsonResponse({ detail: 'plant_now_unavailable' }, 404)),
     fetchPlantSetup: vi.fn(async () => jsonResponse(plantSetupCompletePayload)),
     fetchPlants: vi.fn(async () => [singlePlant]),
     configureApi: vi.fn(),

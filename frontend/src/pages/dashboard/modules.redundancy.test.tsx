@@ -37,6 +37,7 @@ function installApiMock() {
     updateFinancialConfiguration: vi.fn(async () => jsonResponse({})),
     fetchInvestorPanel: vi.fn(async () => jsonResponse(investorUnavailablePayload)),
     fetchPendingBills: vi.fn(async () => jsonResponse({ count: 0, items: [] })),
+    fetchPlantNow: vi.fn(async () => jsonResponse({ detail: 'plant_now_unavailable' }, 404)),
     fetchPlantSetup: vi.fn(async () => jsonResponse(plantSetupCompletePayload)),
     uploadBillPdf: vi.fn(async () => jsonResponse({})),
     confirmBill: vi.fn(async () => jsonResponse({})),

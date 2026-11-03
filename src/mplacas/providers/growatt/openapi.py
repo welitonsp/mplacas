@@ -248,6 +248,23 @@ class GrowattOpenApiClient(SolarProvider):
                 continue
         return totals
 
+    async def plant_now(self) -> dict[str, tuple[Decimal | None, Decimal | None]]:
+        """Por usina: (total desde a instalação em kWh, potência agora em kW).
+
+        Da própria ``plant/list`` (ADR-099). Campo ausente ou ilegível fica
+        ``None`` — nunca zero.
+        """
+        result: dict[str, tuple[Decimal | None, Decimal | None]] = {}
+        for row in await self._plants():
+            values: list[Decimal | None] = []
+            for field in ("total_energy", "current_power"):
+                try:
+                    values.append(_kwh(row.get(field), field))
+                except ProviderSchemaError:
+                    values.append(None)
+            result[plant_serial(str(row["plant_id"]))] = (values[0], values[1])
+        return result
+
     async def probe(self) -> dict[str, str]:
         """Quais endpoints de leitura este token alcança (ADR-094).
 

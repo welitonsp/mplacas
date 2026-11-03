@@ -403,6 +403,12 @@ export async function importProductionHistory(plantId: string): Promise<Response
   })
 }
 
+// Total gerado e potência agora, lidos na marca (ADR-099). Só Growatt por
+// token; outras marcas respondem 404 e a tela não mostra o cartão.
+export async function fetchPlantNow(plantId: string): Promise<Response> {
+  return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account/now`)
+}
+
 export async function deleteProviderAccount(plantId: string): Promise<Response> {
   return apiFetch(`/plants/${encodeURIComponent(plantId)}/provider-account`, { method: 'DELETE' })
 }
