@@ -39,7 +39,7 @@ from mplacas.audit.db_models import AuditEventRecord
 from mplacas.audit.repository import AuditEventRepository
 from mplacas.core.secret_box import SecretBox, SecretBoxError, secret_box_from_settings
 from mplacas.core.principal import OperationsPrincipal
-from mplacas.core.tenancy import AdminPlantPath, AdminPrincipal, ReadPlantPath
+from mplacas.core.tenancy import AdminPlantPath, AdminPrincipal, ReadPlantPath, ScopedPlant
 from mplacas.db.models import Device, MeterReading, Plant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context, set_principal_context
@@ -299,10 +299,13 @@ async def plant_now(scoped: ReadPlantPath) -> PlantNow:
         entry = _LIVE_CACHE.get(scoped.plant_id)
         if entry is not None and entry.account_id != record.id:
             entry = None  # outra conexão
+        connected_at = max(
+            _aware(moment) for moment in (record.created_at, record.rotated_at) if moment
+        )
         if entry is not None and entry.result is not None and entry.fresh_until > now:
             return entry.result
         if entry is not None and entry.retry_after is not None and entry.retry_after > now:
-            return await _stale_or_fail(entry, now, scoped.plant_id)
+            return await _stale_or_fail(entry, now, scoped, connected_at)
         try:
             credentials = ProviderAccountService(session, box).open(record)
         except ProviderAccountError:
@@ -326,7 +329,7 @@ async def plant_now(scoped: ReadPlantPath) -> PlantNow:
         failed = entry or _LiveEntry(account_id=account_id, fresh_until=now)
         failed.retry_after = now + LIVE_FAILURE_TTL
         _LIVE_CACHE[scoped.plant_id] = failed
-        return await _stale_or_fail(failed, now, scoped.plant_id)
+        return await _stale_or_fail(failed, now, scoped, connected_at)
     finally:
         await client.aclose()
     if own:
@@ -352,27 +355,44 @@ async def plant_now(scoped: ReadPlantPath) -> PlantNow:
     return result
 
 
-async def _stale_or_fail(entry: _LiveEntry, now: datetime, plant_id: uuid.UUID) -> PlantNow:
+async def _stale_or_fail(
+    entry: _LiveEntry, now: datetime, scoped: ScopedPlant, connected_at: datetime
+) -> PlantNow:
     if entry.result is not None and entry.result.read_at + LIVE_STALE_LIMIT > now:
         return entry.result.model_copy(update={"stale": True})
     # Sem leitura em memória (o Render reinicia a instância): o último total
-    # gravado à noite (ADR-098) ainda informa, com a hora dele.
+    # gravado à noite (ADR-098) por esta mesma conexão ainda informa, com a
+    # hora dele — somando os aparelhos da usina naquele dia fechado.
     async with SessionFactory() as session:
-        await set_platform_context(session)
-        reading = await session.scalar(
+        await set_principal_context(session, scoped.principal)
+        latest = await session.scalar(
             select(MeterReading)
-            .where(MeterReading.plant_id == plant_id)
-            .order_by(MeterReading.read_at.desc())
+            .where(MeterReading.plant_id == scoped.plant_id)
+            .order_by(MeterReading.reading_date.desc(), MeterReading.read_at.desc())
             .limit(1)
         )
-    if reading is not None and _aware(reading.read_at) + LIVE_STALE_LIMIT * 2 > now:
-        return PlantNow(
-            provider=GROWATT_TOKEN,
-            total_kwh=reading.total_kwh,
-            current_power_kw=None,
-            read_at=reading.read_at,
-            stale=True,
+        rows = (
+            list(
+                await session.scalars(
+                    select(MeterReading).where(
+                        MeterReading.plant_id == scoped.plant_id,
+                        MeterReading.reading_date == latest.reading_date,
+                    )
+                )
+            )
+            if latest is not None
+            else []
         )
+    if rows:
+        read_at = max(_aware(row.read_at) for row in rows)
+        if read_at >= connected_at and read_at + LIVE_STALE_LIMIT * 2 > now:
+            return PlantNow(
+                provider=GROWATT_TOKEN,
+                total_kwh=sum((row.total_kwh for row in rows), Decimal(0)),
+                current_power_kw=None,
+                read_at=read_at,
+                stale=True,
+            )
     raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable")
 
 

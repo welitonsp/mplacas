@@ -1351,3 +1351,38 @@ def test_plant_now_falls_back_to_the_last_night_total(env, monkeypatch) -> None:
     assert response.json()["stale"] is True
     assert response.json()["total_kwh"] == "9200.000"
     assert response.json()["current_power_kw"] is None
+
+
+def test_plant_now_ignores_night_totals_from_a_previous_connection(env, monkeypatch) -> None:
+    from datetime import UTC, date, datetime, timedelta
+    from decimal import Decimal
+
+    from mplacas.db.models import MeterReading
+
+    client, factory, tokens, verifier = env
+    _token_connected(client, tokens)
+
+    async def _seed() -> None:
+        async with factory() as session:
+            device = Device(
+                plant_id=PLANT_A, provider="GROWATT_TOKEN", serial_number="GW-PLANT-1383141"
+            )
+            session.add(device)
+            await session.flush()
+            session.add(
+                MeterReading(
+                    plant_id=PLANT_A,
+                    device_id=device.id,
+                    reading_date=date.today(),
+                    total_kwh=Decimal("9200.0"),
+                    source="GROWATT_TOTAL_DIFF",
+                    read_at=datetime.now(UTC) - timedelta(days=1),  # antes desta conexão
+                )
+            )
+            await session.commit()
+
+    asyncio.run(_seed())
+    monkeypatch.setattr(
+        provider_router, "build_client", lambda *a, **k: _multi_client([], fail=True)
+    )
+    assert client.get(f"{URL}/now", headers=_auth(tokens["a_read"])).status_code == 503
