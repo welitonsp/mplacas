@@ -29,6 +29,7 @@ interface ApiMockOverrides {
   fetchFinancialReturn?: (plantId: string) => Promise<Response>
   fetchPlantSetup?: (plantId: string) => Promise<Response>
   importProductionHistory?: (plantId: string) => Promise<Response>
+  fetchPlantNow?: (plantId: string) => Promise<Response>
 }
 
 function installApiMock(overrides: ApiMockOverrides = {}) {
@@ -44,6 +45,7 @@ function installApiMock(overrides: ApiMockOverrides = {}) {
       overrides.fetchPlantSetup ?? vi.fn(async () => jsonResponse(overrides.setupPayload ?? plantSetupCompletePayload)),
     fetchPlants: vi.fn(async () => [singlePlant]),
     importProductionHistory: overrides.importProductionHistory ?? vi.fn(async () => jsonResponse({ days_received: 0 })),
+    fetchPlantNow: overrides.fetchPlantNow ?? vi.fn(async () => jsonResponse({ detail: 'plant_now_unavailable' }, 404)),
     configureApi: vi.fn(),
   }))
 }
@@ -445,5 +447,51 @@ describe('Início de usina recém-conectada', () => {
     await screen.findByText('Nenhuma leitura da usina nos últimos 90 dias')
     expect(screen.queryByTestId('home-history-import')).not.toBeInTheDocument()
     expect(importProductionHistory).not.toHaveBeenCalled()
+  })
+})
+
+// ADR-099: Growatt por token mostra o que a marca informa agora.
+describe('Sua usina agora', () => {
+  it('mostra potência e total com a fonte e a hora', async () => {
+    freezeToday()
+    await renderHome({
+      fetchPlantNow: vi.fn(async () =>
+        jsonResponse({ provider: 'GROWATT_TOKEN', total_kwh: '9215.4', current_power_kw: '2.3', read_at: '2026-07-31T13:40:00Z' }),
+      ),
+    })
+    const card = await screen.findByTestId('home-now')
+    expect(within(card).getByText('2,3 kW')).toBeInTheDocument()
+    expect(within(card).getByText('9.215 kWh')).toBeInTheDocument()
+    expect(within(card).getByText(/Lido na Growatt às/)).toBeInTheDocument()
+  })
+
+  it('campo que a marca não informa nunca vira zero', async () => {
+    freezeToday()
+    await renderHome({
+      fetchPlantNow: vi.fn(async () =>
+        jsonResponse({ provider: 'GROWATT_TOKEN', total_kwh: '9215.4', current_power_kw: null, read_at: '2026-07-31T13:40:00Z' }),
+      ),
+    })
+    const card = await screen.findByTestId('home-now')
+    expect(within(card).getByText('não informado')).toBeInTheDocument()
+    expect(within(card).queryByText('0 kW')).not.toBeInTheDocument()
+  })
+
+  it('marca fora do ar: diz que é a última leitura', async () => {
+    freezeToday()
+    await renderHome({
+      fetchPlantNow: vi.fn(async () =>
+        jsonResponse({ provider: 'GROWATT_TOKEN', total_kwh: '9215.4', current_power_kw: '2.3', read_at: '2026-07-31T13:40:00Z', stale: true }),
+      ),
+    })
+    const card = await screen.findByTestId('home-now')
+    expect(within(card).getByText(/A Growatt não respondeu agora/)).toBeInTheDocument()
+  })
+
+  it('outras marcas (404): o cartão não aparece', async () => {
+    freezeToday()
+    await renderHome()
+    await screen.findByTestId('home-status')
+    expect(screen.queryByTestId('home-now')).not.toBeInTheDocument()
   })
 })

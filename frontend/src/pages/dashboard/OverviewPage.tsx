@@ -1,5 +1,11 @@
 import { useMemo, useRef } from 'react'
-import { fetchAnomalyHistory, fetchExecutiveDashboard, fetchFinancialReturn, fetchPlantSetup } from '../../lib/api'
+import {
+  fetchAnomalyHistory,
+  fetchExecutiveDashboard,
+  fetchFinancialReturn,
+  fetchPlantNow,
+  fetchPlantSetup,
+} from '../../lib/api'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
 import type { AnomalyDashboardResponse, AnomalyFetchError } from '../../lib/dashboard/contracts'
@@ -35,6 +41,7 @@ import { HomeSavingsCard } from '../../components/home/HomeSavingsCard'
 import { HomeWeekCard } from '../../components/home/HomeWeekCard'
 import { HomeTodoList } from '../../components/home/HomeTodoList'
 import { HomeHistoryImport } from '../../components/home/HomeHistoryImport'
+import { HomeNowCard, parsePlantNow } from '../../components/home/HomeNowCard'
 import { useMe } from '../../contexts/MeContext'
 import { Link } from 'react-router'
 import { DASHBOARD_FINANCIAL_PATH } from '../../routes'
@@ -83,6 +90,14 @@ export function OverviewPage() {
     parse: parseFinancialReturn,
     errorMessage: 'Erro ao buscar retorno do investimento.',
   })
+  // Growatt por token (ADR-099): o que a marca informa agora. Qualquer falha
+  // (inclusive 404 de outras marcas) só esconde o cartão.
+  const plantNow = usePlantResource<ReturnType<typeof parsePlantNow>, never>({
+    plantId,
+    fetcher: fetchPlantNow,
+    parse: parsePlantNow,
+    classifyError: () => null,
+  })
   const setup = usePlantResource({
     plantId,
     fetcher: fetchPlantSetup,
@@ -95,6 +110,7 @@ export function OverviewPage() {
     anomalies.refetch()
     financialReturn.refetch()
     setup.refetch()
+    plantNow.refetch()
   }
   const loading = [executive, anomalies, financialReturn, setup].some((resource) => resource.status === 'loading')
 
@@ -208,6 +224,7 @@ export function OverviewPage() {
             />
           )}
           {daily && week.length > 0 && <HomeWeekCard week={week} />}
+          {plantNow.data && <HomeNowCard now={plantNow.data} />}
         </div>
 
         {(data || setup.data) && (

@@ -90,6 +90,7 @@ vi.mock('./lib/api', () => ({
   fetchPendingBills: vi.fn(async () => {
     throw new Error('mock: sem rede em App.test.tsx')
   }),
+  fetchPlantNow: vi.fn(async () => new Response(JSON.stringify({ detail: 'plant_now_unavailable' }), { status: 404 })),
   fetchPlantSetup: vi.fn(async () => {
     throw new Error('mock: sem rede em App.test.tsx')
   }),
