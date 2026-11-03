@@ -1200,3 +1200,84 @@ def test_plant_now_missing_field_is_none_never_zero(env, monkeypatch) -> None:
     )
     response = client.get(f"{URL}/now", headers=_auth(tokens["a_admin"]))
     assert response.json()["current_power_kw"] is None
+
+
+def _multi_client(calls: list[str], fail: bool = False):
+    import httpx
+
+    from mplacas.providers.growatt.openapi import GrowattOpenApiClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if fail:
+            return httpx.Response(200, json={"error_code": 10012, "error_msg": "frequently"})
+        plants = [
+            {"plant_id": 1383141, "total_energy": "9215.4", "current_power": "2.3"},
+            {"plant_id": 999, "total_energy": "50000", "current_power": "9"},
+        ]
+        return httpx.Response(200, json={"error_code": 0, "data": {"count": 2, "plants": plants}})
+
+    return GrowattOpenApiClient(token="t", transport=httpx.MockTransport(handler))
+
+
+def _token_connected(client, tokens) -> None:
+    body = {"provider": "GROWATT_TOKEN", "password": "abc123"}
+    assert client.put(URL, json=body, headers=_auth(tokens["a_admin"])).status_code == 200
+    provider_router._LIVE_CACHE.clear()
+
+
+def test_plant_now_never_sums_other_plants_of_the_token(env, monkeypatch) -> None:
+    client, factory, tokens, verifier = env
+    _token_connected(client, tokens)
+    monkeypatch.setattr(provider_router, "build_client", lambda *a, **k: _multi_client([]))
+    # sem aparelho ligado e token com 2 usinas: falha fechada
+    assert client.get(f"{URL}/now", headers=_auth(tokens["a_read"])).status_code == 404
+
+    async def _seed() -> None:
+        async with factory() as session:
+            session.add(
+                Device(plant_id=PLANT_A, provider="GROWATT_TOKEN", serial_number="GW-PLANT-1383141")
+            )
+            await session.commit()
+
+    asyncio.run(_seed())
+    provider_router._LIVE_CACHE.clear()
+    response = client.get(f"{URL}/now", headers=_auth(tokens["a_read"]))
+    assert response.json()["total_kwh"] == "9215.4"
+
+
+def test_plant_now_forgets_the_reading_when_the_connection_is_removed(env, monkeypatch) -> None:
+    client, _factory, tokens, verifier = env
+    _token_connected(client, tokens)
+    monkeypatch.setattr(provider_router, "build_client", lambda *a, **k: _now_client([]))
+    assert client.get(f"{URL}/now", headers=_auth(tokens["a_read"])).status_code == 200
+    assert client.delete(URL, headers=_auth(tokens["a_admin"])).status_code in (200, 204)
+    assert client.get(f"{URL}/now", headers=_auth(tokens["a_read"])).status_code == 404
+
+
+def test_plant_now_brand_failure_serves_last_reading_as_stale_and_waits(
+    env, monkeypatch
+) -> None:
+    from datetime import timedelta
+
+    client, _factory, tokens, verifier = env
+    _token_connected(client, tokens)
+    calls: list[str] = []
+    monkeypatch.setattr(provider_router, "build_client", lambda *a, **k: _now_client(calls))
+    assert client.get(f"{URL}/now", headers=_auth(tokens["a_read"])).status_code == 200
+    entry = provider_router._LIVE_CACHE[PLANT_A]
+    entry.fresh_until -= timedelta(minutes=11)
+    monkeypatch.setattr(
+        provider_router, "build_client", lambda *a, **k: _multi_client(calls, fail=True)
+    )
+    stale = client.get(f"{URL}/now", headers=_auth(tokens["a_read"]))
+    assert stale.status_code == 200 and stale.json()["stale"] is True
+    client.get(f"{URL}/now", headers=_auth(tokens["a_read"]))
+    assert len(calls) == 2  # a segunda falha espera 2 min antes de tentar a marca
+
+
+def test_plant_now_other_organization_cannot_read(env, monkeypatch) -> None:
+    client, _factory, tokens, verifier = env
+    _token_connected(client, tokens)
+    monkeypatch.setattr(provider_router, "build_client", lambda *a, **k: _now_client([]))
+    assert client.get(f"{URL}/now", headers=_auth(tokens["b_admin"])).status_code in (403, 404)

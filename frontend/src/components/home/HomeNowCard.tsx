@@ -9,6 +9,8 @@ export interface PlantNow {
   total_kwh: number | null
   current_power_kw: number | null
   read_at: string
+  // a marca falhou agora; esta é a última leitura boa
+  stale: boolean
 }
 
 function toNumber(value: unknown): number | null {
@@ -24,6 +26,7 @@ export function parsePlantNow(payload: unknown): PlantNow {
     total_kwh: toNumber(body.total_kwh),
     current_power_kw: toNumber(body.current_power_kw),
     read_at: body.read_at,
+    stale: body.stale === true,
   }
 }
 
@@ -64,7 +67,9 @@ export function HomeNowCard({ now }: { now: PlantNow }) {
         </div>
       </dl>
       <p className="text-xs text-[var(--color-text-secondary)]">
-        {`Lido na Growatt${time ? ` às ${time}` : ''}. Atualiza a cada 10 minutos.`}
+        {now.stale
+          ? `A Growatt não respondeu agora. Última leitura${time ? ` às ${time}` : ''}.`
+          : `Lido na Growatt${time ? ` às ${time}` : ''}. Atualiza a cada 10 minutos.`}
       </p>
     </section>
   )

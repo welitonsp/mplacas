@@ -477,6 +477,17 @@ describe('Sua usina agora', () => {
     expect(within(card).queryByText('0 kW')).not.toBeInTheDocument()
   })
 
+  it('marca fora do ar: diz que é a última leitura', async () => {
+    freezeToday()
+    await renderHome({
+      fetchPlantNow: vi.fn(async () =>
+        jsonResponse({ provider: 'GROWATT_TOKEN', total_kwh: '9215.4', current_power_kw: '2.3', read_at: '2026-07-31T13:40:00Z', stale: true }),
+      ),
+    })
+    const card = await screen.findByTestId('home-now')
+    expect(within(card).getByText(/A Growatt não respondeu agora/)).toBeInTheDocument()
+  })
+
   it('outras marcas (404): o cartão não aparece', async () => {
     freezeToday()
     await renderHome()

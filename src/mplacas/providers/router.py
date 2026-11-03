@@ -245,7 +245,11 @@ async def get_provider_account(scoped: ReadPlantPath) -> ProviderAccountView:
 # A Growatt só aceita ``plant/list`` de tempos em tempos (10012): uma leitura
 # por usina a cada 10 minutos, em memória (instância única no Render).
 LIVE_TTL = timedelta(minutes=10)
-_LIVE_CACHE: dict[uuid.UUID, tuple[datetime, PlantNow]] = {}
+# Falha da marca sem leitura guardada: espera antes de tentar de novo, para não
+# manter o bloqueio (10012) a cada abertura do Início.
+LIVE_FAILURE_TTL = timedelta(minutes=2)
+# Leitura antiga só substitui um erro até esta idade.
+LIVE_STALE_LIMIT = timedelta(hours=24)
 
 
 class PlantNow(BaseModel):
@@ -254,6 +258,24 @@ class PlantNow(BaseModel):
     total_kwh: Decimal | None
     current_power_kw: Decimal | None
     read_at: datetime
+    # True: a marca falhou agora e esta é a última leitura boa (até 24 h)
+    stale: bool = False
+
+
+@dataclass
+class _LiveEntry:
+    account_id: uuid.UUID
+    fresh_until: datetime
+    result: PlantNow | None = None
+    retry_after: datetime | None = None
+
+
+_LIVE_CACHE: dict[uuid.UUID, _LiveEntry] = {}
+
+
+def _forget_live(plant_id: uuid.UUID) -> None:
+    """A conexão mudou ou saiu: a leitura guardada não vale mais."""
+    _LIVE_CACHE.pop(plant_id, None)
 
 
 @router.get("/{plant_id}/provider-account/now", response_model=PlantNow)
@@ -263,16 +285,23 @@ async def plant_now(scoped: ReadPlantPath) -> PlantNow:
     Só para conexões Growatt por token: é o que a lista de usinas informa
     quando o histórico não é liberado. Outras marcas = 404 (a tela some).
     """
-    cached = _LIVE_CACHE.get(scoped.plant_id)
     now = datetime.now(UTC)
-    if cached is not None and cached[0] > now:
-        return cached[1]
+    for key in [k for k, e in _LIVE_CACHE.items() if e.fresh_until + LIVE_STALE_LIMIT < now]:
+        _LIVE_CACHE.pop(key, None)  # poda
     box = _box()
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
         record = await ProviderAccountService(session, box).get(scoped.plant_id)
         if record is None or not record.active or record.provider != GROWATT_TOKEN:
+            _forget_live(scoped.plant_id)
             raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable")
+        entry = _LIVE_CACHE.get(scoped.plant_id)
+        if entry is not None and entry.account_id != record.id:
+            entry = None  # outra conexão
+        if entry is not None and entry.result is not None and entry.fresh_until > now:
+            return entry.result
+        if entry is not None and entry.retry_after is not None and entry.retry_after > now:
+            return _stale_or_fail(entry, now)
         try:
             credentials = ProviderAccountService(session, box).open(record)
         except ProviderAccountError:
@@ -286,38 +315,51 @@ async def plant_now(scoped: ReadPlantPath) -> PlantNow:
                 )
             )
         )
+        account_id = record.id
     client = build_client(GROWATT_TOKEN, account=credentials.login, password=credentials.password)
     try:
         if not isinstance(client, GrowattOpenApiClient):
             raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable")
         readings = await client.plant_now()
-    except ProviderRateLimitedError:
-        if cached is not None:
-            return cached[1]  # a última leitura vale mais que um erro
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
     except ProviderError:
-        if cached is not None:
-            return cached[1]
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
+        failed = entry or _LiveEntry(account_id=account_id, fresh_until=now)
+        failed.retry_after = now + LIVE_FAILURE_TTL
+        _LIVE_CACHE[scoped.plant_id] = failed
+        return _stale_or_fail(failed, now)
     finally:
         await client.aclose()
-    mine = [value for serial, value in readings.items() if not own or serial in own]
-    if not mine:
-        raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable")
+    if own:
+        mine = [value for serial, value in readings.items() if serial in own]
+    elif len(readings) == 1:
+        # usina ainda sem aparelho: só é seguro se o token enxerga uma usina só
+        mine = list(readings.values())
+    else:
+        mine = []
     totals = [total for total, _ in mine if total is not None]
     powers = [power for _, power in mine if power is not None]
+    if not totals and not powers:
+        raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable")
     result = PlantNow(
         provider=GROWATT_TOKEN,
         total_kwh=sum(totals, Decimal(0)) if totals else None,
         current_power_kw=sum(powers, Decimal(0)) if powers else None,
         read_at=now,
     )
-    _LIVE_CACHE[scoped.plant_id] = (now + LIVE_TTL, result)
+    _LIVE_CACHE[scoped.plant_id] = _LiveEntry(
+        account_id=account_id, fresh_until=now + LIVE_TTL, result=result
+    )
     return result
+
+
+def _stale_or_fail(entry: _LiveEntry, now: datetime) -> PlantNow:
+    if entry.result is not None and entry.result.read_at + LIVE_STALE_LIMIT > now:
+        return entry.result.model_copy(update={"stale": True})
+    raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable")
 
 
 @router.put("/{plant_id}/provider-account", response_model=ProviderAccountView)
 async def put_provider_account(request: Request, scoped: AdminPlantPath) -> ProviderAccountView:
+    _forget_live(scoped.plant_id)
     declared = request.headers.get("content-length")
     if declared is not None and declared.isdigit() and int(declared) > _MAX_BODY_BYTES:
         # Recusa antes de ler: o corpo grande nem chega à memória.
@@ -1188,6 +1230,7 @@ async def import_production_history(
     response_class=Response,
 )
 async def delete_provider_account(request: Request, scoped: AdminPlantPath) -> Response:
+    _forget_live(scoped.plant_id)
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
         try:
