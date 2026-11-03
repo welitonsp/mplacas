@@ -164,6 +164,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     rotate_secrets.set_defaults(handler=_handle_rotate_provider_secrets)
 
+    meter = subparsers.add_parser(
+        "meter-readings",
+        help="read the lifetime total of Growatt plants without history access (ADR-098)",
+    )
+    meter.set_defaults(handler=_handle_meter_readings)
+
     drain = subparsers.add_parser(
         "drain-collection",
         help="reprocess deferred solar collection tasks",
@@ -337,6 +343,11 @@ def _handle_collect_climate(args: argparse.Namespace) -> int:
 
 def _handle_collect(args: argparse.Namespace) -> int:
     asyncio.run(run_collection(target_date=args.target_date))
+    return 0
+
+
+def _handle_meter_readings(_args: argparse.Namespace) -> int:
+    asyncio.run(run_meter_readings())
     return 0
 
 
@@ -550,6 +561,59 @@ async def run_collection(
         raise RuntimeError(
             f"collection failed for {len(problems)} plant(s): {', '.join(problems)}"
         )
+
+
+async def run_meter_readings(*, now: datetime | None = None) -> None:
+    """Lê o total das usinas Growatt por token, só no escuro (ADR-098).
+
+    De dia sai sem tocar no banco nem na marca (o workflow roda várias vezes ao
+    dia porque o GitHub atrasa agendas em horas). No escuro, para cada conexão
+    Growatt por token de cliente ativo: uma ``plant/list`` e a gravação do total
+    que fecha o dia. Usina que falha não interrompe as outras e não muda o
+    estado da conexão (isso é da coleta diária).
+    """
+    from mplacas.collection.meter import covered_date, record_meter_reading
+    from mplacas.core.secret_box import secret_box_from_settings
+    from mplacas.providers.accounts import GROWATT_TOKEN, ProviderAccountService
+    from mplacas.providers.factory import build_client
+    from mplacas.providers.growatt.openapi import GrowattOpenApiClient
+
+    day = covered_date(now)
+    if day is None:
+        logger.info("cloud_job_meter_readings_daylight")
+        return
+    box = secret_box_from_settings()
+    async with SessionFactory() as session:
+        await set_platform_context(session)
+        inactive_plants = set(
+            await session.scalars(
+                select(Plant.id)
+                .join(OrganizationRecord, OrganizationRecord.id == Plant.organization_id)
+                .where(OrganizationRecord.active.is_(False))
+            )
+        )
+        service = ProviderAccountService(session, box)
+        targets = [
+            (record.plant_id, service.open(record))
+            for record in await service.list_active()
+            if record.provider == GROWATT_TOKEN and record.plant_id not in inactive_plants
+        ]
+    for plant_id, credentials in targets:
+        client = build_client(
+            GROWATT_TOKEN, account=credentials.login, password=credentials.password
+        )
+        try:
+            if isinstance(client, GrowattOpenApiClient):
+                await record_meter_reading(
+                    client, plant_id=plant_id, provider=GROWATT_TOKEN, day=day
+                )
+        except Exception as exc:  # noqa: BLE001 - isola a falha por usina
+            logger.warning(
+                "cloud_job_meter_reading_failed",
+                extra={"plant_id": str(plant_id), "error_code": type(exc).__name__},
+            )
+        finally:
+            await client.aclose()
 
 
 async def _count_active_provider_accounts() -> int:

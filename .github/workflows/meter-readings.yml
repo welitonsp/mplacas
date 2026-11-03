@@ -1,0 +1,66 @@
+# Leitura do total acumulado das usinas Growatt sem acesso ao histórico (ADR-098).
+#
+# Alguns tokens Growatt só leem a lista de usinas. A lista traz o total gerado
+# desde a instalação, e o total lido no escuro fecha o dia: a diferença entre
+# dois dias fechados seguidos é a produção.
+#
+# Por que a cada 6 h, o dia todo: o GitHub atrasa agendas em horas (o ciclo das
+# 06:07 tem rodado entre 12h e 17h). Com execuções a cada 6 h, pelo menos uma
+# cai na janela escura de 9 h 30 (19:30–05:00), seja qual for o atraso. 6 h é o
+# mínimo da política de custo zero (docs/POLITICA_CUSTO_ZERO.md). De dia o job
+# sai sem tocar no banco nem na marca, então não acorda o Neon nem o Render. No
+# escuro faz uma chamada por usina; a Growatt aceita a lista de tempos em tempos
+# (10012 quando repetida em minutos).
+name: meter-readings
+
+on:
+  schedule:
+    - cron: "17 1-23/6 * * *"
+      timezone: America/Sao_Paulo
+  workflow_dispatch:
+
+concurrency:
+  group: meter-readings
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MPLACAS_ENVIRONMENT: production
+      MPLACAS_TIMEZONE: America/Sao_Paulo
+      PYTHONPATH: ${{ github.workspace }}/src
+    steps:
+      - name: Ainda é dia?
+        id: dark
+        run: |
+          hhmm=$(TZ=America/Sao_Paulo date +%H%M)
+          if [[ "$hhmm" < "0500" || ! "$hhmm" < "1930" ]]; then
+            echo "dark=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Dia em Goiás ($hhmm): nada a ler."
+            echo "dark=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ steps.dark.outputs.dark == 'true' }}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: ${{ steps.dark.outputs.dark == 'true' }}
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        if: ${{ steps.dark.outputs.dark == 'true' }}
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: meter-readings — total acumulado
+        if: ${{ steps.dark.outputs.dark == 'true' }}
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          MPLACAS_PROVIDER_SECRET_KEYS: ${{ secrets.MPLACAS_PROVIDER_SECRET_KEYS }}
+        run: python -m mplacas.cloud_jobs meter-readings

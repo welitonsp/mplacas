@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, timedelta
 
 from mplacas.collection.queue import CollectionQueueRepository
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context
-from mplacas.core.config import get_settings
 from mplacas.providers.accounts import GROWATT_TOKEN, ProviderLogin
 from mplacas.collection.worker import SLOW_RETRY_SECONDS
 from mplacas.providers.base import (
@@ -18,6 +16,7 @@ from mplacas.providers.base import (
 )
 from mplacas.providers.factory import ENERGY_SOURCES, build_resilient_provider
 from mplacas.providers.growatt.openapi import GrowattOpenApiClient
+from mplacas.collection.meter import covered_date, record_meter_reading
 from mplacas.services.collection import CollectionResult, SolarCollectionService
 
 logger = logging.getLogger(__name__)
@@ -122,10 +121,6 @@ async def run_solar_collection(
         await client.aclose()
 
 
-# Até esta hora (local) ainda é noite: o total lido cobre a véspera inteira.
-METER_NIGHT_UNTIL_HOUR = 5
-
-
 async def _meter_fallback(
     exc: ProviderAuthError,
     *,
@@ -134,11 +129,12 @@ async def _meter_fallback(
     provider: str,
     now: datetime | None,
 ) -> tuple[bool, CollectionResult | None]:
-    """Token Growatt sem permissão de histórico: lê o total da lista (ADR-098).
+    """Token Growatt sem permissão de histórico (ADR-098).
 
-    Só quando a própria lista de usinas funcionou (o token é válido e só o
-    histórico é recusado). Fora da madrugada a leitura não serve para o dia
-    anterior e é descartada sem erro.
+    Só quando a própria lista de usinas funcionou: o token é válido e a marca
+    só não libera o histórico. A produção dessa conta vem da leitura do total
+    no escuro (workflow ``meter-readings``); se esta coleta cair no escuro, já
+    aproveita para ler. De dia não há o que coletar e não é falha da conexão.
     """
     if (
         provider != GROWATT_TOKEN
@@ -147,42 +143,18 @@ async def _meter_fallback(
         or not client.listed_plants
     ):
         return False, None
-    local_now = (now or datetime.now(UTC)).astimezone(ZoneInfo(get_settings().timezone))
-    if local_now.hour >= METER_NIGHT_UNTIL_HOUR:
-        logger.info(
-            "solar_meter_reading_skipped_daylight",
-            extra={"plant_id": str(plant_id), "local_hour": local_now.hour},
-        )
-        # Nada coletado: "adiado", nunca sucesso (a conexão não fica verde à toa).
-        return True, None
+    day = covered_date(now)
+    if day is None:
+        logger.info("solar_collection_history_unavailable", extra={"plant_id": str(plant_id)})
+        return True, CollectionResult(devices_seen=0, records_received=0, records_changed=0)
     try:
-        totals = await client.meter_totals()
-        async with SessionFactory() as session:
-            await set_platform_context(session)
-            result = await SolarCollectionService(
-                session,
-                client,
-                provider_name=provider,
-                energy_source=ENERGY_SOURCES[provider],
-            ).record_meter_totals(
-                plant_id=plant_id, totals=totals, reading_date=local_now.date()
-            )
-            await session.commit()
+        result = await record_meter_reading(client, plant_id=plant_id, provider=provider, day=day)
     except Exception as meter_exc:
         logger.warning(
             "solar_meter_reading_failed",
             extra={"plant_id": str(plant_id), "error_code": type(meter_exc).__name__},
         )
         raise meter_exc from None
-    logger.info(
-        "solar_meter_reading_recorded",
-        extra={
-            "plant_id": str(plant_id),
-            "reading_date": local_now.date().isoformat(),
-            "devices": result.devices_seen,
-            "days_derived": result.records_received,
-        },
-    )
     return True, result
 
 
