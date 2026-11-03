@@ -29,3 +29,18 @@ informa o **total gerado desde a instalação** e a **potência no momento**.
 
 - O cliente vê a usina funcionando no mesmo dia em que conecta.
 - O total exibido não é recalculado pelo sistema. É o número da Growatt, com a fonte visível.
+
+## Revisão — 2026-11-03 (produção)
+
+Primeiro uso real: o cartão apareceu (200). Na abertura seguinte do Início, porém:
+- o Render reiniciou a instância e apagou o cache em memória;
+- a importação automática de histórico (ADR-097) chamou `plant/list` de novo;
+- "agora" levou `10012 error_frequently_access` e o cartão sumiu (503).
+
+Mudou:
+1. **Importar histórico não chama mais a marca** quando a última importação da **mesma
+   conexão**, há menos de 24 h, já respondeu "histórico não liberado". Devolve a mesma
+   resposta na hora, sem contar no teto. A cota da lista fica para o "agora".
+2. **Sem leitura em memória e com a marca falhando**, o "agora" usa o último total gravado à
+   noite (`meter_readings`, até 48 h), com `stale: true`, a hora dele e potência
+   "não informado".

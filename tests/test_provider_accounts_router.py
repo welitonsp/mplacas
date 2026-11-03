@@ -1281,3 +1281,73 @@ def test_plant_now_other_organization_cannot_read(env, monkeypatch) -> None:
     _token_connected(client, tokens)
     monkeypatch.setattr(provider_router, "build_client", lambda *a, **k: _now_client([]))
     assert client.get(f"{URL}/now", headers=_auth(tokens["b_admin"])).status_code in (403, 404)
+
+
+def test_known_unavailable_history_is_not_asked_again(env, monkeypatch) -> None:
+    """03/11/2026: cada abertura do Início reimportava e gastava a cota da lista."""
+    import httpx
+
+    from mplacas.providers.growatt.openapi import GrowattOpenApiClient
+
+    client, _factory, tokens, verifier = env
+    _token_connected(client, tokens)
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url.path)
+        if request.url.path == "/v1/plant/list":
+            data = {"count": 1, "plants": [{"plant_id": 1383141, "total_energy": "900"}]}
+            return httpx.Response(200, json={"error_code": 0, "data": data})
+        return httpx.Response(200, json={"error_code": 10011, "error_msg": "denied"})
+
+    monkeypatch.setattr(
+        provider_router,
+        "build_client",
+        lambda *a, **k: GrowattOpenApiClient(token="t", transport=httpx.MockTransport(handler)),
+    )
+    first = client.post(f"{URL}/import-history", headers=_auth(tokens["a_admin"]))
+    assert first.json()["history_available"] is False
+    calls = len(asked)
+    for _ in range(3):  # nem bate no teto de 2 a cada 10 min
+        again = client.post(f"{URL}/import-history", headers=_auth(tokens["a_admin"]))
+        assert again.status_code == 200 and again.json()["history_available"] is False
+    assert len(asked) == calls
+
+
+def test_plant_now_falls_back_to_the_last_night_total(env, monkeypatch) -> None:
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from mplacas.db.models import MeterReading
+
+    client, factory, tokens, verifier = env
+    _token_connected(client, tokens)
+
+    async def _seed() -> None:
+        async with factory() as session:
+            device = Device(
+                plant_id=PLANT_A, provider="GROWATT_TOKEN", serial_number="GW-PLANT-1383141"
+            )
+            session.add(device)
+            await session.flush()
+            session.add(
+                MeterReading(
+                    plant_id=PLANT_A,
+                    device_id=device.id,
+                    reading_date=date.today(),
+                    total_kwh=Decimal("9200.0"),
+                    source="GROWATT_TOTAL_DIFF",
+                    read_at=datetime.now(UTC),
+                )
+            )
+            await session.commit()
+
+    asyncio.run(_seed())
+    monkeypatch.setattr(
+        provider_router, "build_client", lambda *a, **k: _multi_client([], fail=True)
+    )
+    response = client.get(f"{URL}/now", headers=_auth(tokens["a_read"]))
+    assert response.status_code == 200, response.text
+    assert response.json()["stale"] is True
+    assert response.json()["total_kwh"] == "9200.000"
+    assert response.json()["current_power_kw"] is None
