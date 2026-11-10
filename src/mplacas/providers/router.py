@@ -57,6 +57,7 @@ from mplacas.providers.accounts import (
 from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.plants.autofill import fill_plant_from_profile, locate_profile
 from mplacas.plants.schemas import ModuleTechnology
+from mplacas.providers.refusals import refusal_for
 from mplacas.providers.connect_ticket import ConnectTicketError, issue_ticket, open_ticket
 from mplacas.providers.base import (
     PlantProfile,
@@ -64,7 +65,6 @@ from mplacas.providers.base import (
     ProviderBlockedError,
     ProviderError,
     ProviderRateLimitedError,
-    ProviderUnavailableError,
 )
 from mplacas.providers.db_models import ProviderAccountRecord
 from mplacas.core.config import get_settings
@@ -879,29 +879,12 @@ async def _inspect(
 ) -> ProviderInspection:
     try:
         return await verify_provider_account(provider, credentials)
-    except ProviderRateLimitedError:
-        # A marca bloqueou por excesso de logins (Growatt 507): esperar, não insistir.
-        await refuse("provider_rate_limited")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
-    except ProviderBlockedError:
-        # Login recusado antes de olhar a senha (Growatt 403): não é a senha.
-        await refuse("provider_login_blocked")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
-    except ProviderUnavailableError:
-        await refuse("provider_unavailable")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
     except ProviderError as exc:
-        if provider == GROWATT_TOKEN and not isinstance(exc, ProviderAuthError):
-            # OpenAPI respondeu fora do formato (ou erro de sistema): não é o
-            # token — não mandar o cliente gerar outro à toa.
-            await refuse("provider_unavailable")
-            raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
-        # Senha errada volta como envelope de erro (não 401), na NEPViewer e na Growatt;
-        # auth e formato inesperado viram o mesmo "login recusado", sem
-        # repetir a mensagem do fabricante.
-        reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
-        await refuse(reason)
-        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
+        # Limite de taxa (Growatt 507), login recusado antes da senha (403),
+        # indisponibilidade e senha/token recusado: ver ``refusal_for``.
+        refusal = refusal_for(provider, exc, only_auth_is_credentials=False)
+        await refuse(refusal.reason)
+        raise _error(refusal.status_code, refusal.reason) from None
 
 
 # "Buscar dados na marca" tem teto próprio: cliques no botão não podem
@@ -1216,28 +1199,21 @@ async def import_production_history(
     except CollectionPlantError:
         await refuse("provider_inverter_in_another_plant")
         raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant") from None
-    except ProviderRateLimitedError:
-        await refuse("provider_rate_limited")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
-    except ProviderBlockedError:
-        # bloqueio da marca não é senha errada: mesmo código da conexão
-        await refuse("provider_login_blocked")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
-    except ProviderAuthError:
-        if isinstance(client, GrowattOpenApiClient) and client.listed_plants:
+    except ProviderError as exc:
+        if (
+            isinstance(exc, ProviderAuthError)
+            and not isinstance(exc, ProviderBlockedError)
+            and isinstance(client, GrowattOpenApiClient)
+            and client.listed_plants
+        ):
             # Token válido (a lista respondeu), mas a Growatt não libera o
             # histórico desta conta (10011): a produção passa a vir da leitura
             # do total toda madrugada (ADR-098). Não é erro do cliente.
             history_available = False
         else:
-            reason = (
-                "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
-            )
-            await refuse(reason)
-            raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
-    except ProviderError:
-        await refuse("provider_unavailable")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
+            refusal = refusal_for(provider, exc, only_auth_is_credentials=True)
+            await refuse(refusal.reason)
+            raise _error(refusal.status_code, refusal.reason) from None
     except Exception as exc:
         # ex.: a coleta diária gravando o mesmo dia ao mesmo tempo. Sempre
         # auditado; o log leva só o tipo do erro, nunca dado da conexão.
