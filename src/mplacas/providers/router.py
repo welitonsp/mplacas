@@ -64,7 +64,6 @@ from mplacas.providers.base import (
     ProviderAuthError,
     ProviderBlockedError,
     ProviderError,
-    ProviderRateLimitedError,
 )
 from mplacas.providers.db_models import ProviderAccountRecord
 from mplacas.core.config import get_settings
@@ -1002,20 +1001,10 @@ async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> Pro
     client = build_client(provider, account=credentials.login, password=credentials.password)
     try:
         profile = await client.plant_profile()
-    except ProviderRateLimitedError:
-        await refuse("provider_rate_limited")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
-    except ProviderBlockedError:
-        # bloqueio da marca não é senha errada: mesmo código da conexão
-        await refuse("provider_login_blocked")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
-    except ProviderAuthError:
-        reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
-        await refuse(reason)
-        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
-    except ProviderError:
-        await refuse("provider_unavailable")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
+    except ProviderError as exc:
+        refusal = refusal_for(provider, exc, only_auth_is_credentials=True)
+        await refuse(refusal.reason)
+        raise _error(refusal.status_code, refusal.reason) from None
     finally:
         await client.aclose()
     profile = await locate_profile(profile)  # rede fora da transação
