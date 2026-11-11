@@ -198,10 +198,14 @@ def _fmt(moment: datetime | None) -> str:
     return moment.strftime("%Y-%m-%d %H:%M") if moment else "-"
 
 
-def render_claims_report(report: ClaimsReport) -> str:
-    """Linhas legíveis em português, mais a contagem final por regra."""
+def render_claims_report(report: ClaimsReport, *, totals_only: bool = False) -> str:
+    """Linhas legíveis em português, mais a contagem final por regra.
+
+    ``totals_only``: só a contagem, sem usina, organização nem serial. É o que
+    roda no GitHub Actions — o repositório é público e o log do job também.
+    """
     lines = ["Relatório de reservas de usina Growatt (somente leitura)"]
-    for rule in RULES:
+    for rule in () if totals_only else RULES:
         lines.append(f"{rule} - {RULE_TITLES[rule]}")
         found = [f for f in report.findings if f.rule == rule]
         if not found:

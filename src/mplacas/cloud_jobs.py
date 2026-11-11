@@ -211,6 +211,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "provider-claims-report",
         help="read-only report of Growatt plants claimed by more than one connection",
     )
+    claims.add_argument(
+        "--totals-only",
+        action="store_true",
+        help="print only the count per rule (no plant, organization or serial)",
+    )
     claims.set_defaults(handler=_handle_provider_claims_report)
     return parser
 
@@ -382,13 +387,15 @@ def _handle_operational_watchdog(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _handle_provider_claims_report(_args: argparse.Namespace) -> int:
+def _handle_provider_claims_report(args: argparse.Namespace) -> int:
     # Relatório, não verificação: sai 0 com ou sem achados.
-    print(asyncio.run(run_provider_claims_report()))
+    print(asyncio.run(run_provider_claims_report(totals_only=args.totals_only)))
     return 0
 
 
-async def run_provider_claims_report(*, now: datetime | None = None) -> str:
+async def run_provider_claims_report(
+    *, now: datetime | None = None, totals_only: bool = False
+) -> str:
     """Somente leitura; nunca decifra credencial nem chama API de fabricante."""
     from mplacas.providers.claims_report import build_claims_report, render_claims_report
 
@@ -397,7 +404,7 @@ async def run_provider_claims_report(*, now: datetime | None = None) -> str:
         report = await build_claims_report(
             session, now=(lambda: now) if now is not None else (lambda: datetime.now(UTC))
         )
-    return render_claims_report(report)
+    return render_claims_report(report, totals_only=totals_only)
 
 
 async def run_operational_watchdog(*, now: datetime | None = None) -> None:

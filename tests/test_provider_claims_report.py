@@ -266,3 +266,22 @@ async def test_saida_nao_contem_login_nem_segredos() -> None:
 def test_subcomando_registrado_no_parser() -> None:
     args = _build_parser().parse_args(["provider-claims-report"])
     assert args.command == "provider-claims-report"
+
+
+async def test_somente_totais_nao_mostra_usina_organizacao_nem_serial() -> None:
+    factory = await _factory()
+    await _seed(
+        factory,
+        _account(PLANT_A, last_failure_code="CollectionPlantError"),
+        _device(PLANT_A, GROWATT, "GW-PLANT-1"),
+    )
+    text = render_claims_report(await _report(factory), totals_only=True)
+    assert "Total por regra: R1=0, R2=1" in text
+    assert str(PLANT_A) not in text
+    assert "GW-PLANT-1" not in text
+    assert "organizacao=" not in text
+
+
+def test_subcomando_aceita_somente_totais() -> None:
+    args = _build_parser().parse_args(["provider-claims-report", "--totals-only"])
+    assert args.totals_only is True
