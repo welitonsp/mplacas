@@ -15,6 +15,7 @@ import {
   type PlantSetupItemKey,
 } from '../../lib/dashboard/plant-setup-contracts'
 import { normalizeMeasurement, normalizeMoneyBrl } from '../../lib/forms/decimal'
+import { formatCurrency } from '../../lib/format'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
@@ -595,6 +596,34 @@ function LocationForm({ setup, onSaved }: { setup: PlantSetup; onSaved: () => vo
   )
 }
 
+// Abaixo disso, um valor investido numa usina solar quase sempre é erro de
+// digitação (faltou um zero ou o ponto dos milhares: "1.5" por "1.500").
+// É só um aviso: o backend aceita qualquer valor maior que zero
+// (investment_amount_brl, gt=0), então o front nunca bloqueia por isto.
+const LOW_INVESTMENT_WARNING_BELOW_BRL = 1000
+
+// Mostra, logo abaixo do campo, como o sistema entendeu o valor digitado.
+// Vazio ou inválido não mostra nada: o erro de valor inválido continua sendo o
+// do envio do formulário.
+function InvestmentInterpretation({ id, raw }: { id: string; raw: string }) {
+  const normalized = normalizeMoneyBrl(raw)
+  const amount = normalized ? Number(normalized) : null
+  const understood = amount !== null && Number.isFinite(amount) ? amount : null
+  const isLow = understood !== null && understood > 0 && understood < LOW_INVESTMENT_WARNING_BELOW_BRL
+  return (
+    <div id={id} aria-live="polite" className="text-xs leading-5">
+      {understood !== null && (
+        <p className="mt-1 text-[var(--color-text-secondary)]">Entendemos: {formatCurrency(understood)}</p>
+      )}
+      {isLow && (
+        <p className="text-[var(--color-warning-text)]">
+          Valor baixo para uma usina solar. Confira se não faltou um zero ou o ponto dos milhares.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function InvestmentForm({ setup, onSaved }: { setup: PlantSetup; onSaved: () => void }) {
   const [amount, setAmount] = useState(
     setup.investmentAmountBrl == null
@@ -657,9 +686,10 @@ function InvestmentForm({ setup, onSaved }: { setup: PlantSetup; onSaved: () => 
                 onChange={(e) => setAmount(e.target.value)}
                 disabled={saving}
                 placeholder="Ex.: 11.200,00"
-                aria-describedby="setup-amount-help"
+                aria-describedby="setup-amount-help setup-amount-interpretation"
                 className={INPUT_CLASS}
               />
+              <InvestmentInterpretation id="setup-amount-interpretation" raw={amount} />
             </Field>
             <Field id="setup-paid-on" label="Data do pagamento (opcional)" help="Usada só como referência.">
               <input

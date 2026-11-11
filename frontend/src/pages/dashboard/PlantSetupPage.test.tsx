@@ -327,6 +327,82 @@ describe('PlantSetupPage — o cliente informa os dados da usina', () => {
       Reflect.deleteProperty(navigator, 'geolocation')
     }
   })
+  describe('conferência do valor investido', () => {
+    const LABEL = 'Valor total investido (R$)'
+    const AVISO = /Valor baixo para uma usina solar/
+
+    async function abrir() {
+      vi.resetModules()
+      const updateFinancialConfiguration = vi.fn(async () => jsonResponse({}))
+      installApiMock({ updateFinancialConfiguration })
+      await renderPage()
+      await screen.findByText('0 de 7 itens informados')
+      return updateFinancialConfiguration
+    }
+
+    it('digitar "15.000" mostra "Entendemos: R$ 15.000,00" sem aviso', async () => {
+      await abrir()
+      fireEvent.change(screen.getByLabelText(LABEL), { target: { value: '15.000' } })
+
+      expect(screen.getByText(/Entendemos:\s*R\$\s*15\.000,00/)).toBeInTheDocument()
+      expect(screen.queryByText(AVISO)).not.toBeInTheDocument()
+    })
+
+    it('digitar "1.5" mostra R$ 1,50 e o aviso de valor baixo', async () => {
+      await abrir()
+      fireEvent.change(screen.getByLabelText(LABEL), { target: { value: '1.5' } })
+
+      expect(screen.getByText(/Entendemos:\s*R\$\s*1,50/)).toBeInTheDocument()
+      expect(
+        screen.getByText('Valor baixo para uma usina solar. Confira se não faltou um zero ou o ponto dos milhares.'),
+      ).toBeInTheDocument()
+    })
+
+    it('digitar "11.200,00" mostra a conferência e nenhum aviso', async () => {
+      await abrir()
+      fireEvent.change(screen.getByLabelText(LABEL), { target: { value: '11.200,00' } })
+
+      expect(screen.getByText(/Entendemos:\s*R\$\s*11\.200,00/)).toBeInTheDocument()
+      expect(screen.queryByText(AVISO)).not.toBeInTheDocument()
+    })
+
+    it('apagar o campo remove a conferência e o aviso; valor inválido não mostra nada', async () => {
+      await abrir()
+      const input = screen.getByLabelText(LABEL)
+      fireEvent.change(input, { target: { value: '1.5' } })
+      expect(screen.getByText(/Entendemos:/)).toBeInTheDocument()
+
+      fireEvent.change(input, { target: { value: '' } })
+      expect(screen.queryByText(/Entendemos:/)).not.toBeInTheDocument()
+      expect(screen.queryByText(AVISO)).not.toBeInTheDocument()
+
+      fireEvent.change(input, { target: { value: 'abc' } })
+      expect(screen.queryByText(/Entendemos:/)).not.toBeInTheDocument()
+      expect(screen.queryByText(AVISO)).not.toBeInTheDocument()
+    })
+
+    it('o texto de conferência é referenciado pelo aria-describedby do campo', async () => {
+      await abrir()
+      const input = screen.getByLabelText(LABEL)
+      fireEvent.change(input, { target: { value: '15.000' } })
+
+      const ids = (input.getAttribute('aria-describedby') ?? '').split(' ')
+      const texto = ids.map((id) => document.getElementById(id)?.textContent ?? '').join(' ')
+      expect(texto).toMatch(/Entendemos:/)
+      expect(texto).toMatch(/Tudo o que foi pago/)
+    })
+
+    it('com valor baixo ainda salva, enviando o mesmo payload de antes', async () => {
+      const updateFinancialConfiguration = await abrir()
+      fireEvent.change(screen.getByLabelText(LABEL), { target: { value: '1.5' } })
+      expect(screen.getByText(AVISO)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Salvar investimento' }))
+
+      await waitFor(() =>
+        expect(updateFinancialConfiguration).toHaveBeenCalledWith(singlePlant.id, { investment_amount_brl: '1.50' }),
+      )
+    })
+  })
 })
 
 describe('PlantSetupPage — dados estimados na conexão (ADR-093 § 7)', () => {
