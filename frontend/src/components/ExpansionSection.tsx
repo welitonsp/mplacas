@@ -7,6 +7,7 @@ import {
   type ExpansionMoney,
   type ExpansionPayback,
 } from '../lib/dashboard/expansion-contracts'
+import { normalizeMoneyBrl } from '../lib/forms/decimal'
 import { formatCurrency, formatCycleLabel, formatNumber, toNumber } from '../lib/format'
 import { usePlantResource } from '../hooks/usePlantResource'
 import { DASHBOARD_SETUP_PATH } from '../routes'
@@ -219,14 +220,7 @@ function PaybackBlock({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    // Dinheiro em pt-BR: "1.500,00", "1.500" e "15.000" têm ponto de milhar;
-    // "1500.50" (sem vírgula e sem grupos de 3) é decimal.
-    const raw = amount.trim().replace(/^R\$\s*/i, '')
-    const normalized = raw.includes(',')
-      ? raw.replace(/\./g, '').replace(',', '.')
-      : /^\d{1,3}(\.\d{3})+$/.test(raw)
-        ? raw.replace(/\./g, '')
-        : raw
+    const normalized = normalizeMoneyBrl(amount)
     const numeric = Number(normalized)
     if (!normalized || !Number.isFinite(numeric) || numeric <= 0) {
       setError('Informe o valor total da proposta, maior que zero.')
