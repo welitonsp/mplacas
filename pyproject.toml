@@ -93,6 +93,11 @@ extend-exclude = [".claude"]
 # - `UP035`: `collections.abc` em vez de aliases obsoletos de `typing`.
 select = ["E", "F", "B904", "UP017", "UP035"]
 
+[tool.ruff.lint.per-file-ignores]
+# O guard de configuração (job_bootstrap) precisa rodar ANTES dos imports que
+# criam o engine; ver o comentário no topo do módulo.
+"src/mplacas/cloud_jobs.py" = ["E402"]
+
 [tool.mypy]
 python_version = "3.12"
 packages = ["mplacas"]

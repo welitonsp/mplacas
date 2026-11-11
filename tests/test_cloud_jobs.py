@@ -287,7 +287,7 @@ def test_daily_pipeline_runs_all_plants_and_survives_one_failure(monkeypatch) ->
         _fake_expected_production_resolver({plant_a: Decimal("10.0"), plant_b: Decimal("25.0")}),
     )
 
-    with pytest.raises(RuntimeError, match="Usina A"):
+    with pytest.raises(RuntimeError, match=str(plant_a)):
         cloud_jobs.asyncio.run(
             cloud_jobs.run_daily_pipeline(
                 target_date="2026-07-15",
@@ -464,7 +464,7 @@ def test_operational_watchdog_waits_for_client_plant_first_run(monkeypatch) -> N
     cloud_jobs.asyncio.run(cloud_jobs.run_operational_watchdog(now=now))
 
     history[owner_plant] = None
-    with pytest.raises(RuntimeError, match="Usina Dono"):
+    with pytest.raises(RuntimeError, match=str(owner_plant)):
         cloud_jobs.asyncio.run(cloud_jobs.run_operational_watchdog(now=now))
     get_settings.cache_clear()
 
@@ -497,7 +497,7 @@ def test_daily_pipeline_client_plant_failure_does_not_stop_owner(monkeypatch) ->
         _fake_expected_production_resolver({owner_plant: Decimal("5"), client_plant: None}),
     )
 
-    with pytest.raises(RuntimeError, match="Usina Cliente"):
+    with pytest.raises(RuntimeError, match=str(client_plant)):
         cloud_jobs.asyncio.run(
             cloud_jobs.run_daily_pipeline(
                 target_date="2026-07-15",
@@ -635,7 +635,7 @@ def test_operational_watchdog_checks_all_plants_and_fails_non_zero(monkeypatch) 
     monkeypatch.setattr(cloud_jobs, "get_latest_pipeline_execution", fake_latest)
     monkeypatch.setattr(cloud_jobs, "SessionFactory", lambda: FakeSession())
 
-    with pytest.raises(RuntimeError, match="Usina Doente"):
+    with pytest.raises(RuntimeError, match=str(plant_unhealthy)):
         cloud_jobs.asyncio.run(cloud_jobs.run_operational_watchdog(now=now))
 
     # Both plants were checked; the unhealthy one did not stop the loop.

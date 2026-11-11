@@ -56,12 +56,14 @@ def configure_observability(
     service_name: str,
     app: FastAPI | None = None,
     engine: AsyncEngine | None = None,
+    public_log: bool = False,
 ) -> ObservabilityRuntime:
     global _runtime
     configure_logging(
         level=settings.log_level,
         service_name=service_name,
         structured=settings.env == "production",
+        public=public_log,
     )
     metrics_runtime = configure_metrics(settings=settings, service_name=service_name)
     if not settings.tracing_enabled:

@@ -17,6 +17,14 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
+
+from mplacas.job_bootstrap import ensure_valid_settings, validation_error_summary
+
+if __name__ == "__main__":
+    # Antes dos imports abaixo: mplacas.db.session lê as configurações no import
+    # e um valor inválido viraria traceback pydantic (com o valor) no log público.
+    ensure_valid_settings()
+
 from sqlalchemy import select, text
 
 from mplacas.alerts.job import AlertJobSummary
@@ -79,14 +87,22 @@ def _operator_reason(exc: BaseException) -> str:
     return str(exc) if isinstance(exc, OperatorError) else type(exc).__name__
 
 
+def _single_line_public(value: object) -> str:
+    """Texto de fonte externa (CSV da ANEEL) seguro para uma linha do log público.
+
+    Sem caracteres de controle/quebras de linha e sem "::", para que nada vire
+    comando de workflow do GitHub Actions.
+    """
+    return "".join(c for c in str(value) if c.isprintable()).replace("::", ":")
+
+
 def _public_error_text(exc: BaseException, database_url: str) -> str:
     if isinstance(exc, OperatorError):
         # Uma linha só: quebra de linha seguida de "::" viraria comando do Actions.
         return " ".join(_sanitize(str(exc), database_url).split())
     if isinstance(exc, ValidationError):
         # Só os nomes dos campos: input/msg podem trazer fragmentos da URL do banco.
-        fields = sorted({".".join(str(part) for part in err["loc"]) for err in exc.errors()})
-        return f"{type(exc).__name__} (invalid fields: {', '.join(fields)})"
+        return validation_error_summary(exc)
     return type(exc).__name__
 
 
@@ -111,6 +127,8 @@ def main(argv: list[str] | None = None) -> int:
                 settings=settings,
                 service_name=f"mplacas-job-{args.command}",
                 engine=database_engine,
+                # Log público (Actions): exceções saem só com o nome da classe.
+                public_log=True,
             )
             with traced_operation("cloud_job", command=args.command) as span:
                 try:
@@ -332,7 +350,7 @@ def _import_tariffs(args: argparse.Namespace) -> int:
         f"skipped={len(parsed.skipped)} classes={dict(sorted(by_class.items()))}"
     )
     for reason in parsed.skipped:
-        print(f"  AVISO (base da ANEEL, chave ignorada): {reason}")
+        print(f"  AVISO (base da ANEEL, chave ignorada): {_single_line_public(reason)}")
     # Sanidade: a base precisa conter a distribuidora já cadastrada e conferida
     # nas faturas; sem ela, o formato mudou — nunca um "sucesso" vazio.
     if "EQUATORIAL_GO" not in by_distributor or len(by_distributor) < 20:
@@ -348,9 +366,7 @@ def _import_tariffs(args: argparse.Namespace) -> int:
             print(
                 f"  {period.distributor} {period.tariff_class} {period.valid_from}.."
                 f"{period.valid_to} cheia={period.full_brl_kwh} scee={period.scee_brl_kwh} "
-                # Texto vindo do CSV: sem caracteres de controle nem "::",
-                # para não virar comando do GitHub Actions no log.
-                f"({''.join(c for c in period.source if c.isprintable()).replace('::', ':')})"
+                f"({_single_line_public(period.source)})"
             )
     if args.no_db:
         return 0
@@ -370,7 +386,10 @@ def _import_tariffs(args: argparse.Namespace) -> int:
                 f"inserted={report.inserted} extended={report.extended} "
                 f"unchanged={report.unchanged} skipped={len(report.skipped)}"
             ]
-            lines += [f"  AVISO (cadastro mantido): {reason}" for reason in report.skipped]
+            lines += [
+                f"  AVISO (cadastro mantido): {_single_line_public(reason)}"
+                for reason in report.skipped
+            ]
             return "\n".join(lines)
 
     print(asyncio.run(_run()))
@@ -501,7 +520,7 @@ async def run_operational_watchdog(*, now: datetime | None = None) -> None:
         raise OperatorError("no plants found for the default organization")
 
     problems: list[str] = []
-    for plant_id, plant_name, is_owner_plant in plants:
+    for plant_id, _plant_name, is_owner_plant in plants:
         try:
             await _check_plant_pipeline_health(
                 plant_id=plant_id, current_time=current_time
@@ -519,21 +538,19 @@ async def run_operational_watchdog(*, now: datetime | None = None) -> None:
                 "cloud_job_operational_watchdog_plant_unhealthy",
                 extra={
                     "plant_id": str(plant_id),
-                    "plant_name": plant_name,
                     "error_code": _NoPipelineHistoryError.__name__,
                 },
             )
-            problems.append(f"{plant_name} ({plant_id}): daily pipeline has no execution history")
+            problems.append(f"plant {plant_id}: daily pipeline has no execution history")
         except RuntimeError as exc:
             logger.error(
                 "cloud_job_operational_watchdog_plant_unhealthy",
                 extra={
                     "plant_id": str(plant_id),
-                    "plant_name": plant_name,
                     "error_code": type(exc).__name__,
                 },
             )
-            problems.append(f"{plant_name} ({plant_id}): {_operator_reason(exc)}")
+            problems.append(f"plant {plant_id}: {_operator_reason(exc)}")
 
     if problems:
         raise OperatorError(
@@ -971,12 +988,11 @@ async def run_daily_pipeline(
         raise OperatorError("no plants found for the default organization")
 
     failures: list[str] = []
-    for plant_id, plant_name, is_owner_plant in plants:
+    for plant_id, _plant_name, is_owner_plant in plants:
         logger.info(
             "cloud_job_daily_pipeline_started",
             extra={
                 "plant_id": str(plant_id),
-                "plant_name": plant_name,
                 "target_date": resolved_date.isoformat(),
             },
         )
@@ -1004,7 +1020,6 @@ async def run_daily_pipeline(
                             "cloud_job_daily_pipeline_alerts_skipped",
                             extra={
                                 "plant_id": str(plant_id),
-                                "plant_name": plant_name,
                                 "reason": resolution.unavailable_reason,
                             },
                         )
@@ -1041,7 +1056,6 @@ async def run_daily_pipeline(
                 "cloud_job_daily_pipeline_completed",
                 extra={
                     "plant_id": str(plant_id),
-                    "plant_name": plant_name,
                     "target_date": resolved_date.isoformat(),
                 },
             )
@@ -1050,12 +1064,11 @@ async def run_daily_pipeline(
                 "cloud_job_daily_pipeline_plant_failed",
                 extra={
                     "plant_id": str(plant_id),
-                    "plant_name": plant_name,
                     "target_date": resolved_date.isoformat(),
                     "error_code": type(exc).__name__,
                 },
             )
-            failures.append(f"{plant_name} ({plant_id}): {_operator_reason(exc)}")
+            failures.append(f"plant {plant_id}: {_operator_reason(exc)}")
 
     if failures:
         raise OperatorError(
