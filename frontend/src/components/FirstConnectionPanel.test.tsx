@@ -132,6 +132,56 @@ describe('Assistente de primeiro acesso (ADR-096)', () => {
     expect(confirmFirstPlant).not.toHaveBeenCalled()
   })
 
+  describe('leitura com falha depois do 200', () => {
+    const MENSAGEM = 'Não foi possível concluir agora. Tente novamente.'
+
+    async function esperaVoltarAoPasso1() {
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(MENSAGEM)
+      expect(alert).not.toHaveTextContent(SECRET)
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Ler minha usina' })).toBeVisible())
+      expect(screen.queryByRole('heading', { name: 'Lendo sua usina' })).not.toBeInTheDocument()
+      // O token não aparece em nenhum texto da tela; no campo continua mascarado,
+      // como em qualquer outro erro do passo 1.
+      expect(document.body.textContent).not.toContain(SECRET)
+      expect(screen.getByLabelText('Token da API (app ShinePhone)')).toHaveAttribute('type', 'password')
+    }
+
+    async function podeEnviarDeNovo() {
+      previewFirstPlant.mockResolvedValue(jsonResponse(preview()))
+      fireEvent.click(screen.getByRole('button', { name: 'Ler minha usina' }))
+      await screen.findByRole('heading', { name: 'Encontramos sua usina' })
+      expect(previewFirstPlant).toHaveBeenCalledTimes(2)
+      expect(previewFirstPlant).toHaveBeenLastCalledWith({ provider: 'GROWATT_TOKEN', login: '', password: SECRET })
+      expect(document.body.innerHTML).not.toContain(SECRET)
+    }
+
+    it('200 sem JSON volta ao passo 1 com mensagem fixa e permite tentar de novo', async () => {
+      previewFirstPlant.mockResolvedValue(new Response('<html>erro do proxy</html>', { status: 200 }))
+      renderPanel()
+      submitToken()
+      await esperaVoltarAoPasso1()
+      expect(screen.queryByText(/proxy/)).not.toBeInTheDocument()
+      await podeEnviarDeNovo()
+    })
+
+    it('200 com JSON de formato errado volta ao passo 1 com mensagem fixa', async () => {
+      previewFirstPlant.mockResolvedValue(jsonResponse({ inesperado: true }))
+      renderPanel()
+      submitToken()
+      await esperaVoltarAoPasso1()
+      await podeEnviarDeNovo()
+    })
+
+    it('falha de rede volta ao passo 1 com mensagem fixa', async () => {
+      previewFirstPlant.mockRejectedValue(new TypeError('Failed to fetch'))
+      renderPanel()
+      submitToken()
+      await esperaVoltarAoPasso1()
+      await podeEnviarDeNovo()
+    })
+  })
+
   it('leitura vencida ao salvar volta para conectar de novo', async () => {
     previewFirstPlant.mockResolvedValue(jsonResponse(preview()))
     confirmFirstPlant.mockResolvedValue(jsonResponse({ detail: 'connect_ticket_invalid' }, 422))

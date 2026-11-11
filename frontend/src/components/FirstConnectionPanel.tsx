@@ -483,7 +483,17 @@ export function FirstConnectionPanel() {
       setFocusConnect(true)
       return providerAccountErrorMessage(response, credentials.provider)
     }
-    const parsed = parseConnectPreview(await response.json())
+    // 200 com corpo inválido (não-JSON ou fora do contrato): volta ao passo 1
+    // com mensagem fixa. Sem isso o erro ia para o formulário escondido e a
+    // tela ficava presa em "Lendo sua usina". Nada da resposta é exibido.
+    let parsed: ConnectPreview
+    try {
+      parsed = parseConnectPreview(await response.json())
+    } catch {
+      setStep('connect')
+      setFocusConnect(true)
+      return 'Não foi possível concluir agora. Tente novamente.'
+    }
     setFinished(true)
     // Um instante para a tela mostrar tudo concluído antes da revisão.
     await new Promise((resolve) => setTimeout(resolve, 500))
