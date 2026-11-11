@@ -285,3 +285,25 @@ async def test_somente_totais_nao_mostra_usina_organizacao_nem_serial() -> None:
 def test_subcomando_aceita_somente_totais() -> None:
     args = _build_parser().parse_args(["provider-claims-report", "--totals-only"])
     assert args.totals_only is True
+
+
+async def test_relatorio_mostra_quanto_foi_lido() -> None:
+    factory = await _factory()
+    await _seed(factory, _account(PLANT_A), _device(PLANT_A, GROWATT, "GW-PLANT-1"))
+    text = render_claims_report(await _report(factory), totals_only=True)
+    assert "conexoes_ativas=1" in text and "aparelhos_growatt=1" in text
+    assert "usinas=0" not in text
+
+
+def test_somente_totais_em_falha_mostra_so_o_tipo_do_erro(monkeypatch, capsys) -> None:
+    import mplacas.cloud_jobs as cloud_jobs
+
+    async def boom(**_kwargs: object) -> str:
+        raise ConnectionRefusedError("Connect call failed ('10.1.2.3', 5432)")
+
+    monkeypatch.setattr(cloud_jobs, "run_provider_claims_report", boom)
+    args = _build_parser().parse_args(["provider-claims-report", "--totals-only"])
+    assert args.handler(args) == 1
+    out = capsys.readouterr().out
+    assert "ConnectionRefusedError" in out
+    assert "10.1.2.3" not in out

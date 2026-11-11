@@ -6,8 +6,8 @@ e o ``Device`` só nasce na coleta. Este módulo só **lê** e classifica; não
 decifra credencial, não chama API de fabricante e nunca grava.
 
 Nada do login, ``login_hint``, texto cifrado ou impressão digital sai daqui: as
-consultas nem selecionam essas colunas. Os ``GW-PLANT-<id>`` são identificadores
-de usina, não segredo.
+colunas são lidas com o registro da conexão, mas nunca são mostradas. Os
+``GW-PLANT-<id>`` são identificadores de usina, não segredo.
 """
 
 from __future__ import annotations
@@ -63,6 +63,11 @@ class ClaimFinding:
 @dataclass(frozen=True, slots=True)
 class ClaimsReport:
     findings: tuple[ClaimFinding, ...]
+    # Quanto foi lido. Tudo zero num banco em uso quer dizer que o RLS escondeu
+    # as linhas (papel errado), não que está tudo certo.
+    plants_read: int = 0
+    active_accounts_read: int = 0
+    growatt_devices_read: int = 0
 
     def count(self, rule: str) -> int:
         return sum(1 for finding in self.findings if finding.rule == rule)
@@ -191,7 +196,12 @@ async def build_claims_report(
         provider = account.provider if account else "/".join(sorted({p for p, _ in rows}))
         findings.append(build(R4, plant_id, provider, tuple(sorted(s for _, s in rows))))
 
-    return ClaimsReport(findings=tuple(findings))
+    return ClaimsReport(
+        findings=tuple(findings),
+        plants_read=len(plants),
+        active_accounts_read=len(accounts),
+        growatt_devices_read=len(devices),
+    )
 
 
 def _fmt(moment: datetime | None) -> str:
@@ -225,5 +235,9 @@ def render_claims_report(report: ClaimsReport, *, totals_only: bool = False) -> 
             if f.refusals_audited is not None:
                 parts.append(f"recusas_auditadas={f.refusals_audited}")
             lines.append(" ".join(parts))
+    lines.append(
+        f"Lido: usinas={report.plants_read}, conexoes_ativas={report.active_accounts_read}, "
+        f"aparelhos_growatt={report.growatt_devices_read}"
+    )
     lines.append("Total por regra: " + ", ".join(f"{r}={report.count(r)}" for r in RULES))
     return "\n".join(lines)

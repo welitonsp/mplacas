@@ -389,7 +389,16 @@ def _handle_operational_watchdog(_args: argparse.Namespace) -> int:
 
 def _handle_provider_claims_report(args: argparse.Namespace) -> int:
     # Relatório, não verificação: sai 0 com ou sem achados.
-    print(asyncio.run(run_provider_claims_report(totals_only=args.totals_only)))
+    try:
+        text = asyncio.run(run_provider_claims_report(totals_only=args.totals_only))
+    except Exception as exc:
+        if not args.totals_only:
+            raise
+        # Log público (GitHub Actions): só o tipo do erro. A mensagem de uma
+        # falha de conexão traz o endereço do banco.
+        print(f"error: {type(exc).__name__}")
+        return 1
+    print(text)
     return 0
 
 
