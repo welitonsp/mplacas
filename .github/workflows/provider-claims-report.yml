@@ -1,7 +1,9 @@
-# Relatório somente leitura: a mesma usina Growatt conectada por mais de uma
+# Relatório (somente leitura por padrão): a mesma usina Growatt conectada por mais de uma
 # organização (ver docs do plano de reserva de usina).
 #
-# Só manual. Não grava nada, não decifra credencial e não chama a marca.
+# Só manual. Por padrão não grava nada. Com o campo `aplicar` = PREENCHER, antes do
+# relatório INSERE as reservas que faltam (só insere; nunca apaga nem altera) e
+# mostra só a contagem. Não decifra credencial e não chama a marca.
 # O repositório é público e o log deste job também: por isso roda com
 # --totals-only e mostra APENAS a contagem por regra — nunca usina,
 # organização ou número de série. Havendo caso, o detalhe é consultado fora
@@ -10,6 +12,11 @@ name: provider-claims-report
 
 on:
   workflow_dispatch:
+    inputs:
+      aplicar:
+        description: "Vazio = só relatório. Digite PREENCHER para também criar as reservas que faltam"
+        required: false
+        default: ""
 
 concurrency:
   group: provider-claims-report
@@ -33,8 +40,16 @@ jobs:
           cache: pip
       - name: Install
         run: python -m pip install --require-hashes -r requirements.lock
+      # O valor digitado nunca entra no comando: só é comparado nos `if:`.
       - name: Contar casos por regra
+        if: inputs.aplicar != 'PREENCHER'
         env:
           MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
           MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
         run: python -m mplacas.cloud_jobs provider-claims-report --totals-only
+      - name: Preencher reservas que faltam e contar casos
+        if: inputs.aplicar == 'PREENCHER'
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+        run: python -m mplacas.cloud_jobs provider-claims-report --apply --totals-only

@@ -216,6 +216,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print only the count per rule (no plant, organization or serial)",
     )
+    claims.add_argument(
+        "--apply",
+        action="store_true",
+        help="before the report, insert the missing claims for active connections (insert only)",
+    )
     claims.set_defaults(handler=_handle_provider_claims_report)
     return parser
 
@@ -390,7 +395,9 @@ def _handle_operational_watchdog(_args: argparse.Namespace) -> int:
 def _handle_provider_claims_report(args: argparse.Namespace) -> int:
     # Relatório, não verificação: sai 0 com ou sem achados.
     try:
-        text = asyncio.run(run_provider_claims_report(totals_only=args.totals_only))
+        text = asyncio.run(
+            run_provider_claims_report(totals_only=args.totals_only, apply=args.apply)
+        )
     except Exception as exc:
         if not args.totals_only:
             raise
@@ -403,17 +410,32 @@ def _handle_provider_claims_report(args: argparse.Namespace) -> int:
 
 
 async def run_provider_claims_report(
-    *, now: datetime | None = None, totals_only: bool = False
+    *, now: datetime | None = None, totals_only: bool = False, apply: bool = False
 ) -> str:
-    """Somente leitura; nunca decifra credencial nem chama API de fabricante."""
-    from mplacas.providers.claims_report import build_claims_report, render_claims_report
+    """Somente leitura, salvo ``apply``: aí só INSERE reservas que faltam (ADR-100).
 
+    Nunca decifra credencial nem chama API de fabricante.
+    """
+    from mplacas.providers.claims_report import (
+        backfill_claims,
+        build_claims_report,
+        render_backfill,
+        render_claims_report,
+    )
+
+    prefix = ""
+    if apply:
+        async with SessionFactory() as session:
+            await set_platform_context(session)
+            result = await backfill_claims(session)
+            await session.commit()
+        prefix = render_backfill(result, totals_only=totals_only) + "\n"
     async with SessionFactory() as session:
         await set_platform_context(session)
         report = await build_claims_report(
             session, now=(lambda: now) if now is not None else (lambda: datetime.now(UTC))
         )
-    return render_claims_report(report, totals_only=totals_only)
+    return prefix + render_claims_report(report, totals_only=totals_only)
 
 
 async def run_operational_watchdog(*, now: datetime | None = None) -> None:
