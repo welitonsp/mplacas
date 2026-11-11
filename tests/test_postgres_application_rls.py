@@ -222,7 +222,7 @@ async def test_application_rls_enforces_crud_and_every_ownership_chain() -> None
                     {"tables": list(RLS_TABLES)},
                 )
             ).scalar_one()
-            assert policy_count == enabled_count == len(RLS_TABLES) == 26
+            assert policy_count == enabled_count == len(RLS_TABLES) == 27
 
         async with factory() as session:
             await _set_local_role(session, tenant_role)
