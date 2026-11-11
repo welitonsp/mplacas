@@ -142,6 +142,36 @@ def test_falha_de_migracao_mostra_so_o_tipo_do_erro() -> None:
     )
     summary = _migration_failure_summary(stderr)
     assert summary == "migration failed: sqlalchemy.exc.ProgrammingError"
+    chained = "asyncpg.exceptions.DuplicateTableError: relation x\n\n" + stderr
+    assert _migration_failure_summary(chained) == (
+        "migration failed: sqlalchemy.exc.ProgrammingError "
+        "(causa: asyncpg.exceptions.DuplicateTableError)"
+    )
     assert "10.1.2.3" not in summary and "segredo" not in summary and "SQL" not in summary
     assert _migration_failure_summary("") == "migration failed"
     assert _migration_failure_summary("qualquer coisa sem tipo") == "migration failed"
+
+
+def test_mensagem_do_operador_sai_em_uma_linha_so() -> None:
+    from mplacas.cloud_jobs import OperatorError, _public_error_text
+
+    text = _public_error_text(OperatorError("falhou\n::add-mask::x"), "")
+    assert "\n" not in text
+
+
+def test_erro_da_base_da_aneel_continua_legivel(monkeypatch) -> None:
+    import argparse
+
+    import mplacas.cloud_jobs as cloud_jobs
+    from mplacas.tariffs.aneel_import import AneelImportError
+
+    def boom(_args: argparse.Namespace) -> int:
+        raise AneelImportError("base da ANEEL incompleta ou com formato novo: 3 distribuidoras")
+
+    monkeypatch.setattr(cloud_jobs, "_import_tariffs", boom)
+    try:
+        cloud_jobs._handle_import_tariffs(argparse.Namespace())
+    except cloud_jobs.OperatorError as exc:
+        assert "3 distribuidoras" in str(exc)
+    else:
+        raise AssertionError("esperava OperatorError")

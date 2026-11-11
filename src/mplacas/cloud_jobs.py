@@ -81,7 +81,8 @@ def _operator_reason(exc: BaseException) -> str:
 
 def _public_error_text(exc: BaseException, database_url: str) -> str:
     if isinstance(exc, OperatorError):
-        return _sanitize(str(exc), database_url)
+        # Uma linha só: quebra de linha seguida de "::" viraria comando do Actions.
+        return " ".join(_sanitize(str(exc), database_url).split())
     if isinstance(exc, ValidationError):
         # Só os nomes dos campos: input/msg podem trazer fragmentos da URL do banco.
         fields = sorted({".".join(str(part) for part in err["loc"]) for err in exc.errors()})
@@ -282,6 +283,17 @@ def _handle_outbox_dispatch(_args: argparse.Namespace) -> int:
 
 
 def _handle_import_tariffs(args: argparse.Namespace) -> int:
+    from mplacas.tariffs.aneel_import import AneelImportError
+
+    try:
+        return _import_tariffs(args)
+    except AneelImportError as exc:
+        # Texto nosso sobre a base pública da ANEEL (contagens, colunas): é o
+        # que o workflow import-tariffs transforma em anotação.
+        raise OperatorError(str(exc)) from exc
+
+
+def _import_tariffs(args: argparse.Namespace) -> int:
     import tempfile
 
     import httpx
@@ -1265,11 +1277,17 @@ def _migration_failure_summary(stderr: str) -> str:
     O log do Actions é público. O nome da exceção (última linha do traceback)
     já diz ao operador por onde começar.
     """
-    for line in reversed(stderr.strip().splitlines()):
+    names: list[str] = []
+    for line in stderr.strip().splitlines():
         match = _EXCEPTION_NAME.match(line.strip())
-        if match:
-            return f"migration failed: {match.group(1)}"
-    return "migration failed"
+        if match and match.group(1) not in names:
+            names.append(match.group(1))
+    if not names:
+        return "migration failed"
+    # Em erro encadeado a última linha é o invólucro (ProgrammingError); a
+    # primeira é a causa (DuplicateTableError), que é o que orienta o conserto.
+    cause = f" (causa: {names[0]})" if len(names) > 1 else ""
+    return f"migration failed: {names[-1]}{cause}"
 
 
 def _sanitize(message: str, database_url: str) -> str:
