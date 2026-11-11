@@ -15,6 +15,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
 from sqlalchemy import select, text
 
 from mplacas.alerts.job import AlertJobSummary
@@ -62,14 +63,48 @@ class CommandResult:
 CommandRunner = Callable[[list[str], Mapping[str, str]], CommandResult]
 
 
+class OperatorError(RuntimeError):
+    """Falha deliberada com texto escrito por este código, seguro para o log público.
+
+    O repositório é público, então o stderr dos jobs (GitHub Actions) também é.
+    Só o texto desta classe é impresso; qualquer outra exceção (asyncpg, OSError,
+    httpx, pydantic, SQLAlchemy) mostra apenas o nome da classe. Nunca interpole
+    texto de exceção de terceiros nem valores de configuração aqui.
+    """
+
+
+def _operator_reason(exc: BaseException) -> str:
+    """Motivo de uma falha parcial para compor mensagem deliberada."""
+    return str(exc) if isinstance(exc, OperatorError) else type(exc).__name__
+
+
+def _public_error_text(exc: BaseException, database_url: str) -> str:
+    if isinstance(exc, OperatorError):
+        return _sanitize(str(exc), database_url)
+    if isinstance(exc, ValidationError):
+        # Só os nomes dos campos: input/msg podem trazer fragmentos da URL do banco.
+        fields = sorted({".".join(str(part) for part in err["loc"]) for err in exc.errors()})
+        return f"{type(exc).__name__} (invalid fields: {', '.join(fields)})"
+    return type(exc).__name__
+
+
+def _print_public_error(exc: BaseException, database_url: str, request_id: str | None) -> None:
+    line = f"error: {_public_error_text(exc, database_url)}"
+    if request_id:
+        line += f" [request_id={request_id}]"
+    print(line, file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     observability = None
+    database_url = ""
     correlation = new_correlation_context(request_id=f"job-{uuid.uuid4().hex}")
     with bind_correlation_context(correlation):
         try:
             settings = get_settings()
+            database_url = settings.database_url
             observability = configure_observability(
                 settings=settings,
                 service_name=f"mplacas-job-{args.command}",
@@ -88,11 +123,11 @@ def main(argv: list[str] | None = None) -> int:
                             "error_code": type(exc).__name__,
                         },
                     )
-                    print(f"error: {_sanitize(str(exc), '')}", file=sys.stderr)
+                    _print_public_error(exc, database_url, correlation.request_id)
                     return 1
         except Exception as exc:
             logger.error("cloud_job_bootstrap_failed", extra={"error_code": type(exc).__name__})
-            print(f"error: {_sanitize(str(exc), '')}", file=sys.stderr)
+            _print_public_error(exc, database_url, correlation.request_id)
             return 1
         finally:
             if observability is not None:
@@ -428,7 +463,7 @@ async def run_operational_watchdog(*, now: datetime | None = None) -> None:
     current_time = now or datetime.now(UTC)
     plants = await _list_pipeline_plants()
     if not plants:
-        raise RuntimeError("no plants found for the default organization")
+        raise OperatorError("no plants found for the default organization")
 
     problems: list[str] = []
     for plant_id, plant_name, is_owner_plant in plants:
@@ -463,15 +498,15 @@ async def run_operational_watchdog(*, now: datetime | None = None) -> None:
                     "error_code": type(exc).__name__,
                 },
             )
-            problems.append(f"{plant_name} ({plant_id}): {exc}")
+            problems.append(f"{plant_name} ({plant_id}): {_operator_reason(exc)}")
 
     if problems:
-        raise RuntimeError(
+        raise OperatorError(
             "operational watchdog found unhealthy plant(s): " + "; ".join(problems)
         )
 
 
-class _NoPipelineHistoryError(RuntimeError):
+class _NoPipelineHistoryError(OperatorError):
     """A usina ainda não tem nenhuma execução da análise diária."""
 
 
@@ -484,13 +519,13 @@ async def _check_plant_pipeline_health(
     if latest is None:
         raise _NoPipelineHistoryError("daily pipeline has no execution history")
     if latest.status == PipelineExecutionStatus.FAILED:
-        raise RuntimeError("latest daily pipeline execution failed")
+        raise OperatorError("latest daily pipeline execution failed")
     if latest.status == PipelineExecutionStatus.RUNNING:
         started_at = latest.started_at
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=UTC)
         if current_time - started_at > timedelta(minutes=30):
-            raise RuntimeError("latest daily pipeline execution is stuck")
+            raise OperatorError("latest daily pipeline execution is stuck")
         logger.info(
             "cloud_job_operational_watchdog_running_pipeline",
             extra={"plant_id": str(plant_id), "execution_id": str(latest.execution_id)},
@@ -498,12 +533,12 @@ async def _check_plant_pipeline_health(
         return
     finished_at = latest.finished_at
     if finished_at is None:
-        raise RuntimeError("successful daily pipeline execution has no finish timestamp")
+        raise OperatorError("successful daily pipeline execution has no finish timestamp")
     if finished_at.tzinfo is None:
         finished_at = finished_at.replace(tzinfo=UTC)
     age = current_time - finished_at
     if age > timedelta(hours=26):
-        raise RuntimeError("latest daily pipeline execution is delayed beyond 26 hours")
+        raise OperatorError("latest daily pipeline execution is delayed beyond 26 hours")
     logger.info(
         "cloud_job_operational_watchdog_healthy",
         extra={
@@ -536,7 +571,7 @@ async def run_collection(
         # Falha visível (workflow vermelho), não verde silencioso: sem nenhuma
         # conexão ativa nada é coletado e os dias se perdem (ADR-091, fase 7).
         logger.error("cloud_job_collection_no_active_accounts")
-        raise RuntimeError("no plant has an active provider account; nothing was collected")
+        raise OperatorError("no plant has an active provider account; nothing was collected")
 
     from mplacas.core.secret_box import secret_box_from_settings
     from mplacas.providers.accounts import ProviderAccountService
@@ -598,7 +633,7 @@ async def run_collection(
             extra={"plant_id": str(plant_id), "target_date": resolved_date.isoformat()},
         )
     if problems:
-        raise RuntimeError(
+        raise OperatorError(
             f"collection failed for {len(problems)} plant(s): {', '.join(problems)}"
         )
 
@@ -663,7 +698,7 @@ async def run_meter_readings(*, now: datetime | None = None) -> None:
     if failed:
         # Workflow vermelho = notificação do GitHub: leitura perdida custa o dia
         # dela e o seguinte (a produção é a diferença entre dois dias fechados).
-        raise RuntimeError(f"meter reading failed for {len(failed)} plant(s): {', '.join(failed)}")
+        raise OperatorError(f"meter reading failed for {len(failed)} plant(s): {', '.join(failed)}")
 
 
 async def _count_active_provider_accounts() -> int:
@@ -785,7 +820,7 @@ def _validate_operational_settings() -> None:
     if settings.cloud_job_expected_daily_production_kwh is None:
         missing.append("MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH")
     if missing:
-        raise RuntimeError("missing operational configuration: " + ", ".join(missing))
+        raise OperatorError("missing operational configuration: " + ", ".join(missing))
     _required_decimal(
         settings.cloud_job_expected_daily_production_kwh,
         "MPLACAS_CLOUD_JOB_EXPECTED_DAILY_PRODUCTION_KWH",
@@ -809,7 +844,7 @@ async def run_report_export_drain(*, batch_size: int = 10) -> None:
         },
     )
     if result.failed:
-        raise RuntimeError(f"{result.failed} report export task(s) failed")
+        raise OperatorError(f"{result.failed} report export task(s) failed")
 
 
 async def run_collection_drain() -> None:
@@ -880,7 +915,7 @@ async def run_daily_pipeline(
     token = settings.telegram_bot_token
     chat_id = settings.telegram_alert_chat_id
     if token is None or not chat_id:
-        raise RuntimeError("Telegram alert delivery must be configured for daily pipeline")
+        raise OperatorError("Telegram alert delivery must be configured for daily pipeline")
 
     resolved_date = _resolve_target_date(
         target_date=target_date,
@@ -899,7 +934,7 @@ async def run_daily_pipeline(
 
     plants = await _list_pipeline_plants()
     if not plants:
-        raise RuntimeError("no plants found for the default organization")
+        raise OperatorError("no plants found for the default organization")
 
     failures: list[str] = []
     for plant_id, plant_name, is_owner_plant in plants:
@@ -986,10 +1021,10 @@ async def run_daily_pipeline(
                     "error_code": type(exc).__name__,
                 },
             )
-            failures.append(f"{plant_name} ({plant_id}): {exc}")
+            failures.append(f"{plant_name} ({plant_id}): {_operator_reason(exc)}")
 
     if failures:
-        raise RuntimeError(
+        raise OperatorError(
             "daily pipeline failed for plant(s): " + "; ".join(failures)
         )
 
@@ -1002,7 +1037,7 @@ async def run_daily_digest(
     settings = get_settings()
     plant_name = settings.cloud_job_plant_name
     if plant_name is None or not plant_name.strip():
-        raise RuntimeError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
+        raise OperatorError("MPLACAS_CLOUD_JOB_PLANT_NAME is required")
     plant_id = await _resolve_plant_id(plant_name)
     expected_daily = _required_decimal(
         settings.cloud_job_expected_daily_production_kwh,
@@ -1011,7 +1046,7 @@ async def run_daily_digest(
     token = settings.telegram_bot_token
     chat_id = settings.telegram_alert_chat_id
     if token is None or not chat_id:
-        raise RuntimeError("Telegram alert delivery must be configured for daily digest")
+        raise OperatorError("Telegram alert delivery must be configured for daily digest")
 
     resolved_date = _resolve_target_date(
         target_date=target_date,
@@ -1052,7 +1087,7 @@ async def run_outbox_dispatch() -> AlertJobSummary:
     token = settings.telegram_bot_token
     chat_id = settings.telegram_alert_chat_id
     if token is None or not chat_id:
-        raise RuntimeError("Telegram alert delivery must be configured for outbox dispatch")
+        raise OperatorError("Telegram alert delivery must be configured for outbox dispatch")
     provider = TelegramAlertProvider(
         bot_token=token.get_secret_value(),
         chat_id=chat_id,
@@ -1078,7 +1113,7 @@ async def run_outbox_dispatch() -> AlertJobSummary:
         },
     )
     if summary.failed:
-        raise RuntimeError("one or more outbox deliveries failed")
+        raise OperatorError("one or more outbox deliveries failed")
     return summary
 
 
@@ -1195,9 +1230,9 @@ async def _list_organization_plants(
 
 def _required_decimal(value: Decimal | None, env_name: str) -> Decimal:
     if value is None:
-        raise RuntimeError(f"{env_name} is required")
+        raise OperatorError(f"{env_name} is required")
     if value <= 0:
-        raise RuntimeError(f"{env_name} must be positive")
+        raise OperatorError(f"{env_name} must be positive")
     return value
 
 
@@ -1240,7 +1275,7 @@ def _sanitize(message: str, database_url: str) -> str:
             if parsed.password:
                 sanitized = sanitized.replace(parsed.password, "<redacted>")
     except Exception:
-        pass
+        pass  # a redação nunca pode derrubar o job: devolve o que já foi substituído
     return sanitized
 
 
