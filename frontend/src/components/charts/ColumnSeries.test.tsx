@@ -264,4 +264,19 @@ describe('ColumnSeries', () => {
       expect(getColumn().style.height).toBe('64px')
     })
   })
+
+  it('lista que esvazia e volta (refetch) não repete a animação de entrada', async () => {
+    const { rerender } = render(<ColumnSeries items={[{ label: 'A', value: 80 }]} maxValue={100} />)
+    await waitFor(() => {
+      expect((document.querySelector('[data-quality]') as HTMLElement).style.height).toBe('128px')
+    })
+
+    // O hook de animação fica antes do retorno antecipado de "sem itens": o
+    // estado "já animou" sobrevive ao intervalo vazio e o valor volta direto.
+    rerender(<ColumnSeries items={[]} maxValue={100} />)
+    expect(screen.getByText('Nenhum dado para exibir.')).toBeInTheDocument()
+    rerender(<ColumnSeries items={[{ label: 'A', value: 80 }]} maxValue={100} />)
+
+    expect((document.querySelector('[data-quality]') as HTMLElement).style.height).toBe('128px')
+  })
 })

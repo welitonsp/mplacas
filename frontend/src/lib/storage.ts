@@ -20,7 +20,7 @@
 function warn(operation: string, key: string, error: unknown): void {
   // Silenciar por completo esconderia um navegador mal configurado de quem
   // depura; lançar quebraria o app. Registrar e seguir é o meio-termo.
-  // eslint-disable-next-line no-console
+   
   console.warn(`Armazenamento local indisponível (${operation} "${key}"):`, error)
 }
 

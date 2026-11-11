@@ -106,6 +106,15 @@ export function ColumnSeries({
   legend?: { label: string; tone: ChartTone; dashed?: boolean }[]
   className?: string
 }) {
+  // Animação de entrada (uma vez por montagem, nunca em refetch — ver
+  // `useChartEntrance`): cada coluna (com dado ou o marcador tracejado de
+  // "sem dado") cresce de altura 0 até sua altura real. O rótulo/valor/selo
+  // abaixo de cada coluna e o `aria-label`/tabela `sr-only` nunca dependem
+  // disto — sempre mostram o valor real desde o primeiro render.
+  // Fica ANTES do retorno antecipado de "sem itens": hook depois de `return`
+  // quebra a ordem dos hooks quando a lista passa de vazia a preenchida.
+  const entered = useChartEntrance()
+
   if (items.length === 0) {
     return <p className={`text-sm text-gray-500 ${className}`.trim()}>Nenhum dado para exibir.</p>
   }
@@ -116,13 +125,6 @@ export function ColumnSeries({
     .filter((value): value is number => value != null)
   const effectiveMax =
     maxValue ?? (assessableValues.length > 0 ? niceAxisMax(Math.max(...assessableValues)) : 0)
-
-  // Animação de entrada (uma vez por montagem, nunca em refetch — ver
-  // `useChartEntrance`): cada coluna (com dado ou o marcador tracejado de
-  // "sem dado") cresce de altura 0 até sua altura real. O rótulo/valor/selo
-  // abaixo de cada coluna e o `aria-label`/tabela `sr-only` nunca dependem
-  // disto — sempre mostram o valor real desde o primeiro render.
-  const entered = useChartEntrance()
 
   // Equivalente textual completo do gráfico inteiro — usado no `aria-label`
   // do `role="img"` que envolve só a área visual (barras), mesmo padrão de

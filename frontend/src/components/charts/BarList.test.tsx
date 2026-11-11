@@ -174,4 +174,19 @@ describe('BarList', () => {
       expect(getFill().style.width).toBe('90%')
     })
   })
+
+  it('lista que esvazia e volta (refetch) não repete a animação de entrada', async () => {
+    const { rerender } = render(<BarList items={[{ label: 'A', value: 40 }]} maxValue={200} />)
+    await waitFor(() => {
+      expect((screen.getByRole('progressbar').firstElementChild as HTMLElement).style.width).toBe('20%')
+    })
+
+    // O hook de animação fica antes do retorno antecipado de "sem itens": o
+    // estado "já animou" sobrevive ao intervalo vazio e o valor volta direto.
+    rerender(<BarList items={[]} maxValue={200} />)
+    expect(screen.getByText('Nenhum dado para exibir.')).toBeInTheDocument()
+    rerender(<BarList items={[{ label: 'A', value: 40 }]} maxValue={200} />)
+
+    expect((screen.getByRole('progressbar').firstElementChild as HTMLElement).style.width).toBe('20%')
+  })
 })
