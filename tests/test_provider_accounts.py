@@ -4,7 +4,7 @@ import base64
 import uuid
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
@@ -20,9 +20,11 @@ from mplacas.providers.accounts import (
     ProviderAccountNotFoundError,
     ProviderAccountService,
     ProviderLogin,
+    ProviderPlantClaimConflictError,
     mask_login,
+    provider_family,
 )
-from mplacas.providers.db_models import ProviderAccountRecord
+from mplacas.providers.db_models import ProviderAccountRecord, ProviderPlantClaimRecord
 
 PLANT_A = uuid.UUID("00000000-0000-0000-0000-00000000000a")
 PLANT_B = uuid.UUID("00000000-0000-0000-0000-00000000000b")
@@ -66,7 +68,7 @@ async def test_save_stores_only_ciphertext_and_a_masked_hint() -> None:
     factory = await _factory()
     async with factory() as session:
         record = await ProviderAccountService(session, _box()).save(
-            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN
+            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN, serials=[]
         )
         await session.commit()
 
@@ -84,7 +86,12 @@ async def test_open_returns_the_normalized_login_and_the_exact_password() -> Non
     factory = await _factory()
     async with factory() as session:
         service = ProviderAccountService(session, _box())
-        record = await service.save(plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN)
+        record = await service.save(
+            plant_id=PLANT_A,
+            provider=NEPVIEWER,
+            credentials=LOGIN,
+            serials=[],
+        )
 
         opened = service.open(record)
 
@@ -97,11 +104,17 @@ async def test_ciphertext_moved_to_another_plant_cannot_be_opened() -> None:
     factory = await _factory()
     async with factory() as session:
         service = ProviderAccountService(session, _box())
-        stolen = await service.save(plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN)
+        stolen = await service.save(
+            plant_id=PLANT_A,
+            provider=NEPVIEWER,
+            credentials=LOGIN,
+            serials=[],
+        )
         other = await service.save(
             plant_id=PLANT_B,
             provider=NEPVIEWER,
             credentials=ProviderLogin(login="outro@example.com", password="x"),
+            serials=[],
         )
         other.ciphertext = stolen.ciphertext
         other.key_version = stolen.key_version
@@ -114,13 +127,14 @@ async def test_same_account_on_another_plant_is_refused_regardless_of_case() -> 
     factory = await _factory()
     async with factory() as session:
         service = ProviderAccountService(session, _box())
-        await service.save(plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN)
+        await service.save(plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN, serials=[])
 
         with pytest.raises(ProviderAccountConflictError):
             await service.save(
                 plant_id=PLANT_B,
                 provider=NEPVIEWER,
                 credentials=ProviderLogin(login="cliente@example.com", password="outra"),
+                serials=[],
             )
 
 
@@ -128,12 +142,18 @@ async def test_resaving_the_same_plant_replaces_the_secret_in_place() -> None:
     factory = await _factory()
     async with factory() as session:
         service = ProviderAccountService(session, _box())
-        first = await service.save(plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN)
+        first = await service.save(
+            plant_id=PLANT_A,
+            provider=NEPVIEWER,
+            credentials=LOGIN,
+            serials=[],
+        )
         first_id, first_ciphertext = first.id, first.ciphertext
         second = await service.save(
             plant_id=PLANT_A,
             provider=NEPVIEWER,
             credentials=ProviderLogin(login=LOGIN.login, password="senha-nova"),
+            serials=[],
         )
 
         assert second.id == first_id
@@ -146,7 +166,7 @@ async def test_deactivate_wipes_the_secret_and_frees_the_account() -> None:
     factory = await _factory()
     async with factory() as session:
         service = ProviderAccountService(session, _box())
-        await service.save(plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN)
+        await service.save(plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN, serials=[])
         record = await service.deactivate(PLANT_A)
 
         assert not record.active
@@ -159,7 +179,12 @@ async def test_deactivate_wipes_the_secret_and_frees_the_account() -> None:
         with pytest.raises(ProviderAccountNotFoundError):
             await service.deactivate(PLANT_A)
 
-        moved = await service.save(plant_id=PLANT_B, provider=NEPVIEWER, credentials=LOGIN)
+        moved = await service.save(
+            plant_id=PLANT_B,
+            provider=NEPVIEWER,
+            credentials=LOGIN,
+            serials=[],
+        )
         assert moved.active
 
 
@@ -167,7 +192,7 @@ async def test_database_refuses_an_active_row_without_ciphertext() -> None:
     factory = await _factory()
     async with factory() as session:
         await ProviderAccountService(session, _box()).save(
-            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN
+            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN, serials=[]
         )
         await session.commit()
         with pytest.raises(IntegrityError):
@@ -191,7 +216,7 @@ async def test_invalid_input_is_refused_without_echoing_it(
     async with factory() as session:
         with pytest.raises(ProviderAccountError) as raised:
             await ProviderAccountService(session, _box()).save(
-                plant_id=PLANT_A, provider=provider, credentials=credentials
+                plant_id=PLANT_A, provider=provider, credentials=credentials, serials=[]
             )
 
     assert "s3nh4" not in str(raised.value)
@@ -203,7 +228,7 @@ async def test_unknown_plant_is_refused() -> None:
     async with factory() as session:
         with pytest.raises(ProviderAccountNotFoundError):
             await ProviderAccountService(session, _box()).save(
-                plant_id=uuid.uuid4(), provider=NEPVIEWER, credentials=LOGIN
+                plant_id=uuid.uuid4(), provider=NEPVIEWER, credentials=LOGIN, serials=[]
             )
 
 
@@ -211,7 +236,7 @@ async def test_rotation_reencrypts_with_the_new_key_and_recomputes_fingerprints(
     factory = await _factory()
     async with factory() as session:
         old = ProviderAccountService(session, _box(f"1:{KEY_1}"))
-        record = await old.save(plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN)
+        record = await old.save(plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN, serials=[])
         old_fingerprint = record.account_fingerprint
 
         new = ProviderAccountService(session, _box(f"1:{KEY_1},2:{KEY_2}"))
@@ -223,14 +248,19 @@ async def test_rotation_reencrypts_with_the_new_key_and_recomputes_fingerprints(
         only_new = ProviderAccountService(session, _box(f"2:{KEY_2}"))
         assert only_new.open(record).password == LOGIN.password
         with pytest.raises(ProviderAccountConflictError):
-            await only_new.save(plant_id=PLANT_B, provider=NEPVIEWER, credentials=LOGIN)
+            await only_new.save(plant_id=PLANT_B, provider=NEPVIEWER, credentials=LOGIN, serials=[])
 
 
 async def test_failure_bookkeeping_keeps_only_the_error_code() -> None:
     factory = await _factory()
     async with factory() as session:
         service = ProviderAccountService(session, _box())
-        record = await service.save(plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN)
+        record = await service.save(
+            plant_id=PLANT_A,
+            provider=NEPVIEWER,
+            credentials=LOGIN,
+            serials=[],
+        )
         await service.record_failure(record, code="ProviderAuthenticationError" * 10)
         assert record.last_failure_code is not None and len(record.last_failure_code) == 80
         await service.record_success(record)
@@ -256,12 +286,17 @@ async def test_same_account_is_refused_between_adding_a_key_and_rotating() -> No
     factory = await _factory()
     async with factory() as session:
         await ProviderAccountService(session, _box(f"1:{KEY_1}")).save(
-            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN
+            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN, serials=[]
         )
         both_keys = ProviderAccountService(session, _box(f"1:{KEY_1},2:{KEY_2}"))
 
         with pytest.raises(ProviderAccountConflictError):
-            await both_keys.save(plant_id=PLANT_B, provider=NEPVIEWER, credentials=LOGIN)
+            await both_keys.save(
+                plant_id=PLANT_B,
+                provider=NEPVIEWER,
+                credentials=LOGIN,
+                serials=[],
+            )
 
         assert await both_keys.rotate_all() == 1
 
@@ -270,7 +305,7 @@ async def test_rotation_names_the_plant_that_cannot_be_decrypted() -> None:
     factory = await _factory()
     async with factory() as session:
         record = await ProviderAccountService(session, _box(f"1:{KEY_1}")).save(
-            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN
+            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN, serials=[]
         )
         assert record.ciphertext is not None
         record.ciphertext = record.ciphertext[:-1] + bytes([record.ciphertext[-1] ^ 1])
@@ -284,7 +319,7 @@ async def test_concurrent_connection_of_the_same_plant_becomes_a_domain_error() 
     factory = await _factory()
     async with factory() as first, factory() as second:
         await ProviderAccountService(first, _box()).save(
-            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN
+            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN, serials=[]
         )
         await first.commit()
         # A segunda sessão perdeu a corrida: grava como se a usina estivesse livre.
@@ -299,4 +334,46 @@ async def test_concurrent_connection_of_the_same_plant_becomes_a_domain_error() 
                 plant_id=PLANT_A,
                 provider=NEPVIEWER,
                 credentials=ProviderLogin(login="outro@example.com", password="x"),
+                serials=[],
             )
+
+
+def test_provider_family_groups_growatt_password_and_token_only() -> None:
+    assert provider_family("GROWATT") == provider_family("GROWATT_TOKEN") == "GROWATT"
+    assert provider_family(NEPVIEWER) == NEPVIEWER
+
+
+async def test_claim_conflict_between_plants_has_no_database_text() -> None:
+    factory = await _factory()
+    other = ProviderLogin(login="outro@example.com", password="x")
+    async with factory() as session:
+        service = ProviderAccountService(session, _box())
+        await service.save(
+            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN, serials=["SN-SECRETO", "SN-2"]
+        )
+        await session.commit()
+        with pytest.raises(ProviderPlantClaimConflictError) as raised:
+            await service.save(
+                plant_id=PLANT_B, provider=NEPVIEWER, credentials=other, serials=["SN-SECRETO"]
+            )
+
+    assert "SN-SECRETO" not in str(raised.value)
+    assert "UNIQUE" not in str(raised.value)
+    assert raised.value.__cause__ is None and raised.value.__suppress_context__
+
+
+async def test_save_replaces_claims_and_deactivate_releases_them() -> None:
+    factory = await _factory()
+    async with factory() as session:
+        service = ProviderAccountService(session, _box())
+        await service.save(
+            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN, serials=["SN-1", "SN-1"]
+        )
+        await service.save(
+            plant_id=PLANT_A, provider=NEPVIEWER, credentials=LOGIN, serials=["SN-2"]
+        )
+        claims = list(await session.scalars(select(ProviderPlantClaimRecord)))
+        assert [c.serial_number for c in claims] == ["SN-2"]
+
+        await service.deactivate(PLANT_A)
+        assert list(await session.scalars(select(ProviderPlantClaimRecord))) == []

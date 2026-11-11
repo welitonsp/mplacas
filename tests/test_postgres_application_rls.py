@@ -664,3 +664,95 @@ async def test_plant_claim_unique_refuses_second_tenant_despite_rls() -> None:
                     await connection.execute(text(f'DROP OWNED BY "{tenant_role}"'))
                     await connection.execute(text(f'DROP ROLE "{tenant_role}"'))
         await engine.dispose()
+
+
+@pytest.mark.postgres_integration
+@pytest.mark.asyncio
+async def test_plant_claim_for_another_tenants_plant_is_refused_by_rls() -> None:
+    """O inquilino B não grava reserva para a usina do inquilino A (política por usina)."""
+    url = os.getenv("MPLACAS_TEST_POSTGRES_URL")
+    if not url:
+        pytest.skip("MPLACAS_TEST_POSTGRES_URL is required")
+
+    suffix = uuid.uuid4().hex
+    tenant_role = f"mplacas_claimrls_tenant_{suffix}"
+    org_a, org_b = uuid.uuid4(), uuid.uuid4()
+    plant_a, plant_b = uuid.uuid4(), uuid.uuid4()
+    serial = f"claimrls-{suffix}"
+    roles_created = False
+    engine = create_async_engine(url, pool_size=1, max_overflow=0)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    insert_claim = text(
+        "INSERT INTO provider_plant_claims (id, plant_id, provider_family, serial_number) "
+        "VALUES (:id, :plant_id, 'GROWATT', :serial)"
+    )
+
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(text(f'CREATE ROLE "{tenant_role}" NOLOGIN'))
+            roles_created = True
+            await connection.execute(
+                text(f'GRANT "{tenant_role}" TO CURRENT_USER WITH SET TRUE')
+            )
+            await connection.execute(
+                text(f'GRANT USAGE ON SCHEMA public TO "{tenant_role}"')
+            )
+            await connection.execute(
+                text(
+                    "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public "
+                    f'TO "{tenant_role}"'
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO organizations (id, name, slug, active) VALUES "
+                    "(:org_a, 'ClaimRls A', :slug_a, true), "
+                    "(:org_b, 'ClaimRls B', :slug_b, true)"
+                ),
+                {
+                    "org_a": org_a,
+                    "org_b": org_b,
+                    "slug_a": f"claimrls-a-{suffix}",
+                    "slug_b": f"claimrls-b-{suffix}",
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO plants (id, organization_id, name, timezone) VALUES "
+                    "(:plant_a, :org_a, 'Plant A', 'America/Sao_Paulo'), "
+                    "(:plant_b, :org_b, 'Plant B', 'America/Sao_Paulo')"
+                ),
+                {"plant_a": plant_a, "org_a": org_a, "plant_b": plant_b, "org_b": org_b},
+            )
+
+        # Inquilino B tenta reservar uma usina física em nome da usina de A.
+        async with factory() as session:
+            await _set_local_role(session, tenant_role)
+            await set_tenant_context(session, org_b)
+            with pytest.raises(DBAPIError, match="row-level security"):
+                await session.execute(
+                    insert_claim, {"id": uuid.uuid4(), "plant_id": plant_a, "serial": serial}
+                )
+            await session.rollback()
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("DELETE FROM plants WHERE id = ANY(:ids)"),
+                {"ids": [plant_a, plant_b]},
+            )
+            await connection.execute(
+                text("DELETE FROM organizations WHERE id = ANY(:ids)"),
+                {"ids": [org_a, org_b]},
+            )
+            if roles_created:
+                existing = (
+                    await connection.execute(
+                        text("SELECT 1 FROM pg_roles WHERE rolname = :name"),
+                        {"name": tenant_role},
+                    )
+                ).scalar_one_or_none()
+                if existing:
+                    await connection.execute(text(f'DROP OWNED BY "{tenant_role}"'))
+                    await connection.execute(text(f'DROP ROLE "{tenant_role}"'))
+        await engine.dispose()

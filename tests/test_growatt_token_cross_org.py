@@ -1,31 +1,31 @@
 """A mesma conta Growatt (token) em duas organizações (suspeita de vazamento entre clientes).
 
 Cada teste afirma a expectativa SEGURA: a segunda organização é recusada com 409
-(``provider_inverter_in_another_plant`` ou ``provider_account_in_use``). Os que
-falham hoje levam ``xfail(strict=True)``: documentam a lacuna e avisam sozinhos
-(XPASS vira erro) quando ela for corrigida.
+(``provider_inverter_in_another_plant`` ou ``provider_account_in_use``).
 
-A barreira da impressão digital não pega o token (o login dele é aleatório por
-requisição, ``_token_login``) e a barreira dos aparelhos (``_inverter_in_another_plant``)
-só enxerga linhas de ``devices``, que só nascem na primeira coleta
-(``SolarCollectionService._get_or_create_device``), nunca na conexão.
+A impressão digital não pega o token (o login dele é aleatório por requisição,
+``_token_login``) e os aparelhos (``devices``) só nascem na primeira coleta
+(``SolarCollectionService._get_or_create_device``). Quem fecha a lacuna são as
+reservas de ``provider_plant_claims``, gravadas na conexão (ADR-100).
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import uuid
 from datetime import date
 from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import mplacas.db.session as db_session
 import mplacas.providers.router as provider_router
+from mplacas.audit.db_models import AuditEventRecord
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import encode_access_token
 from mplacas.core.secret_box import KEY_BYTES
@@ -38,7 +38,7 @@ from mplacas.providers import db_models as _provider_models  # noqa: F401
 from mplacas.providers.accounts import GROWATT, GROWATT_TOKEN, ProviderLogin
 from mplacas.providers.base import DailyEnergy as ProviderDailyEnergy
 from mplacas.providers.base import DeviceOverview, SolarDevice, SolarProvider
-from mplacas.providers.db_models import ProviderAccountRecord
+from mplacas.providers.db_models import ProviderAccountRecord, ProviderPlantClaimRecord
 from mplacas.providers.router import ProviderInspection
 from mplacas.services.collection import CollectionPlantError, SolarCollectionService
 
@@ -53,18 +53,16 @@ PREVIEW = "/plants/connect/preview"
 CONFIRM = "/plants/connect/confirm"
 CONNECT = "/plants/connect"
 
-GAP_PUT = (
-    "lacuna: antes da primeira coleta não existe Device, então a organização B conecta "
-    "o mesmo token/usina Growatt que a A já conectou (a impressão digital usa login aleatório)"
-)
-GAP_FIRST = (
-    "lacuna: no primeiro acesso, antes da primeira coleta da organização A, a organização B "
-    "conecta o mesmo token/usina Growatt (nenhuma linha em devices para barrar)"
-)
-
 
 async def _setup():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_fk_pragma(dbapi_conn, _record):  # CASCADE das reservas, como no teste do modelo
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -136,6 +134,11 @@ async def _records(factory) -> list[ProviderAccountRecord]:
         return list(await session.scalars(select(ProviderAccountRecord)))
 
 
+async def _claims(factory) -> list[ProviderPlantClaimRecord]:
+    async with factory() as session:
+        return list(await session.scalars(select(ProviderPlantClaimRecord)))
+
+
 async def _devices(factory) -> list[Device]:
     async with factory() as session:
         return list(await session.scalars(select(Device)))
@@ -181,7 +184,6 @@ def _assert_refused(response) -> None:
 # --- PUT /plants/{id}/provider-account -------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=GAP_PUT)
 def test_put_token_same_plant_in_two_orgs_before_collection_is_refused(env) -> None:
     client, factory, admins, _ = env
     assert _put(client, URL_A, _token_body(), admins["a"]).status_code == 200
@@ -193,18 +195,19 @@ def test_put_token_same_plant_in_two_orgs_before_collection_is_refused(env) -> N
     assert len(asyncio.run(_records(factory))) == 1
 
 
-def test_put_token_same_plant_in_two_orgs_documents_actual_behaviour(env) -> None:
-    """Registra o que acontece de fato hoje (sem xfail): B conecta e há 2 linhas."""
+def test_put_token_same_plant_in_two_orgs_second_is_refused_and_only_a_is_claimed(env) -> None:
     client, factory, admins, _ = env
     first = _put(client, URL_A, _token_body(), admins["a"])
     second = _put(client, URL_B, _token_body(), admins["b"])
 
-    assert (first.status_code, second.status_code) == (200, 200)
+    assert (first.status_code, second.status_code) == (200, 409)
+    assert second.json() == {"detail": "provider_inverter_in_another_plant"}
     records = asyncio.run(_records(factory))
-    assert {r.plant_id for r in records} == {PLANT_A, PLANT_B}
-    assert all(r.provider == GROWATT_TOKEN and r.active for r in records)
-    # logins aleatórios por requisição: as impressões digitais nunca colidem
-    assert len({r.account_fingerprint for r in records}) == 2
+    assert [(r.plant_id, r.active) for r in records] == [(PLANT_A, True)]
+    claims = asyncio.run(_claims(factory))
+    assert [(c.plant_id, c.provider_family, c.serial_number) for c in claims] == [
+        (PLANT_A, "GROWATT", SERIAL)
+    ]
     assert asyncio.run(_devices(factory)) == []
 
 
@@ -220,7 +223,6 @@ def test_put_token_same_plant_after_first_collection_is_refused(env) -> None:
     assert [r.plant_id for r in asyncio.run(_records(factory))] == [PLANT_A]
 
 
-@pytest.mark.xfail(strict=True, reason=GAP_PUT)
 def test_put_password_in_a_then_token_in_b_before_collection_is_refused(env) -> None:
     client, factory, admins, _ = env
     assert _put(client, URL_A, _password_body(), admins["a"]).status_code == 200
@@ -231,7 +233,6 @@ def test_put_password_in_a_then_token_in_b_before_collection_is_refused(env) -> 
     assert len(asyncio.run(_records(factory))) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=GAP_PUT)
 def test_put_token_in_a_then_password_in_b_before_collection_is_refused(env) -> None:
     client, factory, admins, _ = env
     assert _put(client, URL_A, _token_body(), admins["a"]).status_code == 200
@@ -256,7 +257,6 @@ def test_put_password_in_a_then_token_in_b_after_collection_is_refused(env) -> N
 # --- primeiro acesso: POST /plants/connect ---------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=GAP_FIRST)
 def test_connect_token_same_plant_in_two_new_orgs_before_collection_is_refused(env) -> None:
     client, factory, _admins, _ = env
     _, head_1 = _empty_org(factory)
@@ -290,7 +290,6 @@ def test_connect_token_same_plant_after_first_collection_is_refused(env) -> None
     assert asyncio.run(_plants()) == []
 
 
-@pytest.mark.xfail(strict=True, reason=GAP_FIRST)
 def test_connect_password_in_a_then_token_in_new_org_before_collection_is_refused(env) -> None:
     client, factory, _admins, _ = env
     _, head_1 = _empty_org(factory)
@@ -314,7 +313,6 @@ def _preview_confirm(client, headers, body):
     return client.post(CONFIRM, json={"ticket": data["ticket"], "plant": plant}, headers=headers)
 
 
-@pytest.mark.xfail(strict=True, reason=GAP_FIRST)
 def test_preview_confirm_token_same_plant_in_two_new_orgs_before_collection_is_refused(
     env,
 ) -> None:
@@ -342,16 +340,15 @@ def test_preview_token_same_plant_after_first_collection_is_refused(env) -> None
     assert response.json()["detail"] == "provider_inverter_in_another_plant"
 
 
-def test_confirm_rechecks_inverter_so_a_stale_ticket_cannot_bypass_a_new_device(env) -> None:
-    """B abre a prévia antes de A coletar; quando A coleta, a confirmação de B é barrada."""
+def test_confirm_rechecks_inverter_so_a_stale_ticket_cannot_bypass_a_new_claim(env) -> None:
+    """B abre a prévia antes de A conectar; quando A conecta, a confirmação de B é barrada."""
     client, factory, _admins, _ = env
     _, head_1 = _empty_org(factory)
     _, head_2 = _empty_org(factory)
+    preview = client.post(PREVIEW, json=_token_body(), headers=head_2)
+    assert preview.status_code == 200  # ainda ninguém reservou a usina: a prévia passa
     created = _preview_confirm(client, head_1, _token_body())
     assert created.status_code == 201
-    preview = client.post(PREVIEW, json=_token_body(), headers=head_2)
-    assert preview.status_code == 200  # ainda sem Device: a prévia passa
-    _seed_device(factory, uuid.UUID(created.json()["plant_id"]), GROWATT_TOKEN)
     data = preview.json()
     plant = {k: v for k, v in data["plant"].items() if k != "city"}
 
@@ -379,9 +376,31 @@ class _SamePlantProvider(SolarProvider):
         return [ProviderDailyEnergy(date(2026, 11, 1), Decimal("10.5"))]
 
 
-def _connect_both(client, admins) -> None:
-    assert _put(client, URL_A, _token_body(), admins["a"]).status_code == 200
-    assert _put(client, URL_B, _token_body(), admins["b"]).status_code == 200
+def _connect_both(client, admins, factory) -> None:
+    """Duplicata legada gravada direto: duas conexões e nenhuma reserva.
+
+    É o que pode existir em produção de antes das reservas (ADR-100); a rota nova
+    já não deixa criar isso.
+    """
+
+    async def _seed() -> None:
+        async with factory() as session:
+            for plant_id, fingerprint in ((PLANT_A, "fp-a"), (PLANT_B, "fp-b")):
+                session.add(
+                    ProviderAccountRecord(
+                        plant_id=plant_id,
+                        provider=GROWATT_TOKEN,
+                        login_hint="to***",
+                        account_fingerprint=fingerprint,
+                        ciphertext=b"x",
+                        key_version=1,
+                        active=True,
+                    )
+                )
+            await session.commit()
+
+    asyncio.run(_seed())
+    assert asyncio.run(_claims(factory)) == []
 
 
 def test_daily_collection_first_plant_owns_the_device_and_second_fails_closed(env) -> None:
@@ -392,7 +411,7 @@ def test_daily_collection_first_plant_owns_the_device_and_second_fails_closed(en
     tentativa). Nada da produção de A é gravado em B.
     """
     client, factory, admins, _ = env
-    _connect_both(client, admins)
+    _connect_both(client, admins, factory)
 
     async def _collect(plant_id):
         async with factory() as session:
@@ -421,7 +440,7 @@ def test_daily_collection_first_plant_owns_the_device_and_second_fails_closed(en
 def test_meter_reading_job_creates_the_device_and_fails_the_other_org(env) -> None:
     """Leitura da madrugada (``record_meter_totals``): mesmo desfecho do job diário."""
     client, factory, admins, _ = env
-    _connect_both(client, admins)
+    _connect_both(client, admins, factory)
 
     async def _meter(plant_id):
         async with factory() as session:
@@ -453,3 +472,180 @@ def test_meter_reading_job_creates_the_device_and_fails_the_other_org(env) -> No
             return list(await session.scalars(select(MeterReading)))
 
     assert [r.plant_id for r in asyncio.run(_readings())] == [PLANT_A]
+
+
+# --- corrida: a restrição UNIQUE é a barreira real --------------------------
+
+
+@pytest.fixture
+def blind_early_check(monkeypatch):
+    """A conferência antecipada não vê nada: só o UNIQUE do banco barra a segunda."""
+
+    async def _never(*_args, **_kwargs) -> bool:
+        return False
+
+    monkeypatch.setattr(provider_router, "_inverter_in_another_plant", _never)
+
+
+async def _refusals(factory, resource_id) -> list[AuditEventRecord]:
+    async with factory() as session:
+        return list(
+            await session.scalars(
+                select(AuditEventRecord).where(
+                    AuditEventRecord.action == "provider_account.verify_failed",
+                    AuditEventRecord.resource_id == str(resource_id),
+                )
+            )
+        )
+
+
+async def _plants_of(factory, org_id) -> list[Plant]:
+    async with factory() as session:
+        return list(await session.scalars(select(Plant).where(Plant.organization_id == org_id)))
+
+
+def test_race_put_unique_refuses_b_and_audits_the_refusal(env, blind_early_check) -> None:
+    client, factory, admins, _ = env
+    assert _put(client, URL_A, _token_body(), admins["a"]).status_code == 200
+
+    response = _put(client, URL_B, _token_body(), admins["b"])
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "provider_inverter_in_another_plant"}
+    assert [r.plant_id for r in asyncio.run(_records(factory))] == [PLANT_A]
+    refusals = asyncio.run(_refusals(factory, PLANT_B))
+    assert [r.details for r in refusals] == [
+        {"provider": GROWATT_TOKEN, "reason": "provider_inverter_in_another_plant"}
+    ]
+
+
+def test_race_connect_unique_refuses_b_without_leaving_a_plant(env, blind_early_check) -> None:
+    client, factory, _admins, _ = env
+    _, head_1 = _empty_org(factory)
+    org_2, head_2 = _empty_org(factory)
+    assert client.post(CONNECT, json=_token_body(), headers=head_1).status_code == 201
+
+    response = client.post(CONNECT, json=_token_body(), headers=head_2)
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "provider_inverter_in_another_plant"}
+    assert asyncio.run(_plants_of(factory, org_2)) == []
+    assert [r.details for r in asyncio.run(_refusals(factory, org_2))] == [
+        {"provider": GROWATT_TOKEN, "reason": "provider_inverter_in_another_plant"}
+    ]
+
+
+def test_race_confirm_unique_refuses_b_without_leaving_a_plant(env, blind_early_check) -> None:
+    client, factory, _admins, _ = env
+    _, head_1 = _empty_org(factory)
+    org_2, head_2 = _empty_org(factory)
+    assert _preview_confirm(client, head_1, _token_body()).status_code == 201
+
+    response = _preview_confirm(client, head_2, _token_body())
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "provider_inverter_in_another_plant"}
+    assert asyncio.run(_plants_of(factory, org_2)) == []
+    assert [r.details for r in asyncio.run(_refusals(factory, org_2))] == [
+        {"provider": GROWATT_TOKEN, "reason": "provider_inverter_in_another_plant"}
+    ]
+
+
+# --- ciclo de vida das reservas --------------------------------------------
+
+
+def test_disconnect_before_collection_releases_the_claims_for_b(env) -> None:
+    client, factory, admins, _ = env
+    assert _put(client, URL_A, _token_body(), admins["a"]).status_code == 200
+    assert _put(client, URL_B, _token_body(), admins["b"]).status_code == 409
+
+    assert client.delete(URL_A, headers=admins["a"]).status_code == 204
+
+    assert asyncio.run(_claims(factory)) == []
+    assert _put(client, URL_B, _token_body(), admins["b"]).status_code == 200
+    assert [c.plant_id for c in asyncio.run(_claims(factory))] == [PLANT_B]
+
+
+def test_reconnect_with_other_serials_replaces_the_claims(env) -> None:
+    client, factory, admins, verifier = env
+    assert _put(client, URL_A, _token_body(), admins["a"]).status_code == 200
+    verifier.serials = ["GW-PLANT-OUTRA"]
+    assert _put(client, URL_A, _password_body(), admins["a"]).status_code == 200
+
+    assert [c.serial_number for c in asyncio.run(_claims(factory))] == ["GW-PLANT-OUTRA"]
+    verifier.serials = [SERIAL]
+    assert _put(client, URL_B, _token_body(), admins["b"]).status_code == 200  # SERIAL liberado
+    verifier.serials = ["GW-PLANT-OUTRA"]
+    assert _put(client, URL_A, _token_body(), admins["a"]).status_code == 200  # A mantém a sua
+
+
+def test_disconnect_after_collection_keeps_blocking_through_the_device(env) -> None:
+    client, factory, admins, _ = env
+    assert _put(client, URL_A, _token_body(), admins["a"]).status_code == 200
+    _seed_device(factory, PLANT_A, GROWATT_TOKEN)
+    assert client.delete(URL_A, headers=admins["a"]).status_code == 204
+    assert asyncio.run(_claims(factory)) == []
+
+    response = _put(client, URL_B, _token_body(), admins["b"])
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "provider_inverter_in_another_plant"}
+
+
+def test_token_with_several_plants_claims_all_of_them(env) -> None:
+    client, factory, admins, verifier = env
+    verifier.serials = [SERIAL, "GW-PLANT-2", SERIAL]
+
+    assert _put(client, URL_A, _token_body(), admins["a"]).status_code == 200
+
+    assert sorted(c.serial_number for c in asyncio.run(_claims(factory))) == [
+        SERIAL,
+        "GW-PLANT-2",
+    ]
+    verifier.serials = ["GW-PLANT-2"]
+    assert _put(client, URL_B, _token_body(), admins["b"]).status_code == 409
+
+
+def test_other_brand_with_the_same_serial_is_not_blocked_by_a_growatt_claim(env) -> None:
+    client, factory, admins, _ = env
+    assert _put(client, URL_A, _token_body(), admins["a"]).status_code == 200
+
+    other = {"provider": "NEPVIEWER", "login": "cliente@example.com", "password": "s3nh4"}
+    assert _put(client, URL_B, other, admins["b"]).status_code == 200
+
+    families = {(c.plant_id, c.provider_family) for c in asyncio.run(_claims(factory))}
+    assert families == {(PLANT_A, "GROWATT"), (PLANT_B, "NEPVIEWER")}
+
+
+# --- nada do outro cliente nem do erro do banco sai na recusa ---------------
+
+
+@pytest.mark.parametrize("early_check", [True, False])
+def test_refusal_leaks_nothing_about_a_or_the_database_error(
+    env, monkeypatch, early_check
+) -> None:
+    client, factory, admins, _ = env
+    if not early_check:
+
+        async def _never(*_args, **_kwargs) -> bool:
+            return False
+
+        monkeypatch.setattr(provider_router, "_inverter_in_another_plant", _never)
+    assert _put(client, URL_A, _token_body(), admins["a"]).status_code == 200
+
+    response = _put(client, URL_B, _token_body(), admins["b"])
+
+    assert response.status_code == 409
+    audits = asyncio.run(_refusals(factory, PLANT_B))
+    assert len(audits) == 1
+    visible = response.text + json.dumps(audits[0].details)
+    for forbidden in (
+        str(PLANT_A),
+        "Casa A",
+        SERIAL,
+        "uq_provider_plant_claims",
+        "UNIQUE",
+        "IntegrityError",
+        "provider_plant_claims",
+    ):
+        assert forbidden not in visible

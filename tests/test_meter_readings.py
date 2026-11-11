@@ -266,6 +266,7 @@ async def test_meter_readings_job_reads_token_plants_in_the_dark(monkeypatch) ->
             plant_id=PLANT,
             provider=GROWATT_TOKEN,
             credentials=ProviderLogin(login="token-x", password="tok"),
+            serials=[],
         )
         await session.commit()
     await _record(factory, "900.0", date(2026, 11, 2))
@@ -290,6 +291,7 @@ async def _token_account(monkeypatch, factory):
             plant_id=PLANT,
             provider=GROWATT_TOKEN,
             credentials=ProviderLogin(login="token-x", password="tok"),
+            serials=[],
         )
         await session.commit()
 
