@@ -1386,3 +1386,83 @@ def test_plant_now_ignores_night_totals_from_a_previous_connection(env, monkeypa
         provider_router, "build_client", lambda *a, **k: _multi_client([], fail=True)
     )
     assert client.get(f"{URL}/now", headers=_auth(tokens["a_read"])).status_code == 503
+
+
+def test_preview_then_confirm_stores_the_same_draft_values(env) -> None:
+    client, factory, _tokens, verifier = env
+    verifier.serials = ["GW-PLANT-888"]
+    verifier.profile = PROFILE
+    org_id = _empty_org(factory)
+    preview = _preview(client, org_id, provider="GROWATT", login="rogerio").json()
+    draft = preview["plant"]
+    assert draft["installed_power_kwp"] == "5.400"
+    assert draft["latitude"] == "-17.744100" and draft["longitude"] == "-48.625200"
+    plant = {k: v for k, v in draft.items() if k != "city"}
+
+    response = client.post(
+        CONFIRM, json={"ticket": preview["ticket"], "plant": plant}, headers=_same_admin(org_id)
+    )
+
+    assert response.status_code == 201, response.text
+    created = asyncio.run(_plants_of(factory, org_id))[0]
+    assert created.name == draft["name"]
+    assert created.installed_power_kwp == Decimal(draft["installed_power_kwp"])
+    assert created.latitude == Decimal(draft["latitude"])
+    assert created.longitude == Decimal(draft["longitude"])
+    assert created.array_tilt_degrees == Decimal(draft["array_tilt_degrees"])
+    assert created.array_azimuth_degrees == Decimal(draft["array_azimuth_degrees"])
+    assert created.module_technology == draft["module_technology"]
+    # nada foi mudado pelo cliente: toda origem da prévia é mantida, na mesma ordem
+    assert created.auto_filled == preview["origins"]
+    assert list(response.json()["auto_filled"]) == list(preview["origins"])
+
+
+def test_confirm_with_invalid_ticket_is_audited_as_unknown_without_the_ticket(env) -> None:
+    client, factory, _tokens, verifier = env
+    org_id = _empty_org(factory)
+    preview = _preview(client, org_id).json()
+    plant = {k: v for k, v in preview["plant"].items() if k != "city"}
+    bad_ticket = preview["ticket"][:-4] + "AAAA"
+
+    response = client.post(
+        CONFIRM, json={"ticket": bad_ticket, "plant": plant}, headers=_same_admin(org_id)
+    )
+
+    assert response.status_code == 422
+    refusals = [
+        e
+        for e in asyncio.run(_audit(factory))
+        if e.action == "provider_account.verify_failed" and e.resource_id == str(org_id)
+    ]
+    assert len(refusals) == 1
+    assert refusals[0].details == {"provider": "unknown", "reason": "connect_ticket_invalid"}
+    for event in asyncio.run(_audit(factory)):
+        assert bad_ticket not in repr(event.details)
+        assert preview["ticket"] not in repr(event.details)
+
+
+def test_confirm_with_inverter_of_another_organization_leaks_nothing(env) -> None:
+    client, factory, _tokens, verifier = env
+    verifier.serials = ["SN-VIZINHO-9"]
+    org_id = _empty_org(factory)
+    preview = _preview(client, org_id).json()
+    plant = {k: v for k, v in preview["plant"].items() if k != "city"}
+
+    async def _seed_device() -> None:
+        async with factory() as session:
+            session.add(
+                Device(plant_id=PLANT_B, provider="NEPVIEWER", serial_number="SN-VIZINHO-9")
+            )
+            await session.commit()
+
+    asyncio.run(_seed_device())
+
+    response = client.post(
+        CONFIRM, json={"ticket": preview["ticket"], "plant": plant}, headers=_same_admin(org_id)
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "provider_inverter_in_another_plant"}
+    for secret in ("Vizinho", str(PLANT_B), "SN-VIZINHO-9"):
+        assert secret not in response.text
+    assert asyncio.run(_plants_of(factory, org_id)) == []

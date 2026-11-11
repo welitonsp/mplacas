@@ -17,7 +17,6 @@ Nenhuma resposta, log ou evento de auditoria contém login ou senha.
 
 from __future__ import annotations
 
-import enum
 import json
 import re
 import secrets
@@ -57,6 +56,11 @@ from mplacas.providers.accounts import (
 from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.plants.autofill import fill_plant_from_profile, locate_profile
 from mplacas.plants.schemas import ModuleTechnology
+from mplacas.providers.first_connection import (
+    DEFAULT_PLANT_NAME,
+    build_draft,
+    reconcile_origins,
+)
 from mplacas.providers.refusals import refusal_for
 from mplacas.providers.connect_ticket import ConnectTicketError, issue_ticket, open_ticket
 from mplacas.providers.base import (
@@ -441,9 +445,6 @@ class FirstConnectionResult(BaseModel):
     auto_filled: dict[str, str]
 
 
-DEFAULT_PLANT_NAME = "Minha usina"
-
-
 @router.post(
     "/connect",
     response_model=FirstConnectionResult,
@@ -555,27 +556,6 @@ async def connect_first_plant(
 
 # --- Assistente de primeiro acesso (ADR-096): prévia → revisar → salvar ----
 
-_DRAFT_FIELDS = (
-    "name",
-    "installed_power_kwp",
-    "latitude",
-    "longitude",
-    "array_tilt_degrees",
-    "array_azimuth_degrees",
-    "module_technology",
-)
-# Campo do rascunho → chave de ``plants.auto_filled`` (``plants.autofill``).
-_ORIGIN_KEYS = {
-    "name": "name",
-    "installed_power_kwp": "dc_capacity_kwp",
-    "latitude": "location",
-    "longitude": "location",
-    "array_tilt_degrees": "array_tilt_degrees",
-    "array_azimuth_degrees": "array_azimuth_degrees",
-    "module_technology": "module_technology",
-}
-
-
 class PlantDraft(BaseModel):
     """A usina montada na prévia, ainda não salva. Valores como texto."""
 
@@ -639,15 +619,6 @@ class ConnectConfirmation(BaseModel):
     plant: PlantConfirmation
 
 
-def _text(value: object, places: str | None = None) -> str | None:
-    """Rascunho como texto, já no formato que a confirmação aceita (casas)."""
-    if value is None:
-        return None
-    if places is not None and isinstance(value, Decimal):
-        return str(value.quantize(Decimal(places)))
-    return str(value)
-
-
 @router.post("/connect/preview", response_model=ConnectPreview)
 async def preview_first_plant(
     request: Request, response: Response, principal: AdminPrincipal
@@ -678,20 +649,10 @@ async def preview_first_plant(
         raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant")
     profile = await locate_profile(inspection.profile)
 
-    # Rascunho numa usina que nunca vai para o banco (só para aplicar as regras).
-    draft_plant = Plant(organization_id=organization_id, name=DEFAULT_PLANT_NAME)
-    filled = fill_plant_from_profile(draft_plant, profile, set_name=True)
-    draft = PlantDraft(
-        name=(draft_plant.name or DEFAULT_PLANT_NAME)[:120],
-        installed_power_kwp=_text(draft_plant.installed_power_kwp, "0.001"),
-        latitude=_text(draft_plant.latitude, "0.000001"),
-        longitude=_text(draft_plant.longitude, "0.000001"),
-        city=profile.city if profile else None,
-        array_tilt_degrees=_text(draft_plant.array_tilt_degrees, "0.01"),
-        array_azimuth_degrees=_text(draft_plant.array_azimuth_degrees, "0.01"),
-        module_technology=draft_plant.module_technology,
-    )
-    values = {field: getattr(draft, field) for field in _DRAFT_FIELDS}
+    built = build_draft(organization_id, profile)
+    filled = built.origins
+    values = built.values
+    draft = PlantDraft(**values, city=built.city)  # type: ignore[arg-type]
     try:
         ticket, expires_at = issue_ticket(
             box,
@@ -725,19 +686,6 @@ async def preview_first_plant(
         ticket=ticket,
         expires_at=expires_at,
     )
-
-
-def _same(value: object, drafted: str | None) -> bool:
-    if value is None or drafted is None:
-        return value is None and drafted is None
-    if isinstance(value, Decimal):
-        try:
-            return value == Decimal(drafted)
-        except ArithmeticError:
-            return False
-    if isinstance(value, enum.Enum):
-        return str(value.value) == drafted
-    return str(value) == drafted
 
 
 @router.post(
@@ -774,15 +722,8 @@ async def confirm_first_plant(
         await refuse(ticket.provider, "provider_inverter_in_another_plant")
         raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant")
     confirmed = payload.plant
-    origins: dict[str, str] = {}
-    for field_name in _DRAFT_FIELDS:
-        key = _ORIGIN_KEYS[field_name]
-        origin = ticket.origins.get(key)
-        if origin and _same(getattr(confirmed, field_name), ticket.draft.get(field_name)):
-            origins.setdefault(key, origin)
-        elif origin:
-            origins[key] = ""  # mudado pelo cliente: o valor é dele
-    auto_filled = {key: origin for key, origin in origins.items() if origin}
+    reconciled = reconcile_origins(confirmed, ticket.draft, ticket.origins)
+    auto_filled = reconciled.auto_filled
 
     async with SessionFactory() as session:
         await set_principal_context(session, principal)
@@ -837,7 +778,7 @@ async def confirm_first_plant(
                 "plant_id": str(plant.id),
                 "provider": ticket.provider,
                 "auto_filled": sorted(auto_filled),
-                "edited_by_owner": sorted(key for key, origin in origins.items() if not origin),
+                "edited_by_owner": reconciled.edited_by_owner,
             },
         )
         await audit.record(
