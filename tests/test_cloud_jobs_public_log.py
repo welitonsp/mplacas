@@ -128,3 +128,20 @@ def test_motivo_parcial_de_terceiros_vira_nome_da_classe() -> None:
 
 def test_sanitize_nao_derruba_com_url_invalida() -> None:
     assert cloud_jobs._sanitize("msg", "http://[::1") == "msg"
+
+
+def test_falha_de_migracao_mostra_so_o_tipo_do_erro() -> None:
+    from mplacas.cloud_jobs import _migration_failure_summary
+
+    stderr = (
+        "Traceback (most recent call last):\n"
+        '  File "x.py", line 1, in <module>\n'
+        "sqlalchemy.exc.ProgrammingError: (asyncpg.exceptions.DuplicateTableError) "
+        'relation "provider_plant_claims" already exists [SQL: CREATE TABLE ...] '
+        "host=10.1.2.3 password=segredo\n"
+    )
+    summary = _migration_failure_summary(stderr)
+    assert summary == "migration failed: sqlalchemy.exc.ProgrammingError"
+    assert "10.1.2.3" not in summary and "segredo" not in summary and "SQL" not in summary
+    assert _migration_failure_summary("") == "migration failed"
+    assert _migration_failure_summary("qualquer coisa sem tipo") == "migration failed"

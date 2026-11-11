@@ -6,6 +6,7 @@ import hashlib
 import logging
 import os
 import subprocess
+import re
 import sys
 import uuid
 from urllib.parse import urlsplit, urlunsplit
@@ -873,9 +874,8 @@ def run_migrations(
         {"MPLACAS_DATABASE_URL": settings.database_url},
     )
     if result.returncode != 0:
-        message = _sanitize(result.stderr.strip() or "migration failed", settings.database_url)
         logger.error("cloud_job_migration_failed", extra={"returncode": result.returncode})
-        raise RuntimeError(message)
+        raise OperatorError(_migration_failure_summary(result.stderr))
     logger.info("cloud_job_migration_completed")
     return 0
 
@@ -1254,6 +1254,22 @@ def _run_command(args: list[str], env: Mapping[str, str]) -> CommandResult:
         stdout=completed.stdout,
         stderr=completed.stderr,
     )
+
+
+_EXCEPTION_NAME = re.compile(r"^([A-Za-z_][\w.]*(?:Error|Exception))\b")
+
+
+def _migration_failure_summary(stderr: str) -> str:
+    """Só o tipo do erro do alembic: o texto dele traz SQL e o endereço do banco.
+
+    O log do Actions é público. O nome da exceção (última linha do traceback)
+    já diz ao operador por onde começar.
+    """
+    for line in reversed(stderr.strip().splitlines()):
+        match = _EXCEPTION_NAME.match(line.strip())
+        if match:
+            return f"migration failed: {match.group(1)}"
+    return "migration failed"
 
 
 def _sanitize(message: str, database_url: str) -> str:
