@@ -394,12 +394,12 @@ def _handle_operational_watchdog(_args: argparse.Namespace) -> int:
 
 def _handle_provider_claims_report(args: argparse.Namespace) -> int:
     # Relatório, não verificação: sai 0 com ou sem achados.
+    # No GitHub Actions o log é público: lá, sempre só os totais.
+    totals_only = args.totals_only or os.environ.get("GITHUB_ACTIONS") == "true"
     try:
-        text = asyncio.run(
-            run_provider_claims_report(totals_only=args.totals_only, apply=args.apply)
-        )
+        text = asyncio.run(run_provider_claims_report(totals_only=totals_only, apply=args.apply))
     except Exception as exc:
-        if not args.totals_only:
+        if not totals_only:
             raise
         # Log público (GitHub Actions): só o tipo do erro. A mensagem de uma
         # falha de conexão traz o endereço do banco.

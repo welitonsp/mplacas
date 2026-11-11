@@ -278,6 +278,10 @@ class ClaimsBackfillResult:
     # Aparelhos de usina com conexão ativa que não foram reservados: de outra
     # família que a da conexão, ou de marca fora de ``BACKFILL_PROVIDERS``.
     ignored: int = 0
+    # Conexões ativas sem nenhum aparelho da própria família: a coleta ainda
+    # não criou aparelho, então não há o que reservar aqui. São as mais
+    # expostas — a reserva delas só nasce quando reconectarem.
+    without_device: int = 0
 
 
 async def backfill_claims(session: AsyncSession) -> ClaimsBackfillResult:
@@ -323,6 +327,7 @@ async def backfill_claims(session: AsyncSession) -> ClaimsBackfillResult:
     created = 0
     already = 0
     ignored = 0
+    without_device = 0
     conflicts: list[ClaimConflict] = []
     seen: set[tuple[uuid.UUID, str, str]] = set()
 
@@ -332,6 +337,8 @@ async def backfill_claims(session: AsyncSession) -> ClaimsBackfillResult:
             ignored += len(plant_devices)
             continue
         family = provider_family(account.provider)
+        if not any(device_family == family for device_family, _ in plant_devices):
+            without_device += 1
         for device_family, serial in plant_devices:
             if device_family != family:
                 ignored += 1
@@ -369,6 +376,7 @@ async def backfill_claims(session: AsyncSession) -> ClaimsBackfillResult:
         already_present=already,
         conflicts=tuple(conflicts),
         ignored=ignored,
+        without_device=without_device,
     )
 
 
@@ -376,7 +384,8 @@ def render_backfill(result: ClaimsBackfillResult, *, totals_only: bool = False) 
     """Linha de totais; com detalhe (fora do Actions), usina e serial de cada conflito."""
     lines = [
         f"Reservas: criadas={result.created}, ja_existiam={result.already_present}, "
-        f"conflitos={len(result.conflicts)}, ignoradas={result.ignored}"
+        f"conflitos={len(result.conflicts)}, ignoradas={result.ignored}, "
+        f"conexoes_sem_aparelho={result.without_device}"
     ]
     if not totals_only:
         for conflict in result.conflicts:

@@ -241,7 +241,10 @@ def test_render_somente_totais_nao_traz_usina_nem_serial() -> None:
         created=1, conflicts=(ClaimConflict(PLANT_A, "GROWATT", "GW-PLANT-SEGREDO"),)
     )
     totals = render_backfill(result, totals_only=True)
-    assert totals == "Reservas: criadas=1, ja_existiam=0, conflitos=1, ignoradas=0"
+    assert totals == (
+        "Reservas: criadas=1, ja_existiam=0, conflitos=1, ignoradas=0, "
+        "conexoes_sem_aparelho=0"
+    )
     detail = render_backfill(result)
     assert "GW-PLANT-SEGREDO" in detail and str(PLANT_A) in detail
 
@@ -282,7 +285,8 @@ async def test_sem_apply_nenhuma_tabela_muda_e_com_apply_a_saida_so_traz_totais(
     assert "Reservas:" not in dry
 
     applied = await cloud_jobs.run_provider_claims_report(totals_only=True, apply=True)
-    assert applied.startswith("Reservas: criadas=1, ja_existiam=0, conflitos=1, ignoradas=0\n")
+    assert applied.startswith("Reservas: criadas=1, ja_existiam=0, conflitos=1, ignoradas=0, "
+        "conexoes_sem_aparelho=0\n")
     assert "GW-PLANT-SEGREDO" not in applied and "GW-PLANT-3" not in applied
     after = await _counts(factory)
     assert after["provider_plant_claims"] == before["provider_plant_claims"] + 1
@@ -291,4 +295,33 @@ async def test_sem_apply_nenhuma_tabela_muda_e_com_apply_a_saida_so_traz_totais(
     }
 
     again = await cloud_jobs.run_provider_claims_report(totals_only=True, apply=True)
-    assert again.startswith("Reservas: criadas=0, ja_existiam=1, conflitos=1, ignoradas=0\n")
+    assert again.startswith(
+        "Reservas: criadas=0, ja_existiam=1, conflitos=1, ignoradas=0, conexoes_sem_aparelho=0\n"
+    )
+
+
+def test_no_github_actions_o_relatorio_sai_sempre_so_com_totais(monkeypatch, capsys) -> None:
+    import mplacas.cloud_jobs as cloud_jobs
+
+    seen: dict[str, object] = {}
+
+    async def fake(**kwargs: object) -> str:
+        seen.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(cloud_jobs, "run_provider_claims_report", fake)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    args = cloud_jobs._build_parser().parse_args(["provider-claims-report", "--apply"])
+    assert args.handler(args) == 0
+    assert seen == {"totals_only": True, "apply": True}
+    capsys.readouterr()
+
+
+async def test_conexao_ativa_sem_aparelho_e_contada() -> None:
+    factory = await _factory()
+    await _seed(factory, _account(PLANT_A))
+    async with factory() as session:
+        result = await backfill_claims(session)
+    assert result.created == 0
+    assert result.without_device == 1
+    assert "conexoes_sem_aparelho=1" in render_backfill(result, totals_only=True)
