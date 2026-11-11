@@ -18,6 +18,7 @@ from mplacas.core.config import get_settings
 from mplacas.db.models import Device
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context
+from mplacas.providers.accounts import family_members
 from mplacas.providers.growatt.openapi import GrowattOpenApiClient
 from mplacas.services.collection import CollectionResult, SolarCollectionService
 
@@ -59,10 +60,12 @@ async def record_meter_reading(
         await set_platform_context(session)
         # Um token pode enxergar várias usinas: fica só a(s) já ligada(s) a
         # esta usina, para nunca somar a produção de outra.
+        # Senha e token da Growatt são a mesma usina física: família, não marca.
+        family = family_members(provider)
         own = set(
             await session.scalars(
                 select(Device.serial_number).where(
-                    Device.plant_id == plant_id, Device.provider == provider
+                    Device.plant_id == plant_id, Device.provider.in_(family)
                 )
             )
         )

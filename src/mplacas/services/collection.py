@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.db.models import DailyEnergy, DataStatus, Device, MeterReading, Plant
 from mplacas.db.repositories.daily_energy import DailyEnergyRepository
+from mplacas.providers.accounts import family_members
 from mplacas.providers.base import SolarProvider
 
 
@@ -206,13 +207,33 @@ class SolarCollectionService:
     async def _get_or_create_device(
         self, *, plant: Plant, serial_number: str, model_name: str | None
     ) -> Device:
-        result = await self._session.execute(
-            select(Device).where(
-                Device.provider == self._provider_name,
-                Device.serial_number == serial_number,
+        # Mesma usina física = mesma FAMÍLIA de marca (Growatt por senha e por
+        # token leem o mesmo ``GW-PLANT-<id>``): trocar a conexão reaproveita o
+        # aparelho em vez de criar um 2º e dobrar a produção. O ``provider``
+        # gravado no aparelho não é reescrito.
+        members = family_members(self._provider_name)
+        found = (
+            await self._session.execute(
+                select(Device)
+                .where(Device.provider.in_(members), Device.serial_number == serial_number)
+                .order_by(Device.created_at, Device.id)
             )
-        )
-        device = result.scalar_one_or_none()
+        ).scalars().all()
+        # ADR-091: aparelho da MESMA marca em outra usina nunca é reaproveitado.
+        for candidate in found:
+            if candidate.provider == self._provider_name and candidate.plant_id != plant.id:
+                raise CollectionPlantError(
+                    f"device already belongs to another plant (device_id={candidate.id})"
+                )
+        own = [d for d in found if d.plant_id == plant.id]
+        if not own and found:
+            # só existe em outra usina (sob a outra marca da família): mesma barreira
+            raise CollectionPlantError(
+                f"device already belongs to another plant (device_id={found[0].id})"
+            )
+        device = next((d for d in own if d.provider == self._provider_name), None)
+        if device is None and own:
+            device = own[0]
         if device is None:
             device = Device(
                 plant_id=plant.id,
@@ -222,12 +243,6 @@ class SolarCollectionService:
             )
             self._session.add(device)
             await self._session.flush()
-        elif device.plant_id != plant.id:
-            # ADR-091: o mesmo número de série em outra usina nunca é
-            # reaproveitado — gravaria a produção de um cliente em outro.
-            raise CollectionPlantError(
-                f"device already belongs to another plant (device_id={device.id})"
-            )
         elif model_name and device.model_name != model_name:
             device.model_name = model_name
         return device

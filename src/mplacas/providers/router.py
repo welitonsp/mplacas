@@ -52,6 +52,7 @@ from mplacas.providers.accounts import (
     ProviderAccountService,
     ProviderLogin,
     ProviderPlantClaimConflictError,
+    family_members,
     provider_family,
 )
 from mplacas.organizations.db_models import OrganizationRecord
@@ -337,7 +338,8 @@ async def _read_brand_now(
         own = frozenset(
             await session.scalars(
                 select(Device.serial_number).where(
-                    Device.plant_id == scoped.plant_id, Device.provider == GROWATT_TOKEN
+                    Device.plant_id == scoped.plant_id,
+                    Device.provider.in_(family_members(GROWATT_TOKEN)),
                 )
             )
         )
@@ -894,7 +896,7 @@ async def _inverter_in_another_plant(
         # As duas formas de conectar a Growatt (senha e token) leem as mesmas
         # usinas (``GW-PLANT-<id>``): conferem juntas.
         family = provider_family(provider)
-        members = sorted(p for p in SUPPORTED_PROVIDERS if provider_family(p) == family)
+        members = family_members(provider)
         query = select(Device.id).where(
             Device.provider.in_(members), Device.serial_number.in_(serials)
         )

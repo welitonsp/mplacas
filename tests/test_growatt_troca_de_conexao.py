@@ -5,8 +5,8 @@ marcas (``GROWATT`` e ``GROWATT_TOKEN``), mas ``devices`` é único por
 ``(provider, serial_number)`` e ``SolarCollectionService._get_or_create_device``
 procura o aparelho só pelo ``provider`` da conexão atual. Estes testes fixam a
 expectativa CORRETA (um aparelho por usina física na usina; o total do dia é a
-produção de um só). Enquanto a falha existe, os que a provam ficam como
-``xfail(strict=True)``: quando for corrigida, a suíte avisa.
+produção de um só). O aparelho é procurado pela FAMÍLIA da marca
+(``provider_family``) dentro da mesma usina.
 """
 
 from __future__ import annotations
@@ -58,8 +58,6 @@ HISTORY = f"{URL}/import-history"
 METER_SOURCE = "GROWATT_TOTAL_DIFF"
 KWH_POR_DIA = Decimal("10.000")
 DIAS = 3
-
-XFAIL_DUPLICA = "troca de conexão cria 2º aparelho p/ o mesmo GW-PLANT e dobra a produção"
 
 
 def _ontem() -> date:
@@ -194,7 +192,6 @@ def test_controle_reimportar_na_mesma_marca_nao_duplica(env) -> None:
     assert set(asyncio.run(_total_por_dia(factory)).values()) == {KWH_POR_DIA}
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_DUPLICA)
 def test_apos_trocar_senha_por_token_nao_ha_segundo_aparelho(env) -> None:
     client, factory, headers = env
     _trocar_senha_por_token(client, headers)
@@ -203,7 +200,6 @@ def test_apos_trocar_senha_por_token_nao_ha_segundo_aparelho(env) -> None:
     assert len({serial for _, serial in aparelhos}) == len(aparelhos), aparelhos
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_DUPLICA)
 def test_total_do_dia_apos_a_troca_e_a_producao_de_um_so(env) -> None:
     client, factory, headers = env
     _trocar_senha_por_token(client, headers)
@@ -212,7 +208,6 @@ def test_total_do_dia_apos_a_troca_e_a_producao_de_um_so(env) -> None:
     assert totais == {dia: KWH_POR_DIA for dia in _dias()}
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_DUPLICA)
 def test_producao_do_ciclo_da_fatura_apos_a_troca_nao_dobra(env) -> None:
     """O que o cliente vê: produção no período da fatura (conferência com a distribuidora)."""
     client, factory, headers = env
@@ -265,7 +260,6 @@ async def _coletar(factory, provider: str, dias: list[date], kwh: Decimal = KWH_
         ).collect(plant_id=PLANT, start=min(dias), end=max(dias), consolidate_through=max(dias))
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_DUPLICA)
 @pytest.mark.asyncio
 async def test_sentido_inverso_token_depois_senha_nao_duplica() -> None:
     factory, engine = await _banco_so()
@@ -281,7 +275,6 @@ async def test_sentido_inverso_token_depois_senha_nao_duplica() -> None:
         await engine.dispose()
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_DUPLICA)
 @pytest.mark.asyncio
 async def test_valores_diferentes_entre_as_fontes_nao_somam() -> None:
     """GROWATT_CLASSIC e GROWATT_OPENAPI_V1 medem o mesmo dia com precisão diferente."""
@@ -297,7 +290,6 @@ async def test_valores_diferentes_entre_as_fontes_nao_somam() -> None:
         await engine.dispose()
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_DUPLICA)
 @pytest.mark.asyncio
 async def test_leitura_do_total_da_madrugada_nao_duplica_dia_ja_coletado() -> None:
     """Caminho noturno (ADR-098, ``GROWATT_TOTAL_DIFF``) depois da troca para token."""
@@ -368,3 +360,185 @@ def test_modelo_nao_impede_o_mesmo_serial_em_duas_marcas_na_mesma_usina() -> Non
     }
     assert ("provider", "serial_number") in uniques
     assert not any("plant_id" in cols for cols in uniques)
+
+
+# --- 4. Barreiras e efeitos colaterais da correção -----------------------------
+
+OUTRA_USINA = uuid.UUID("00000000-0000-0000-0000-0000000000d2")
+
+
+class FakeNep(FakeGrowatt):
+    """Cliente NEPViewer de mentira: serial configurável."""
+
+    def __init__(self, dias: list[date], serial: str) -> None:
+        super().__init__(dias)
+        self._serial = serial
+
+    async def list_devices(self) -> list[SolarDevice]:
+        return [SolarDevice(serial_number=self._serial, model_name="Inv", city=None,
+                            last_update=None)]
+
+
+class FakeDoisSeriais(FakeGrowatt):
+    async def list_devices(self) -> list[SolarDevice]:
+        return [
+            SolarDevice(serial_number=s, model_name="Usina", city=None, last_update=None)
+            for s in ("GW-PLANT-1", "GW-PLANT-2")
+        ]
+
+
+async def _servico(factory, client, provider: str, source: str | None = None, dias=None):
+    dias = dias or _dias()
+    async with factory() as session:
+        await SolarCollectionService(
+            session,
+            client,
+            provider_name=provider,
+            energy_source=source or ENERGY_SOURCES[provider],
+        ).collect(plant_id=PLANT, start=min(dias), end=max(dias), consolidate_through=max(dias))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dono,coletor", [(GROWATT, GROWATT_TOKEN), (GROWATT_TOKEN, GROWATT)])
+async def test_serial_de_outra_usina_na_outra_marca_da_familia_continua_barrado(
+    dono: str, coletor: str
+) -> None:
+    from mplacas.services.collection import CollectionPlantError
+
+    factory, engine = await _banco_so()
+    try:
+        async with factory() as session:
+            org = await session.scalar(select(Plant.organization_id).where(Plant.id == PLANT))
+            session.add(Plant(id=OUTRA_USINA, organization_id=org, name="Outra"))
+            await session.flush()
+            session.add(Device(plant_id=OUTRA_USINA, provider=dono, serial_number=SERIAL))
+            await session.commit()
+
+        with pytest.raises(CollectionPlantError):
+            await _servico(factory, FakeGrowatt(_dias()), coletor)
+
+        async with factory() as session:
+            rows = (await session.execute(select(Device.plant_id, Device.provider))).all()
+        assert rows == [(OUTRA_USINA, dono)]
+        assert await _total_por_dia(factory) == {}
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_dois_seriais_growatt_diferentes_continuam_dois_aparelhos_somados() -> None:
+    factory, engine = await _banco_so()
+    try:
+        dias = _dias()
+        await _servico(factory, FakeDoisSeriais(dias), GROWATT)
+        await _servico(factory, FakeDoisSeriais(dias), GROWATT_TOKEN)
+
+        aparelhos = await _aparelhos(factory)
+        assert aparelhos == [(GROWATT, "GW-PLANT-1"), (GROWATT, "GW-PLANT-2")]
+        assert await _total_por_dia(factory) == {dia: KWH_POR_DIA * 2 for dia in dias}
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_nepviewer_reaproveita_na_mesma_marca_e_serial_diferente_cria_outro() -> None:
+    factory, engine = await _banco_so()
+    try:
+        dias = _dias()
+        await _servico(factory, FakeNep(dias, "NEP-1"), "NEPVIEWER")
+        await _servico(factory, FakeNep(dias, "NEP-1"), "NEPVIEWER")
+        assert await _aparelhos(factory) == [("NEPVIEWER", "NEP-1")]
+        await _servico(factory, FakeNep(dias, "NEP-2"), "NEPVIEWER")
+        assert await _aparelhos(factory) == [("NEPVIEWER", "NEP-1"), ("NEPVIEWER", "NEP-2")]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_troca_mantem_o_provider_gravado_e_a_versao_guarda_o_valor_anterior() -> None:
+    from mplacas.db.models import DailyEnergyVersion
+
+    factory, engine = await _banco_so()
+    try:
+        dias = _dias()
+        await _coletar(factory, GROWATT, dias, Decimal("10.000"))
+        await _coletar(factory, GROWATT_TOKEN, dias, Decimal("10.400"))
+
+        assert await _aparelhos(factory) == [(GROWATT, SERIAL)]  # provider não reescrito
+        async with factory() as session:
+            dias_db = (await session.scalars(select(DailyEnergyRow))).all()
+            versoes = (await session.scalars(select(DailyEnergyVersion))).all()
+        assert len(dias_db) == DIAS
+        assert {d.energy_kwh for d in dias_db} == {Decimal("10.400")}
+        assert {d.source for d in dias_db} == {ENERGY_SOURCES[GROWATT_TOKEN]}
+        assert len(versoes) == DIAS
+        assert {v.energy_kwh for v in versoes} == {Decimal("10.000")}
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_job_do_medidor_enxerga_o_aparelho_reaproveitado(monkeypatch) -> None:
+    import mplacas.collection.meter as meter
+
+    factory, engine = await _banco_so()
+    try:
+        dias = _dias()
+        await _coletar(factory, GROWATT, dias)  # aparelho gravado como GROWATT
+        monkeypatch.setattr(meter, "SessionFactory", factory)
+
+        class Cliente(FakeGrowatt):
+            async def meter_totals(self):
+                return {SERIAL: Decimal("1010"), "GW-PLANT-OUTRA": Decimal("5")}
+
+        vespera, hoje = dias[-2], dias[-1]
+        # a leitura da véspera (total 1000), depois a de hoje, ambas pela marca TOKEN
+        class Antes(Cliente):
+            async def meter_totals(self):
+                return {SERIAL: Decimal("1000"), "GW-PLANT-OUTRA": Decimal("5")}
+
+        await meter.record_meter_reading(
+            Antes(dias), plant_id=PLANT, provider=GROWATT_TOKEN, day=vespera  # type: ignore[arg-type]
+        )
+        await meter.record_meter_reading(
+            Cliente(dias), plant_id=PLANT, provider=GROWATT_TOKEN, day=hoje  # type: ignore[arg-type]
+        )
+
+        # só o serial desta usina entrou (filtro "own" viu o aparelho GROWATT) e
+        # o dia já coletado pelo histórico não foi sobrescrito nem duplicado
+        assert await _aparelhos(factory) == [(GROWATT, SERIAL)]
+        assert (await _total_por_dia(factory))[hoje] == KWH_POR_DIA
+    finally:
+        await engine.dispose()
+
+
+def test_leitura_ao_vivo_inclui_o_aparelho_reaproveitado(env, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from mplacas.core.tenancy import ScopedPlant
+    from mplacas.providers.accounts import ProviderAccountService
+
+    client, factory, headers = env
+    _conectar(client, headers, GROWATT)
+    _importar(client, headers)  # aparelho gravado como GROWATT
+    _conectar(client, headers, GROWATT_TOKEN)
+
+    class Vivo:
+        async def plant_now(self):
+            return []
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(provider_router, "GrowattOpenApiClient", Vivo)
+    monkeypatch.setattr(provider_router, "build_client", lambda *a, **k: Vivo())
+
+    async def _ler():
+        async with factory() as session:
+            box = provider_router._box()
+            record = await ProviderAccountService(session, box).get(PLANT)
+            org = await session.scalar(select(Plant.organization_id).where(Plant.id == PLANT))
+        scoped = ScopedPlant(plant_id=PLANT, principal=SimpleNamespace(organization_id=org))  # type: ignore[arg-type]
+        return await provider_router._read_brand_now(scoped, record, box)
+
+    assert asyncio.run(_ler()).own_serials == frozenset({SERIAL})
