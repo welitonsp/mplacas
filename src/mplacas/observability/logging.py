@@ -160,6 +160,9 @@ class StructuredJsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
+_URL_LOGGERS = ("httpx", "httpcore")
+
+
 def configure_logging(
     *,
     level: str,
@@ -185,3 +188,9 @@ def configure_logging(
         level=level.upper(),
         handlers=[handler],
     )
+    if public:
+        # O httpx registra em INFO a URL inteira de cada chamada: as coordenadas
+        # da usina (Open-Meteo) e o id da usina na marca iam para o log público.
+        # Falha de chamada continua aparecendo (WARNING ou erro do próprio job).
+        for noisy in _URL_LOGGERS:
+            logging.getLogger(noisy).setLevel(logging.WARNING)

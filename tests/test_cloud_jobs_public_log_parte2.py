@@ -286,3 +286,39 @@ def test_resumo_de_regra_entre_campos_nao_sai_vazio() -> None:
     except ValidationError as exc:
         resumo = validation_error_summary(exc)
     assert resumo == "ValidationError (invalid configuration)"
+
+
+def test_log_publico_nao_registra_a_url_das_chamadas(monkeypatch) -> None:
+    from mplacas.observability.logging import configure_logging
+
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "handlers", [])
+    saida = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", saida)
+    httpx_logger = logging.getLogger("httpx")
+    monkeypatch.setattr(httpx_logger, "level", logging.NOTSET)
+
+    configure_logging(level="INFO", service_name="job", structured=True, public=True)
+    httpx_logger.info(
+        'HTTP Request: GET https://archive-api.open-meteo.com/v1/archive?latitude=-17.7441 "200"'
+    )
+    httpx_logger.warning("falha de chamada")
+
+    assert "latitude" not in saida.getvalue()
+    assert "falha de chamada" in saida.getvalue()
+
+
+def test_log_da_api_continua_registrando_as_chamadas(monkeypatch) -> None:
+    from mplacas.observability.logging import configure_logging
+
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "handlers", [])
+    saida = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", saida)
+    httpx_logger = logging.getLogger("httpx")
+    monkeypatch.setattr(httpx_logger, "level", logging.NOTSET)
+
+    configure_logging(level="INFO", service_name="api", structured=True)
+    httpx_logger.info("HTTP Request: GET https://exemplo.test/x")
+
+    assert "exemplo.test" in saida.getvalue()
