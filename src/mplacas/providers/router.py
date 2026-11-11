@@ -57,19 +57,27 @@ from mplacas.providers.accounts import (
 from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.plants.autofill import fill_plant_from_profile, locate_profile
 from mplacas.plants.schemas import ModuleTechnology
+from mplacas.providers.refusals import refusal_for
 from mplacas.providers.connect_ticket import ConnectTicketError, issue_ticket, open_ticket
 from mplacas.providers.base import (
     PlantProfile,
     ProviderAuthError,
     ProviderBlockedError,
     ProviderError,
-    ProviderRateLimitedError,
-    ProviderUnavailableError,
 )
 from mplacas.providers.db_models import ProviderAccountRecord
 from mplacas.core.config import get_settings
 from mplacas.providers.factory import ENERGY_SOURCES, build_client
 from mplacas.providers.growatt.openapi import GrowattOpenApiClient
+from mplacas.providers.live_reading import (
+    BrandSnapshot,
+    LiveReadingBrandDownError,
+    LiveReadingCache,
+    LiveReadingService,
+    LiveReadingUnavailableError,
+    NightTotal,
+    aware,
+)
 from mplacas.services.collection import (
     CollectionPlantError,
     CollectionResult,
@@ -242,15 +250,8 @@ async def get_provider_account(scoped: ReadPlantPath) -> ProviderAccountView:
 
 
 # --- ADR-099: a usina agora, para contas Growatt sem histórico ---------------
-
-# A Growatt só aceita ``plant/list`` de tempos em tempos (10012): uma leitura
-# por usina a cada 10 minutos, em memória (instância única no Render).
-LIVE_TTL = timedelta(minutes=10)
-# Falha da marca sem leitura guardada: espera antes de tentar de novo, para não
-# manter o bloqueio (10012) a cada abertura do Início.
-LIVE_FAILURE_TTL = timedelta(minutes=2)
-# Leitura antiga só substitui um erro até esta idade.
-LIVE_STALE_LIMIT = timedelta(hours=24)
+# A regra (memória, espera depois de falha, o que é desta usina) mora em
+# ``providers.live_reading``; aqui ficam só HTTP, autorização e banco.
 
 
 class PlantNow(BaseModel):
@@ -263,20 +264,10 @@ class PlantNow(BaseModel):
     stale: bool = False
 
 
-@dataclass
-class _LiveEntry:
-    account_id: uuid.UUID
-    fresh_until: datetime
-    result: PlantNow | None = None
-    retry_after: datetime | None = None
-
-
-_LIVE_CACHE: dict[uuid.UUID, _LiveEntry] = {}
-
-
-def _forget_live(plant_id: uuid.UUID) -> None:
-    """A conexão mudou ou saiu: a leitura guardada não vale mais."""
-    _LIVE_CACHE.pop(plant_id, None)
+_LIVE = LiveReadingCache()
+# Mesmo dicionário do cache (os testes limpam e inspecionam por aqui).
+_LIVE_CACHE = _LIVE.entries
+_forget_live = _LIVE.forget
 
 
 @router.get("/{plant_id}/provider-account/now", response_model=PlantNow)
@@ -286,114 +277,95 @@ async def plant_now(scoped: ReadPlantPath) -> PlantNow:
     Só para conexões Growatt por token: é o que a lista de usinas informa
     quando o histórico não é liberado. Outras marcas = 404 (a tela some).
     """
-    now = datetime.now(UTC)
-    for key in [k for k, e in _LIVE_CACHE.items() if e.fresh_until + LIVE_STALE_LIMIT < now]:
-        _LIVE_CACHE.pop(key, None)  # poda
     box = _box()
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
         record = await ProviderAccountService(session, box).get(scoped.plant_id)
-        if record is None or not record.active or record.provider != GROWATT_TOKEN:
-            _forget_live(scoped.plant_id)
-            raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable")
-        entry = _LIVE_CACHE.get(scoped.plant_id)
-        if entry is not None and entry.account_id != record.id:
-            entry = None  # outra conexão
-        connected_at = max(
-            _aware(moment) for moment in (record.created_at, record.rotated_at) if moment
+    if record is None or not record.active or record.provider != GROWATT_TOKEN:
+        _forget_live(scoped.plant_id)
+        raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable")
+
+    async def load() -> BrandSnapshot:
+        return await _read_brand_now(scoped, record, box)
+
+    async def night_total() -> NightTotal | None:
+        return await _last_night_total(scoped)
+
+    try:
+        reading = await LiveReadingService(_LIVE).read(
+            plant_id=scoped.plant_id,
+            account_id=record.id,
+            provider=GROWATT_TOKEN,
+            connected_at=max(
+                aware(moment) for moment in (record.created_at, record.rotated_at) if moment
+            ),
+            load=load,
+            night_total=night_total,
         )
-        if entry is not None and entry.result is not None and entry.fresh_until > now:
-            return entry.result
-        if entry is not None and entry.retry_after is not None and entry.retry_after > now:
-            return await _stale_or_fail(entry, now, scoped, connected_at)
+    except LiveReadingUnavailableError:
+        raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable") from None
+    except LiveReadingBrandDownError:
+        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
+    return PlantNow(
+        provider=reading.provider,
+        total_kwh=reading.total_kwh,
+        current_power_kw=reading.current_power_kw,
+        read_at=reading.read_at,
+        stale=reading.stale,
+    )
+
+
+async def _read_brand_now(
+    scoped: ScopedPlant, record: ProviderAccountRecord, box: SecretBox
+) -> BrandSnapshot:
+    """Uma leitura na marca. A rede fica fora da sessão do banco."""
+    async with SessionFactory() as session:
+        await set_principal_context(session, scoped.principal)
         try:
             credentials = ProviderAccountService(session, box).open(record)
         except ProviderAccountError:
             raise _error(
                 status.HTTP_503_SERVICE_UNAVAILABLE, "provider_account_unreadable"
             ) from None
-        own = set(
+        own = frozenset(
             await session.scalars(
                 select(Device.serial_number).where(
                     Device.plant_id == scoped.plant_id, Device.provider == GROWATT_TOKEN
                 )
             )
         )
-        account_id = record.id
     client = build_client(GROWATT_TOKEN, account=credentials.login, password=credentials.password)
     try:
         if not isinstance(client, GrowattOpenApiClient):
-            raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable")
-        readings = await client.plant_now()
-    except ProviderError:
-        failed = entry or _LiveEntry(account_id=account_id, fresh_until=now)
-        failed.retry_after = now + LIVE_FAILURE_TTL
-        _LIVE_CACHE[scoped.plant_id] = failed
-        return await _stale_or_fail(failed, now, scoped, connected_at)
+            raise LiveReadingUnavailableError
+        return BrandSnapshot(readings=await client.plant_now(), own_serials=own)
     finally:
         await client.aclose()
-    if own:
-        mine = [value for serial, value in readings.items() if serial in own]
-    elif len(readings) == 1:
-        # usina ainda sem aparelho: só é seguro se o token enxerga uma usina só
-        mine = list(readings.values())
-    else:
-        mine = []
-    totals = [total for total, _ in mine if total is not None]
-    powers = [power for _, power in mine if power is not None]
-    if not totals and not powers:
-        raise _error(status.HTTP_404_NOT_FOUND, "plant_now_unavailable")
-    result = PlantNow(
-        provider=GROWATT_TOKEN,
-        total_kwh=sum(totals, Decimal(0)) if totals else None,
-        current_power_kw=sum(powers, Decimal(0)) if powers else None,
-        read_at=now,
-    )
-    _LIVE_CACHE[scoped.plant_id] = _LiveEntry(
-        account_id=account_id, fresh_until=now + LIVE_TTL, result=result
-    )
-    return result
 
 
-async def _stale_or_fail(
-    entry: _LiveEntry, now: datetime, scoped: ScopedPlant, connected_at: datetime
-) -> PlantNow:
-    if entry.result is not None and entry.result.read_at + LIVE_STALE_LIMIT > now:
-        return entry.result.model_copy(update={"stale": True})
-    # Sem leitura em memória (o Render reinicia a instância): o último total
-    # gravado à noite (ADR-098) por esta mesma conexão ainda informa, com a
-    # hora dele — somando os aparelhos da usina naquele dia fechado.
+async def _last_night_total(scoped: ScopedPlant) -> NightTotal | None:
+    """Soma dos aparelhos da usina no último dia fechado gravado (ADR-098)."""
     async with SessionFactory() as session:
         await set_principal_context(session, scoped.principal)
-        latest = await session.scalar(
-            select(MeterReading)
+        latest_date = (
+            select(func.max(MeterReading.reading_date))
             .where(MeterReading.plant_id == scoped.plant_id)
-            .order_by(MeterReading.reading_date.desc(), MeterReading.read_at.desc())
-            .limit(1)
+            .scalar_subquery()
         )
-        rows = (
-            list(
-                await session.scalars(
-                    select(MeterReading).where(
-                        MeterReading.plant_id == scoped.plant_id,
-                        MeterReading.reading_date == latest.reading_date,
-                    )
+        rows = list(
+            await session.scalars(
+                select(MeterReading).where(
+                    MeterReading.plant_id == scoped.plant_id,
+                    MeterReading.reading_date == latest_date,
                 )
             )
-            if latest is not None
-            else []
         )
-    if rows:
-        read_at = max(_aware(row.read_at) for row in rows)
-        if read_at >= connected_at and read_at + LIVE_STALE_LIMIT * 2 > now:
-            return PlantNow(
-                provider=GROWATT_TOKEN,
-                total_kwh=sum((row.total_kwh for row in rows), Decimal(0)),
-                current_power_kw=None,
-                read_at=read_at,
-                stale=True,
-            )
-    raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable")
+    if not rows:
+        return None
+    return NightTotal(
+        total_kwh=sum((row.total_kwh for row in rows), Decimal(0)),
+        read_at=max(aware(row.read_at) for row in rows),
+    )
 
 
 @router.put("/{plant_id}/provider-account", response_model=ProviderAccountView)
@@ -906,29 +878,12 @@ async def _inspect(
 ) -> ProviderInspection:
     try:
         return await verify_provider_account(provider, credentials)
-    except ProviderRateLimitedError:
-        # A marca bloqueou por excesso de logins (Growatt 507): esperar, não insistir.
-        await refuse("provider_rate_limited")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
-    except ProviderBlockedError:
-        # Login recusado antes de olhar a senha (Growatt 403): não é a senha.
-        await refuse("provider_login_blocked")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
-    except ProviderUnavailableError:
-        await refuse("provider_unavailable")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
     except ProviderError as exc:
-        if provider == GROWATT_TOKEN and not isinstance(exc, ProviderAuthError):
-            # OpenAPI respondeu fora do formato (ou erro de sistema): não é o
-            # token — não mandar o cliente gerar outro à toa.
-            await refuse("provider_unavailable")
-            raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
-        # Senha errada volta como envelope de erro (não 401), na NEPViewer e na Growatt;
-        # auth e formato inesperado viram o mesmo "login recusado", sem
-        # repetir a mensagem do fabricante.
-        reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
-        await refuse(reason)
-        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
+        # Limite de taxa (Growatt 507), login recusado antes da senha (403),
+        # indisponibilidade e senha/token recusado: ver ``refusal_for``.
+        refusal = refusal_for(provider, exc, only_auth_is_credentials=False)
+        await refuse(refusal.reason)
+        raise _error(refusal.status_code, refusal.reason) from None
 
 
 # "Buscar dados na marca" tem teto próprio: cliques no botão não podem
@@ -1046,20 +1001,10 @@ async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> Pro
     client = build_client(provider, account=credentials.login, password=credentials.password)
     try:
         profile = await client.plant_profile()
-    except ProviderRateLimitedError:
-        await refuse("provider_rate_limited")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
-    except ProviderBlockedError:
-        # bloqueio da marca não é senha errada: mesmo código da conexão
-        await refuse("provider_login_blocked")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
-    except ProviderAuthError:
-        reason = "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
-        await refuse(reason)
-        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
-    except ProviderError:
-        await refuse("provider_unavailable")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
+    except ProviderError as exc:
+        refusal = refusal_for(provider, exc, only_auth_is_credentials=True)
+        await refuse(refusal.reason)
+        raise _error(refusal.status_code, refusal.reason) from None
     finally:
         await client.aclose()
     profile = await locate_profile(profile)  # rede fora da transação
@@ -1130,11 +1075,6 @@ class HistoryImportResult(BaseModel):
 HISTORY_UNAVAILABLE_RECHECK = timedelta(hours=24)
 
 
-def _aware(moment: datetime) -> datetime:
-    """SQLite devolve datas sem fuso; o PostgreSQL, com. Tudo em UTC."""
-    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
-
-
 async def _history_known_unavailable(
     session: AsyncSession, plant_id: uuid.UUID, record: ProviderAccountRecord
 ) -> HistoryImportResult | None:
@@ -1144,7 +1084,7 @@ async def _history_known_unavailable(
         return None
     since = max(
         datetime.now(UTC) - HISTORY_UNAVAILABLE_RECHECK,
-        *(_aware(moment) for moment in (record.created_at, record.rotated_at) if moment),
+        *(aware(moment) for moment in (record.created_at, record.rotated_at) if moment),
     )
     event = await session.scalar(
         select(AuditEventRecord)
@@ -1156,7 +1096,7 @@ async def _history_known_unavailable(
         .order_by(AuditEventRecord.created_at.desc())
         .limit(1)
     )
-    if event is None or _aware(event.created_at) < since:
+    if event is None or aware(event.created_at) < since:
         return None
     details = event.details
     if not isinstance(details, dict) or details.get("history_available") is not False:
@@ -1248,28 +1188,21 @@ async def import_production_history(
     except CollectionPlantError:
         await refuse("provider_inverter_in_another_plant")
         raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant") from None
-    except ProviderRateLimitedError:
-        await refuse("provider_rate_limited")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_rate_limited") from None
-    except ProviderBlockedError:
-        # bloqueio da marca não é senha errada: mesmo código da conexão
-        await refuse("provider_login_blocked")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_login_blocked") from None
-    except ProviderAuthError:
-        if isinstance(client, GrowattOpenApiClient) and client.listed_plants:
+    except ProviderError as exc:
+        if (
+            isinstance(exc, ProviderAuthError)
+            and not isinstance(exc, ProviderBlockedError)
+            and isinstance(client, GrowattOpenApiClient)
+            and client.listed_plants
+        ):
             # Token válido (a lista respondeu), mas a Growatt não libera o
             # histórico desta conta (10011): a produção passa a vir da leitura
             # do total toda madrugada (ADR-098). Não é erro do cliente.
             history_available = False
         else:
-            reason = (
-                "provider_token_failed" if provider == GROWATT_TOKEN else "provider_login_failed"
-            )
-            await refuse(reason)
-            raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
-    except ProviderError:
-        await refuse("provider_unavailable")
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_unavailable") from None
+            refusal = refusal_for(provider, exc, only_auth_is_credentials=True)
+            await refuse(refusal.reason)
+            raise _error(refusal.status_code, refusal.reason) from None
     except Exception as exc:
         # ex.: a coleta diária gravando o mesmo dia ao mesmo tempo. Sempre
         # auditado; o log leva só o tipo do erro, nunca dado da conexão.
