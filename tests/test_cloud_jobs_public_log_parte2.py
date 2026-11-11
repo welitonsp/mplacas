@@ -243,3 +243,46 @@ def test_motivo_de_linha_ignorada_da_aneel_sai_em_uma_linha(monkeypatch, capsys)
     assert len(aviso) == 1
     assert "add-mask" in aviso[0] and "::" not in aviso[0]
     assert not any(linha.startswith("::") for linha in linhas)
+
+
+def test_entrypoint_com_url_que_o_banco_nao_entende_nao_mostra_traceback() -> None:
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(_RAIZ / "src"),
+        "MPLACAS_DATABASE_URL": "postgresql+asyncpg://usuario:s3nh4@db.interno.example:p0rt4-s3cr3t4/m",
+    }
+    env.pop("MPLACAS_REQUEST_TIMEOUT_SECONDS", None)
+    result = subprocess.run(
+        [sys.executable, "-m", "mplacas.cloud_jobs", "smoke"],
+        cwd=str(_RAIZ),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    saida = result.stdout + result.stderr
+    assert result.returncode == 1, saida
+    assert "Traceback" not in saida
+    assert "p0rt4-s3cr3t4" not in saida and "s3nh4" not in saida
+    assert saida.strip().startswith("error: ")
+    assert len(saida.strip().splitlines()) == 1
+
+
+def test_resumo_de_regra_entre_campos_nao_sai_vazio() -> None:
+    from pydantic import BaseModel, ValidationError, model_validator
+
+    from mplacas.job_bootstrap import validation_error_summary
+
+    class Regra(BaseModel):
+        a: int = 0
+
+        @model_validator(mode="after")
+        def _checa(self) -> Regra:
+            raise ValueError("faltou coisa secreta")
+
+    try:
+        Regra()
+    except ValidationError as exc:
+        resumo = validation_error_summary(exc)
+    assert resumo == "ValidationError (invalid configuration)"
