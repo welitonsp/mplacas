@@ -18,7 +18,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // eslint-disable-next-line no-console
+     
     console.error('Erro não tratado na interface do Mplacas:', error, info.componentStack)
   }
 

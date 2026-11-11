@@ -214,6 +214,8 @@ jobs:
           retention-days: 30
       - name: Type check
         run: npm run type-check
+      - name: Lint
+        run: npm run lint
       - name: Tests
         env:
           # env.ts throws at import time if VITE_API_URL is absent, and test

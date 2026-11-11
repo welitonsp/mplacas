@@ -15,7 +15,7 @@ import { safeStorage } from './lib/storage'
 try {
   applyTheme(resolveInitialTheme())
 } catch (error) {
-  // eslint-disable-next-line no-console
+   
   console.error('Falha ao resolver o tema inicial do Mplacas; usando o tema claro padrão:', error)
   applyTheme('light')
 }
@@ -70,7 +70,7 @@ async function bootstrap() {
       </StrictMode>,
     )
   } catch (error) {
-    // eslint-disable-next-line no-console
+     
     console.error('Falha ao inicializar o Mplacas:', error)
     root.render(<ConfigErrorScreen />)
   }

@@ -134,7 +134,7 @@ export function usePlantResource<T, E = string>(
       }
       // `errorMessage` fixo: a falha completa (com `cause`/`status`) vai para
       // o console — nunca para a tela, mesma política de `ErrorBoundary.tsx`.
-      // eslint-disable-next-line no-console
+       
       console.error('usePlantResource: falha ao buscar recurso da usina', currentPlantId, failure)
       setState({
         plantId: currentPlantId,

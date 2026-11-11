@@ -64,6 +64,14 @@ export function BarList({
   valueFormatter?: (value: number) => string
   className?: string
 }) {
+  // Animação de entrada (uma vez por montagem, nunca em refetch — ver
+  // `useChartEntrance`): cada barra cresce de 0% até sua largura real.
+  // `aria-valuenow`/`aria-label`/o valor textual ao lado nunca dependem
+  // disto — sempre mostram o valor real desde o primeiro render.
+  // Fica ANTES do retorno antecipado de "sem itens": hook depois de `return`
+  // quebra a ordem dos hooks quando a lista passa de vazia a preenchida.
+  const entered = useChartEntrance()
+
   if (items.length === 0) {
     return (
       <p className={`text-sm text-gray-500 ${className}`.trim()}>Nenhum dado para exibir.</p>
@@ -75,12 +83,6 @@ export function BarList({
     .filter((value): value is number => value != null)
   const effectiveMax = maxValue ?? (assessableValues.length > 0 ? Math.max(...assessableValues) : 0)
   const formatValue = valueFormatter ?? ((value: number) => String(value))
-
-  // Animação de entrada (uma vez por montagem, nunca em refetch — ver
-  // `useChartEntrance`): cada barra cresce de 0% até sua largura real.
-  // `aria-valuenow`/`aria-label`/o valor textual ao lado nunca dependem
-  // disto — sempre mostram o valor real desde o primeiro render.
-  const entered = useChartEntrance()
 
   return (
     <ul className={`flex flex-col gap-2.5 ${className}`.trim()}>
