@@ -228,6 +228,21 @@ describe('PlantSetupPage — o cliente informa os dados da usina', () => {
     )
   })
 
+  it('salva "15.000" no investimento como quinze mil (15000.00), não como 15,00', async () => {
+    vi.resetModules()
+    const updateFinancialConfiguration = vi.fn(async () => jsonResponse({}))
+    installApiMock({ updateFinancialConfiguration })
+
+    await renderPage()
+    await screen.findByText('0 de 7 itens informados')
+    fireEvent.change(screen.getByLabelText('Valor total investido (R$)'), { target: { value: '15.000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar investimento' }))
+
+    await waitFor(() =>
+      expect(updateFinancialConfiguration).toHaveBeenCalledWith(singlePlant.id, { investment_amount_brl: '15000.00' }),
+    )
+  })
+
   it('preenche os formulários com o que já foi informado', async () => {
     vi.resetModules()
     installApiMock({

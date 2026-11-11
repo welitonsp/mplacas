@@ -14,6 +14,7 @@ import {
   type PlantSetup,
   type PlantSetupItemKey,
 } from '../../lib/dashboard/plant-setup-contracts'
+import { normalizeMeasurement, normalizeMoneyBrl } from '../../lib/forms/decimal'
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
@@ -107,16 +108,6 @@ const SECONDARY_BUTTON =
   'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-semibold text-[var(--color-text-primary)] transition-colors duration-200 hover:bg-[var(--color-surface-subtle)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none'
 
 type Feedback = { tone: 'success' | 'error'; message: string } | null
-
-// Aceita vírgula decimal ("4,4") e devolve o texto que o backend espera
-// ("4.4"); `null` para vazio, `undefined` para inválido.
-function normalizeDecimal(raw: string): string | null | undefined {
-  const trimmed = raw.trim().replace(/\s/g, '')
-  if (trimmed === '') return null
-  const normalized = trimmed.includes(',') ? trimmed.replace(/\./g, '').replace(',', '.') : trimmed
-  if (!/^-?\d+(\.\d+)?$/.test(normalized)) return undefined
-  return normalized
-}
 
 // "Mudou?" sem a armadilha de `Number(null) === 0`: um valor novo 0 (Norte,
 // placa deitada) contra "nada salvo" é mudança, e precisa ser enviado.
@@ -302,7 +293,7 @@ function InstallationForm({ setup, onSaved }: { setup: PlantSetup; onSaved: () =
       ['Inclinação', tilt, 'array_tilt_degrees', setup.arrayTiltDegrees],
     ]
     for (const [label, raw, key, original] of numberFields) {
-      const value = normalizeDecimal(raw)
+      const value = normalizeMeasurement(raw)
       if (value === undefined) {
         setFeedback({ tone: 'error', message: `${label}: use só números, por exemplo 4,4.` })
         return
@@ -311,7 +302,7 @@ function InstallationForm({ setup, onSaved }: { setup: PlantSetup; onSaved: () =
     }
 
     let azimuth: string | null | undefined = null
-    if (direction === CUSTOM_DIRECTION) azimuth = normalizeDecimal(customAzimuth)
+    if (direction === CUSTOM_DIRECTION) azimuth = normalizeMeasurement(customAzimuth)
     else if (direction !== '') azimuth = direction
     if (azimuth === undefined || (azimuth !== null && (Number(azimuth) < 0 || Number(azimuth) >= 360))) {
       setFeedback({ tone: 'error', message: 'Direção em graus: use um número de 0 a 359 (0 = Norte, 90 = Leste).' })
@@ -519,8 +510,8 @@ function LocationForm({ setup, onSaved }: { setup: PlantSetup; onSaved: () => vo
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFeedback(null)
-    const lat = normalizeDecimal(latitude)
-    const lon = normalizeDecimal(longitude)
+    const lat = normalizeMeasurement(latitude)
+    const lon = normalizeMeasurement(longitude)
     if (lat == null || lon == null) {
       setFeedback({ tone: 'error', message: 'Informe a latitude e a longitude, por exemplo -17,74 e -48,62.' })
       return
@@ -617,7 +608,7 @@ function InvestmentForm({ setup, onSaved }: { setup: PlantSetup; onSaved: () => 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFeedback(null)
-    const value = normalizeDecimal(amount.replace(/^R\$\s*/, ''))
+    const value = normalizeMoneyBrl(amount)
     if (value == null || Number(value) <= 0) {
       setFeedback({ tone: 'error', message: 'Informe o valor investido, maior que zero. Ex.: 11.200,00.' })
       return
