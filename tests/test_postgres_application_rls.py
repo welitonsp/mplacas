@@ -5,7 +5,7 @@ import uuid
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from mplacas.core.tenancy import _infer_single_plant_for_organization_in_session
@@ -222,7 +222,7 @@ async def test_application_rls_enforces_crud_and_every_ownership_chain() -> None
                     {"tables": list(RLS_TABLES)},
                 )
             ).scalar_one()
-            assert policy_count == enabled_count == len(RLS_TABLES) == 26
+            assert policy_count == enabled_count == len(RLS_TABLES) == 27
 
         async with factory() as session:
             await _set_local_role(session, tenant_role)
@@ -532,6 +532,116 @@ async def test_infer_single_plant_join_across_organizations_and_plants_rls() -> 
                 {"plant_b": plant_b, "org_b": org_b},
             )
             assert blocked.scalar_one_or_none() is None
+            await session.rollback()
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("DELETE FROM plants WHERE id = ANY(:ids)"),
+                {"ids": [plant_a, plant_b]},
+            )
+            await connection.execute(
+                text("DELETE FROM organizations WHERE id = ANY(:ids)"),
+                {"ids": [org_a, org_b]},
+            )
+            if roles_created:
+                existing = (
+                    await connection.execute(
+                        text("SELECT 1 FROM pg_roles WHERE rolname = :name"),
+                        {"name": tenant_role},
+                    )
+                ).scalar_one_or_none()
+                if existing:
+                    await connection.execute(text(f'DROP OWNED BY "{tenant_role}"'))
+                    await connection.execute(text(f'DROP ROLE "{tenant_role}"'))
+        await engine.dispose()
+
+
+@pytest.mark.postgres_integration
+@pytest.mark.asyncio
+async def test_plant_claim_unique_refuses_second_tenant_despite_rls() -> None:
+    """O UNIQUE de ``provider_plant_claims`` vale também para linhas que o RLS esconde.
+
+    O inquilino B não enxerga a reserva do inquilino A, mas o índice único do
+    PostgreSQL enxerga: o INSERT de B para o mesmo (família, serial) falha.
+    """
+    url = os.getenv("MPLACAS_TEST_POSTGRES_URL")
+    if not url:
+        pytest.skip("MPLACAS_TEST_POSTGRES_URL is required")
+
+    suffix = uuid.uuid4().hex
+    tenant_role = f"mplacas_claim_tenant_{suffix}"
+    org_a, org_b = uuid.uuid4(), uuid.uuid4()
+    plant_a, plant_b = uuid.uuid4(), uuid.uuid4()
+    serial = f"claim-{suffix}"
+    roles_created = False
+    engine = create_async_engine(url, pool_size=1, max_overflow=0)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    insert_claim = text(
+        "INSERT INTO provider_plant_claims (id, plant_id, provider_family, serial_number) "
+        "VALUES (:id, :plant_id, 'GROWATT', :serial)"
+    )
+
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(text(f'CREATE ROLE "{tenant_role}" NOLOGIN'))
+            roles_created = True
+            await connection.execute(
+                text(f'GRANT "{tenant_role}" TO CURRENT_USER WITH SET TRUE')
+            )
+            await connection.execute(
+                text(f'GRANT USAGE ON SCHEMA public TO "{tenant_role}"')
+            )
+            await connection.execute(
+                text(
+                    "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public "
+                    f'TO "{tenant_role}"'
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO organizations (id, name, slug, active) VALUES "
+                    "(:org_a, 'Claim A', :slug_a, true), "
+                    "(:org_b, 'Claim B', :slug_b, true)"
+                ),
+                {
+                    "org_a": org_a,
+                    "org_b": org_b,
+                    "slug_a": f"claim-a-{suffix}",
+                    "slug_b": f"claim-b-{suffix}",
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO plants (id, organization_id, name, timezone) VALUES "
+                    "(:plant_a, :org_a, 'Plant A', 'America/Sao_Paulo'), "
+                    "(:plant_b, :org_b, 'Plant B', 'America/Sao_Paulo')"
+                ),
+                {"plant_a": plant_a, "org_a": org_a, "plant_b": plant_b, "org_b": org_b},
+            )
+
+        # Inquilino A reserva a usina física.
+        async with factory() as session:
+            await _set_local_role(session, tenant_role)
+            await set_tenant_context(session, org_a)
+            await session.execute(
+                insert_claim, {"id": uuid.uuid4(), "plant_id": plant_a, "serial": serial}
+            )
+            await session.commit()
+
+        # Inquilino B não enxerga a reserva de A e não consegue reservar a mesma usina.
+        async with factory() as session:
+            await _set_local_role(session, tenant_role)
+            await set_tenant_context(session, org_b)
+            visible = await session.execute(
+                text("SELECT count(*) FROM provider_plant_claims WHERE serial_number = :serial"),
+                {"serial": serial},
+            )
+            assert visible.scalar_one() == 0
+            with pytest.raises(IntegrityError):
+                await session.execute(
+                    insert_claim, {"id": uuid.uuid4(), "plant_id": plant_b, "serial": serial}
+                )
             await session.rollback()
     finally:
         async with engine.begin() as connection:

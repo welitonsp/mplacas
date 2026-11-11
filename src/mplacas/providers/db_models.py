@@ -71,3 +71,34 @@ class ProviderAccountRecord(Base):
             f"ProviderAccountRecord(id={self.id}, plant_id={self.plant_id}, "
             f"provider={self.provider}, active={self.active})"
         )
+
+
+class ProviderPlantClaimRecord(Base):
+    """Reserva de uma usina física do fabricante por uma usina do Mplacas.
+
+    Gravada na hora da conexão. A restrição UNIQUE ``(provider_family,
+    serial_number)`` vale para todas as linhas, inclusive as que o RLS esconde
+    do inquilino que está inserindo; assim o banco recusa a segunda
+    organização, mesmo em conexões simultâneas. ``provider_family`` agrupa
+    variantes do mesmo fabricante (ex.: ``GROWATT`` para GROWATT e
+    GROWATT_TOKEN). Reserva removida junto com a usina (CASCADE).
+    """
+
+    __tablename__ = "provider_plant_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_family",
+            "serial_number",
+            name="uq_provider_plant_claims_family_serial",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    plant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("plants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    provider_family: Mapped[str] = mapped_column(String(40), nullable=False)
+    serial_number: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

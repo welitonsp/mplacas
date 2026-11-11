@@ -34,6 +34,10 @@ LATER_RLS_MIGRATIONS = {
     / "versions"
     / "20261029_0051_add_provider_accounts.py",
     "meter_readings": ROOT / "migrations" / "versions" / "20261102_0054_add_meter_readings.py",
+    "provider_plant_claims": ROOT
+    / "migrations"
+    / "versions"
+    / "20261111_0055_add_provider_plant_claims.py",
 }
 
 

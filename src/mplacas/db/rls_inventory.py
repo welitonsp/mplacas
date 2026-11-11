@@ -37,6 +37,8 @@ RLS_TABLES: dict[str, RlsTable] = {
     "provider_accounts": RlsTable(RlsScope.PLANT, "plant_id"),
     # Criada na 20261102_0054 com a política por usina (ADR-098).
     "meter_readings": RlsTable(RlsScope.PLANT, "plant_id"),
+    # Criada na 20261111_0055 com a política por usina (reserva de usina do fabricante).
+    "provider_plant_claims": RlsTable(RlsScope.PLANT, "plant_id"),
     "pipeline_executions": RlsTable(RlsScope.PLANT, "plant_id"),
     "report_export_tasks": RlsTable(RlsScope.PLANT, "plant_id"),
     "seasonal_pv_baseline_results": RlsTable(RlsScope.PLANT, "plant_id"),
