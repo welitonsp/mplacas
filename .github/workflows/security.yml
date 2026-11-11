@@ -15,12 +15,23 @@ jobs:
   codeql:
     runs-on: ubuntu-latest
     steps:
+      # A análise do CodeQL só é gratuita em repositório público. Em privado
+      # (sem GitHub Code Security) o envio do resultado falha; por isso os
+      # passos são pulados e o job fica verde.
+      - name: Visibilidade do repositório
+        id: repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "private=$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.repo.outputs.private != 'true'
       - name: Initialize CodeQL
+        if: steps.repo.outputs.private != 'true'
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           languages: python,javascript-typescript
       - name: Analyze
+        if: steps.repo.outputs.private != 'true'
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
 
   secret-scan:
