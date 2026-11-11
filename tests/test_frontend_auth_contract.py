@@ -115,6 +115,12 @@ def test_canonical_contract_and_cloudflare_headers_are_complete() -> None:
         any(line.startswith(required) for line in header_lines)
         for required in required_headers
     )
+    # geolocation=(self): o botão "Usar a localização deste aparelho" da tela de
+    # cadastro da usina precisa da API; `()` a bloquearia até para o próprio site.
+    assert (
+        "Permissions-Policy: camera=(), microphone=(), geolocation=(self), payment=()"
+        in header_lines
+    )
     assert "connect-src 'self' https:;" not in headers
     # A origem da API no CSP e a origem que o cliente HTTP chama vêm da MESMA
     # variável (VITE_API_URL), resolvida no build por

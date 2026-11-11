@@ -270,6 +270,48 @@ describe('PlantSetupPage — o cliente informa os dados da usina', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('não tem permissão')
   })
+
+  it('"Usar a localização deste aparelho" preenche latitude e longitude com vírgula decimal', async () => {
+    vi.resetModules()
+    installApiMock()
+    const getCurrentPosition = vi.fn((success: PositionCallback) =>
+      success({ coords: { latitude: -17.74321, longitude: -48.62987 } } as GeolocationPosition),
+    )
+    Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition }, configurable: true })
+
+    try {
+      await renderPage()
+      await screen.findByText('0 de 7 itens informados')
+      fireEvent.click(screen.getByRole('button', { name: 'Usar a localização deste aparelho' }))
+
+      expect(await screen.findByText('Localização preenchida. Confira e salve.')).toBeInTheDocument()
+      expect(screen.getByLabelText('Latitude')).toHaveValue('-17,74321')
+      expect(screen.getByLabelText('Longitude')).toHaveValue('-48,62987')
+    } finally {
+      Reflect.deleteProperty(navigator, 'geolocation')
+    }
+  })
+
+  it('"Usar a localização deste aparelho" negada mostra a mensagem de erro e não preenche os campos', async () => {
+    vi.resetModules()
+    installApiMock()
+    const getCurrentPosition = vi.fn((_success: PositionCallback, failure?: PositionErrorCallback | null) =>
+      failure?.({ code: 1, message: 'denied' } as GeolocationPositionError),
+    )
+    Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition }, configurable: true })
+
+    try {
+      await renderPage()
+      await screen.findByText('0 de 7 itens informados')
+      fireEvent.click(screen.getByRole('button', { name: 'Usar a localização deste aparelho' }))
+
+      expect(await screen.findByText(/Não foi possível obter a localização/)).toBeInTheDocument()
+      expect(screen.getByLabelText('Latitude')).toHaveValue('')
+      expect(screen.getByLabelText('Longitude')).toHaveValue('')
+    } finally {
+      Reflect.deleteProperty(navigator, 'geolocation')
+    }
+  })
 })
 
 describe('PlantSetupPage — dados estimados na conexão (ADR-093 § 7)', () => {
