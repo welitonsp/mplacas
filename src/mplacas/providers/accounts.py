@@ -10,16 +10,17 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.core.secret_box import SealedSecret, SecretBox, SecretBoxError
 from mplacas.db.models import Plant
-from mplacas.providers.db_models import ProviderAccountRecord
+from mplacas.providers.db_models import ProviderAccountRecord, ProviderPlantClaimRecord
 
 NEPVIEWER = "NEPVIEWER"
 GROWATT = "GROWATT"
@@ -27,6 +28,7 @@ GROWATT = "GROWATT"
 # no lugar da senha; o "login" é derivado no servidor (nunca é o token).
 GROWATT_TOKEN = "GROWATT_TOKEN"
 SUPPORTED_PROVIDERS = frozenset({NEPVIEWER, GROWATT, GROWATT_TOKEN})
+_GROWATT_FAMILY = frozenset({GROWATT, GROWATT_TOKEN})
 _MAX_LOGIN = 254
 _MAX_PASSWORD = 256
 _MAX_FAILURE_CODE = 80
@@ -38,6 +40,13 @@ class ProviderAccountError(ValueError):
 
 class ProviderAccountConflictError(ProviderAccountError):
     """A mesma conta do fabricante já está ligada a outra usina."""
+
+
+class ProviderPlantClaimConflictError(ProviderAccountConflictError):
+    """Alguma usina física do fabricante já está reservada por outra usina.
+
+    A mensagem é fixa: o texto do erro do banco traz o número de série.
+    """
 
 
 class ProviderAccountNotFoundError(ProviderAccountError):
@@ -53,6 +62,11 @@ class ProviderLogin:
 
     def __repr__(self) -> str:
         return f"ProviderLogin(login={mask_login(self.login)!r}, password=<hidden>)"
+
+
+def provider_family(provider: str) -> str:
+    """Família da marca: senha e token da Growatt leem as mesmas usinas físicas."""
+    return "GROWATT" if provider in _GROWATT_FAMILY else provider
 
 
 def normalize_login(login: str) -> str:
@@ -144,9 +158,14 @@ class ProviderAccountService:
         plant_id: uuid.UUID,
         provider: str,
         credentials: ProviderLogin,
+        serials: Sequence[str],
         now: datetime | None = None,
     ) -> ProviderAccountRecord:
-        """Cria ou substitui a conexão da usina. Recusa a conta de outra usina."""
+        """Cria ou substitui a conexão da usina e reserva as usinas físicas que a conta enxerga.
+
+        ``serials`` é obrigatório para nenhuma entrada esquecer a reserva (ADR-100); vazio
+        é válido (nada a reservar). Recusa a conta de outra usina e usina física de outra usina.
+        """
         _validate(provider, credentials)
         plant = await self._session.get(Plant, plant_id)
         if plant is None:
@@ -185,7 +204,34 @@ class ProviderAccountService:
         record.last_failure_at = None
         record.last_failure_code = None
         await self._flush_or_conflict()
+        await self._replace_claims(plant_id, provider, serials)
         return record
+
+    async def _replace_claims(
+        self, plant_id: uuid.UUID, provider: str, serials: Sequence[str]
+    ) -> None:
+        """Troca as reservas da usina. A corrida perdida (unique) vira erro sem o texto do banco."""
+        await self._release_claims(plant_id)
+        family = provider_family(provider)
+        for serial in dict.fromkeys(serials):
+            self._session.add(
+                ProviderPlantClaimRecord(
+                    plant_id=plant_id, provider_family=family, serial_number=serial
+                )
+            )
+        try:
+            async with self._session.begin_nested():
+                await self._session.flush()
+        except IntegrityError:
+            # Nunca repassar o erro do banco: o DETAIL traz o número de série.
+            raise ProviderPlantClaimConflictError(
+                "a provider plant is already claimed by another plant"
+            ) from None
+
+    async def _release_claims(self, plant_id: uuid.UUID) -> None:
+        await self._session.execute(
+            delete(ProviderPlantClaimRecord).where(ProviderPlantClaimRecord.plant_id == plant_id)
+        )
 
     async def _flush_or_conflict(self) -> None:
         """Converte a corrida perdida (unique) em erro de domínio, sem parâmetros."""
@@ -209,6 +255,7 @@ class ProviderAccountService:
         record.key_version = None
         record.account_fingerprint = None
         record.deactivated_at = now or datetime.now(UTC)
+        await self._release_claims(plant_id)
         await self._session.flush()
         return record
 

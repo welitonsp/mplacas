@@ -43,15 +43,16 @@ from mplacas.db.models import Device, MeterReading, Plant
 from mplacas.db.session import SessionFactory
 from mplacas.db.tenant_context import set_platform_context, set_principal_context
 from mplacas.providers.accounts import (
-    GROWATT,
     GROWATT_TOKEN,
     NEPVIEWER,
+    SUPPORTED_PROVIDERS,
     ProviderAccountConflictError,
     ProviderAccountError,
     ProviderAccountNotFoundError,
     ProviderAccountService,
     ProviderLogin,
-    SUPPORTED_PROVIDERS,
+    ProviderPlantClaimConflictError,
+    provider_family,
 )
 from mplacas.organizations.db_models import OrganizationRecord
 from mplacas.plants.autofill import fill_plant_from_profile, locate_profile
@@ -69,7 +70,7 @@ from mplacas.providers.base import (
     ProviderBlockedError,
     ProviderError,
 )
-from mplacas.providers.db_models import ProviderAccountRecord
+from mplacas.providers.db_models import ProviderAccountRecord, ProviderPlantClaimRecord
 from mplacas.core.config import get_settings
 from mplacas.providers.factory import ENERGY_SOURCES, build_client
 from mplacas.providers.growatt.openapi import GrowattOpenApiClient
@@ -153,9 +154,11 @@ def _token_login(credentials: ProviderLogin) -> ProviderLogin:
     """Login de uma conexão por token (ADR-094): identificador aleatório, nunca o token.
 
     O token não passa por hash nenhum (nem para impressão digital). A mesma
-    usina Growatt em duas usinas do MPlacas é barrada pelos aparelhos
-    ``GW-PLANT-<id>`` (``_inverter_in_another_plant``), que conferem senha e
-    token juntos. Na tela aparece mascarado ("to***3f").
+    usina Growatt em duas usinas do MPlacas é barrada pelas reservas de
+    ``provider_plant_claims``, gravadas na conexão (ADR-100), e pelos aparelhos
+    ``GW-PLANT-<id>`` (``_inverter_in_another_plant``), depois da coleta; as
+    duas conferências tratam senha e token como uma família só. Na tela
+    aparece mascarado ("to***3f").
     """
     return ProviderLogin(login=f"token-{secrets.token_hex(8)}", password=credentials.password)
 
@@ -401,8 +404,15 @@ async def put_provider_account(request: Request, scoped: AdminPlantPath) -> Prov
         service = ProviderAccountService(session, box)
         try:
             record = await service.save(
-                plant_id=scoped.plant_id, provider=provider, credentials=credentials
+                plant_id=scoped.plant_id,
+                provider=provider,
+                credentials=credentials,
+                serials=serials,
             )
+        except ProviderPlantClaimConflictError:
+            await session.rollback()
+            await refuse("provider_inverter_in_another_plant")
+            raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant") from None
         except ProviderAccountConflictError:
             await session.rollback()
             await refuse("provider_account_in_use")
@@ -508,8 +518,15 @@ async def connect_first_plant(
         service = ProviderAccountService(session, box)
         try:
             record = await service.save(
-                plant_id=plant.id, provider=provider, credentials=credentials
+                plant_id=plant.id,
+                provider=provider,
+                credentials=credentials,
+                serials=inspection.serials,
             )
+        except ProviderPlantClaimConflictError:
+            await session.rollback()
+            await refuse("provider_inverter_in_another_plant")
+            raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant") from None
         except ProviderAccountConflictError:
             await session.rollback()
             await refuse("provider_account_in_use")
@@ -756,8 +773,15 @@ async def confirm_first_plant(
         service = ProviderAccountService(session, box)
         try:
             record = await service.save(
-                plant_id=plant.id, provider=ticket.provider, credentials=ticket.credentials
+                plant_id=plant.id,
+                provider=ticket.provider,
+                credentials=ticket.credentials,
+                serials=ticket.serials,
             )
+        except ProviderPlantClaimConflictError:
+            await session.rollback()
+            await refuse(ticket.provider, "provider_inverter_in_another_plant")
+            raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant") from None
         except ProviderAccountConflictError:
             await session.rollback()
             await refuse(ticket.provider, "provider_account_in_use")
@@ -857,9 +881,6 @@ async def _enforce_verify_limit(
         raise _error(status.HTTP_429_TOO_MANY_REQUESTS, "provider_verify_rate_limited")
 
 
-_GROWATT_FAMILY = {GROWATT, GROWATT_TOKEN}
-
-
 async def _inverter_in_another_plant(
     provider: str, serials: list[str], plant_id: uuid.UUID | None
 ) -> bool:
@@ -872,14 +893,24 @@ async def _inverter_in_another_plant(
         await set_platform_context(session)
         # As duas formas de conectar a Growatt (senha e token) leem as mesmas
         # usinas (``GW-PLANT-<id>``): conferem juntas.
-        family = _GROWATT_FAMILY if provider in _GROWATT_FAMILY else {provider}
+        family = provider_family(provider)
+        members = sorted(p for p in SUPPORTED_PROVIDERS if provider_family(p) == family)
         query = select(Device.id).where(
-            Device.provider.in_(sorted(family)), Device.serial_number.in_(serials)
+            Device.provider.in_(members), Device.serial_number.in_(serials)
         )
         if plant_id is not None:
             query = query.where(Device.plant_id != plant_id)
-        taken = await session.scalar(query.limit(1))
-    return taken is not None
+        if await session.scalar(query.limit(1)) is not None:
+            return True
+        # Reservas da conexão (ADR-100): valem antes da primeira coleta. Recusa
+        # cedo; a restrição UNIQUE de ``provider_plant_claims`` é a barreira real.
+        claims = select(ProviderPlantClaimRecord.id).where(
+            ProviderPlantClaimRecord.provider_family == family,
+            ProviderPlantClaimRecord.serial_number.in_(serials),
+        )
+        if plant_id is not None:
+            claims = claims.where(ProviderPlantClaimRecord.plant_id != plant_id)
+        return await session.scalar(claims.limit(1)) is not None
 
 
 async def _audit_refusal(

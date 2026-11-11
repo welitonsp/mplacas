@@ -98,6 +98,7 @@ async def _connect(factory, plant_id: uuid.UUID, login: str, provider: str = NEP
             plant_id=plant_id,
             provider=provider,
             credentials=ProviderLogin(login=login, password=f"senha-{login}"),
+            serials=[],
         )
         await session.commit()
 

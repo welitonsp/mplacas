@@ -102,6 +102,7 @@ async def _connect(factory) -> None:
             plant_id=PLANT_ID,
             provider=NEPVIEWER,
             credentials=ProviderLogin(login="operador", password="segredo-da-usina"),
+            serials=[],
         )
         await session.commit()
 
