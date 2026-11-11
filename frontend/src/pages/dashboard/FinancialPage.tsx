@@ -41,7 +41,7 @@ const ExpansionSection = lazy(() =>
 // `financialReturn` (ROI/payback), `investor` (usina × CDI) e, dentro de
 // `BillsSection`, faturas pendentes e meses a recalcular.
 export function FinancialPage() {
-  const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
+  const { plantId, plants, loading: plantsLoading, error: plantsError, reload: reloadPlants } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
   // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
   const headingRef = useModuleTitle('Dinheiro')
@@ -103,7 +103,7 @@ export function FinancialPage() {
     return (
       <RetryableError
         message={plantsError}
-        onRetry={() => window.location.reload()}
+        onRetry={reloadPlants}
         className="mb-6"
       />
     )

@@ -62,7 +62,7 @@ import { DASHBOARD_FINANCIAL_PATH } from '../../routes'
 const NO_CYCLE = 'NO_CYCLE'
 
 export function OverviewPage() {
-  const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
+  const { plantId, plants, loading: plantsLoading, error: plantsError, reload: reloadPlants } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
   // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
   const headingRef = useModuleTitle('Início')
@@ -144,7 +144,7 @@ export function OverviewPage() {
   }
 
   if (plantsError) {
-    return <RetryableError message={plantsError} onRetry={() => window.location.reload()} className="mb-6" />
+    return <RetryableError message={plantsError} onRetry={reloadPlants} className="mb-6" />
   }
 
   // Organização sem nenhuma usina cadastrada (`count == 0`, ADR-069, seção 7):

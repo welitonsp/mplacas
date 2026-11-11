@@ -91,7 +91,7 @@ function topLossCandidate(losses: PhotovoltaicLossItem[] | null): PhotovoltaicLo
 // Sem o toggle expandir/colapsar que `TechnicalPerformanceSection` tinha
 // antes desta etapa: a rota já é a divulgação progressiva.
 export function TechnicalPage() {
-  const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
+  const { plantId, plants, loading: plantsLoading, error: plantsError, reload: reloadPlants } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
   // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
   const headingRef = useModuleTitle('Detalhes técnicos')
@@ -129,7 +129,7 @@ export function TechnicalPage() {
     return (
       <RetryableError
         message={plantsError}
-        onRetry={() => window.location.reload()}
+        onRetry={reloadPlants}
         className="mb-6"
       />
     )
