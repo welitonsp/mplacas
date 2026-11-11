@@ -44,9 +44,9 @@ async def run_climate_history(
     provider: ClimateProvider,
     maximum_days: int,
 ) -> list[str]:
-    """Busca e grava o clima de cada usina; devolve as falhas (usina e bloco)."""
+    """Busca e grava o clima de cada usina; devolve as falhas (id da usina e bloco)."""
     failures: list[str] = []
-    for plant_id, plant_name in plants:
+    for plant_id, _plant_name in plants:
         for chunk_start, chunk_end in climate_chunks(start, end, maximum_days):
             try:
                 async with SessionFactory() as session:
@@ -74,5 +74,6 @@ async def run_climate_history(
                     "climate_history_chunk_failed",
                     extra={"plant_id": str(plant_id), "start_date": chunk_start.isoformat()},
                 )
-                failures.append(f"{plant_name} {chunk_start}..{chunk_end}")
+                # Só o id: o nome da usina é texto livre do cliente e o log do job é público.
+                failures.append(f"{plant_id} {chunk_start}..{chunk_end}")
     return failures

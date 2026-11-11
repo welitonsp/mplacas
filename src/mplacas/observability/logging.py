@@ -23,6 +23,32 @@ _STANDARD_FIELDS = frozenset(logging.makeLogRecord({}).__dict__) | {
 _EXCEPTION_TEXT_FORMATTER = logging.Formatter()
 
 
+def _qualified_name(exc: BaseException) -> str:
+    cls = type(exc)
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
+def exception_class_summary(exc: BaseException) -> str:
+    """Classe da exceção e a da causa raiz (``__cause__``/``__context__``), sem texto."""
+    seen = {id(exc)}
+    root = exc
+    while True:
+        if root.__cause__ is not None:
+            nxt = root.__cause__
+        elif root.__context__ is not None and not root.__suppress_context__:
+            nxt = root.__context__
+        else:
+            break
+        if id(nxt) in seen:
+            break
+        seen.add(id(nxt))
+        root = nxt
+    summary = _qualified_name(exc)
+    if root is not exc:
+        summary += f" (root cause: {_qualified_name(root)})"
+    return summary
+
+
 class SecretRedactionFilter(logging.Filter):
     """Redact known secrets (e.g. Telegram bot tokens) from log records.
 
@@ -37,6 +63,10 @@ class SecretRedactionFilter(logging.Filter):
     ``str()`` embeds the offending URL — e.g. ``httpx.HTTPStatusError``.
     """
 
+    def __init__(self, *, exception_detail: bool = True) -> None:
+        super().__init__()
+        self._exception_detail = exception_detail
+
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.msg, str):
             record.msg = redact_secrets(record.msg)
@@ -47,7 +77,17 @@ class SecretRedactionFilter(logging.Filter):
                 }
             else:
                 record.args = tuple(self._redact_arg(arg) for arg in record.args)
-        if record.exc_info:
+        if not self._exception_detail and (record.exc_info or record.exc_text):
+            # Log público (jobs no GitHub Actions): a mensagem e o traceback de
+            # asyncpg/SQLAlchemy/httpx trazem host, SQL e valores. Só as classes.
+            exc = record.exc_info[1] if record.exc_info else None
+            record.exc_text = (
+                exception_class_summary(exc)
+                if exc is not None
+                else "exception (details omitted)"
+            )
+            record.exc_info = None
+        elif record.exc_info:
             # Render the traceback ourselves (traceback.print_exception,
             # via logging.Formatter.formatException, walks the full
             # __cause__/__context__ chain) *before* any handler formatter
@@ -125,9 +165,14 @@ def configure_logging(
     level: str,
     service_name: str,
     structured: bool,
+    public: bool = False,
 ) -> None:
+    """``public=True`` (jobs, log público): registros com exceção só levam as classes.
+
+    Na API (log privado) o padrão ``False`` mantém o traceback completo.
+    """
     handler = logging.StreamHandler(sys.stdout)
-    handler.addFilter(SecretRedactionFilter())
+    handler.addFilter(SecretRedactionFilter(exception_detail=not public))
     if structured:
         handler.setFormatter(
             StructuredJsonFormatter(service_name=service_name)

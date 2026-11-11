@@ -38,9 +38,11 @@ async def drain_report_exports(*, batch_size: int = 10) -> ExportDrainResult:
             await _process_task(task_id)
             completed += 1
         except Exception as exc:
+            # Só o tipo: este log sai no Actions (público). O texto completo
+            # fica em error_message, no banco.
             logger.error(
                 "report_export_task_failed",
-                extra={"task_id": str(task_id), "error": str(exc)},
+                extra={"task_id": str(task_id), "error_code": type(exc).__name__},
             )
             await _fail_task(task_id, error_message=str(exc))
             failed += 1
@@ -128,5 +130,5 @@ async def _fail_task(task_id: uuid.UUID, *, error_message: str) -> None:
     except Exception as exc:
         logger.error(
             "report_export_task_fail_record_failed",
-            extra={"task_id": str(task_id), "error": str(exc)},
+            extra={"task_id": str(task_id), "error_code": type(exc).__name__},
         )
