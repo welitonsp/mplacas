@@ -170,6 +170,61 @@ const BUDGETS = [
     // passos (conectar, leitura, revisar e salvar). Carregado só por conta sem
     // usina, uma vez na vida do cliente. Medido: 4,41 kB.
   },
+  // -------------------------------------------------------------------------
+  // CHUNKS COMPARTILHADOS GRANDES E ESTÁVEIS (2026-11-11). Moravam na coletora
+  // e ocupavam 24,4 dos 44,8 kB dela, o que a deixava com 0,16 kB de folga:
+  // qualquer hook/componente compartilhado novo quebraria o CI, e a única saída
+  // à vista era subir o teto da coletora (esconder crescimento). Nomeá-los tira
+  // da coletora o que NÃO é novo, e ela volta a medir só o que é.
+  //
+  // Regra de margem destas quatro linhas (e da coletora, ver abaixo): medido
+  // por este script + 5%, arredondado para cima ao próximo 0,25 kB. É menor que
+  // a folga das rotas (~20-60%) de propósito: estes chunks não ganham código de
+  // feature, só crescem por mudança consciente (nova rota no `App`, novo
+  // endpoint no `api`, novo item de navegação no layout, upgrade do
+  // react-router). Se um deles estourar, é para discutir, não para subir o teto.
+  // Medido em 2026-11-11 (build limpo da main).
+  {
+    // Núcleo do react-router. O Rollup nomeia os dois chunks compartilhados com
+    // o nome do primeiro módulo de cada um (`components` vem de
+    // `react-router/.../lib/components.js`, `lib` de `.../dom/lib.js`) — NÃO
+    // são código do projeto, apesar do nome. Nome instável por natureza: um
+    // upgrade do react-router pode renomeá-los ou fundi-los. Se isso
+    // acontecer, o `match` deixa de achar arquivo e a linha vira AUSENTE (falha
+    // de propósito, ver topo): reajuste o regex olhando o `dist/assets/`.
+    // O regex exige o hash de exatamente 8 caracteres do Vite, para não casar
+    // um `lib-foo-<hash>.js` qualquer. Um chunk do projeto que o Rollup venha
+    // a nomear `lib`/`components` cairia aqui e estouraria este teto — o
+    // aviso de estouro lista os arquivos, e aí se separa. Não fixei os nomes
+    // com `manualChunks`: medido, isso adiciona 1 requisição e +0,3 kB na
+    // primeira carga da landing e +2,3 kB gzip no total (ver commit).
+    // medido: 10,59 (components) + 3,44 (lib) = 14,02 kB
+    name: 'react-router (components-* + lib-*)',
+    match: /^(components|lib)-[A-Za-z0-9_-]{8}\.js$/,
+    limitKb: 14.75,
+  },
+  {
+    // Casca do dashboard (cabeçalho, navegação, seletor de usina), carregada
+    // por toda rota autenticada. medido: 4,40 kB
+    name: 'DashboardLayout',
+    match: /^DashboardLayout-.*\.js$/,
+    limitKb: 4.75,
+  },
+  {
+    // Roteador do app (`App.tsx`) com os providers de Auth/Me e o
+    // `ProtectedRoute`; baixado em toda visita logo após o entry. Cresce a
+    // cada rota nova. medido: 3,18 kB
+    name: 'App (rotas + providers)',
+    match: /^App-.*\.js$/,
+    limitKb: 3.5,
+  },
+  {
+    // Cliente HTTP, sessão (`auth.ts`) e `env.ts`. Cresce a cada endpoint
+    // novo. medido: 2,77 kB
+    name: 'api (cliente HTTP + sessão)',
+    match: /^api-.*\.js$/,
+    limitKb: 3,
+  },
   {
     // Página pública (`PublicHomePage`), entrou depois deste gate e por isso
     // não tinha categoria. JS e CSS juntos porque é uma superfície só, e
@@ -196,8 +251,16 @@ const BUDGETS = [
 // própria — a decisão vira explícita em vez de silenciosa.
 const CATCH_ALL = {
   name: 'demais chunks (soma)',
-  limitKb: 45,
-  // medido em 2026-08-14: ~34,3 kB somando tudo que não casa com as regras
+  limitKb: 21.5,
+  // Teto de 45 para 21,5 kB em 2026-11-11, junto com as quatro categorias
+  // nomeadas acima (react-router, DashboardLayout, App, api), que saíram daqui.
+  // Medido: 44,84 kB antes (folga 0,16) → 20,46 kB agora (folga 1,04, regra de
+  // margem de 5% descrita acima). Soma de todos os tetos: 277 → 279,5 kB (+2,5, a folga que antes era 0,16 virou ~2,7 distribuída).
+  // O que sobra aqui é o que a descrição acima sempre quis medir: contratos,
+  // utilitários, ícones e componentes pequenos compartilhados. Crescimento
+  // novo agora consome a folga DESTA linha e fica visível.
+  //
+  // Histórico — medido em 2026-08-14: ~34,3 kB somando tudo que não casa com as regras
   // acima. Teto com folga deliberada, não espelho da medição.
   //
   // Teto revisado de 42 para 45 kB em 2026-10-31 (ADR-093, entrada de
