@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import {
   deviceDailyStatusPayload,
   jsonResponse,
@@ -244,5 +244,29 @@ describe('TechnicalPage — módulo Técnico (ADR-072, Etapa 2)', () => {
     // `DashboardPage` para este recurso: o erro vira estado de
     // indisponibilidade por bloco, nunca um alerta na tela.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('quando /plants falha, "Tentar novamente" busca a lista de usinas de novo, sem recarregar a página (a sessão vive só em memória)', async () => {
+    vi.resetModules()
+    const fetchPlants = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Falha ao buscar usinas.'))
+      .mockResolvedValue([singlePlant])
+    installApiMock({ fetchPlants })
+    const reload = vi.fn()
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...originalLocation, reload } })
+
+    try {
+      await renderTechnicalPage()
+      fireEvent.click(await screen.findByRole('button', { name: 'Tentar novamente' }))
+
+      await waitFor(() => expect(fetchPlants).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument())
+      expect(await screen.findByRole('heading', { name: 'Detalhes técnicos' })).toBeInTheDocument()
+      expect(reload).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
   })
 })

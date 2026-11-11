@@ -65,7 +65,7 @@ function fallbackPvSummary(plantId: string): PhotovoltaicSummaryResponse {
 // `LatestDailyProductionCard`, na mesma composição/ordem que tinham em
 // `DashboardPage.tsx` antes desta etapa.
 export function ProductionPage() {
-  const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
+  const { plantId, plants, loading: plantsLoading, error: plantsError, reload: reloadPlants } = usePlant()
   // `document.title`/foco por rota (ADR-072, Etapa 6) — ver `useModuleTitle`.
   // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
   const headingRef = useModuleTitle('Energia')
@@ -164,7 +164,7 @@ export function ProductionPage() {
     return (
       <RetryableError
         message={plantsError}
-        onRetry={() => window.location.reload()}
+        onRetry={reloadPlants}
         className="mb-6"
       />
     )

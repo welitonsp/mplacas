@@ -611,3 +611,29 @@ describe('PlantSetupPage — buscar dados da usina na marca (ADR-094)', () => {
     await waitFor(() => expect(fetchPlantSetup).toHaveBeenCalledTimes(2))
   })
 })
+
+describe('PlantSetupPage — falha ao carregar as usinas', () => {
+  it('"Tentar novamente" busca a lista de usinas de novo, sem recarregar a página (a sessão vive só em memória)', async () => {
+    vi.resetModules()
+    const resolved = installApiMock()
+    const fetchPlants = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Falha ao buscar usinas.'))
+      .mockResolvedValue([singlePlant])
+    vi.doMock('../../lib/api', () => ({ ...resolved, fetchPlants, configureApi: vi.fn() }))
+    const reload = vi.fn()
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...originalLocation, reload } })
+
+    try {
+      await renderPage()
+      fireEvent.click(await screen.findByRole('button', { name: 'Tentar novamente' }))
+
+      await waitFor(() => expect(fetchPlants).toHaveBeenCalledTimes(2))
+      expect(await screen.findByText('0 de 7 itens informados')).toBeInTheDocument()
+      expect(reload).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
+  })
+})

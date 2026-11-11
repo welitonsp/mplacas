@@ -284,4 +284,28 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
     }
   })
+
+  it('quando /plants falha, "Tentar novamente" busca a lista de usinas de novo, sem recarregar a página (a sessão vive só em memória)', async () => {
+    vi.resetModules()
+    const fetchPlants = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Falha ao buscar usinas.'))
+      .mockResolvedValue([singlePlant])
+    installApiMock({ fetchPlants })
+    const reload = vi.fn()
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...originalLocation, reload } })
+
+    try {
+      await renderFinancialPage()
+      fireEvent.click(await screen.findByRole('button', { name: 'Tentar novamente' }))
+
+      await waitFor(() => expect(fetchPlants).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument())
+      expect(await screen.findByRole('heading', { name: 'Dinheiro' })).toBeInTheDocument()
+      expect(reload).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
+  })
 })

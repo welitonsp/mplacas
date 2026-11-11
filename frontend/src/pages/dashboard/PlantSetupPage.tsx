@@ -721,7 +721,7 @@ function BillsStatus({ setup }: { setup: PlantSetup }) {
 }
 
 export function PlantSetupPage() {
-  const { plantId, plants, loading: plantsLoading, error: plantsError } = usePlant()
+  const { plantId, plants, loading: plantsLoading, error: plantsError, reload: reloadPlants } = usePlant()
   const headingRef = useModuleTitle('Minha usina')
   // Remonta os formulários quando os dados relidos na marca chegam.
   const pendingProfileRef = useRef(false)
@@ -742,7 +742,7 @@ export function PlantSetupPage() {
 
   if (plantsLoading) return <MetricCardSkeletonGrid />
   if (plantsError) {
-    return <RetryableError message={plantsError} onRetry={() => window.location.reload()} className="mb-6" />
+    return <RetryableError message={plantsError} onRetry={reloadPlants} className="mb-6" />
   }
   if (!plantId || plants.length === 0) {
     return (
