@@ -1,0 +1,40 @@
+# Relatório somente leitura: a mesma usina Growatt conectada por mais de uma
+# organização (ver docs do plano de reserva de usina).
+#
+# Só manual. Não grava nada, não decifra credencial e não chama a marca.
+# O repositório é público e o log deste job também: por isso roda com
+# --totals-only e mostra APENAS a contagem por regra — nunca usina,
+# organização ou número de série. Havendo caso, o detalhe é consultado fora
+# do Actions.
+name: provider-claims-report
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: provider-claims-report
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  relatorio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MPLACAS_ENVIRONMENT: production
+      PYTHONPATH: ${{ github.workspace }}/src
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements.lock
+      - name: Contar casos por regra
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+        run: python -m mplacas.cloud_jobs provider-claims-report --totals-only

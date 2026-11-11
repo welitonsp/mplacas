@@ -206,6 +206,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="fail when the daily pipeline ledger is absent, delayed, stuck or failed",
     )
     watchdog.set_defaults(handler=_handle_operational_watchdog)
+
+    claims = subparsers.add_parser(
+        "provider-claims-report",
+        help="read-only report of Growatt plants claimed by more than one connection",
+    )
+    claims.add_argument(
+        "--totals-only",
+        action="store_true",
+        help="print only the count per rule (no plant, organization or serial)",
+    )
+    claims.set_defaults(handler=_handle_provider_claims_report)
     return parser
 
 
@@ -374,6 +385,35 @@ def _handle_daily_digest(args: argparse.Namespace) -> int:
 def _handle_operational_watchdog(_args: argparse.Namespace) -> int:
     asyncio.run(run_operational_watchdog())
     return 0
+
+
+def _handle_provider_claims_report(args: argparse.Namespace) -> int:
+    # Relatório, não verificação: sai 0 com ou sem achados.
+    try:
+        text = asyncio.run(run_provider_claims_report(totals_only=args.totals_only))
+    except Exception as exc:
+        if not args.totals_only:
+            raise
+        # Log público (GitHub Actions): só o tipo do erro. A mensagem de uma
+        # falha de conexão traz o endereço do banco.
+        print(f"error: {type(exc).__name__}")
+        return 1
+    print(text)
+    return 0
+
+
+async def run_provider_claims_report(
+    *, now: datetime | None = None, totals_only: bool = False
+) -> str:
+    """Somente leitura; nunca decifra credencial nem chama API de fabricante."""
+    from mplacas.providers.claims_report import build_claims_report, render_claims_report
+
+    async with SessionFactory() as session:
+        await set_platform_context(session)
+        report = await build_claims_report(
+            session, now=(lambda: now) if now is not None else (lambda: datetime.now(UTC))
+        )
+    return render_claims_report(report, totals_only=totals_only)
 
 
 async def run_operational_watchdog(*, now: datetime | None = None) -> None:
