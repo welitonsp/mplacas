@@ -69,6 +69,12 @@ def provider_family(provider: str) -> str:
     return "GROWATT" if provider in _GROWATT_FAMILY else provider
 
 
+def family_members(provider: str) -> list[str]:
+    """Todas as marcas da mesma família (inclui ``provider``), em ordem estável."""
+    family = provider_family(provider)
+    return sorted({p for p in SUPPORTED_PROVIDERS | {provider} if provider_family(p) == family})
+
+
 def normalize_login(login: str) -> str:
     return login.strip()
 
