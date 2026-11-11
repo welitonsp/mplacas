@@ -743,3 +743,23 @@ def test_invitation_purpose_migration_matches_orm() -> None:
     assert column.nullable is False
     assert 'server_default="INVITE"' in source
     assert 'drop_column("user_invitations", "purpose")' in source
+
+
+def test_provider_plant_claims_migration_matches_orm() -> None:
+    from mplacas.providers.db_models import ProviderPlantClaimRecord
+
+    source = (
+        ROOT / "migrations" / "versions" / "20261111_0055_add_provider_plant_claims.py"
+    ).read_text(encoding="utf-8")
+    table = ProviderPlantClaimRecord.__table__
+    constraint_names = {constraint.name for constraint in table.constraints}
+
+    assert 'revision = "20261111_0055"' in source
+    assert 'down_revision = "20261102_0054"' in source
+    assert "uq_provider_plant_claims_family_serial" in constraint_names
+    assert "uq_provider_plant_claims_family_serial" in source
+    assert table.c.serial_number.type.length == 120
+    assert table.c.provider_family.nullable is False
+    assert 'ondelete="CASCADE"' in source
+    assert "FORCE ROW LEVEL SECURITY" in source
+    assert "drop_table(TABLE)" in source

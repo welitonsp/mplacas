@@ -33,7 +33,7 @@ from mplacas.tariffs import db_models as _tariff_models  # noqa: F401
 def test_every_application_table_has_exactly_one_rls_classification() -> None:
     assert classified_application_tables() == frozenset(Base.metadata.tables)
     assert not (frozenset(RLS_TABLES) & PUBLIC_REFERENCE_TABLES)
-    assert len(RLS_TABLES) == 26
+    assert len(RLS_TABLES) == 27
 
 
 def test_public_reference_tables_carry_no_tenant_ownership_column() -> None:
