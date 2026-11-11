@@ -756,3 +756,193 @@ async def test_plant_claim_for_another_tenants_plant_is_refused_by_rls() -> None
                     await connection.execute(text(f'DROP OWNED BY "{tenant_role}"'))
                     await connection.execute(text(f'DROP ROLE "{tenant_role}"'))
         await engine.dispose()
+
+
+@pytest.mark.postgres_integration
+@pytest.mark.asyncio
+async def test_claims_backfill_in_platform_context_inserts_for_all_tenants() -> None:
+    """O preenchimento (contexto de plataforma) grava reserva de usinas de inquilinos
+    diferentes e conta, sem levantar, o serial já reservado por outra usina.
+
+    NÃO foi executado localmente (os testes locais rodam em SQLite); roda no job
+    ``postgres-integration`` do CI.
+    """
+    from mplacas.providers.claims_report import backfill_claims
+
+    url = os.getenv("MPLACAS_TEST_POSTGRES_URL")
+    if not url:
+        pytest.skip("MPLACAS_TEST_POSTGRES_URL is required")
+
+    suffix = uuid.uuid4().hex
+    platform_role = f"mplacas_fill_platform_{suffix}"
+    platform_marker = "mplacas_platform"
+    org_a, org_b = uuid.uuid4(), uuid.uuid4()
+    plant_a, plant_b, plant_c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    s_a, s_b, s_conflict = (f"GW-PLANT-fill-{n}-{suffix}" for n in ("a", "b", "x"))
+    marker_created = False
+    roles_created = False
+    engine = create_async_engine(url, pool_size=1, max_overflow=0)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def claims_for(session) -> dict[str, uuid.UUID]:
+        rows = await session.execute(
+            text(
+                "SELECT serial_number, plant_id FROM provider_plant_claims "
+                "WHERE serial_number = ANY(:serials)"
+            ),
+            {"serials": [s_a, s_b, s_conflict]},
+        )
+        return {row.serial_number: row.plant_id for row in rows.all()}
+
+    try:
+        async with engine.begin() as connection:
+            marker_created = not bool(
+                (
+                    await connection.execute(
+                        text("SELECT to_regrole(:role_name) IS NOT NULL"),
+                        {"role_name": platform_marker},
+                    )
+                ).scalar_one()
+            )
+            if marker_created:
+                await connection.execute(text(f'CREATE ROLE "{platform_marker}" NOLOGIN'))
+            await connection.execute(text(f'CREATE ROLE "{platform_role}" NOLOGIN'))
+            roles_created = True
+            await connection.execute(
+                text(f'GRANT "{platform_role}" TO CURRENT_USER WITH SET TRUE')
+            )
+            await connection.execute(text(f'GRANT "{platform_marker}" TO "{platform_role}"'))
+            await connection.execute(
+                text(f'GRANT USAGE ON SCHEMA public TO "{platform_role}"')
+            )
+            await connection.execute(
+                text(
+                    "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public "
+                    f'TO "{platform_role}"'
+                )
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO organizations (id, name, slug, active) VALUES "
+                    "(:org_a, 'Fill A', :slug_a, true), (:org_b, 'Fill B', :slug_b, true)"
+                ),
+                {
+                    "org_a": org_a,
+                    "org_b": org_b,
+                    "slug_a": f"fill-a-{suffix}",
+                    "slug_b": f"fill-b-{suffix}",
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO plants (id, organization_id, name, timezone) VALUES "
+                    "(:plant_a, :org_a, 'Fill A', 'America/Sao_Paulo'), "
+                    "(:plant_b, :org_b, 'Fill B', 'America/Sao_Paulo'), "
+                    "(:plant_c, :org_b, 'Fill C', 'America/Sao_Paulo')"
+                ),
+                {
+                    "plant_a": plant_a,
+                    "plant_b": plant_b,
+                    "plant_c": plant_c,
+                    "org_a": org_a,
+                    "org_b": org_b,
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO devices (id, plant_id, provider, serial_number) VALUES "
+                    "(:d1, :plant_a, 'GROWATT_TOKEN', :s_a), "
+                    "(:d2, :plant_b, 'GROWATT', :s_b), "
+                    "(:d3, :plant_a, 'GROWATT_TOKEN', :s_x)"
+                ),
+                {
+                    "d1": uuid.uuid4(),
+                    "d2": uuid.uuid4(),
+                    "d3": uuid.uuid4(),
+                    "plant_a": plant_a,
+                    "plant_b": plant_b,
+                    "s_a": s_a,
+                    "s_b": s_b,
+                    "s_x": s_conflict,
+                },
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO provider_accounts "
+                    "(id, plant_id, provider, login_hint, account_fingerprint, "
+                    "ciphertext, key_version, active) VALUES "
+                    "(:a1, :plant_a, 'GROWATT_TOKEN', 'a***', :fp_a, '\\x01', 1, true), "
+                    "(:a2, :plant_b, 'GROWATT', 'b***', :fp_b, '\\x02', 1, true)"
+                ),
+                {
+                    "a1": uuid.uuid4(),
+                    "a2": uuid.uuid4(),
+                    "plant_a": plant_a,
+                    "plant_b": plant_b,
+                    "fp_a": f"fill-a-{suffix}",
+                    "fp_b": f"fill-b-{suffix}",
+                },
+            )
+            # Reserva antiga do serial em disputa, em nome de outra usina (sem conexão).
+            await connection.execute(
+                text(
+                    "INSERT INTO provider_plant_claims (id, plant_id, provider_family, "
+                    "serial_number) VALUES (:id, :plant_c, 'GROWATT', :s_x)"
+                ),
+                {"id": uuid.uuid4(), "plant_c": plant_c, "s_x": s_conflict},
+            )
+
+        async with factory() as session:
+            await _set_local_role(session, platform_role)
+            await set_platform_context(session)
+            result = await backfill_claims(session)
+            await session.commit()
+
+        assert (plant_a, "GROWATT", s_conflict) in {
+            (c.plant_id, c.provider_family, c.serial_number) for c in result.conflicts
+        }
+        async with factory() as session:
+            await _set_local_role(session, platform_role)
+            await set_platform_context(session)
+            assert await claims_for(session) == {
+                s_a: plant_a,
+                s_b: plant_b,
+                s_conflict: plant_c,
+            }
+
+        # Idempotente: a segunda execução não cria nada para estas usinas.
+        async with factory() as session:
+            await _set_local_role(session, platform_role)
+            await set_platform_context(session)
+            again = await backfill_claims(session)
+            await session.commit()
+            assert await claims_for(session) == {
+                s_a: plant_a,
+                s_b: plant_b,
+                s_conflict: plant_c,
+            }
+        assert again.already_present >= result.already_present + 2
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("DELETE FROM plants WHERE id = ANY(:ids)"),
+                {"ids": [plant_a, plant_b, plant_c]},
+            )
+            await connection.execute(
+                text("DELETE FROM organizations WHERE id = ANY(:ids)"),
+                {"ids": [org_a, org_b]},
+            )
+            existing_roles = set(
+                (
+                    await connection.execute(
+                        text("SELECT rolname FROM pg_roles WHERE rolname = ANY(:names)"),
+                        {"names": [platform_role, platform_marker]},
+                    )
+                ).scalars()
+            )
+            if roles_created and platform_role in existing_roles:
+                await connection.execute(text(f'DROP OWNED BY "{platform_role}"'))
+                await connection.execute(text(f'DROP ROLE "{platform_role}"'))
+            if marker_created and platform_marker in existing_roles:
+                await connection.execute(text(f'DROP ROLE IF EXISTS "{platform_marker}"'))
+        await engine.dispose()

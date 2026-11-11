@@ -19,12 +19,18 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.audit.db_models import AuditEventRecord
 from mplacas.db.models import Device, Plant
-from mplacas.providers.accounts import GROWATT, GROWATT_TOKEN
-from mplacas.providers.db_models import ProviderAccountRecord
+from mplacas.providers.accounts import (
+    GROWATT,
+    GROWATT_TOKEN,
+    NEPVIEWER,
+    provider_family,
+)
+from mplacas.providers.db_models import ProviderAccountRecord, ProviderPlantClaimRecord
 
 GROWATT_FAMILY = frozenset({GROWATT, GROWATT_TOKEN})
 DEFAULT_SUSPECT_AFTER = timedelta(hours=48)
@@ -240,4 +246,151 @@ def render_claims_report(report: ClaimsReport, *, totals_only: bool = False) -> 
         f"aparelhos_growatt={report.growatt_devices_read}"
     )
     lines.append("Total por regra: " + ", ".join(f"{r}={report.count(r)}" for r in RULES))
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Preenchimento das reservas (ADR-100): só INSERE. Nunca apaga nem altera
+# reserva, conexão, aparelho ou usina.
+# ---------------------------------------------------------------------------
+
+# Marcas em que o ``Device.serial_number`` gravado na coleta é a mesma noção do
+# que a conferência da conexão entrega a ``ProviderAccountService.save(serials=)``:
+# as duas vêm de ``client.list_devices()`` (``GW-PLANT-<id>`` na Growatt, número
+# de série do inversor na NEPViewer; ``collection.py`` grava o Device com o
+# ``remote.serial_number`` da mesma lista). Marca fora desta lista é ignorada
+# em vez de adivinhada.
+BACKFILL_PROVIDERS = frozenset({NEPVIEWER, GROWATT, GROWATT_TOKEN})
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimConflict:
+    plant_id: uuid.UUID
+    provider_family: str
+    serial_number: str
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimsBackfillResult:
+    created: int = 0
+    already_present: int = 0
+    conflicts: tuple[ClaimConflict, ...] = ()
+    # Aparelhos de usina com conexão ativa que não foram reservados: de outra
+    # família que a da conexão, ou de marca fora de ``BACKFILL_PROVIDERS``.
+    ignored: int = 0
+    # Conexões ativas sem nenhum aparelho da própria família: a coleta ainda
+    # não criou aparelho, então não há o que reservar aqui. São as mais
+    # expostas — a reserva delas só nasce quando reconectarem.
+    without_device: int = 0
+
+
+async def backfill_claims(session: AsyncSession) -> ClaimsBackfillResult:
+    """Cria a reserva das conexões ativas a partir dos ``Device`` da própria usina.
+
+    Contexto de plataforma definido por quem chama; **não faz commit**. Cada
+    INSERT roda em savepoint: um conflito não desfaz os demais. O texto do
+    erro do banco (traz o serial e o nome da restrição) nunca é guardado.
+    Idempotente: a segunda execução só encontra reservas já existentes.
+    """
+    accounts = list(
+        await session.scalars(
+            select(ProviderAccountRecord)
+            .where(ProviderAccountRecord.active.is_(True))
+            .order_by(ProviderAccountRecord.plant_id)
+        )
+    )
+    devices = (
+        await session.execute(select(Device.plant_id, Device.provider, Device.serial_number))
+    ).all()
+    existing = {
+        (row.provider_family, row.serial_number): row.plant_id
+        for row in (
+            await session.execute(
+                select(
+                    ProviderPlantClaimRecord.provider_family,
+                    ProviderPlantClaimRecord.serial_number,
+                    ProviderPlantClaimRecord.plant_id,
+                )
+            )
+        ).all()
+    }
+
+    # Quem possui cada (família, serial) por aparelho, em TODAS as usinas: se
+    # mais de uma, é duplicata antiga e nenhuma é reservada às cegas.
+    holders: dict[tuple[str, str], set[uuid.UUID]] = defaultdict(set)
+    by_plant: dict[uuid.UUID, list[tuple[str, str]]] = defaultdict(list)
+    for plant_id, provider, serial in devices:
+        key = (provider_family(provider), serial)
+        holders[key].add(plant_id)
+        by_plant[plant_id].append(key)
+
+    created = 0
+    already = 0
+    ignored = 0
+    without_device = 0
+    conflicts: list[ClaimConflict] = []
+    seen: set[tuple[uuid.UUID, str, str]] = set()
+
+    for account in accounts:
+        plant_devices = by_plant.get(account.plant_id, [])
+        if account.provider not in BACKFILL_PROVIDERS:
+            ignored += len(plant_devices)
+            continue
+        family = provider_family(account.provider)
+        if not any(device_family == family for device_family, _ in plant_devices):
+            without_device += 1
+        for device_family, serial in plant_devices:
+            if device_family != family:
+                ignored += 1
+                continue
+            triple = (account.plant_id, family, serial)
+            if triple in seen:
+                continue
+            seen.add(triple)
+            owner = existing.get((family, serial))
+            if owner == account.plant_id:
+                already += 1
+                continue
+            if owner is not None or holders[(family, serial)] != {account.plant_id}:
+                conflicts.append(ClaimConflict(account.plant_id, family, serial))
+                continue
+            try:
+                async with session.begin_nested():
+                    session.add(
+                        ProviderPlantClaimRecord(
+                            plant_id=account.plant_id,
+                            provider_family=family,
+                            serial_number=serial,
+                        )
+                    )
+                    await session.flush()
+            except IntegrityError:
+                # Nunca repassar o erro do banco: o DETAIL traz o número de série.
+                conflicts.append(ClaimConflict(account.plant_id, family, serial))
+                continue
+            existing[(family, serial)] = account.plant_id
+            created += 1
+
+    return ClaimsBackfillResult(
+        created=created,
+        already_present=already,
+        conflicts=tuple(conflicts),
+        ignored=ignored,
+        without_device=without_device,
+    )
+
+
+def render_backfill(result: ClaimsBackfillResult, *, totals_only: bool = False) -> str:
+    """Linha de totais; com detalhe (fora do Actions), usina e serial de cada conflito."""
+    lines = [
+        f"Reservas: criadas={result.created}, ja_existiam={result.already_present}, "
+        f"conflitos={len(result.conflicts)}, ignoradas={result.ignored}, "
+        f"conexoes_sem_aparelho={result.without_device}"
+    ]
+    if not totals_only:
+        for conflict in result.conflicts:
+            lines.append(
+                f"  conflito usina={conflict.plant_id} familia={conflict.provider_family} "
+                f"serial={conflict.serial_number} (duplicata antiga: resolver manualmente)"
+            )
     return "\n".join(lines)
