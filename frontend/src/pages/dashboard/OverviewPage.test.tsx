@@ -372,12 +372,15 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Início' })).toBeInTheDocument()
   })
 
-  it('histórico mensal fora do contrato: ignorado, sem tarefa', async () => {
+  it('histórico mensal fora do contrato: sem tarefa, e nunca "Nada pendente."', async () => {
     freezeToday('2026-09-01T10:00:00')
     await renderHome({ fetchMonthlyProductionHistory: vi.fn(async () => jsonResponse({ cycles: 'x' })) })
 
     const todo = await screen.findByRole('region', { name: 'Precisa de você' })
-    expect(await within(todo).findByText('Nada pendente.')).toBeInTheDocument()
+    expect(
+      await within(todo).findByText('Não foi possível conferir os créditos do último ciclo agora.'),
+    ).toBeInTheDocument()
+    expect(within(todo).queryByText('Nada pendente.')).not.toBeInTheDocument()
   })
 
   it('falha ao ler o cadastro: diz que não conseguiu conferir, nunca "Nada pendente."', async () => {

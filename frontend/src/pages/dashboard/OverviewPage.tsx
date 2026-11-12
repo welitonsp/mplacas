@@ -110,13 +110,15 @@ export function OverviewPage() {
 
   // Só os 2 ciclos mais recentes (créditos não explicados e lembrete da próxima
   // fatura). Extra e opcional: falha ou demora não afeta o resto da tela nem
-  // gera tarefa (`classifyError` nulo: não há mensagem de erro a mostrar), e
-  // fica fora de `loading` para não segurar o botão Atualizar.
-  const recentCycles = usePlantResource<ReturnType<typeof parseHomeCycles>, never>({
+  // gera tarefa nem banner de erro, e fica fora de `loading` para não segurar o
+  // botão Atualizar. Toda falha vira o estado definido 'unavailable' (nunca
+  // fica "carregando" para sempre): a lista não afirma "Nada pendente." sem
+  // ter conferido os créditos.
+  const recentCycles = usePlantResource<ReturnType<typeof parseHomeCycles>, 'unavailable'>({
     plantId,
     fetcher: (id: string) => fetchMonthlyProductionHistory(id, 2),
     parse: parseHomeCycles,
-    classifyError: () => null,
+    classifyError: () => 'unavailable',
   })
 
   const refreshAll = () => {
@@ -148,6 +150,7 @@ export function OverviewPage() {
     today: new Date(),
   })
   const setupStatus = setup.data ? 'ready' : setup.error ? 'error' : 'loading'
+  const historyStatus = recentCycles.data ? 'ready' : recentCycles.error ? 'unavailable' : 'loading'
 
   // A tarefa de diagnóstico crítico abre a lista completa, recolhida no fim.
   const diagnosticsRef = useRef<HTMLDetailsElement>(null)
@@ -251,6 +254,7 @@ export function OverviewPage() {
           <HomeTodoList
             todos={todos}
             setupStatus={setupStatus}
+            historyStatus={historyStatus}
             onOpenDiagnostics={openDiagnostics}
             calmNote={data && cycleLabel ? buildCalmNote(data.current_cycle.quality, cycleLabel) : null}
           />

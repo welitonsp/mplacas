@@ -171,7 +171,7 @@ describe('buildHomeTodos — créditos sem explicação no último ciclo', () =>
     expect(todo).toMatchObject({
       title: 'Registro impossível no ciclo set/26',
       detail:
-        'A distribuidora registrou mais energia enviada à rede do que o inversor produziu. Veja na aba Energia o que conferir.',
+        'O medidor da distribuidora registrou mais envio à rede do que o inversor mediu. Um dos dois está errado. Veja na aba Energia o que conferir.',
       target: 'energy',
     })
   })
@@ -236,6 +236,21 @@ describe('buildHomeTodos — a próxima fatura já deve ter chegado', () => {
       {
         key: 'next-bill',
         title: 'A fatura de outubro já deve ter chegado',
+        detail: 'Envie o PDF para conferir os créditos.',
+        target: 'bills',
+      },
+    ])
+  })
+
+  it('75 dias: ainda fala de uma fatura só', () => {
+    expect(reminder(daysAfterCycleEnd(75))[0].title).toBe('A fatura de outubro já deve ter chegado')
+  })
+
+  it('76 dias (~2 ciclos): fala em faturas, no plural, a partir do mês seguinte', () => {
+    expect(reminder(daysAfterCycleEnd(76))).toEqual([
+      {
+        key: 'next-bill',
+        title: 'Há faturas para enviar desde outubro',
         detail: 'Envie o PDF para conferir os créditos.',
         target: 'bills',
       },

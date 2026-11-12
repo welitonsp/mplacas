@@ -154,6 +154,10 @@ export interface HomeTodo {
 // ciclo de ~30 dias mais a emissão e a entrega da distribuidora.
 export const BILL_REMINDER_AFTER_DAYS = 40
 
+// Acima de 75 dias (~2 ciclos) provavelmente falta mais de uma fatura: o aviso
+// deixa de nomear um único mês e passa a falar em "faturas" (plural).
+export const BILL_REMINDER_PLURAL_AFTER_DAYS = 75
+
 // Resumo mínimo de um ciclo fechado do histórico mensal (`/reports/monthly/history`),
 // só com o que o Início usa. `check` é `null` quando o servidor não conferiu o
 // ciclo — nunca vira "OK".
@@ -187,8 +191,13 @@ function newestFirst(cycles: readonly HomeCycleSummary[]): HomeCycleSummary[] {
   return [...cycles].sort((a, b) => b.referenceMonth.localeCompare(a.referenceMonth))
 }
 
-// Créditos que o servidor não viu na fatura. Só LOSS e IMPOSSIBLE pedem ação
-// do dono (a aba Energia manda conferir com a distribuidora / pedir aferição).
+// Créditos que o servidor não viu na fatura (LOSS) ou inconsistência entre os
+// medidores (IMPOSSIBLE: a distribuidora registrou mais envio do que o inversor
+// mediu — NÃO é crédito faltando, e o erro pode estar em qualquer um dos dois).
+// Só os dois pedem ação do dono (a aba Energia manda conferir com a
+// distribuidora / pedir aferição). A tarefa não tem campo de tom: ambos usam o
+// mesmo ícone e posição; a aba Energia mostra IMPOSSIBLE como "danger", e aqui
+// ele não é mais severo do que isso (nem menos: segue no topo).
 // SUSPECT ("fora do padrão... pode ser o medidor ou mais consumo") é só um
 // aviso explicado lá; OK e UNVERIFIABLE não têm o que fazer.
 function buildCreditsTodo(cycles: readonly HomeCycleSummary[]): HomeTodo | null {
@@ -218,7 +227,7 @@ function buildCreditsTodo(cycles: readonly HomeCycleSummary[]): HomeTodo | null 
       key: 'utility-credits',
       title: `Registro impossível no ciclo ${label}`,
       detail:
-        'A distribuidora registrou mais energia enviada à rede do que o inversor produziu. Veja na aba Energia o que conferir.',
+        'O medidor da distribuidora registrou mais envio à rede do que o inversor mediu. Um dos dois está errado. Veja na aba Energia o que conferir.',
       target: 'energy',
     }
   }
@@ -234,12 +243,22 @@ function buildBillReminder(
 ): HomeTodo | null {
   const latest = newestFirst(cycles)[0]
   if (!latest?.cycleEnd) return null
-  if (daysBetween(latest.cycleEnd, today) <= BILL_REMINDER_AFTER_DAYS) return null
+  const elapsed = daysBetween(latest.cycleEnd, today)
+  if (elapsed <= BILL_REMINDER_AFTER_DAYS) return null
 
   const match = /^(\d{4})-(\d{2})$/.exec(latest.referenceMonth)
   const monthIndex = match ? Number(match[2]) - 1 : -1
   const consistent = monthIndex >= 0 && monthIndex < 12 && latest.cycleEnd.slice(0, 7) === latest.referenceMonth
   const next = consistent ? MONTH_NAMES[(monthIndex + 1) % 12] : null
+
+  if (elapsed > BILL_REMINDER_PLURAL_AFTER_DAYS) {
+    return {
+      key: 'next-bill',
+      title: next ? `Há faturas para enviar desde ${next}` : 'Há faturas para enviar',
+      detail: 'Envie o PDF para conferir os créditos.',
+      target: 'bills',
+    }
+  }
 
   return {
     key: 'next-bill',

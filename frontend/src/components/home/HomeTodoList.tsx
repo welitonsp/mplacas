@@ -27,17 +27,21 @@ function RowContent({ todo, icon: Icon }: { todo: HomeTodo; icon: LucideIcon }) 
 }
 
 // "Precisa de você" (ADR-083): só tarefas com ação concreta.
-// - "Nada pendente." só quando o cadastro foi de fato lido: falha ao ler não
-//   vira "zero pendências" (indisponível nunca é zero).
+// - "Nada pendente." só quando o cadastro E o histórico mensal (créditos do
+//   último ciclo) foram de fato lidos: falha ou espera não viram "zero
+//   pendências" (indisponível nunca é zero). Enquanto o histórico carrega, a
+//   lista fica só com o título (mesma apresentação de quando o cadastro carrega).
 // - Diagnóstico crítico abre a lista completa, que mora no próprio Início.
 export function HomeTodoList({
   todos,
   setupStatus,
+  historyStatus,
   calmNote,
   onOpenDiagnostics,
 }: {
   todos: readonly HomeTodo[]
   setupStatus: 'ready' | 'loading' | 'error'
+  historyStatus: 'ready' | 'loading' | 'unavailable'
   calmNote: string | null
   onOpenDiagnostics: () => void
 }) {
@@ -65,11 +69,17 @@ export function HomeTodoList({
         </ul>
       )}
 
-      {todos.length === 0 && setupStatus === 'ready' && (
+      {todos.length === 0 && setupStatus === 'ready' && historyStatus === 'ready' && (
         <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5">
           <ClipboardCheck aria-hidden="true" className="h-5 w-5 shrink-0 text-[var(--color-success-text)]" />
           <p className="text-sm font-semibold text-[var(--color-text-primary)]">Nada pendente.</p>
         </div>
+      )}
+
+      {todos.length === 0 && setupStatus !== 'loading' && historyStatus === 'unavailable' && (
+        <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
+          Não foi possível conferir os créditos do último ciclo agora.
+        </p>
       )}
 
       {setupStatus === 'error' && (
