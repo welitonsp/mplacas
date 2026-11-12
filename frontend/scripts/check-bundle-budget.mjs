@@ -226,6 +226,16 @@ const BUDGETS = [
     limitKb: 3,
   },
   {
+    // Texto do veredito "placas × distribuidora" e o leitor do histórico
+    // mensal (`lib/dashboard/utility-check-text.ts`). Compartilhado entre a
+    // aba Energia e a resposta ao confirmar a fatura (aba Dinheiro), de onde
+    // saiu do chunk da ProductionPage (12,73 → 11,22 kB). Só cresce se o
+    // veredito ganhar um caso novo. medido: 2,02 kB (+5%, ao 0,25 kB acima)
+    name: 'veredito da distribuidora (utility-check-text)',
+    match: /^utility-check-text-.*\.js$/,
+    limitKb: 2.25,
+  },
+  {
     // Página pública (`PublicHomePage`), entrou depois deste gate e por isso
     // não tinha categoria. JS e CSS juntos porque é uma superfície só, e
     // porque a landing traz CSS próprio de peso comparável ao script.

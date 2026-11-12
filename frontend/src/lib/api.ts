@@ -255,6 +255,15 @@ export async function fetchFinancialReturn(plantId: string): Promise<Response> {
   return apiFetch(`/energy/financial-return/latest?plant_id=${encodeURIComponent(plantId)}`)
 }
 
+// Análise de UM ciclo pela fatura (`GET /energy/cycles/{bill_id}`): a economia
+// estimada daquele ciclo e, quando não há, o motivo. Usada para responder, logo
+// depois de confirmar a fatura, quanto o ciclo economizou.
+export async function fetchEnergyCycle(plantId: string, billId: string): Promise<Response> {
+  return apiFetch(
+    `/energy/cycles/${encodeURIComponent(billId)}?plant_id=${encodeURIComponent(plantId)}`
+  )
+}
+
 // Histórico de produção por ciclo de faturamento (`GET /reports/monthly/history`).
 // Só devolve ciclos já fechados com fatura confirmada — nunca um ciclo "em curso" —
 // e uma usina sem nenhum ciclo fechado recebe `200` com `cycles: []`, nunca 404.
