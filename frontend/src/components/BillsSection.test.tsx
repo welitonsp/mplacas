@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render as renderBare, screen, waitFor, within } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { MemoryRouter } from 'react-router'
 import { BillsSection } from './BillsSection'
 import * as api from '../lib/api'
+
+// O painel de resposta da confirmação tem link para Energia: precisa de roteador.
+const render = (ui: ReactElement) => renderBare(ui, { wrapper: MemoryRouter })
 
 const pendingBill = {
   id: 'bill-1',
@@ -383,3 +388,183 @@ describe('BillsSection — importar e conferir faturas', () => {
     release(json({ status: 'confirmed', bill: pendingBill }))
   })
 })
+
+describe('BillsSection — resposta no momento da confirmação', () => {
+  const OK_CHECK = {
+    verdict: 'OK',
+    reasons: [],
+    missing_credits_kwh: null,
+    meter_export_kwh: '235.00',
+    previous_balance_kwh: '10.00',
+    credits_used_kwh: '221.00',
+    credit_balance_kwh: '24.00',
+  }
+
+  function history(utilityCheck: Record<string, unknown> | null, billId = 'bill-1') {
+    return json({
+      plant_id: 'plant-1',
+      limit: 24,
+      cycles_returned: 1,
+      cycles: [
+        {
+          reference_month: '2026-09',
+          bill_id: billId,
+          status: 'CONFIRMED',
+          cycle_start: '2026-08-17',
+          cycle_end: '2026-09-14',
+          production_kwh: '300.00',
+          distributor: 'EQUATORIAL_GO',
+          utility_check: utilityCheck,
+        },
+      ],
+    })
+  }
+
+  function cycle(savings: string | null, reason: string | null = null) {
+    return json({
+      bill_id: 'bill-1',
+      indicators: { estimated_savings_brl: savings, savings_unavailable_reason: reason },
+    })
+  }
+
+  async function confirmOne() {
+    vi.spyOn(api, 'fetchPendingBills')
+      .mockResolvedValueOnce(json({ count: 1, items: [pendingBill] }))
+      .mockResolvedValue(json({ count: 0, items: [] }))
+    vi.spyOn(api, 'confirmBill').mockResolvedValue(
+      json({ status: 'confirmed', bill: { ...pendingBill, status: 'CONFIRMED' } }),
+    )
+    render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar fatura' }))
+    return screen.findByRole('status', { name: 'Resultado de set/2026' })
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.spyOn(api, 'fetchSavingsGaps').mockResolvedValue(json({ count: 0, items: [] }))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('OK: mostra o ciclo, a economia estimada, o veredito com a prova e o link para Energia', async () => {
+    vi.spyOn(api, 'fetchEnergyCycle').mockResolvedValue(cycle('48.90'))
+    vi.spyOn(api, 'fetchMonthlyProductionHistory').mockResolvedValue(history(OK_CHECK))
+
+    const panel = await confirmOne()
+
+    await waitFor(() => expect(panel).toHaveTextContent(/Você economizou\s*R\$\s*48,90\s*neste ciclo\./))
+    expect(panel).toHaveTextContent('Ciclo de set/2026')
+    expect(panel).toHaveTextContent('Estimado')
+    expect(panel).toHaveTextContent(
+      'Todo kWh registrado virou crédito: 235 kWh registrados + 10 kWh de saldo anterior; 221 kWh usados e saldo de 24 kWh.',
+    )
+    expect(within(panel).getByRole('link', { name: 'Ver o ciclo' })).toHaveAttribute('href', '/dashboard/energia')
+    expect(panel).toHaveAttribute('aria-live', 'polite')
+    expect(api.fetchEnergyCycle).toHaveBeenCalledWith('plant-1', 'bill-1')
+  })
+
+  it('LOSS: usa a mesma frase da aba Energia, sem afirmar prejuízo confirmado', async () => {
+    vi.spyOn(api, 'fetchEnergyCycle').mockResolvedValue(cycle('48.90'))
+    vi.spyOn(api, 'fetchMonthlyProductionHistory').mockResolvedValue(
+      history({ verdict: 'LOSS', reasons: [], missing_credits_kwh: '12.50', loss_confirmed: false }),
+    )
+
+    const panel = await confirmOne()
+
+    await waitFor(() =>
+      expect(panel).toHaveTextContent(
+        'A fatura não mostra 12,5 kWh nem como abatimento nem como saldo, e não confirma que 100% da geração é desta unidade. Confira com a Equatorial: o crédito pode ter ido para outra unidade do rateio.',
+      ),
+    )
+    expect(panel).not.toHaveTextContent('forte indício de prejuízo')
+  })
+
+  it('UNVERIFIABLE: diz por que não deu para conferir, sem "tudo certo"', async () => {
+    vi.spyOn(api, 'fetchEnergyCycle').mockResolvedValue(cycle('48.90'))
+    vi.spyOn(api, 'fetchMonthlyProductionHistory').mockResolvedValue(
+      history({ verdict: 'UNVERIFIABLE', reasons: ['NO_PREVIOUS_BILL'] }),
+    )
+
+    const panel = await confirmOne()
+
+    await waitFor(() =>
+      expect(panel).toHaveTextContent('Falta a fatura do mês anterior para conferir o saldo de créditos.'),
+    )
+    expect(panel).not.toHaveTextContent('Todo kWh registrado virou crédito')
+  })
+
+  it('histórico sem este ciclo: diz que a conferência ainda não está disponível e não mostra números inventados', async () => {
+    vi.spyOn(api, 'fetchEnergyCycle').mockResolvedValue(cycle(null, 'TARIFF_NOT_AVAILABLE'))
+    vi.spyOn(api, 'fetchMonthlyProductionHistory').mockResolvedValue(history(OK_CHECK, 'outra-fatura'))
+
+    const panel = await confirmOne()
+
+    await waitFor(() =>
+      expect(panel).toHaveTextContent(
+        'A conferência deste ciclo ainda não está disponível. Ela aparece em Energia assim que for calculada.',
+      ),
+    )
+    expect(panel).not.toHaveTextContent('Todo kWh registrado virou crédito')
+    expect(panel).not.toHaveTextContent(/R\$/)
+    expect(within(panel).getByRole('link', { name: 'Ver o ciclo' })).toBeInTheDocument()
+  })
+
+  it('falha no histórico e na economia: nada de números, só o aviso', async () => {
+    vi.spyOn(api, 'fetchEnergyCycle').mockRejectedValue(new Error('rede'))
+    vi.spyOn(api, 'fetchMonthlyProductionHistory').mockResolvedValue(json({ detail: 'erro' }, 500))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const panel = await confirmOne()
+
+    await waitFor(() => expect(panel).toHaveTextContent('A conferência deste ciclo ainda não está disponível.'))
+    expect(panel).toHaveTextContent('Economia ainda não disponível para este ciclo.')
+    expect(panel).not.toHaveTextContent(/R\$/)
+    expect(panel).not.toHaveTextContent('Estimado')
+  })
+
+  it('economia indisponível com motivo: mostra o motivo do servidor, nunca R$ 0', async () => {
+    vi.spyOn(api, 'fetchEnergyCycle').mockResolvedValue(cycle(null, 'TARIFF_NOT_AVAILABLE'))
+    vi.spyOn(api, 'fetchMonthlyProductionHistory').mockResolvedValue(history(OK_CHECK))
+
+    const panel = await confirmOne()
+
+    await waitFor(() =>
+      expect(panel).toHaveTextContent(
+        'Economia estimada ainda não disponível — a fatura deste ciclo não tem a tarifa com impostos registrada.',
+      ),
+    )
+    expect(panel).not.toHaveTextContent(/R\$/)
+    expect(panel).not.toHaveTextContent('Você economizou')
+    expect(panel).not.toHaveTextContent('Estimado')
+  })
+
+  it('confirmar várias de uma vez mostra UM resumo apontando para Energia, sem painel por fatura', async () => {
+    const twoBills = {
+      count: 2,
+      items: [
+        { ...pendingBill, id: 'b1', reference_month: '2024-09' },
+        { ...pendingBill, id: 'b2', reference_month: '2024-10' },
+      ],
+    }
+    vi.spyOn(api, 'fetchPendingBills')
+      .mockResolvedValueOnce(json(twoBills))
+      .mockResolvedValue(json({ count: 0, items: [] }))
+    vi.spyOn(api, 'confirmBill').mockResolvedValue(json({ status: 'confirmed', bill: pendingBill }))
+    const cycleSpy = vi.spyOn(api, 'fetchEnergyCycle')
+    const historySpy = vi.spyOn(api, 'fetchMonthlyProductionHistory')
+
+    render(<BillsSection plantId="plant-1" onConfirmed={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar todas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar 2 faturas' }))
+
+    const summary = await screen.findByRole('status', { name: 'Conferência dos ciclos confirmados' })
+    expect(summary).toHaveTextContent('O veredito dos créditos de cada ciclo confirmado está em Energia.')
+    expect(within(summary).getByRole('link', { name: 'Ver os ciclos' })).toHaveAttribute('href', '/dashboard/energia')
+    expect(screen.queryAllByRole('status', { name: /Resultado de/ })).toHaveLength(0)
+    expect(cycleSpy).not.toHaveBeenCalled()
+    expect(historySpy).not.toHaveBeenCalled()
+  })
+})
+

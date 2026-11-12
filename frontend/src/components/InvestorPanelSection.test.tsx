@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { InvestorPanelSection } from './InvestorPanelSection'
 import { parseInvestorPanel } from '../lib/dashboard/investor-contracts'
@@ -72,5 +72,24 @@ describe('InvestorPanelSection', () => {
     renderSection(investorUnavailablePayload)
     expect(screen.getByText('Informe o valor investido')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Ir para Minha usina' })).toHaveAttribute('href', '/dashboard/minha-usina')
+  })
+
+  it('sem faturas confirmadas, diz que a importação fica no fim da aba e o botão leva até ela', () => {
+    renderSection({ ...investorUnavailablePayload, unavailable_reason: 'NO_CONSOLIDATED_SAVINGS' })
+    expect(screen.getByText(/na seção Faturas de energia, no fim desta página/)).toBeInTheDocument()
+    expect(screen.queryByText(/no topo desta página/)).not.toBeInTheDocument()
+
+    const target = document.createElement('div')
+    target.id = 'faturas'
+    const scroll = vi.fn()
+    target.scrollIntoView = scroll
+    const importButton = document.createElement('button')
+    importButton.id = 'bill-import-button'
+    document.body.append(target, importButton)
+    fireEvent.click(screen.getByRole('button', { name: 'Ir para as faturas' }))
+    expect(scroll).toHaveBeenCalledWith({ block: 'start' })
+    expect(importButton).toHaveFocus()
+    target.remove()
+    importButton.remove()
   })
 })

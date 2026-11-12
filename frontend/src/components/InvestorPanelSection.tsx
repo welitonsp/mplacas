@@ -61,8 +61,9 @@ function UnavailableState({ panel }: { panel: InvestorPanel }) {
       return (
         <EmptyState
           title="Confirme a primeira fatura"
-          description="O retorno usa a economia real das faturas confirmadas a partir do mês seguinte à ligação (a do mês da ligação é de geração parcial). Importe a fatura em PDF no topo desta página."
+          description="O retorno usa a economia real das faturas confirmadas a partir do mês seguinte à ligação (a do mês da ligação é de geração parcial). Importe a fatura em PDF na seção Faturas de energia, no fim desta página."
           tone="brand"
+          action={<GoToBillsButton />}
         />
       )
     default:
@@ -74,6 +75,24 @@ function UnavailableState({ panel }: { panel: InvestorPanel }) {
         />
       )
   }
+}
+
+// As faturas ficam no FIM da aba Dinheiro (`#faturas`, `FinancialPage`). O
+// roteador não rola até a âncora estando na mesma página, então o botão rola e
+// leva o foco ao botão de importar, para teclado e leitor de tela chegarem lá.
+function GoToBillsButton() {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        document.getElementById('faturas')?.scrollIntoView?.({ block: 'start' })
+        document.getElementById('bill-import-button')?.focus({ preventScroll: true })
+      }}
+      className="inline-flex min-h-[44px] items-center rounded-lg bg-[var(--color-brand-primary)] px-4 text-sm font-semibold text-[var(--color-on-brand)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2"
+    >
+      Ir para as faturas
+    </button>
+  )
 }
 
 export function InvestorPanelSection({

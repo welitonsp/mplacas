@@ -13,6 +13,7 @@ import { RetryableError } from './RetryableError'
 import { SectionTitle } from './SectionTitle'
 import { SavingsGapsPanel } from './SavingsGapsPanel'
 import { BulkConfirmBar } from './BulkConfirmBar'
+import { ConfirmedBatchResult, ConfirmedBillResult } from './ConfirmedBillResult'
 
 // Importar e conferir faturas de energia pelo site (fase 2 do plano de
 // inteligência financeira). Fluxo:
@@ -43,6 +44,11 @@ type Feedback = { tone: 'success' | 'info' | 'error'; message: string }
 // Resultado da leitura de um arquivo; `billId` quando ficou uma pendência.
 type ImportOutcome = Feedback & { month?: string; billId?: string; completed?: boolean }
 type BatchItem = ImportOutcome & { fileName: string }
+// Resposta mostrada depois de confirmar: uma fatura (com a resposta do ciclo) ou
+// várias (um resumo só). Guarda a usina para nunca aparecer sob outra.
+type ConfirmedResult =
+  | { kind: 'single'; plantId: string; billId: string; cycleLabel: string }
+  | { kind: 'batch'; plantId: string }
 
 // Um ano e meio de contas por vez: cobre "mandar o ano inteiro" com folga e
 // mantém a leitura sequencial (PDF isolado no servidor) num tempo razoável.
@@ -319,6 +325,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [batch, setBatch] = useState<BatchItem[] | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [confirmedResult, setConfirmedResult] = useState<ConfirmedResult | null>(null)
   const feedbackRef = useRef<HTMLDivElement>(null)
   // O lote pode terminar depois de a tela sair (troca de usina, navegação).
   const mounted = useRef(true)
@@ -383,6 +390,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
       if (files.length === 0) return
       setFeedback(null)
       setBatch(null)
+      setConfirmedResult(null)
       if (files.length > MAX_BATCH_FILES) {
         setFeedback({
           tone: 'error',
@@ -457,6 +465,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
               onChange={handleFile}
             />
             <button
+              id="bill-import-button"
               type="button"
               className={PRIMARY_BUTTON}
               disabled={uploading || bulkBusy}
@@ -489,6 +498,18 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
             {feedback.message}
           </div>
         )}
+
+        {confirmedResult?.plantId === plantId &&
+          (confirmedResult.kind === 'single' ? (
+            <ConfirmedBillResult
+              key={confirmedResult.billId}
+              plantId={plantId}
+              billId={confirmedResult.billId}
+              cycleLabel={confirmedResult.cycleLabel}
+            />
+          ) : (
+            <ConfirmedBatchResult />
+          ))}
 
         {batch && (
           <div className="mt-4 rounded-lg border border-[var(--color-border)] px-3 py-3 text-sm">
@@ -544,6 +565,7 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
                   requestAnimationFrame(() => feedbackRef.current?.focus())
                   pending.refetch()
                   if (confirmed > 0) {
+                    setConfirmedResult({ kind: 'batch', plantId })
                     setGapsReload((value) => value + 1)
                     onConfirmed()
                   }
@@ -560,6 +582,12 @@ export function BillsSection({ plantId, onConfirmed }: { plantId: string; onConf
                   setFeedback({
                     tone: 'success',
                     message: `Fatura de ${monthLabel(updated)} confirmada. Economia e retorno do investimento atualizados.`,
+                  })
+                  setConfirmedResult({
+                    kind: 'single',
+                    plantId,
+                    billId: updated.id,
+                    cycleLabel: monthLabel(updated),
                   })
                   pending.refetch()
                   setGapsReload((value) => value + 1)
