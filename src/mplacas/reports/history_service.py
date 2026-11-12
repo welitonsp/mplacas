@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,7 @@ from mplacas.db.models import Plant
 from mplacas.intelligence.investor_service import (
     calculation_version_tuple,
     commissioning_month,
+    counts_in_savings,
 )
 from mplacas.reports.contract import MonthlyEnergyReport, ReportMetric
 from mplacas.reports.savings_gaps import (
@@ -136,7 +138,24 @@ def _metric_or_absent(metrics: tuple[ReportMetric, ...], key: str) -> str | None
 
 
 def _money(value: Decimal | None) -> str | None:
-    return None if value is None else str(value)
+    """Valor monetário dos campos NOVOS, sempre em notação posicional.
+
+    ``format(..., "f")`` evita ``1E+2``; não arredonda nem quantiza o gravado.
+    """
+    return None if value is None else format(value, "f")
+
+
+def _superseded_by_rebilling(reference_months: list[str]) -> list[bool]:
+    """Por ciclo: ``True`` se outro ciclo do MESMO mês o substitui na janela.
+
+    Regra do refaturamento, a mesma de ``expansion_service`` ("o mais recente
+    do refaturamento vence"): a lista de ciclos vem ordenada por mês e, dentro
+    do mês, por ``created_at`` do snapshot (``list_recent_for_plant``); o ÚLTIMO
+    ciclo de cada mês é o que vale, igual ao ``by_month[month] = cycle`` que
+    sobrescreve na iteração daquele serviço.
+    """
+    last_index = {month: index for index, month in enumerate(reference_months)}
+    return [last_index[month] != index for index, month in enumerate(reference_months)]
 
 
 def _savings_fields(
@@ -174,58 +193,75 @@ def _savings_fields(
     }
 
 
+@dataclass(frozen=True)
+class _CycleFacts:
+    """Fatos do ciclo que alimentam a janela (valores ainda em ``Decimal``)."""
+
+    cycle: dict[str, object]
+    saving: Decimal | None
+    bill_amount: Decimal | None
+    superseded: bool
+    counts: bool
+
+
 def _savings_window(
-    cycles: list[dict[str, object]], *, commissioning_excluded: list[bool]
+    facts: list[_CycleFacts], *, commissioning_known: bool
 ) -> dict[str, object]:
     """Totais da janela, em ``Decimal``, só com o que já está nos ciclos.
 
-    Regras de contagem (``contributing`` = ciclo com economia que entrou na soma):
+    A lista de ciclos devolve TODOS os ciclos; a janela aplica duas regras de
+    dinheiro, as mesmas do painel do investidor e da expansão:
 
-    - ``cycles_in_window``: todos os ciclos devolvidos.
-    - ``cycles_with_savings``: só os que contribuem. O mês de ligação com valor
-      NÃO conta aqui (fica de fora da soma por regra, ADR-079).
-    - ``cycles_without_savings``: ciclos com economia nula (indisponível ou
-      snapshot anterior à métrica), inclusive no mês de ligação.
-    - Logo: in_window = with + without + (1 se o mês de ligação com valor foi excluído).
-    - ``commissioning_month_excluded``: há ciclo no mês de ligação COM valor que
-      ficou fora da soma.
+    - Refaturamento: dois ciclos do mesmo mês ficam na lista, mas só um conta
+      (o mais recente, ver :func:`_superseded_by_rebilling`) — para economia e
+      para o total da fatura.
+    - Mês de ligação (ADR-079): só contam meses ESTRITAMENTE posteriores a ele
+      (:func:`counts_in_savings`). Vale para a economia; o total da fatura
+      inclui esses ciclos (valor de face da fatura, não estimativa).
+
+    Contadores (identidade que sempre vale)::
+
+        cycles_in_window = cycles_with_savings + cycles_without_savings
+                           + cycles_excluded_commissioning
+                           + cycles_superseded_by_rebilling
+
+    - ``cycles_superseded_by_rebilling``: ciclos que perderam para um
+      refaturamento, qualquer que seja o valor (contam só aqui).
+    - Entre os demais: ``cycles_without_savings`` = sem valor de economia;
+      ``cycles_excluded_commissioning`` = com valor, mas mês <= mês de ligação;
+      ``cycles_with_savings`` = com valor e dentro da regra (entram na soma).
+    - ``commissioning_known``: a usina tem data de ligação (e foi lida). Sem
+      ela nada é excluído e os totais seguem calculados.
     - Contadores de tarifa/defasagem olham só os ciclos que contribuem.
-    - Fatura: ``total_bill_amount_brl`` soma todos os ciclos cuja fatura ainda
-      está entre as confirmadas (inclui o mês de ligação: é valor pago, não
-      estimativa); cobertura própria em ``cycles_with_bill_amount``.
-    - Dois ciclos no mesmo mês (refaturamento) são dois ciclos e somam ambos.
+    - ``cycles_with_bill_amount``: cobertura própria do total da fatura (ciclos
+      não substituídos cuja fatura segue entre as confirmadas).
     """
-    contributing: list[dict[str, object]] = []
-    without = 0
-    for cycle, excluded in zip(cycles, commissioning_excluded, strict=True):
-        if cycle["estimated_savings_brl"] is None:
-            without += 1
-        elif not excluded:
-            contributing.append(cycle)
+    kept = [f for f in facts if not f.superseded]
+    contributing = [f for f in kept if f.saving is not None and f.counts]
+    without = sum(1 for f in kept if f.saving is None)
+    excluded = sum(1 for f in kept if f.saving is not None and not f.counts)
     total: Decimal | None = None
     if contributing:
-        total = sum((Decimal(str(c["estimated_savings_brl"])) for c in contributing), Decimal("0"))
-    bill_amounts = [
-        Decimal(str(c["bill_total_amount_brl"]))
-        for c in cycles
-        if c["bill_total_amount_brl"] is not None
-    ]
-    months = [str(c["reference_month"]) for c in contributing]
+        total = sum((f.saving for f in contributing if f.saving is not None), Decimal("0"))
+    bill_amounts = [f.bill_amount for f in kept if f.bill_amount is not None]
+    months = [str(f.cycle["reference_month"]) for f in contributing]
     return {
         "total_estimated_savings_brl": _money(total),
-        "cycles_in_window": len(cycles),
+        "cycles_in_window": len(facts),
         "cycles_with_savings": len(contributing),
         "cycles_without_savings": without,
-        "commissioning_month_excluded": any(commissioning_excluded),
+        "cycles_excluded_commissioning": excluded,
+        "cycles_superseded_by_rebilling": len(facts) - len(kept),
+        "commissioning_known": commissioning_known,
         "first_reference_month": min(months) if months else None,
         "last_reference_month": max(months) if months else None,
         "cycles_with_bill_tariff": sum(
-            1 for c in contributing if c["savings_tariff_source"] == SAVINGS_TARIFF_BILL
+            1 for f in contributing if f.cycle["savings_tariff_source"] == SAVINGS_TARIFF_BILL
         ),
         "cycles_with_outdated_or_partial": sum(
             1
-            for c in contributing
-            if c["savings_gap_cause"]
+            for f in contributing
+            if f.cycle["savings_gap_cause"]
             in (
                 SavingsGapCause.OUTDATED_CALCULATION.value,
                 SavingsGapCause.PARTIAL_PRODUCTION.value,
@@ -269,11 +305,12 @@ async def load_monthly_production_history(
     # sessão/contexto RLS. Fora do escopo ou sem data → None (nada é excluído).
     plant = await session.get(Plant, plant_id) if plant_scope.allows(plant_id) else None
     commissioned_month = commissioning_month(plant.commissioned_on if plant else None)
+    superseded_flags = _superseded_by_rebilling([s.report.reference_month for s in snapshots])
 
     cycles: list[dict[str, object]] = []
-    commissioning_excluded: list[bool] = []
+    facts: list[_CycleFacts] = []
     export_shares: list[Decimal] = []
-    for snapshot in snapshots:
+    for snapshot, superseded in zip(snapshots, superseded_flags, strict=True):
         report = snapshot.report
         bill = bills.get(report.bill_id)
         injection = _metric_value(report.metrics, "injected_kwh")
@@ -323,7 +360,15 @@ async def load_monthly_production_history(
         is_commissioning = (
             None if commissioned_month is None else report.reference_month == commissioned_month
         )
-        commissioning_excluded.append(bool(is_commissioning) and savings_value is not None)
+        facts.append(
+            _CycleFacts(
+                cycle={},  # preenchido abaixo, junto do dict do ciclo
+                saving=savings_value,
+                bill_amount=bill.total_amount_brl if bill else None,
+                superseded=superseded,
+                counts=counts_in_savings(report.reference_month, commissioned_month),
+            )
+        )
         cycles.append(
             {
                 "reference_month": report.reference_month,
@@ -357,15 +402,24 @@ async def load_monthly_production_history(
                 "bill_total_amount_brl": _money(bill.total_amount_brl if bill else None),
                 "bill_public_lighting_brl": _money(bill.public_lighting_brl if bill else None),
                 "is_commissioning_month": is_commissioning,
+                "is_before_commissioning": (
+                    None
+                    if commissioned_month is None
+                    else report.reference_month < commissioned_month
+                ),
+                "superseded_by_rebilling": superseded,
             }
         )
+        facts[-1] = replace(facts[-1], cycle=cycles[-1])
 
     return {
         "plant_id": str(plant_id),
         "limit": limit,
         "cycles_returned": len(cycles),
         "cycles": cycles,
-        "savings_window": _savings_window(cycles, commissioning_excluded=commissioning_excluded),
+        "savings_window": _savings_window(
+            facts, commissioning_known=commissioned_month is not None
+        ),
     }
 
 
