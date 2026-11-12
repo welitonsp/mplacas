@@ -3,6 +3,7 @@ import {
   fetchAnomalyHistory,
   fetchExecutiveDashboard,
   fetchFinancialReturn,
+  fetchMonthlyProductionHistory,
   fetchPlantNow,
   fetchPlantSetup,
 } from '../../lib/api'
@@ -17,6 +18,7 @@ import {
   parseExecutiveDashboard,
 } from '../../lib/dashboard/contracts'
 import { parseFinancialReturn } from '../../lib/dashboard/financial-return-contracts'
+import { parseHomeCycles } from '../../lib/dashboard/home-cycles-contract'
 import { parsePlantSetup } from '../../lib/dashboard/plant-setup-contracts'
 import {
   buildCalmNote,
@@ -56,8 +58,9 @@ import { DASHBOARD_FINANCIAL_PATH } from '../../routes'
 // Energia e Dinheiro; a lista completa de diagnósticos e a evolução do ciclo
 // ficam recolhidas no fim, para quem quiser abrir.
 //
-// Quatro recursos, todos de leitura: executivo, produção diária, retorno do
-// investimento e cadastro da usina (para tarefas pendentes). Falha dos dois
+// Cinco recursos, todos de leitura: executivo, produção diária, retorno do
+// investimento, cadastro da usina (para tarefas pendentes) e os 2 últimos
+// ciclos do histórico mensal (créditos e lembrete de fatura). Falha dos três
 // últimos não derruba a tela: o cartão correspondente só omite a parte.
 const NO_CYCLE = 'NO_CYCLE'
 
@@ -105,7 +108,19 @@ export function OverviewPage() {
     errorMessage: 'Erro ao buscar o cadastro da usina.',
   })
 
+  // Só os 2 ciclos mais recentes (créditos não explicados e lembrete da próxima
+  // fatura). Extra e opcional: falha ou demora não afeta o resto da tela nem
+  // gera tarefa (`classifyError` nulo: não há mensagem de erro a mostrar), e
+  // fica fora de `loading` para não segurar o botão Atualizar.
+  const recentCycles = usePlantResource<ReturnType<typeof parseHomeCycles>, never>({
+    plantId,
+    fetcher: (id: string) => fetchMonthlyProductionHistory(id, 2),
+    parse: parseHomeCycles,
+    classifyError: () => null,
+  })
+
   const refreshAll = () => {
+    recentCycles.refetch()
     executive.refetch()
     anomalies.refetch()
     financialReturn.refetch()
@@ -126,7 +141,12 @@ export function OverviewPage() {
       ? buildUnavailableHomeStatus(anomalies.error)
       : null
   const week = daily ? buildWeekWindow(daily, latestDataDate) : []
-  const todos = buildHomeTodos({ setup: setup.data, diagnostics })
+  const todos = buildHomeTodos({
+    setup: setup.data,
+    diagnostics,
+    recentCycles: recentCycles.data,
+    today: new Date(),
+  })
   const setupStatus = setup.data ? 'ready' : setup.error ? 'error' : 'loading'
 
   // A tarefa de diagnóstico crítico abre a lista completa, recolhida no fim.

@@ -8,8 +8,9 @@
 
 import type { AnomalyDailyPoint, Diagnostic } from './contracts'
 import type { PlantSetup } from './plant-setup-contracts'
+import type { UtilityCheckVerdict } from './monthly-history-contracts'
 import { productionAlertSignal } from './production-alerts'
-import { formatNumber, formatShortDate, toNumber } from '../format'
+import { formatCycleLabel, formatNumber, formatShortDate, toNumber } from '../format'
 
 export type HomeTone = 'success' | 'warning' | 'danger' | 'neutral'
 
@@ -139,7 +140,7 @@ export function buildWeekWindow(
 // tratada pela frase de situação (`buildHomeStatus`).
 const DATA_GAP_DIAGNOSTIC_CODES: ReadonlySet<string> = new Set(['MISSING_DAILY_DATA'])
 
-export type HomeTodoTarget = 'setup' | 'bills' | 'diagnostics'
+export type HomeTodoTarget = 'setup' | 'bills' | 'diagnostics' | 'energy'
 
 export interface HomeTodo {
   key: string
@@ -148,16 +149,128 @@ export interface HomeTodo {
   target: HomeTodoTarget
 }
 
+// Dias após o FIM do último ciclo confirmado a partir dos quais a próxima
+// fatura "já deve ter chegado". Decisão do dono (12/11/2026): 40 dias cobre o
+// ciclo de ~30 dias mais a emissão e a entrega da distribuidora.
+export const BILL_REMINDER_AFTER_DAYS = 40
+
+// Resumo mínimo de um ciclo fechado do histórico mensal (`/reports/monthly/history`),
+// só com o que o Início usa. `check` é `null` quando o servidor não conferiu o
+// ciclo — nunca vira "OK".
+export interface HomeCycleSummary {
+  referenceMonth: string
+  cycleEnd: string | null
+  check: {
+    verdict: UtilityCheckVerdict
+    missingCreditsKwh: number | null
+    lossConfirmed: boolean
+  } | null
+}
+
+const MONTH_NAMES = [
+  'janeiro',
+  'fevereiro',
+  'março',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro',
+]
+
+// Mais recente primeiro; `referenceMonth` ("AAAA-MM") ordena como texto.
+function newestFirst(cycles: readonly HomeCycleSummary[]): HomeCycleSummary[] {
+  return [...cycles].sort((a, b) => b.referenceMonth.localeCompare(a.referenceMonth))
+}
+
+// Créditos que o servidor não viu na fatura. Só LOSS e IMPOSSIBLE pedem ação
+// do dono (a aba Energia manda conferir com a distribuidora / pedir aferição).
+// SUSPECT ("fora do padrão... pode ser o medidor ou mais consumo") é só um
+// aviso explicado lá; OK e UNVERIFIABLE não têm o que fazer.
+function buildCreditsTodo(cycles: readonly HomeCycleSummary[]): HomeTodo | null {
+  const latest = newestFirst(cycles).find((cycle) => cycle.check != null)
+  const check = latest?.check
+  if (!latest || !check) return null
+  const label = formatCycleLabel(latest.referenceMonth)
+
+  if (check.verdict === 'LOSS') {
+    // Sem número (ausente ou não positivo), diz sem número: nunca "0 kWh".
+    const amount =
+      check.missingCreditsKwh != null && check.missingCreditsKwh > 0
+        ? `${formatNumber(check.missingCreditsKwh, 2)} kWh`
+        : null
+    const shown = amount
+      ? `A fatura não mostra ${amount} nem como abatimento nem como saldo.`
+      : 'A fatura não mostra todo kWh registrado nem como abatimento nem como saldo.'
+    return {
+      key: 'utility-credits',
+      title: check.lossConfirmed ? `Créditos faltando no ciclo ${label}` : `Créditos sem explicação no ciclo ${label}`,
+      detail: `${shown} Veja na aba Energia o que conferir.`,
+      target: 'energy',
+    }
+  }
+  if (check.verdict === 'IMPOSSIBLE') {
+    return {
+      key: 'utility-credits',
+      title: `Registro impossível no ciclo ${label}`,
+      detail:
+        'A distribuidora registrou mais energia enviada à rede do que o inversor produziu. Veja na aba Energia o que conferir.',
+      target: 'energy',
+    }
+  }
+  return null
+}
+
+// "A fatura de <mês> já deve ter chegado": o mês é o do ciclo seguinte ao
+// último confirmado (referência + 1). Só afirma o mês se a referência
+// concordar com a data de fim do ciclo; senão a frase fica sem mês.
+function buildBillReminder(
+  cycles: readonly HomeCycleSummary[],
+  today: Date,
+): HomeTodo | null {
+  const latest = newestFirst(cycles)[0]
+  if (!latest?.cycleEnd) return null
+  if (daysBetween(latest.cycleEnd, today) <= BILL_REMINDER_AFTER_DAYS) return null
+
+  const match = /^(\d{4})-(\d{2})$/.exec(latest.referenceMonth)
+  const monthIndex = match ? Number(match[2]) - 1 : -1
+  const consistent = monthIndex >= 0 && monthIndex < 12 && latest.cycleEnd.slice(0, 7) === latest.referenceMonth
+  const next = consistent ? MONTH_NAMES[(monthIndex + 1) % 12] : null
+
+  return {
+    key: 'next-bill',
+    title: next ? `A fatura de ${next} já deve ter chegado` : 'A próxima fatura já deve ter chegado',
+    detail: 'Envie o PDF para conferir os créditos.',
+    target: 'bills',
+  }
+}
+
 // O que precisa do dono, em ordem de importância. Só entra o que tem ação
 // concreta para ele fazer; o resto fica explicado onde o dado aparece.
+//
+// Ordem: créditos não explicados (o achado mais valioso, vai primeiro) →
+// cadastro → faturas pendentes → diagnósticos críticos → lembrete da próxima
+// fatura (rotina, por último). `recentCycles`/`today` são opcionais: sem
+// histórico (ausente, falho ou vazio) nenhuma das duas tarefas novas aparece.
 export function buildHomeTodos({
   setup,
   diagnostics,
+  recentCycles = null,
+  today = null,
 }: {
   setup: PlantSetup | null
   diagnostics: readonly Diagnostic[]
+  recentCycles?: readonly HomeCycleSummary[] | null
+  today?: Date | null
 }): HomeTodo[] {
   const todos: HomeTodo[] = []
+
+  const credits = recentCycles ? buildCreditsTodo(recentCycles) : null
+  if (credits) todos.push(credits)
 
   if (setup && setup.completed < setup.total) {
     const missing = setup.total - setup.completed
@@ -196,6 +309,14 @@ export function buildHomeTodos({
       // A lista completa de diagnósticos mora no próprio Início (recolhida).
       target: 'diagnostics',
     })
+  }
+
+  // Precisa do cadastro lido (sem fatura pendente) e de ao menos um ciclo
+  // confirmado: sem nenhum, o item "Primeira fatura confirmada" do cadastro
+  // já pede a primeira fatura.
+  if (recentCycles && recentCycles.length > 0 && today && setup && setup.pendingBills === 0) {
+    const reminder = buildBillReminder(recentCycles, today)
+    if (reminder) todos.push(reminder)
   }
 
   return todos

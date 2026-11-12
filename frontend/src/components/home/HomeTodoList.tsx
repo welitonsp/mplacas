@@ -1,14 +1,16 @@
 import { Link } from 'react-router'
-import { ChevronRight, ClipboardCheck, FileText, OctagonAlert, Settings2, type LucideIcon } from 'lucide-react'
+import { ChevronRight, ClipboardCheck, FileText, OctagonAlert, Scale, Settings2, type LucideIcon } from 'lucide-react'
 import type { HomeTodo } from '../../lib/dashboard/home'
-import { DASHBOARD_FINANCIAL_PATH, DASHBOARD_SETUP_PATH } from '../../routes'
+import { DASHBOARD_FINANCIAL_PATH, DASHBOARD_PRODUCTION_PATH, DASHBOARD_SETUP_PATH } from '../../routes'
 
 const ROW_CLASS =
   'flex min-h-[44px] w-full items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5 text-left transition-colors duration-150 hover:border-[var(--color-gray-300)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none'
 
-const LINK_TARGET: Record<'setup' | 'bills', { to: string; icon: LucideIcon }> = {
+const LINK_TARGET: Record<'setup' | 'bills' | 'energy', { to: string; icon: LucideIcon }> = {
   setup: { to: DASHBOARD_SETUP_PATH, icon: Settings2 },
   bills: { to: `${DASHBOARD_FINANCIAL_PATH}#faturas`, icon: FileText },
+  // A aba Energia não tem âncora para a lista de ciclos: leva à aba.
+  energy: { to: DASHBOARD_PRODUCTION_PATH, icon: Scale },
 }
 
 function RowContent({ todo, icon: Icon }: { todo: HomeTodo; icon: LucideIcon }) {

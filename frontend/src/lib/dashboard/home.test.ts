@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { AnomalyDailyPoint, Diagnostic } from './contracts'
+import type { HomeCycleSummary } from './home'
 import type { PlantSetup } from './plant-setup-contracts'
 import {
+  BILL_REMINDER_AFTER_DAYS,
   STALE_TELEMETRY_DAYS,
   buildCalmNote,
   buildHomeStatus,
@@ -116,6 +118,164 @@ describe('buildHomeTodos (ADR-083)', () => {
 
   it('lacuna de telemetria (MISSING_DAILY_DATA), mesmo CRÍTICA, não vira tarefa do dono', () => {
     expect(buildHomeTodos({ setup: setup(), diagnostics: [diagnostic('CRITICAL', 'MISSING_DAILY_DATA')] })).toEqual([])
+  })
+})
+
+function cycle(overrides: Partial<HomeCycleSummary> = {}): HomeCycleSummary {
+  return { referenceMonth: '2026-09', cycleEnd: '2026-09-14', check: null, ...overrides }
+}
+
+function withCheck(
+  verdict: NonNullable<HomeCycleSummary['check']>['verdict'],
+  extra: Partial<NonNullable<HomeCycleSummary['check']>> = {},
+): HomeCycleSummary['check'] {
+  return { verdict, missingCreditsKwh: null, lossConfirmed: false, ...extra }
+}
+
+// Fim do ciclo 14/09/2026 + N dias, horário local.
+function daysAfterCycleEnd(days: number): Date {
+  return new Date(2026, 8, 14 + days, 9, 0)
+}
+
+describe('buildHomeTodos — créditos sem explicação no último ciclo', () => {
+  const credits = (check: HomeCycleSummary['check']) =>
+    buildHomeTodos({ setup: setup(), diagnostics: [], recentCycles: [cycle({ check })] })
+
+  it('LOSS com kWh: cita ciclo e valor com unidade, sem acusar além do veredito', () => {
+    const todos = credits(withCheck('LOSS', { missingCreditsKwh: 123.456 }))
+    expect(todos).toEqual([
+      {
+        key: 'utility-credits',
+        title: 'Créditos sem explicação no ciclo set/26',
+        detail: 'A fatura não mostra 123,46 kWh nem como abatimento nem como saldo. Veja na aba Energia o que conferir.',
+        target: 'energy',
+      },
+    ])
+  })
+
+  it('LOSS confirmado usa o rótulo "Créditos faltando" da aba Energia', () => {
+    const [todo] = credits(withCheck('LOSS', { missingCreditsKwh: 50, lossConfirmed: true }))
+    expect(todo.title).toBe('Créditos faltando no ciclo set/26')
+  })
+
+  it.each([[null], [0], [-3]])('LOSS sem valor utilizável (%s): diz sem número, nunca "0 kWh"', (kwh) => {
+    const [todo] = credits(withCheck('LOSS', { missingCreditsKwh: kwh }))
+    expect(todo.detail).toBe(
+      'A fatura não mostra todo kWh registrado nem como abatimento nem como saldo. Veja na aba Energia o que conferir.',
+    )
+    expect(todo.detail).not.toMatch(/\d/)
+  })
+
+  it('IMPOSSIBLE vira tarefa, sem número inventado', () => {
+    const [todo] = credits(withCheck('IMPOSSIBLE', { missingCreditsKwh: null }))
+    expect(todo).toMatchObject({
+      title: 'Registro impossível no ciclo set/26',
+      detail:
+        'A distribuidora registrou mais energia enviada à rede do que o inversor produziu. Veja na aba Energia o que conferir.',
+      target: 'energy',
+    })
+  })
+
+  it.each([['OK'], ['UNVERIFIABLE'], ['SUSPECT']] as const)('%s não vira tarefa', (verdict) => {
+    expect(credits(withCheck(verdict, { missingCreditsKwh: 40 }))).toEqual([])
+  })
+
+  it('ciclo sem conferência (null) não vira tarefa', () => {
+    expect(credits(null)).toEqual([])
+  })
+
+  it('vale o ciclo mais recente que tem conferência, mesmo se a lista vier fora de ordem', () => {
+    const cycles = [
+      cycle({ referenceMonth: '2026-09', check: withCheck('OK') }),
+      cycle({ referenceMonth: '2026-08', check: withCheck('LOSS', { missingCreditsKwh: 10 }) }),
+    ]
+    expect(buildHomeTodos({ setup: setup(), diagnostics: [], recentCycles: cycles })).toEqual([])
+    const [todo] = buildHomeTodos({
+      setup: setup(),
+      diagnostics: [],
+      recentCycles: [cycle({ referenceMonth: '2026-09', check: null }), cycles[1]],
+    })
+    expect(todo.title).toBe('Créditos sem explicação no ciclo ago/26')
+  })
+
+  it('histórico ausente ou vazio: nada (nunca adivinha)', () => {
+    expect(buildHomeTodos({ setup: setup(), diagnostics: [], recentCycles: null })).toEqual([])
+    expect(buildHomeTodos({ setup: setup(), diagnostics: [], recentCycles: [] })).toEqual([])
+  })
+
+  it('vem antes de cadastro, faturas pendentes e diagnósticos; o lembrete de fatura vem por último', () => {
+    const todos = buildHomeTodos({
+      setup: setup({ completed: 5 }),
+      diagnostics: [diagnostic('CRITICAL', 'INVERSOR')],
+      recentCycles: [cycle({ check: withCheck('LOSS', { missingCreditsKwh: 9 }) })],
+      today: daysAfterCycleEnd(60),
+    })
+    expect(todos.map((todo) => todo.key)).toEqual(['utility-credits', 'setup', 'diagnostic-INVERSOR', 'next-bill'])
+  })
+})
+
+describe('buildHomeTodos — a próxima fatura já deve ter chegado', () => {
+  const reminder = (today: Date, overrides: { setup?: PlantSetup | null; cycles?: HomeCycleSummary[] | null } = {}) =>
+    buildHomeTodos({
+      setup: overrides.setup === undefined ? setup() : overrides.setup,
+      diagnostics: [],
+      recentCycles: overrides.cycles === undefined ? [cycle()] : overrides.cycles,
+      today,
+    })
+
+  it('o limite é de 40 dias, em uma constante', () => {
+    expect(BILL_REMINDER_AFTER_DAYS).toBe(40)
+  })
+
+  it('40 dias após o fim do ciclo: ainda não', () => {
+    expect(reminder(daysAfterCycleEnd(40))).toEqual([])
+  })
+
+  it('41 dias: lembra, com o mês do ciclo seguinte ao último confirmado', () => {
+    expect(reminder(daysAfterCycleEnd(41))).toEqual([
+      {
+        key: 'next-bill',
+        title: 'A fatura de outubro já deve ter chegado',
+        detail: 'Envie o PDF para conferir os créditos.',
+        target: 'bills',
+      },
+    ])
+  })
+
+  it('virada de ano: ciclo de dezembro aponta janeiro', () => {
+    const cycles = [cycle({ referenceMonth: '2026-12', cycleEnd: '2026-12-10' })]
+    const [todo] = reminder(new Date(2027, 0, 25), { cycles })
+    expect(todo.title).toBe('A fatura de janeiro já deve ter chegado')
+  })
+
+  it('usa o ciclo mais recente, não o primeiro da lista', () => {
+    const cycles = [cycle({ referenceMonth: '2026-09' }), cycle({ referenceMonth: '2026-08', cycleEnd: '2026-08-14' })]
+    expect(reminder(daysAfterCycleEnd(41), { cycles })).toHaveLength(1)
+    expect(reminder(daysAfterCycleEnd(41), { cycles })[0].title).toMatch(/outubro/)
+  })
+
+  it('referência que não bate com a data de fim: frase sem mês', () => {
+    const cycles = [cycle({ referenceMonth: '2026-08', cycleEnd: '2026-09-14' })]
+    const [todo] = reminder(daysAfterCycleEnd(41), { cycles })
+    expect(todo.title).toBe('A próxima fatura já deve ter chegado')
+  })
+
+  it('fatura pendente de confirmação suprime o lembrete (a tarefa de conferir já cobre)', () => {
+    const todos = reminder(daysAfterCycleEnd(60), { setup: setup({ pendingBills: 1 }) })
+    expect(todos.map((todo) => todo.key)).toEqual(['pending-bills'])
+  })
+
+  it.each([
+    ['sem cadastro lido', { setup: null }],
+    ['sem histórico', { cycles: null }],
+    ['nenhum ciclo confirmado (o cadastro já pede a 1ª fatura)', { cycles: [] }],
+    ['ciclo sem data de fim', { cycles: [cycle({ cycleEnd: null })] }],
+  ] as const)('%s: nada', (_name, overrides) => {
+    expect(reminder(daysAfterCycleEnd(90), overrides as never)).toEqual([])
+  })
+
+  it('sem "hoje" injetado, nunca lembra', () => {
+    expect(buildHomeTodos({ setup: setup(), diagnostics: [], recentCycles: [cycle()] })).toEqual([])
   })
 })
 
