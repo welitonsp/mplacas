@@ -815,3 +815,648 @@ def test_ambiguous_previous_month_bills_skip_credit_check(cross_tenant_setup) ->
     september = [c for c in response.json()["cycles"] if c["reference_month"] == "2026-09"][0]
     assert september["utility_check"]["verdict"] == "UNVERIFIABLE"
     assert "AMBIGUOUS_PREVIOUS_BILL" in september["utility_check"]["reasons"]
+
+
+# ---------------------------------------------------------------------------
+# Conta ciclo a ciclo: economia e fatura por ciclo + bloco `savings_window`
+# (tudo lido do snapshot e da fatura confirmada; nenhum cálculo novo).
+# ---------------------------------------------------------------------------
+
+_CURRENT = "0.5.0"
+
+
+async def _seed_month(
+    factory,
+    *,
+    month: str,
+    source_hash: str,
+    metrics: dict[str, str] | None,
+    version: str = _CURRENT,
+    quality: dict[str, str] | None = None,
+    total: Decimal = Decimal("60"),
+    cycle_start: date | None = None,
+    revisions: tuple[tuple[int, dict[str, str] | None], ...] = (),
+    created_at: datetime | None = None,
+    bill_status: BillStatus | None = None,
+) -> None:
+    async with factory() as session:
+        bill = _bill(plant_id=PLANT_A, reference_month=month, source_hash=source_hash)
+        if bill_status is not None:
+            bill.status = bill_status
+        bill.total_amount_brl = total
+        if cycle_start is not None:
+            bill.cycle_start = cycle_start
+        session.add(bill)
+        await session.flush()
+        record = _snapshot_record(
+            plant_id=PLANT_A,
+            bill_id=bill.id,
+            reference_month=month,
+            extra_metrics=metrics,
+            calculation_version=version,
+            quality=quality,
+        )
+        if created_at is not None:
+            record.created_at = created_at
+        session.add(record)
+        for revision, revision_metrics in revisions:
+            record = _snapshot_record(
+                plant_id=PLANT_A,
+                bill_id=bill.id,
+                reference_month=month,
+                extra_metrics=revision_metrics,
+                calculation_version=version,
+            )
+            record.revision = revision
+            session.add(record)
+        await session.commit()
+
+
+def _history(token: str) -> dict:
+    response = TestClient(app).get(
+        "/reports/monthly/history",
+        headers=_headers(token),
+        params={"plant_id": str(PLANT_A)},
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+def _by_month(body: dict) -> dict[str, dict]:
+    return {c["reference_month"]: c for c in body["cycles"]}
+
+
+_FULL = "DISTRIBUTOR_FULL_TARIFF"
+
+
+def _savings(value: str, source: str = _FULL) -> dict[str, str]:
+    return {"estimated_savings_brl": value, "savings_tariff_source": source}
+
+
+def _assert_identity(window: dict) -> None:
+    """Identidade documentada em ``_savings_window``: a janela sempre fecha."""
+    assert window["cycles_in_window"] == (
+        window["cycles_with_savings"]
+        + window["cycles_without_savings"]
+        + window["cycles_excluded_commissioning"]
+        + window["cycles_superseded_by_rebilling"]
+    )
+
+
+def _set_commissioning(factory, commissioned_on: date) -> None:
+    import asyncio
+
+    async def _run() -> None:
+        async with factory() as session:
+            plant = await session.get(Plant, PLANT_A)
+            assert plant is not None
+            plant.commissioned_on = commissioned_on
+            await session.commit()
+
+    asyncio.run(_run())
+
+
+def test_cycle_exposes_saving_bill_and_snapshot_base(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_month(factory, month="2026-03", source_hash="a" * 64, metrics=_savings("123.45"))
+    )
+
+    body = _history(token_a)
+    cycle = body["cycles"][0]
+    assert cycle["estimated_savings_brl"] == "123.45"
+    assert cycle["savings_unavailable_reason"] is None
+    assert cycle["savings_tariff_source"] == _FULL
+    assert cycle["savings_gap_cause"] is None
+    assert cycle["calculation_version"] == _CURRENT
+    assert cycle["report_revision"] == 1
+    assert cycle["report_created_at"]
+    assert cycle["bill_total_amount_brl"] == "60.00"
+    assert cycle["bill_public_lighting_brl"] == "30.00"
+    assert cycle["is_commissioning_month"] is None
+    assert cycle["is_before_commissioning"] is None
+    assert cycle["superseded_by_rebilling"] is False
+    # Campos que já existiam seguem intactos.
+    assert cycle["production_kwh"] == "100.000"
+    assert cycle["cycle_start"] == "2026-03-28"
+    assert set(body) == {"plant_id", "limit", "cycles_returned", "cycles", "savings_window"}
+
+
+@pytest.mark.parametrize(
+    "reason",
+    ["TARIFF_NOT_READ", "NO_CONSUMPTION_OR_TELEMETRY", "QUALQUER_OUTRO_MOTIVO"],
+)
+def test_unavailable_saving_carries_engine_reason_and_never_zero(
+    cross_tenant_setup, reason: str
+) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_month(
+            factory,
+            month="2026-03",
+            source_hash="a" * 64,
+            metrics={"estimated_savings_brl": "", "savings_unavailable_reason": reason},
+        )
+    )
+
+    body = _history(token_a)
+    cycle = body["cycles"][0]
+    assert cycle["estimated_savings_brl"] is None
+    assert cycle["savings_unavailable_reason"] == reason
+    assert cycle["savings_tariff_source"] is None
+    assert cycle["savings_gap_cause"] == "SAVINGS_UNAVAILABLE"
+    window = body["savings_window"]
+    assert window["total_estimated_savings_brl"] is None
+    assert window["cycles_with_savings"] == 0
+    assert window["cycles_without_savings"] == 1
+
+
+def test_snapshot_predating_the_metric_is_distinct_from_unavailable(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_month(
+            factory, month="2026-03", source_hash="a" * 64, metrics=None, version="0.2.0"
+        )
+    )
+
+    cycle = _history(token_a)["cycles"][0]
+    assert cycle["estimated_savings_brl"] is None
+    assert cycle["savings_unavailable_reason"] == "REPORT_PREDATES_SAVINGS"
+    assert cycle["savings_gap_cause"] == "REPORT_PREDATES_SAVINGS"
+    assert cycle["savings_tariff_source"] is None
+    assert cycle["calculation_version"] == "0.2.0"
+
+
+def test_negative_saving_keeps_its_sign_and_enters_the_total(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_month(factory, month="2026-03", source_hash="a" * 64, metrics=_savings("-12.30"))
+    )
+    asyncio.run(
+        _seed_month(factory, month="2026-04", source_hash="b" * 64, metrics=_savings("50.00"))
+    )
+
+    body = _history(token_a)
+    assert _by_month(body)["2026-03"]["estimated_savings_brl"] == "-12.30"
+    assert body["savings_window"]["total_estimated_savings_brl"] == "37.70"
+
+
+def test_window_counts_bill_tariff_and_outdated_or_partial_cycles(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    async def _seed() -> None:
+        await _seed_month(
+            factory, month="2026-01", source_hash="a" * 64, metrics=_savings("10.00")
+        )
+        # Tarifa da fatura (piso): defasado.
+        await _seed_month(
+            factory,
+            month="2026-02",
+            source_hash="b" * 64,
+            metrics=_savings("20.00", "BILL_TARIFF"),
+        )
+        # Versão anterior à correção da fórmula.
+        await _seed_month(
+            factory,
+            month="2026-03",
+            source_hash="c" * 64,
+            metrics=_savings("30.00"),
+            version="0.3.0",
+        )
+        # Dias sem leitura sem estimativa pelo sol.
+        await _seed_month(
+            factory,
+            month="2026-04",
+            source_hash="d" * 64,
+            metrics=_savings("40.00"),
+            quality={"missing_days": "2", "provisional_days": "0"},
+        )
+        await _seed_month(
+            factory, month="2026-05", source_hash="e" * 64, metrics={"estimated_savings_brl": ""}
+        )
+
+    asyncio.run(_seed())
+
+    body = _history(token_a)
+    cycles = _by_month(body)
+    assert cycles["2026-01"]["savings_gap_cause"] is None
+    assert cycles["2026-02"]["savings_gap_cause"] == "OUTDATED_CALCULATION"
+    assert cycles["2026-02"]["savings_tariff_source"] == "BILL_TARIFF"
+    assert cycles["2026-03"]["savings_gap_cause"] == "OUTDATED_CALCULATION"
+    assert cycles["2026-04"]["savings_gap_cause"] == "PARTIAL_PRODUCTION"
+    # Métrica vazia sem motivo gravado: nunca fica sem motivo.
+    assert cycles["2026-05"]["savings_unavailable_reason"] == "SAVINGS_UNAVAILABLE"
+    window = body["savings_window"]
+    assert window["total_estimated_savings_brl"] == "100.00"
+    assert window["cycles_in_window"] == 5
+    assert window["cycles_with_savings"] == 4
+    assert window["cycles_without_savings"] == 1
+    assert window["cycles_with_bill_tariff"] == 1
+    assert window["cycles_with_outdated_or_partial"] == 3
+    assert window["first_reference_month"] == "2026-01"
+    assert window["last_reference_month"] == "2026-04"
+    assert window["cycles_excluded_commissioning"] == 0
+    assert window["commissioning_known"] is False
+    _assert_identity(window)
+
+
+def test_commissioning_month_is_listed_but_excluded_from_the_total(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    _set_commissioning(factory, date(2026, 1, 15))
+
+    async def _seed() -> None:
+        await _seed_month(
+            factory, month="2026-01", source_hash="a" * 64, metrics=_savings("999.00")
+        )
+        await _seed_month(
+            factory, month="2026-02", source_hash="b" * 64, metrics=_savings("10.00")
+        )
+        await _seed_month(
+            factory, month="2026-03", source_hash="c" * 64, metrics=_savings("5.50")
+        )
+
+    asyncio.run(_seed())
+
+    body = _history(token_a)
+    cycles = _by_month(body)
+    assert cycles["2026-01"]["is_commissioning_month"] is True
+    assert cycles["2026-01"]["estimated_savings_brl"] == "999.00"
+    assert cycles["2026-02"]["is_commissioning_month"] is False
+    window = body["savings_window"]
+    assert window["total_estimated_savings_brl"] == "15.50"
+    assert window["cycles_excluded_commissioning"] == 1
+    assert window["commissioning_known"] is True
+    _assert_identity(window)
+    assert window["cycles_in_window"] == 3
+    assert window["cycles_with_savings"] == 2
+    assert window["cycles_without_savings"] == 0
+    assert window["first_reference_month"] == "2026-02"
+    assert window["last_reference_month"] == "2026-03"
+    # A fatura do mês de ligação é valor pago: entra no total da fatura.
+    assert window["total_bill_amount_brl"] == "180.00"
+    assert window["cycles_with_bill_amount"] == 3
+
+
+def test_only_commissioning_month_has_saving_gives_null_total(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    _set_commissioning(factory, date(2026, 1, 15))
+    asyncio.run(
+        _seed_month(factory, month="2026-01", source_hash="a" * 64, metrics=_savings("999.00"))
+    )
+
+    window = _history(token_a)["savings_window"]
+    assert window["total_estimated_savings_brl"] is None
+    assert window["cycles_excluded_commissioning"] == 1
+    _assert_identity(window)
+    assert window["cycles_with_savings"] == 0
+    assert window["first_reference_month"] is None
+    assert window["last_reference_month"] is None
+
+
+def test_plant_without_commissioning_date_excludes_nothing(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_month(factory, month="2026-01", source_hash="a" * 64, metrics=_savings("7.00"))
+    )
+
+    body = _history(token_a)
+    assert body["cycles"][0]["is_commissioning_month"] is None
+    assert body["savings_window"]["total_estimated_savings_brl"] == "7.00"
+    assert body["savings_window"]["cycles_excluded_commissioning"] == 0
+    assert body["savings_window"]["commissioning_known"] is False
+
+
+def test_bill_totals_are_summed_separately_from_savings(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    async def _seed() -> None:
+        await _seed_month(
+            factory,
+            month="2026-01",
+            source_hash="a" * 64,
+            metrics=_savings("10.00"),
+            total=Decimal("100.10"),
+        )
+        await _seed_month(
+            factory,
+            month="2026-02",
+            source_hash="b" * 64,
+            metrics={"estimated_savings_brl": ""},
+            total=Decimal("200.20"),
+        )
+
+    asyncio.run(_seed())
+
+    window = _history(token_a)["savings_window"]
+    assert window["total_estimated_savings_brl"] == "10.00"
+    assert window["total_bill_amount_brl"] == "300.30"
+    assert window["cycles_with_bill_amount"] == 2
+
+
+def test_latest_revision_is_used_and_exposed(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_month(
+            factory,
+            month="2026-03",
+            source_hash="a" * 64,
+            metrics={"estimated_savings_brl": ""},
+            revisions=((2, _savings("42.00")),),
+        )
+    )
+
+    body = _history(token_a)
+    assert body["cycles_returned"] == 1
+    cycle = body["cycles"][0]
+    assert cycle["report_revision"] == 2
+    assert cycle["estimated_savings_brl"] == "42.00"
+    assert body["savings_window"]["total_estimated_savings_brl"] == "42.00"
+
+
+def test_rebilled_month_lists_both_cycles_but_only_the_latest_counts(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    async def _seed() -> None:
+        await _seed_month(
+            factory,
+            month="2026-03",
+            source_hash="a" * 64,
+            metrics=_savings("10.00"),
+            total=Decimal("60"),
+            created_at=datetime(2026, 4, 1, tzinfo=UTC),
+        )
+        await _seed_month(
+            factory,
+            month="2026-03",
+            source_hash="b" * 64,
+            metrics=_savings("12.00"),
+            total=Decimal("70"),
+            cycle_start=date(2026, 3, 1),
+            created_at=datetime(2026, 4, 2, tzinfo=UTC),
+        )
+
+    asyncio.run(_seed())
+
+    body = _history(token_a)
+    assert body["cycles_returned"] == 2
+    old, new = body["cycles"]
+    # O mais recente do refaturamento vence (mesma regra da expansão).
+    assert old["superseded_by_rebilling"] is True
+    assert new["superseded_by_rebilling"] is False
+    assert old["estimated_savings_brl"] == "10.00"  # segue na lista, intacto
+    window = body["savings_window"]
+    assert window["total_estimated_savings_brl"] == "12.00"
+    assert window["total_bill_amount_brl"] == "70.00"
+    assert window["cycles_with_bill_amount"] == 1
+    assert window["cycles_with_savings"] == 1
+    assert window["cycles_superseded_by_rebilling"] == 1
+    assert window["cycles_in_window"] == 2
+    _assert_identity(window)
+
+
+def test_superseded_cycle_counts_only_as_superseded_even_without_value(
+    cross_tenant_setup,
+) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    async def _seed() -> None:
+        await _seed_month(
+            factory,
+            month="2026-03",
+            source_hash="a" * 64,
+            metrics={"estimated_savings_brl": ""},
+            created_at=datetime(2026, 4, 1, tzinfo=UTC),
+        )
+        await _seed_month(
+            factory,
+            month="2026-03",
+            source_hash="b" * 64,
+            metrics=_savings("5.00"),
+            cycle_start=date(2026, 3, 1),
+            created_at=datetime(2026, 4, 2, tzinfo=UTC),
+        )
+
+    asyncio.run(_seed())
+
+    window = _history(token_a)["savings_window"]
+    assert window["cycles_without_savings"] == 0
+    assert window["cycles_superseded_by_rebilling"] == 1
+    assert window["cycles_with_savings"] == 1
+    _assert_identity(window)
+
+
+@pytest.mark.parametrize("raw", ["abc", "NaN", "Infinity"])
+def test_unreadable_or_non_finite_saving_is_null_never_zero(
+    cross_tenant_setup, raw: str
+) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_month(factory, month="2026-03", source_hash="a" * 64, metrics=_savings(raw))
+    )
+    asyncio.run(
+        _seed_month(factory, month="2026-04", source_hash="b" * 64, metrics=_savings("8.00"))
+    )
+
+    body = _history(token_a)
+    cycle = _by_month(body)["2026-03"]
+    assert cycle["estimated_savings_brl"] is None
+    assert cycle["savings_unavailable_reason"] == "SAVINGS_UNAVAILABLE"
+    assert cycle["savings_gap_cause"] == "SAVINGS_UNAVAILABLE"
+    window = body["savings_window"]
+    assert window["total_estimated_savings_brl"] == "8.00"
+    assert window["cycles_without_savings"] == 1
+    _assert_identity(window)
+
+
+def test_cycle_before_commissioning_is_listed_flagged_and_out_of_savings(
+    cross_tenant_setup,
+) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    _set_commissioning(factory, date(2026, 2, 10))
+
+    async def _seed() -> None:
+        await _seed_month(
+            factory, month="2026-01", source_hash="a" * 64, metrics=_savings("500.00")
+        )
+        await _seed_month(
+            factory, month="2026-02", source_hash="b" * 64, metrics=_savings("400.00")
+        )
+        await _seed_month(
+            factory, month="2026-03", source_hash="c" * 64, metrics=_savings("3.00")
+        )
+
+    asyncio.run(_seed())
+
+    body = _history(token_a)
+    cycles = _by_month(body)
+    assert cycles["2026-01"]["is_before_commissioning"] is True
+    assert cycles["2026-01"]["is_commissioning_month"] is False
+    assert cycles["2026-01"]["estimated_savings_brl"] == "500.00"
+    assert cycles["2026-02"]["is_before_commissioning"] is False
+    assert cycles["2026-02"]["is_commissioning_month"] is True
+    assert cycles["2026-03"]["is_before_commissioning"] is False
+    window = body["savings_window"]
+    assert window["total_estimated_savings_brl"] == "3.00"
+    assert window["cycles_excluded_commissioning"] == 2
+    assert window["cycles_with_savings"] == 1
+    # A fatura é valor de face: os três ciclos entram.
+    assert window["total_bill_amount_brl"] == "180.00"
+    assert window["cycles_with_bill_amount"] == 3
+    _assert_identity(window)
+
+
+def test_plant_outside_scope_gives_empty_cycles_and_well_formed_window(
+    cross_tenant_setup,
+) -> None:
+    from mplacas.core.authorization import PlantScope
+    from mplacas.reports.history_service import load_monthly_production_history
+
+    factory, _, _, _, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(_seed_cycles(factory, plant_id=PLANT_A, months=["2026-01"]))
+    _set_commissioning(factory, date(2026, 1, 5))
+
+    async def _run() -> dict:
+        async with factory() as session:
+            return await load_monthly_production_history(
+                session,
+                plant_id=PLANT_A,
+                plant_scope=PlantScope.restricted({uuid.uuid4()}),
+                limit=12,
+            )
+
+    body = asyncio.run(_run())
+    assert body["cycles"] == []
+    window = body["savings_window"]
+    assert window["commissioning_known"] is False
+    assert window["total_estimated_savings_brl"] is None
+    assert window["cycles_in_window"] == 0
+    _assert_identity(window)
+
+
+def test_two_bills_in_commissioning_month_keep_the_identity(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    _set_commissioning(factory, date(2026, 1, 15))
+
+    async def _seed() -> None:
+        await _seed_month(
+            factory,
+            month="2026-01",
+            source_hash="a" * 64,
+            metrics=_savings("20.00"),
+            created_at=datetime(2026, 2, 1, tzinfo=UTC),
+        )
+        await _seed_month(
+            factory,
+            month="2026-01",
+            source_hash="b" * 64,
+            metrics=_savings("30.00"),
+            cycle_start=date(2026, 1, 1),
+            created_at=datetime(2026, 2, 2, tzinfo=UTC),
+        )
+        await _seed_month(
+            factory, month="2026-02", source_hash="c" * 64, metrics=_savings("4.00")
+        )
+
+    asyncio.run(_seed())
+
+    window = _history(token_a)["savings_window"]
+    assert window["cycles_in_window"] == 3
+    assert window["cycles_superseded_by_rebilling"] == 1
+    assert window["cycles_excluded_commissioning"] == 1
+    assert window["cycles_with_savings"] == 1
+    assert window["total_estimated_savings_brl"] == "4.00"
+    # Fatura: o refaturamento vence (60) + fevereiro (60); a antiga não soma.
+    assert window["total_bill_amount_brl"] == "120.00"
+    _assert_identity(window)
+
+
+def test_snapshot_whose_bill_is_no_longer_confirmed_has_null_bill_fields(
+    cross_tenant_setup,
+) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    # Estado alcançável: a fatura saiu do status CONFIRMED depois do snapshot.
+    asyncio.run(
+        _seed_month(
+            factory,
+            month="2026-03",
+            source_hash="a" * 64,
+            metrics=_savings("9.00"),
+            bill_status=BillStatus.PENDING_REVIEW,
+        )
+    )
+
+    body = _history(token_a)
+    cycle = body["cycles"][0]
+    assert cycle["bill_total_amount_brl"] is None
+    assert cycle["bill_public_lighting_brl"] is None
+    assert cycle["cycle_start"] is None
+    window = body["savings_window"]
+    assert window["total_bill_amount_brl"] is None
+    assert window["cycles_with_bill_amount"] == 0
+    assert window["total_estimated_savings_brl"] == "9.00"
+    _assert_identity(window)
+
+
+def test_new_money_fields_are_never_scientific_notation(cross_tenant_setup) -> None:
+    factory, _, _, token_a, _ = cross_tenant_setup
+    import asyncio
+
+    asyncio.run(
+        _seed_month(factory, month="2026-03", source_hash="a" * 64, metrics=_savings("1E+2"))
+    )
+
+    body = _history(token_a)
+    assert body["cycles"][0]["estimated_savings_brl"] == "100"
+    assert body["savings_window"]["total_estimated_savings_brl"] == "100"
+
+
+def test_empty_history_has_well_formed_savings_window(cross_tenant_setup) -> None:
+    _, _, _, token_a, _ = cross_tenant_setup
+
+    body = _history(token_a)
+    assert body["cycles"] == []
+    assert body["savings_window"] == {
+        "total_estimated_savings_brl": None,
+        "cycles_in_window": 0,
+        "cycles_with_savings": 0,
+        "cycles_without_savings": 0,
+        "cycles_excluded_commissioning": 0,
+        "cycles_superseded_by_rebilling": 0,
+        "commissioning_known": False,
+        "first_reference_month": None,
+        "last_reference_month": None,
+        "cycles_with_bill_tariff": 0,
+        "cycles_with_outdated_or_partial": 0,
+        "total_bill_amount_brl": None,
+        "cycles_with_bill_amount": 0,
+    }

@@ -10,16 +10,34 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.billing.read_repository import ConfirmedBillReadRepository
 from mplacas.billing.models import UtilityBill
+from mplacas.intelligence.energy_engine import SAVINGS_TARIFF_BILL
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
-from mplacas.intelligence.investor_service import calculation_version_tuple
+from mplacas.db.models import Plant
+from mplacas.intelligence.investor_service import (
+    calculation_version_tuple,
+    commissioning_month,
+    counts_in_savings,
+)
 from mplacas.reports.contract import MonthlyEnergyReport, ReportMetric
-from mplacas.reports.snapshot import MonthlyReportSnapshotRepository, ReportSnapshotIntegrityError
+from mplacas.reports.savings_gaps import (
+    SAVINGS_METRIC_KEY,
+    SAVINGS_REASON_METRIC_KEY,
+    SAVINGS_TARIFF_SOURCE_METRIC_KEY,
+    SavingsGapCause,
+    savings_gap_cause,
+)
+from mplacas.reports.snapshot import (
+    MonthlyReportSnapshot,
+    MonthlyReportSnapshotRepository,
+    ReportSnapshotIntegrityError,
+)
 from mplacas.reports.utility_check import (
     check_cycle,
     credit_unit_value_brl,
@@ -106,6 +124,154 @@ def _decimal_or_none(value: str | None) -> Decimal | None:
         return None
 
 
+def _metric_or_absent(metrics: tuple[ReportMetric, ...], key: str) -> str | None:
+    """Valor cru da métrica; ``None`` só quando ela NÃO existe no snapshot.
+
+    Diferente de :func:`_metric_value`, que trata métrica ausente e métrica
+    vazia do mesmo jeito: para a economia, ausente = snapshot anterior à
+    métrica; vazia = indisponível, com motivo gravado.
+    """
+    for metric in metrics:
+        if metric.key == key:
+            return metric.value
+    return None
+
+
+def _money(value: Decimal | None) -> str | None:
+    """Valor monetário dos campos NOVOS, sempre em notação posicional.
+
+    ``format(..., "f")`` evita ``1E+2``; não arredonda nem quantiza o gravado.
+    """
+    return None if value is None else format(value, "f")
+
+
+def _superseded_by_rebilling(reference_months: list[str]) -> list[bool]:
+    """Por ciclo: ``True`` se outro ciclo do MESMO mês o substitui na janela.
+
+    Regra do refaturamento, a mesma de ``expansion_service`` ("o mais recente
+    do refaturamento vence"): a lista de ciclos vem ordenada por mês e, dentro
+    do mês, por ``created_at`` do snapshot (``list_recent_for_plant``); o ÚLTIMO
+    ciclo de cada mês é o que vale, igual ao ``by_month[month] = cycle`` que
+    sobrescreve na iteração daquele serviço.
+    """
+    last_index = {month: index for index, month in enumerate(reference_months)}
+    return [last_index[month] != index for index, month in enumerate(reference_months)]
+
+
+def _savings_fields(
+    snapshot: MonthlyReportSnapshot, bill: UtilityBill | None
+) -> tuple[Decimal | None, dict[str, object]]:
+    """Economia do ciclo tal como gravada no snapshot (nada recalculado)."""
+    metrics = snapshot.report.metrics
+    raw = _metric_or_absent(metrics, SAVINGS_METRIC_KEY)
+    value: Decimal | None = None
+    reason: str | None = None
+    cause = savings_gap_cause(snapshot, bill)
+    if raw is None:
+        reason = SavingsGapCause.REPORT_PREDATES_SAVINGS.value
+    else:
+        value = _decimal_or_none(raw) if raw != "" else None
+        if value is not None and not value.is_finite():
+            value = None
+        if value is None:
+            # Vazia (indisponível) ou ilegível: nunca vira zero.
+            reason = (
+                _metric_value(metrics, SAVINGS_REASON_METRIC_KEY)
+                or SavingsGapCause.SAVINGS_UNAVAILABLE.value
+            )
+            cause = SavingsGapCause.SAVINGS_UNAVAILABLE
+    return value, {
+        # Pode ser NEGATIVA (a conta "sem a usina" pode dar menos que a fatura):
+        # nunca truncar nem trocar null por "0".
+        "estimated_savings_brl": _money(value),
+        "savings_unavailable_reason": reason,
+        "savings_tariff_source": _metric_value(metrics, SAVINGS_TARIFF_SOURCE_METRIC_KEY),
+        "savings_gap_cause": None if cause is None else cause.value,
+        "calculation_version": snapshot.report.calculation_version,
+        "report_revision": snapshot.revision,
+        "report_created_at": snapshot.created_at.isoformat(),
+    }
+
+
+@dataclass(frozen=True)
+class _CycleFacts:
+    """Fatos do ciclo que alimentam a janela (valores ainda em ``Decimal``)."""
+
+    cycle: dict[str, object]
+    saving: Decimal | None
+    bill_amount: Decimal | None
+    superseded: bool
+    counts: bool
+
+
+def _savings_window(
+    facts: list[_CycleFacts], *, commissioning_known: bool
+) -> dict[str, object]:
+    """Totais da janela, em ``Decimal``, só com o que já está nos ciclos.
+
+    A lista de ciclos devolve TODOS os ciclos; a janela aplica duas regras de
+    dinheiro, as mesmas do painel do investidor e da expansão:
+
+    - Refaturamento: dois ciclos do mesmo mês ficam na lista, mas só um conta
+      (o mais recente, ver :func:`_superseded_by_rebilling`) — para economia e
+      para o total da fatura.
+    - Mês de ligação (ADR-079): só contam meses ESTRITAMENTE posteriores a ele
+      (:func:`counts_in_savings`). Vale para a economia; o total da fatura
+      inclui esses ciclos (valor de face da fatura, não estimativa).
+
+    Contadores (identidade que sempre vale)::
+
+        cycles_in_window = cycles_with_savings + cycles_without_savings
+                           + cycles_excluded_commissioning
+                           + cycles_superseded_by_rebilling
+
+    - ``cycles_superseded_by_rebilling``: ciclos que perderam para um
+      refaturamento, qualquer que seja o valor (contam só aqui).
+    - Entre os demais: ``cycles_without_savings`` = sem valor de economia;
+      ``cycles_excluded_commissioning`` = com valor, mas mês <= mês de ligação;
+      ``cycles_with_savings`` = com valor e dentro da regra (entram na soma).
+    - ``commissioning_known``: a usina tem data de ligação (e foi lida). Sem
+      ela nada é excluído e os totais seguem calculados.
+    - Contadores de tarifa/defasagem olham só os ciclos que contribuem.
+    - ``cycles_with_bill_amount``: cobertura própria do total da fatura (ciclos
+      não substituídos cuja fatura segue entre as confirmadas).
+    """
+    kept = [f for f in facts if not f.superseded]
+    contributing = [f for f in kept if f.saving is not None and f.counts]
+    without = sum(1 for f in kept if f.saving is None)
+    excluded = sum(1 for f in kept if f.saving is not None and not f.counts)
+    total: Decimal | None = None
+    if contributing:
+        total = sum((f.saving for f in contributing if f.saving is not None), Decimal("0"))
+    bill_amounts = [f.bill_amount for f in kept if f.bill_amount is not None]
+    months = [str(f.cycle["reference_month"]) for f in contributing]
+    return {
+        "total_estimated_savings_brl": _money(total),
+        "cycles_in_window": len(facts),
+        "cycles_with_savings": len(contributing),
+        "cycles_without_savings": without,
+        "cycles_excluded_commissioning": excluded,
+        "cycles_superseded_by_rebilling": len(facts) - len(kept),
+        "commissioning_known": commissioning_known,
+        "first_reference_month": min(months) if months else None,
+        "last_reference_month": max(months) if months else None,
+        "cycles_with_bill_tariff": sum(
+            1 for f in contributing if f.cycle["savings_tariff_source"] == SAVINGS_TARIFF_BILL
+        ),
+        "cycles_with_outdated_or_partial": sum(
+            1
+            for f in contributing
+            if f.cycle["savings_gap_cause"]
+            in (
+                SavingsGapCause.OUTDATED_CALCULATION.value,
+                SavingsGapCause.PARTIAL_PRODUCTION.value,
+            )
+        ),
+        "total_bill_amount_brl": _money(sum(bill_amounts, Decimal("0")) if bill_amounts else None),
+        "cycles_with_bill_amount": len(bill_amounts),
+    }
+
+
 def _quality_payload(metrics: tuple[ReportMetric, ...]) -> dict[str, int | None] | None:
     if not any(_metric_value(metrics, key) is not None for key in _QUALITY_KEYS):
         return None
@@ -135,9 +301,16 @@ async def load_monthly_production_history(
     for confirmed in confirmed_bills:
         bills_by_month.setdefault(confirmed.bill.reference_month, []).append(confirmed.bill)
 
+    # Mês de ligação da usina: uma leitura para o pedido inteiro, na mesma
+    # sessão/contexto RLS. Fora do escopo ou sem data → None (nada é excluído).
+    plant = await session.get(Plant, plant_id) if plant_scope.allows(plant_id) else None
+    commissioned_month = commissioning_month(plant.commissioned_on if plant else None)
+    superseded_flags = _superseded_by_rebilling([s.report.reference_month for s in snapshots])
+
     cycles: list[dict[str, object]] = []
+    facts: list[_CycleFacts] = []
     export_shares: list[Decimal] = []
-    for snapshot in snapshots:
+    for snapshot, superseded in zip(snapshots, superseded_flags, strict=True):
         report = snapshot.report
         bill = bills.get(report.bill_id)
         injection = _metric_value(report.metrics, "injected_kwh")
@@ -183,6 +356,19 @@ async def load_monthly_production_history(
         check_payload["missing_credits_value_brl"] = (
             None if missing_value is None else str(missing_value)
         )
+        savings_value, savings_fields = _savings_fields(snapshot, bill)
+        is_commissioning = (
+            None if commissioned_month is None else report.reference_month == commissioned_month
+        )
+        facts.append(
+            _CycleFacts(
+                cycle={},  # preenchido abaixo, junto do dict do ciclo
+                saving=savings_value,
+                bill_amount=bill.total_amount_brl if bill else None,
+                superseded=superseded,
+                counts=counts_in_savings(report.reference_month, commissioned_month),
+            )
+        )
         cycles.append(
             {
                 "reference_month": report.reference_month,
@@ -211,14 +397,29 @@ async def load_monthly_production_history(
                 # Conferência da distribuidora (ADR-084): créditos, envio
                 # impossível e fração enviada à rede contra o histórico.
                 "utility_check": check_payload,
+                # Conta do ciclo (só leitura do snapshot e da fatura confirmada).
+                **savings_fields,
+                "bill_total_amount_brl": _money(bill.total_amount_brl if bill else None),
+                "bill_public_lighting_brl": _money(bill.public_lighting_brl if bill else None),
+                "is_commissioning_month": is_commissioning,
+                "is_before_commissioning": (
+                    None
+                    if commissioned_month is None
+                    else report.reference_month < commissioned_month
+                ),
+                "superseded_by_rebilling": superseded,
             }
         )
+        facts[-1] = replace(facts[-1], cycle=cycles[-1])
 
     return {
         "plant_id": str(plant_id),
         "limit": limit,
         "cycles_returned": len(cycles),
         "cycles": cycles,
+        "savings_window": _savings_window(
+            facts, commissioning_known=commissioned_month is not None
+        ),
     }
 
 

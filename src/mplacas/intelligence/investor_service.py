@@ -87,6 +87,25 @@ def _last_twelve_contiguous(months: list[str]) -> bool:
     return len(months) >= 12 and months_between(months[-12], months[-1]) == 11
 
 
+def commissioning_month(commissioned_on: date | None) -> str | None:
+    """Mês ``AAAA-MM`` da ligação da usina; ``None`` sem data de ligação.
+
+    Regra única do mês de ligação (ADR-079): a fatura desse mês é de geração
+    parcial. Reusada pelo histórico mensal para marcar o ciclo.
+    """
+    return commissioned_on.strftime("%Y-%m") if commissioned_on else None
+
+
+def counts_in_savings(reference_month: str, commissioned_month: str | None) -> bool:
+    """Regra única: o mês entra na conta de economia?
+
+    Só meses ESTRITAMENTE posteriores ao mês de ligação (ADR-079); sem data de
+    ligação nada é excluído. Usada pelo painel do investidor, pela expansão e
+    pelo histórico mensal.
+    """
+    return commissioned_month is None or reference_month > commissioned_month
+
+
 async def get_investor_panel(
     session: AsyncSession,
     *,
@@ -134,11 +153,11 @@ async def get_investor_panel(
 
     investment = plant.investment_amount_brl
     commissioned_on = plant.commissioned_on
-    commissioned_month = commissioned_on.strftime("%Y-%m") if commissioned_on else None
+    commissioned_month = commissioning_month(commissioned_on)
     # Só ciclos posteriores ao mês da ligação: a fatura do mês da ligação é de
     # geração parcial e o realizado e a projeção usam a mesma regra (ADR-079).
     if commissioned_month is not None:
-        savings = {m: v for m, v in savings.items() if m > commissioned_month}
+        savings = {m: v for m, v in savings.items() if counts_in_savings(m, commissioned_month)}
 
     def unavailable(reason: InvestorUnavailableReason, **extra: object) -> InvestorPanel:
         base: dict[str, object] = dict(

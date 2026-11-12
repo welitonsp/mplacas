@@ -207,6 +207,20 @@ def _gap_for(
     return None
 
 
+def savings_gap_cause(
+    snapshot: MonthlyReportSnapshot, bill: UtilityBill | None = None
+) -> SavingsGapCause | None:
+    """Causa pela qual a economia do snapshot não está em dia; ``None`` = em dia.
+
+    Envoltório público de :func:`_gap_for` para leitores que já têm snapshot e
+    fatura em mãos (histórico mensal) — mesma regra, sem segunda versão.
+    """
+    gap = _gap_for(
+        snapshot.report.bill_id, snapshot.report.reference_month, snapshot, bill
+    )
+    return None if gap is None else gap.cause
+
+
 async def list_savings_gaps(
     session: AsyncSession,
     *,

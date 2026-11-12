@@ -34,7 +34,11 @@ from mplacas.intelligence.investor_metrics import (
     annualize,
     months_between,
 )
-from mplacas.intelligence.investor_service import calculation_version_tuple
+from mplacas.intelligence.investor_service import (
+    calculation_version_tuple,
+    commissioning_month,
+    counts_in_savings,
+)
 from mplacas.market.bcb import BcbSgsClient
 from mplacas.market.service import last_closed_month, monthly_rates
 from mplacas.reports.history_service import (
@@ -111,7 +115,7 @@ async def get_expansion_assessment(
     }
 
     context: list[str] = []
-    commissioned_month = plant.commissioned_on.strftime("%Y-%m") if plant.commissioned_on else None
+    commissioned_month = commissioning_month(plant.commissioned_on)
     if commissioned_month is None:
         context.append("COMMISSIONING_DATE_MISSING")
 
@@ -122,7 +126,7 @@ async def get_expansion_assessment(
     by_month: dict[str, dict[str, object]] = {}
     for cycle in raw_cycles:
         month = str(cycle["reference_month"])
-        if commissioned_month is None or month > commissioned_month:
+        if counts_in_savings(month, commissioned_month):
             by_month[month] = cycle
     ordered = [by_month[m] for m in sorted(by_month)]
 
