@@ -1,14 +1,16 @@
 import { Link } from 'react-router'
-import { ChevronRight, ClipboardCheck, FileText, OctagonAlert, Settings2, type LucideIcon } from 'lucide-react'
+import { ChevronRight, ClipboardCheck, FileText, OctagonAlert, Scale, Settings2, type LucideIcon } from 'lucide-react'
 import type { HomeTodo } from '../../lib/dashboard/home'
-import { DASHBOARD_FINANCIAL_PATH, DASHBOARD_SETUP_PATH } from '../../routes'
+import { DASHBOARD_FINANCIAL_PATH, DASHBOARD_PRODUCTION_PATH, DASHBOARD_SETUP_PATH } from '../../routes'
 
 const ROW_CLASS =
   'flex min-h-[44px] w-full items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5 text-left transition-colors duration-150 hover:border-[var(--color-gray-300)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] motion-reduce:transition-none'
 
-const LINK_TARGET: Record<'setup' | 'bills', { to: string; icon: LucideIcon }> = {
+const LINK_TARGET: Record<'setup' | 'bills' | 'energy', { to: string; icon: LucideIcon }> = {
   setup: { to: DASHBOARD_SETUP_PATH, icon: Settings2 },
   bills: { to: `${DASHBOARD_FINANCIAL_PATH}#faturas`, icon: FileText },
+  // A aba Energia não tem âncora para a lista de ciclos: leva à aba.
+  energy: { to: DASHBOARD_PRODUCTION_PATH, icon: Scale },
 }
 
 function RowContent({ todo, icon: Icon }: { todo: HomeTodo; icon: LucideIcon }) {
@@ -25,17 +27,21 @@ function RowContent({ todo, icon: Icon }: { todo: HomeTodo; icon: LucideIcon }) 
 }
 
 // "Precisa de você" (ADR-083): só tarefas com ação concreta.
-// - "Nada pendente." só quando o cadastro foi de fato lido: falha ao ler não
-//   vira "zero pendências" (indisponível nunca é zero).
+// - "Nada pendente." só quando o cadastro E o histórico mensal (créditos do
+//   último ciclo) foram de fato lidos: falha ou espera não viram "zero
+//   pendências" (indisponível nunca é zero). Enquanto o histórico carrega, a
+//   lista fica só com o título (mesma apresentação de quando o cadastro carrega).
 // - Diagnóstico crítico abre a lista completa, que mora no próprio Início.
 export function HomeTodoList({
   todos,
   setupStatus,
+  historyStatus,
   calmNote,
   onOpenDiagnostics,
 }: {
   todos: readonly HomeTodo[]
   setupStatus: 'ready' | 'loading' | 'error'
+  historyStatus: 'ready' | 'loading' | 'unavailable'
   calmNote: string | null
   onOpenDiagnostics: () => void
 }) {
@@ -63,11 +69,17 @@ export function HomeTodoList({
         </ul>
       )}
 
-      {todos.length === 0 && setupStatus === 'ready' && (
+      {todos.length === 0 && setupStatus === 'ready' && historyStatus === 'ready' && (
         <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5">
           <ClipboardCheck aria-hidden="true" className="h-5 w-5 shrink-0 text-[var(--color-success-text)]" />
           <p className="text-sm font-semibold text-[var(--color-text-primary)]">Nada pendente.</p>
         </div>
+      )}
+
+      {todos.length === 0 && setupStatus !== 'loading' && historyStatus === 'unavailable' && (
+        <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
+          Não foi possível conferir os créditos do último ciclo agora.
+        </p>
       )}
 
       {setupStatus === 'error' && (

@@ -20,6 +20,23 @@ vi.mock('../../env', () => ({
 // (`PlantContext`) e `configureApi` (`AuthContext`). Nenhum outro fetcher é
 // declarado: se a aba disparasse outro, o teste quebraria (fronteira de fetch
 // por módulo, ADR-072, Decisão 3).
+// `/reports/monthly/history` (2 ciclos mais recentes): créditos e lembrete.
+function historyPayload(cycles: unknown[]) {
+  return { plant_id: singlePlant.id, limit: 2, cycles_returned: cycles.length, cycles }
+}
+
+function historyCycle(overrides: Record<string, unknown> = {}) {
+  return {
+    reference_month: '2026-07',
+    bill_id: '77777777-7777-7777-7777-777777777777',
+    status: 'STABLE',
+    cycle_start: '2026-06-15',
+    cycle_end: '2026-07-14',
+    utility_check: { verdict: 'OK', missing_credits_kwh: '0.00', loss_confirmed: false, reasons: [] },
+    ...overrides,
+  }
+}
+
 interface ApiMockOverrides {
   executivePayload?: unknown
   setupPayload?: unknown
@@ -30,6 +47,7 @@ interface ApiMockOverrides {
   fetchPlantSetup?: (plantId: string) => Promise<Response>
   importProductionHistory?: (plantId: string) => Promise<Response>
   fetchPlantNow?: (plantId: string) => Promise<Response>
+  fetchMonthlyProductionHistory?: (plantId: string, limit?: number) => Promise<Response>
 }
 
 function installApiMock(overrides: ApiMockOverrides = {}) {
@@ -43,6 +61,8 @@ function installApiMock(overrides: ApiMockOverrides = {}) {
       vi.fn(async () => jsonResponse(overrides.financialReturnPayload ?? financialReturnUnavailablePayload)),
     fetchPlantSetup:
       overrides.fetchPlantSetup ?? vi.fn(async () => jsonResponse(overrides.setupPayload ?? plantSetupCompletePayload)),
+    fetchMonthlyProductionHistory:
+      overrides.fetchMonthlyProductionHistory ?? vi.fn(async () => jsonResponse(historyPayload([]))),
     fetchPlants: vi.fn(async () => [singlePlant]),
     importProductionHistory: overrides.importProductionHistory ?? vi.fn(async () => jsonResponse({ days_received: 0 })),
     fetchPlantNow: overrides.fetchPlantNow ?? vi.fn(async () => jsonResponse({ detail: 'plant_now_unavailable' }, 404)),
@@ -98,13 +118,14 @@ const returnReached = {
 }
 
 describe('OverviewPage — aba Início (ADR-083)', () => {
-  it('dispara exatamente 4 requisições de dados, uma de cada recurso, com a usina ativa', async () => {
+  it('dispara exatamente 5 requisições de dados, uma de cada recurso, com a usina ativa', async () => {
     freezeToday()
     const mocks = {
       fetchExecutiveDashboard: vi.fn(async () => jsonResponse(executivePayload)),
       fetchAnomalyHistory: vi.fn(async () => jsonResponse(anomalyPayload)),
       fetchFinancialReturn: vi.fn(async () => jsonResponse(financialReturnUnavailablePayload)),
       fetchPlantSetup: vi.fn(async () => jsonResponse(plantSetupCompletePayload)),
+      fetchMonthlyProductionHistory: vi.fn(async () => jsonResponse(historyPayload([]))),
     }
     await renderHome(mocks)
 
@@ -112,7 +133,11 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
     await waitFor(() => {
       for (const mock of Object.values(mocks)) expect(mock).toHaveBeenCalledTimes(1)
     })
-    for (const mock of Object.values(mocks)) expect(mock).toHaveBeenCalledWith(singlePlant.id)
+    for (const [name, mock] of Object.entries(mocks)) {
+      // O histórico mensal pede só os 2 ciclos mais recentes.
+      if (name === 'fetchMonthlyProductionHistory') expect(mock).toHaveBeenCalledWith(singlePlant.id, 2)
+      else expect(mock).toHaveBeenCalledWith(singlePlant.id)
+    }
   })
 
   it('título "Início" e a ordem de leitura: situação → dinheiro → 7 dias → precisa de você', async () => {
@@ -294,6 +319,68 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
     fireEvent.click(within(todo).getByRole('button', { name: /Um inversor parou de produzir/ }))
     expect(details.open).toBe(true)
     expect(within(details).getByText('Um inversor parou de produzir.')).toBeInTheDocument()
+  })
+
+  it('créditos sem explicação no último ciclo: tarefa no topo, com link para a aba Energia', async () => {
+    freezeToday()
+    await renderHome({
+      setupPayload: { ...plantSetupCompletePayload, completed: 5 },
+      fetchMonthlyProductionHistory: vi.fn(async () =>
+        jsonResponse(
+          historyPayload([
+            historyCycle({
+              utility_check: { verdict: 'LOSS', missing_credits_kwh: '87.40', loss_confirmed: false, reasons: [] },
+            }),
+          ]),
+        ),
+      ),
+    })
+
+    const todo = await screen.findByRole('region', { name: 'Precisa de você' })
+    const link = await within(todo).findByRole('link', { name: /Créditos sem explicação no ciclo jul\/26/ })
+    expect(link).toHaveAttribute('href', '/dashboard/energia')
+    expect(link).toHaveTextContent('A fatura não mostra 87,4 kWh nem como abatimento nem como saldo.')
+    const links = within(todo).getAllByRole('link')
+    expect(links[0]).toBe(link)
+    expect(links).toHaveLength(2)
+  })
+
+  it('mais de 40 dias do fim do último ciclo: lembra da fatura, com link para o envio em Dinheiro', async () => {
+    freezeToday('2026-09-01T10:00:00')
+    await renderHome({
+      fetchMonthlyProductionHistory: vi.fn(async () => jsonResponse(historyPayload([historyCycle()]))),
+    })
+
+    const todo = await screen.findByRole('region', { name: 'Precisa de você' })
+    const link = await within(todo).findByRole('link', { name: /A fatura de agosto já deve ter chegado/ })
+    expect(link).toHaveAttribute('href', '/dashboard/dinheiro#faturas')
+    expect(link).toHaveTextContent('Envie o PDF para conferir os créditos.')
+    expect(within(todo).queryByText('Nada pendente.')).not.toBeInTheDocument()
+  })
+
+  it('histórico mensal falhando: a tela segue com as tarefas de sempre, sem tarefa nova nem aviso de erro', async () => {
+    freezeToday()
+    await renderHome({
+      setupPayload: { ...plantSetupCompletePayload, completed: 5 },
+      fetchMonthlyProductionHistory: vi.fn(async () => jsonResponse({ detail: 'erro' }, 500)),
+    })
+
+    const todo = await screen.findByRole('region', { name: 'Precisa de você' })
+    expect(await within(todo).findByRole('link', { name: /Completar o cadastro da usina/ })).toBeInTheDocument()
+    expect(within(todo).getAllByRole('link')).toHaveLength(1)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Início' })).toBeInTheDocument()
+  })
+
+  it('histórico mensal fora do contrato: sem tarefa, e nunca "Nada pendente."', async () => {
+    freezeToday('2026-09-01T10:00:00')
+    await renderHome({ fetchMonthlyProductionHistory: vi.fn(async () => jsonResponse({ cycles: 'x' })) })
+
+    const todo = await screen.findByRole('region', { name: 'Precisa de você' })
+    expect(
+      await within(todo).findByText('Não foi possível conferir os créditos do último ciclo agora.'),
+    ).toBeInTheDocument()
+    expect(within(todo).queryByText('Nada pendente.')).not.toBeInTheDocument()
   })
 
   it('falha ao ler o cadastro: diz que não conseguiu conferir, nunca "Nada pendente."', async () => {
