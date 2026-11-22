@@ -19,7 +19,7 @@ dependencies = [
   # Piso 6.21.4: corrige CVE-2026-119203..119209 (pypdf processa faturas
   # recebidas de clientes; antes, 6.21.2 para CVE-2026-115572/115580/115585 e
   # 6.19.0 para PYSEC-2026-4153..4160).
-  "pypdf>=6.21.4,<7",
+  "pypdf>=6.21.4,<8",
   "reportlab>=4.4,<6",
   "xlsxwriter>=3.2,<4",
   # Piso 2.15: corrige PYSEC-2026-4140..4152 e 4183 (assina os tokens de acesso).
@@ -45,7 +45,7 @@ otlp = [
 dev = [
   "editables==0.6",
   "hatchling>=1.27,<2",
-  "pip-tools==7.6.2",
+  "pip-tools==7.7.0",
   "pytest>=9.0.3,<10",
   "pytest-asyncio>=1.2,<2",
   "ruff>=0.11,<1",
