@@ -60,7 +60,7 @@ seguir funcionando. Ele sai do corpo na etapa 4.
 - `POST /auth/refresh`: com cookie presente, **ele é a credencial** e o corpo é ignorado (nunca
   "cookie inválido, tenta o corpo"). Sem cookie, vale o corpo, exatamente como antes. Com cookie
   e refresh recusado (401), a resposta também apaga o cookie, para o navegador parar de mandar um
-  token morto.
+  token morto — **exceto** na tolerância de rotação (item 4), que responde 401 sem `Set-Cookie`.
 - `POST /auth/logout`: com cookie, revoga a sessão e responde com o cookie apagado (`Max-Age=0`,
   mesmo `Path`/atributos). Continua `204` para token válido, inválido, expirado ou já revogado.
 
@@ -109,7 +109,9 @@ Duas abas pedindo refresh juntas apresentam o mesmo token; uma ganha a rotação
 caía no caminho de replay e **derrubava a família inteira** — inclusive a sessão recém-criada da
 vencedora. Agora: token autêntico, inativo, **não revogado** e rotacionado há menos de
 `MPLACAS_AUTH_REFRESH_REUSE_GRACE_SECONDS` (padrão 10 s, máximo 60) → `401` **sem** revogar a família
-e **sem** emitir sessão nova. Depois da janela, o comportamento de sempre: replay → família
+e **sem** emitir sessão nova, e a resposta **não traz `Set-Cookie`**: se chegasse depois da
+resposta da aba vencedora, um cookie de remoção apagaria o cookie novo e deslogaria o usuário
+(`RotationRejection.WITHIN_GRACE` × `DEFINITIVE` em `rotate_session`). Depois da janela, o comportamento de sempre: replay → família
 revogada. O frontend (etapa 3) deve repetir o refresh uma única vez ao receber 401 do próprio
 refresh: o pote de cookies já terá o token novo gravado pela outra aba.
 
@@ -133,31 +135,58 @@ Sem migration: usa `created_at`, `family_id` e `expires_at`, que já existem.
 
 ### 6. IP do cliente confiável (limite de tentativas)
 
-`server.py` usava `forwarded_allow_ips="*"`: o uvicorn aceitava `X-Forwarded-For` de **qualquer**
-um e pegava o primeiro endereço da lista, que o cliente escreve. Bastava trocar o cabeçalho a cada
-tentativa para escapar do bloqueio de login e de convite.
+**Problema.** `server.py` usava `forwarded_allow_ips="*"`: o uvicorn aceita `X-Forwarded-For` de
+**qualquer** um e pega o primeiro endereço da lista, que o cliente escreve. Trocando o cabeçalho a
+cada tentativa, dá para escapar do bloqueio de login e de convite.
 
-Agora:
+**Por que não fechar já com "redes privadas".** A documentação do Render não pôde ser consultada,
+então não se sabe quantos proxies (balanceador do Render, borda Cloudflare) ficam entre o cliente e
+o contêiner, nem por quais redes eles chegam. Errar para o lado restritivo **não é inofensivo**: se
+o IP resolvido virar o do balanceador ou o de um nó de borda, todos os clientes atrás dele passam a
+dividir a mesma chave de limite (`usuário + IP`). Aí um atacante que conheça o e-mail de alguém
+erra a senha 5 vezes e **bloqueia o login legítimo da vítima por 15 minutos, repetidamente**
+(negação de serviço direcionada pelo agrupamento). Por isso esta etapa não muda o comportamento do
+deploy e prepara a correção para ser ligada depois de medida.
 
-1. `MPLACAS_FORWARDED_ALLOW_IPS` (padrão: loopback, `10.0.0.0/8`, `172.16.0.0/12`,
-   `192.168.0.0/16`, `100.64.0.0/10`, `fc00::/7`) — o proxy do Render chega ao contêiner por rede
-   privada. O uvicorn só lê `X-Forwarded-For` quando o par TCP está nessas redes e, nesse caso,
-   pega o endereço **mais à direita que não é dessas redes**: o que o proxy do Render acrescentou.
-   O que o cliente forjou fica à esquerda e é descartado. `*` é recusado na validação da config.
-2. `X-Mplacas-Client-IP` só vale quando o pedido também traz `X-Mplacas-Proxy-Secret` igual a
-   `MPLACAS_PROXY_SHARED_SECRET` (mínimo 32 bytes; comparação `hmac.compare_digest`). Sem segredo
-   configurado (padrão), o cabeçalho é ignorado. É o caminho da Pages Function, que preenche o IP
-   com o `CF-Connecting-IP` do navegador. Segredo errado gera só o log
-   `proxy_shared_secret_mismatch` (sem valor nenhum). O segredo nunca entra em log, `repr` nem
-   `safe_summary`.
+**O que está no código:**
+
+1. **Transitório — padrão igual ao de antes.** `MPLACAS_FORWARDED_ALLOW_IPS` tem padrão `*` (aceito
+   explicitamente pela validação, só sozinho). O risco conhecido continua o mesmo de hoje: o XFF é
+   forjável e o bloqueio de tentativas pode ser contornado. Nenhum risco novo é introduzido.
+2. **Modo robusto, desligado por padrão — `MPLACAS_TRUSTED_PROXY_HOPS = N`** (1–10, sem padrão).
+   Cada proxy confiável acrescenta um endereço à direita do XFF, então o IP do cliente é
+   `XFF[-N]`; o que o cliente forjou fica mais à esquerda e é descartado. XFF com menos de N itens
+   ou item não-IP → par TCP (falha fechada). Nesse modo o uvicorn **não** reescreve o endereço do
+   cliente: `server.build_asgi_app` aplica o `ProxyHeadersMiddleware` (só para o esquema https) e
+   em seguida devolve ao escopo o par TCP real (`RestoreTcpPeerMiddleware`); o IP dos limites sai
+   só de `resolve_client_ip`.
+3. **Cabeçalho do proxy autenticado.** `X-Mplacas-Client-IP` só vale quando o pedido também traz
+   `X-Mplacas-Proxy-Secret` igual a `MPLACAS_PROXY_SHARED_SECRET` (mínimo 32 bytes;
+   `hmac.compare_digest`). Tem precedência sobre os demais. Sem segredo configurado (padrão), o
+   cabeçalho é ignorado. Segredo errado gera só o log `proxy_shared_secret_mismatch`. O segredo
+   nunca entra em log, `repr` nem `safe_summary`; segredo em branco é tratado como ausente e gera o
+   aviso `proxy_shared_secret_blank_ignored` na subida.
+4. **Diagnóstico temporário — `client_ip_diagnostic`** (INFO, só no login, flag
+   `MPLACAS_CLIENT_IP_DIAGNOSTIC`, padrão ligado). Registra **apenas**: `peer_is_private` (o par
+   TCP é endereço privado?), `forwarded_for_hops` (quantos itens tem o XFF),
+   `resolved_matches_peer` (o IP resolvido é o próprio par TCP?) e
+   `trusted_proxy_hops_configured`. Nunca endereço, usuário ou cabeçalho (há teste). Para isso o
+   `TcpPeerMiddleware` guarda o par TCP real antes de qualquer reescrita.
 
 Os dois limites (`/auth/login` e convites) usam `mplacas.core.client_ip.resolve_client_ip`.
 
-**Incerteza assumida:** a documentação do Render não pôde ser consultada nesta sessão. Se o
-balanceador do Render acrescentar ao `X-Forwarded-For` um endereço público intermediário depois do
-cliente, o limite passa a agrupar clientes por esse intermediário — mais restritivo, nunca
-burlável. Depois da etapa 2, o IP passa a vir do cabeçalho autenticado do proxy, e essa incerteza
-deixa de importar.
+**Procedimento para sair do transitório (dono do produto + agente):**
+
+1. Publicar este PR e fazer alguns logins reais, de redes diferentes (4G e Wi-Fi).
+2. Nos logs do Render, ler os eventos `client_ip_diagnostic`. Esperado: `peer_is_private=true` e
+   `forwarded_for_hops` constante entre logins sem XFF forjado — esse número é N.
+3. Definir `MPLACAS_TRUSTED_PROXY_HOPS=N` no Render. Conferir de novo: `resolved_matches_peer`
+   deve ser `false` (o IP veio do XFF, não do balanceador).
+4. Teste de fumaça: um login com `X-Forwarded-For: 1.2.3.4` forjado deve somar `+1` em
+   `forwarded_for_hops` e continuar bloqueando após 5 erros.
+5. Só então: trocar o padrão de `MPLACAS_FORWARDED_ALLOW_IPS` (remover o `*`) e remover o
+   `client_ip_diagnostic` num PR próprio. Depois da etapa 2 (proxy), o IP passa a vir do cabeçalho
+   autenticado e o XFF só importa para chamadas que não passam pelo proxy.
 
 ## Comportamento por plataforma
 
@@ -179,7 +208,8 @@ Em qualquer plataforma: depois do teto de 30 dias desde o login, pede senha de n
 | Login-CSRF | `Origin` não era checado | `Origin` presente precisa estar na lista |
 | Roubo de token por máquina compartilhada | nada sobrevive à aba | cookie sobrevive até o `Max-Age`/teto: **logout explícito importa**; navegação privada recomendada em máquina alheia |
 | Token roubado usado em paralelo | replay derruba a família | igual, salvo nos 10 s de tolerância (ver Negativas) |
-| Burlar bloqueio de login trocando `X-Forwarded-For` | possível | não (item 6) |
+| Burlar bloqueio de login trocando `X-Forwarded-For` | possível | ainda possível no padrão transitório; fechado com `MPLACAS_TRUSTED_PROXY_HOPS` ou pelo cabeçalho autenticado do proxy (item 6) |
+| Bloquear o login de uma vítima por agrupamento de IP | não | evitado de propósito: nada fica restritivo antes de medir os saltos (item 6) |
 | Proxy comprometido / segredo vazado | — | quem tem o segredo escolhe o IP do limite de tentativas, nada além disso; trocar o segredo no Render e no Pages |
 
 ## Ordem de implantação
@@ -207,7 +237,8 @@ Cada etapa é reversível sozinha, e nenhuma exige migration.
 - O refresh token sai do alcance de JavaScript.
 - Duas abas não se derrubam mais.
 - Sessão tem fim garantido (teto), independentemente de uso contínuo.
-- O bloqueio de tentativas de login deixa de ser burlável por cabeçalho.
+- O bloqueio de tentativas de login fica pronto para deixar de ser burlável por cabeçalho (após o
+  procedimento do item 6).
 - A revogação por replay passa a ser de fato gravada.
 
 ### Negativas
@@ -235,7 +266,10 @@ Cada etapa é reversível sozinha, e nenhuma exige migration.
   família revogada (cookie e corpo); teto → 401 e família encerrada; sessão rotacionada nunca passa
   do teto; isolamento entre organizações pelo cookie; usuário/organização desativados; IP do proxy
   só com segredo; `X-Forwarded-For` forjado ignorado; bloqueio não burlável; segredo fora dos logs.
-- `tests/test_server_contract.py`: `forwarded_allow_ips` nunca `*`.
+- `tests/test_auth_cookie_session.py` (cont.): resposta 401 da tolerância sem `Set-Cookie`; cadeia
+  real do `server.py` com o padrão transitório; `TRUSTED_PROXY_HOPS` com 1, 2 e 3 saltos, XFF
+  forjado à esquerda, XFF curto e item inválido; diagnóstico sem nenhum endereço, usuário ou senha.
+- `tests/test_server_contract.py`: o uvicorn recebe a cadeia de `build_asgi_app`.
 - `tests/test_cors_expose_headers.py`: preflight libera `X-Mplacas-Auth` com credenciais só para a
   origem configurada.
 - Fluxo antigo: `tests/test_auth_characterization.py`, `tests/test_auth_logout.py` e demais

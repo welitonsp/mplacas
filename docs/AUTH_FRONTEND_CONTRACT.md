@@ -31,6 +31,8 @@ Decisão vigente: ADR-102 (substitui a ADR-073). Implantação em etapas; o que 
   revogar a família (duas abas). A família nunca passa de 30 dias desde o login
   (`MPLACAS_AUTH_SESSION_MAX_AGE_DAYS`); depois disso, 401 e login com senha.
 - `POST /auth/refresh` lê o cookie primeiro; com cookie, ele é a credencial e o corpo é ignorado.
+  Refresh recusado pelo cookie apaga o cookie, exceto na tolerância de duas abas (401 sem
+  `Set-Cookie`).
   **[transitório]** Sem cookie, aceita `{"refresh_token": ...}` no corpo, como antes.
 - **[transitório]** As respostas de login, refresh e aceite ainda trazem `refresh_token` no corpo
   JSON. Até a etapa 3, o frontend guarda esse valor só em memória (nunca em storage).
@@ -44,6 +46,9 @@ Decisão vigente: ADR-102 (substitui a ADR-073). Implantação em etapas; o que 
   revogar nem apagar o cookie.
 - `POST /auth/login` e `POST /auth/invitations/accept`: se houver `Origin`, ele precisa estar na
   lista (senão `403`); sem `Origin` (cliente que não é navegador), segue como antes.
+  **Atenção:** com `MPLACAS_CORS_ALLOWED_ORIGINS` vazia, todo login e aceite feito por navegador
+  (que sempre manda `Origin`) recebe `403`, e o refresh/logout pelo cookie também. A lista precisa
+  conter a origem exata do frontend em todo ambiente com navegador.
 - O fluxo do corpo, sem cookie, não exige cabeçalho novo **[transitório]**.
 
 ## Logout
@@ -64,7 +69,9 @@ decisão explícita da ADR-052.
 - O proxy envia `X-Mplacas-Client-IP` (do `CF-Connecting-IP`) com `X-Mplacas-Proxy-Secret`; o
   backend só honra o IP quando o segredo confere com `MPLACAS_PROXY_SHARED_SECRET` (sem segredo
   configurado, o cabeçalho é ignorado). O segredo nunca é logado.
-- O uvicorn só aceita `X-Forwarded-For` das redes de `MPLACAS_FORWARDED_ALLOW_IPS` (nunca `*`).
+- **[transitório]** `MPLACAS_FORWARDED_ALLOW_IPS=*` (padrão) mantém o comportamento anterior, com
+  XFF forjável. A saída é `MPLACAS_TRUSTED_PROXY_HOPS` (IP = `XFF[-N]`), definido depois de ler o
+  log `client_ip_diagnostic` — procedimento na ADR-102 § 6.
 
 ## Headers e origens
 

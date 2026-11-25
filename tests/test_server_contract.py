@@ -136,11 +136,10 @@ def test_server_uses_port_and_host(monkeypatch) -> None:
     assert server.main() == 0
     assert captured["host"] == "0.0.0.0"
     assert captured["port"] == 9090
-    assert captured["proxy_headers"] is True
-    # ADR-102: "*" deixava qualquer cliente forjar o IP por X-Forwarded-For.
-    assert captured["forwarded_allow_ips"] != "*"
-    assert captured["forwarded_allow_ips"] == get_settings().forwarded_allow_ips
-    assert "10.0.0.0/8" in str(captured["forwarded_allow_ips"])
+    # ADR-102 § 6: os cabeçalhos de proxy são tratados pela cadeia montada em
+    # ``build_asgi_app`` (que guarda o par TCP real por fora), não pelo uvicorn.
+    assert captured["proxy_headers"] is False
+    assert isinstance(captured["args"][0], server.TcpPeerMiddleware)
     assert captured["access_log"] is False
     assert captured["log_config"] is None
     assert captured["observability_shutdown"] is True

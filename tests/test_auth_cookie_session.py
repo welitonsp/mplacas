@@ -526,6 +526,9 @@ def test_reuse_within_grace_is_401_without_revoking_family(monkeypatch, tmp_path
     late = _cookie_refresh(client, first)
 
     assert late.status_code == 401
+    # Sem Set-Cookie: se esta resposta chegasse depois da vencedora, um
+    # cookie de remoção apagaria o cookie novo e deslogaria o usuário.
+    assert _set_cookies(late) == []
     assert len(_sessions(factory)) == 2  # nenhuma sessão nova emitida
     assert _session_for(factory, second).active is True
     assert _session_for(factory, first).revoked_at is None
@@ -781,35 +784,128 @@ def test_proxy_secret_never_reaches_logs(monkeypatch, tmp_path, caplog) -> None:
     assert _PROXY_SECRET not in str(get_settings().safe_summary())
 
 
-def test_forwarded_for_trusted_only_from_private_proxy() -> None:
-    """Com a configuração padrão, o uvicorn só aceita X-Forwarded-For vindo do
-    proxy do Render (rede privada) e pega o endereço mais à direita que não é
-    proxy: o que o cliente escreveu à esquerda é descartado."""
-    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+def _run_chain(settings: Settings, peer: str, xff: list[str]) -> Request:
+    """Passa um pedido pela cadeia real do ``server.py`` e devolve o Request
+    que a aplicação enxerga."""
+    from mplacas.server import build_asgi_app
 
-    seen: dict[str, object] = {}
+    seen: dict[str, Request] = {}
 
     async def app(scope, receive, send) -> None:
-        seen["client"] = scope["client"]
+        seen["request"] = Request(scope)
 
-    middleware = ProxyHeadersMiddleware(
-        app, trusted_hosts=Settings(_env_file=None).forwarded_allow_ips  # type: ignore[call-arg]
-    )
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/auth/login",
+        "client": (peer, 1234),
+        "headers": [(b"x-forwarded-for", value.encode()) for value in xff],
+    }
+    asyncio.run(build_asgi_app(app, settings)(scope, None, None))
+    return seen["request"]
 
-    def call(peer: str, xff: str) -> object:
-        scope = {
-            "type": "http",
-            "client": (peer, 1234),
-            "headers": [(b"x-forwarded-for", xff.encode())],
+
+def _hops_settings(hops: int | None, **extra) -> Settings:
+    return Settings(_env_file=None, trusted_proxy_hops=hops, **extra)  # type: ignore[call-arg]
+
+
+def test_default_chain_keeps_previous_behaviour_and_stashes_tcp_peer() -> None:
+    """Transitório (ADR-102 § 6): ``*`` reproduz o deploy anterior — o uvicorn
+    pega o primeiro do XFF (forjável, como já era) — mas o par TCP real fica
+    guardado para o diagnóstico."""
+    request = _run_chain(_hops_settings(None), "10.20.30.40", ["1.2.3.4, 198.51.100.9"])
+
+    assert request.client is not None and request.client.host == "1.2.3.4"
+    assert request.scope["mplacas.tcp_peer"][0] == "10.20.30.40"
+
+
+def test_explicit_private_list_takes_rightmost_untrusted() -> None:
+    settings = _hops_settings(None, forwarded_allow_ips="10.0.0.0/8")
+
+    request = _run_chain(settings, "10.20.30.40", ["1.2.3.4, 198.51.100.9"])
+    assert request.client is not None and request.client.host == "198.51.100.9"
+    request = _run_chain(settings, "203.0.113.50", ["1.2.3.4"])
+    assert request.client is not None and request.client.host == "203.0.113.50"
+
+
+@pytest.mark.parametrize(
+    ("hops", "xff", "expected"),
+    [
+        (1, ["198.51.100.9"], "198.51.100.9"),
+        (1, ["6.6.6.6, 198.51.100.9"], "198.51.100.9"),
+        (2, ["6.6.6.6, 198.51.100.9, 172.70.1.1"], "198.51.100.9"),
+        (2, ["6.6.6.6", "198.51.100.9, 172.70.1.1"], "198.51.100.9"),
+        (3, ["6.6.6.6, 7.7.7.7, 198.51.100.9, 172.70.1.1, 10.1.1.1"], "198.51.100.9"),
+        # Menos itens que os saltos configurados → par TCP (o próprio proxy).
+        (3, ["198.51.100.9, 172.70.1.1"], "10.20.30.40"),
+        # Item na posição esperada não é IP → par TCP.
+        (1, ["198.51.100.9, lixo"], "10.20.30.40"),
+    ],
+    ids=["1-hop", "1-hop-forjado", "2-hops", "2-hops-cabecalhos", "3-hops", "curto", "invalido"],
+)
+def test_trusted_proxy_hops_picks_nth_from_right(hops, xff, expected) -> None:
+    settings = _hops_settings(hops)
+
+    request = _run_chain(settings, "10.20.30.40", xff)
+
+    # Nesse modo o uvicorn não reescreve o cliente: ele continua o par TCP.
+    assert request.client is not None and request.client.host == "10.20.30.40"
+    assert resolve_client_ip(request, settings) == expected
+
+
+def test_proxy_secret_header_wins_over_hops() -> None:
+    settings = _hops_settings(1, proxy_shared_secret=_PROXY_SECRET)
+    request = _request(
+        {
+            "X-Forwarded-For": "6.6.6.6, 198.51.100.9",
+            "X-Mplacas-Client-IP": "203.0.113.7",
+            "X-Mplacas-Proxy-Secret": _PROXY_SECRET,
         }
-        asyncio.run(middleware(scope, None, None))  # type: ignore[arg-type]
-        return seen["client"][0]  # type: ignore[index]
-
-    assert call("10.20.30.40", "1.2.3.4, 198.51.100.9") == "198.51.100.9"
-    assert call("10.20.30.40", "1.2.3.4, 198.51.100.9, 10.1.1.1") == "198.51.100.9"
-    assert call("203.0.113.50", "1.2.3.4") == "203.0.113.50"
+    )
+    assert resolve_client_ip(request, settings) == "203.0.113.7"
 
 
-def test_wildcard_forwarded_allow_ips_is_rejected() -> None:
+def test_trusted_proxy_hops_bounds() -> None:
+    for invalid in (0, 11):
+        with pytest.raises(ValueError):
+            _hops_settings(invalid)
+
+
+def test_forwarded_allow_ips_wildcard_only_alone() -> None:
+    assert Settings(_env_file=None).forwarded_allow_ips == "*"  # type: ignore[call-arg]
     with pytest.raises(ValueError):
-        Settings(_env_file=None, forwarded_allow_ips="*")  # type: ignore[call-arg]
+        Settings(_env_file=None, forwarded_allow_ips="*,10.0.0.0/8")  # type: ignore[call-arg]
+
+
+def test_client_ip_diagnostic_logs_no_address_user_or_header(
+    monkeypatch, tmp_path, caplog
+) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path, MPLACAS_TRUSTED_PROXY_HOPS="1")
+    _seed_user(factory)
+    secret_like = ["198.51.100.9", "6.6.6.6", "testclient", "dona@tenant.example", _PASSWORD]
+
+    with caplog.at_level(logging.DEBUG):
+        _login(client, **{"X-Forwarded-For": "6.6.6.6, 198.51.100.9"})
+
+    (record,) = [r for r in caplog.records if r.getMessage() == "client_ip_diagnostic"]
+    assert record.levelno == logging.INFO
+    assert record.peer_is_private is False  # type: ignore[attr-defined]
+    assert record.forwarded_for_hops == 2  # type: ignore[attr-defined]
+    assert record.resolved_matches_peer is False  # type: ignore[attr-defined]
+    # Só os logs da aplicação: o DEBUG do aiosqlite (que ecoa parâmetros SQL)
+    # não roda em produção, onde o nível é INFO.
+    app_records = [r for r in caplog.records if r.name.startswith("mplacas")]
+    assert record in app_records
+    dumped = "".join(r.getMessage() + repr(vars(r)) for r in app_records)
+    for value in secret_like:
+        assert value not in dumped
+
+
+def test_client_ip_diagnostic_can_be_turned_off(monkeypatch, tmp_path, caplog) -> None:
+    client, factory = _make_client(monkeypatch, tmp_path, MPLACAS_CLIENT_IP_DIAGNOSTIC="false")
+    _seed_user(factory)
+
+    with caplog.at_level(logging.DEBUG):
+        _login(client)
+
+    assert not any(r.getMessage() == "client_ip_diagnostic" for r in caplog.records)

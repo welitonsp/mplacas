@@ -27,8 +27,9 @@ from mplacas.auth.session_service import (
     AuthSessionService,
     IssuedRefreshSession,
     LoginRateLimitService,
+    RotationRejection,
 )
-from mplacas.core.client_ip import resolve_client_ip
+from mplacas.core.client_ip import log_client_ip_diagnostic, resolve_client_ip
 from mplacas.core.config import Settings, get_settings
 from mplacas.core.jwt import (
     JwtError,
@@ -312,6 +313,7 @@ async def login(
 
     rate_limit = LoginRateLimitService(session)
     client_host = resolve_client_ip(request, settings)
+    log_client_ip_diagnostic(request, settings, client_host)
     rate_key = LoginRateLimitService.key_for(
         username=body.username,
         client_host=client_host,
@@ -396,7 +398,11 @@ async def refresh(
     # Commit também na falha: a revogação da família (replay, teto absoluto)
     # escrita por ``rotate_session`` não pode se perder num rollback.
     await session.commit()
-    if issued is None:
+    if issued is RotationRejection.WITHIN_GRACE:
+        # Perdeu a corrida para outra aba: a vencedora já gravou o cookie
+        # novo. Apagar aqui poderia chegar depois e deslogar o usuário.
+        raise _invalid_refresh_token()
+    if isinstance(issued, RotationRejection):
         raise _invalid_refresh_token(clear_cookie=clear_on_failure)
 
     _set_refresh_cookie(response, issued, settings)

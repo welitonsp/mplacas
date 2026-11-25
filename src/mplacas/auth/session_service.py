@@ -5,6 +5,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, UTC
+from enum import Enum
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.engine import CursorResult
@@ -42,6 +43,20 @@ class IssuedRefreshSession:
 
     token: str
     expires_at: datetime
+
+
+class RotationRejection(Enum):
+    """Por que ``rotate_session`` não emitiu sessão (ADR-102).
+
+    ``WITHIN_GRACE``: outro pedido acabou de rotacionar este token (duas
+    abas). A sessão nova da vencedora está viva; a resposta ao cliente NÃO
+    pode apagar o cookie, senão chega depois da vencedora e apaga o cookie
+    novo. ``DEFINITIVE``: token inválido, expirado, revogado, replay ou teto
+    — a sessão acabou de fato.
+    """
+
+    WITHIN_GRACE = "within_grace"
+    DEFINITIVE = "definitive"
 
 
 class AuthSessionService:
@@ -100,7 +115,7 @@ class AuthSessionService:
         issued = await self.rotate_session(
             token=token, claims=claims, ttl_seconds=ttl_seconds
         )
-        return issued.token if issued is not None else None
+        return issued.token if isinstance(issued, IssuedRefreshSession) else None
 
     async def rotate_session(
         self,
@@ -110,20 +125,20 @@ class AuthSessionService:
         ttl_seconds: int,
         reuse_grace_seconds: int = 0,
         absolute_max_seconds: int | None = None,
-    ) -> IssuedRefreshSession | None:
+    ) -> IssuedRefreshSession | RotationRejection:
         """Troca o refresh token por um novo da mesma família.
 
-        Devolve ``None`` em qualquer falha. O chamador DEVE fazer commit mesmo
-        no ``None``: a revogação da família (replay ou teto absoluto) é escrita
-        aqui e se perderia num rollback.
+        Em falha devolve um ``RotationRejection``. O chamador DEVE fazer commit
+        mesmo na falha: a revogação da família (replay ou teto absoluto) é
+        escrita aqui e se perderia num rollback.
 
         - ``reuse_grace_seconds``: token autêntico rotacionado há menos que
-          isso (duas abas) → ``None`` sem revogar a família (ADR-102).
+          isso (duas abas) → ``WITHIN_GRACE``, sem revogar a família.
         - ``absolute_max_seconds``: a família não passa disso desde a criação
-          da raiz; passou → família encerrada e ``None``.
+          da raiz; passou → família encerrada e ``DEFINITIVE``.
         """
         if claims.jti is None:
-            return None
+            return RotationRejection.DEFINITIVE
         now = _utc_now()
         token_hash = hash_refresh_token(token)
         new_session_id = uuid.uuid4()
@@ -145,14 +160,13 @@ class AuthSessionService:
         ).scalar_one_or_none()
 
         if claimed_family_id is None:
-            await self._handle_failed_rotation(
+            return await self._handle_failed_rotation(
                 session_id=claims.jti,
                 token_hash=token_hash,
                 claims=claims,
                 now=now,
                 reuse_grace_seconds=reuse_grace_seconds,
             )
-            return None
 
         new_expires_at = now + timedelta(seconds=ttl_seconds)
         if absolute_max_seconds is not None:
@@ -163,7 +177,7 @@ class AuthSessionService:
                 await self._end_family_at_cap(
                     family_id=claimed_family_id, presented_session_id=claims.jti, now=now
                 )
-                return None
+                return RotationRejection.DEFINITIVE
             new_expires_at = min(new_expires_at, family_deadline)
 
         self._session.add(
@@ -229,24 +243,24 @@ class AuthSessionService:
         claims: JwtClaims,
         now: datetime,
         reuse_grace_seconds: int = 0,
-    ) -> None:
+    ) -> RotationRejection:
         record = await self._session.get(AuthSessionRecord, session_id)
         if record is None:
-            return
+            return RotationRejection.DEFINITIVE
         token_matches = (
             record.user_id == claims.sub
             and record.organization_id == claims.org_id
             and record.refresh_token_hash == token_hash
         )
         if not token_matches:
-            return
+            return RotationRejection.DEFINITIVE
         if record.active and _as_utc(record.expires_at) <= now:
             record.active = False
             record.revoked_at = now
             await self._session.flush()
-            return
+            return RotationRejection.DEFINITIVE
         if record.active:
-            return
+            return RotationRejection.DEFINITIVE
         if (
             reuse_grace_seconds > 0
             and record.revoked_at is None
@@ -263,7 +277,7 @@ class AuthSessionService:
                     "auth_session_family_id": str(record.family_id),
                 },
             )
-            return
+            return RotationRejection.WITHIN_GRACE
 
         # O token autêntico já foi consumido/revogado: isso é replay. A
         # família inteira é invalidada para que o sucessor possivelmente
@@ -286,6 +300,7 @@ class AuthSessionService:
             },
         )
         await self._session.flush()
+        return RotationRejection.DEFINITIVE
 
     async def revoke(self, *, session_id: uuid.UUID) -> bool:
         record = await self._session.get(AuthSessionRecord, session_id)

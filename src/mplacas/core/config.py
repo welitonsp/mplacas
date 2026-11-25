@@ -126,12 +126,19 @@ class Settings(BaseSettings):
     # Segredo compartilhado com o proxy (Pages Function). Sem ele, o cabeçalho
     # ``X-Mplacas-Client-IP`` é ignorado. Nunca logado nem exposto.
     proxy_shared_secret: SecretStr | None = Field(default=None, repr=False)
-    # Redes cujo ``X-Forwarded-For`` o uvicorn aceita (o proxy do Render chega
-    # por endereço privado). ``*`` é proibido: deixava o cliente forjar o IP e
-    # escapar do limite de tentativas de login.
-    forwarded_allow_ips: str = (
-        "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,fc00::/7"
-    )
+    # Hosts/redes cujo ``X-Forwarded-For`` é aceito (``ProxyHeadersMiddleware``
+    # do uvicorn). TRANSITÓRIO (ADR-102 § 6): o padrão ``*`` reproduz o deploy
+    # de antes — e com ele o risco já existente de o cliente forjar o IP pelo
+    # XFF — até ``client_ip_diagnostic`` confirmar quantos saltos de proxy o
+    # Render põe na frente. Depois, definir ``trusted_proxy_hops`` e remover.
+    forwarded_allow_ips: str = "*"
+    # Modo robusto, desligado por padrão: N saltos de proxy confiáveis contados
+    # da direita do XFF; IP do cliente = ``XFF[-N]``. Definido, o uvicorn deixa
+    # de reescrever o endereço do cliente com o XFF.
+    trusted_proxy_hops: int | None = None
+    # Log ``client_ip_diagnostic`` no login (só booleanos e contagem, nunca
+    # endereço). Temporário: some junto com o ``*`` acima.
+    client_ip_diagnostic: bool = True
     cors_allowed_origins: str | None = None
     dashboard_url: HttpUrl = HttpUrl("https://mplacas-frontend.pages.dev/dashboard")
     fanout_max_plants: int = 10
@@ -255,11 +262,23 @@ class Settings(BaseSettings):
     @classmethod
     def _validate_forwarded_allow_ips(cls, value: str) -> str:
         entries = [entry.strip() for entry in value.split(",") if entry.strip()]
-        if any(entry == "*" for entry in entries):
-            raise ValueError(
-                "MPLACAS_FORWARDED_ALLOW_IPS must not be '*': it lets clients spoof their IP"
-            )
+        if not entries:
+            raise ValueError("MPLACAS_FORWARDED_ALLOW_IPS must not be empty")
+        if "*" in entries:
+            # Aceito de propósito, transitório (ADR-102 § 6): é o comportamento
+            # que já estava em produção. Misturado com outros valores não faz
+            # sentido e indica erro de configuração.
+            if len(entries) > 1:
+                raise ValueError("'*' must be the only MPLACAS_FORWARDED_ALLOW_IPS entry")
+            return "*"
         return ",".join(entries)
+
+    @field_validator("trusted_proxy_hops")
+    @classmethod
+    def _validate_trusted_proxy_hops(cls, value: int | None) -> int | None:
+        if value is not None and not 1 <= value <= 10:
+            raise ValueError("trusted proxy hops must be between 1 and 10")
+        return value
 
     @field_validator("proxy_shared_secret")
     @classmethod
