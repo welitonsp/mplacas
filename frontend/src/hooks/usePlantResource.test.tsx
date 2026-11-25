@@ -92,6 +92,36 @@ describe('usePlantResource', () => {
     expect(consoleErrorSpy).not.toHaveBeenCalled()
   })
 
+  it('http com corpo {"detail": "..."} expõe o detail em classifyError; corpo ilegível fica só com o status', async () => {
+    const seen: ResourceFailure[] = []
+    const classifyError = (failure: ResourceFailure) => {
+      seen.push(failure)
+      return 'X'
+    }
+    renderHook(() =>
+      usePlantResource({
+        plantId: 'p1',
+        fetcher: async () => jsonResponse({ detail: 'abc' }, 404),
+        parse: (v) => v,
+        classifyError,
+      }),
+    )
+    await waitFor(() => expect(seen).toHaveLength(1))
+    expect(seen[0]).toEqual({ kind: 'http', status: 404, detail: 'abc' })
+
+    renderHook(() =>
+      usePlantResource({
+        plantId: 'p2',
+        fetcher: async () => new Response('Not Found', { status: 404 }),
+        parse: (v) => v,
+        classifyError,
+      }),
+    )
+    await waitFor(() => expect(seen).toHaveLength(2))
+    expect(seen[1]).toEqual({ kind: 'http', status: 404 })
+    expect('detail' in seen[1]).toBe(false)
+  })
+
   // (d) HTTP 404 com classifyError retornando um valor
   it('404 com classifyError retornando NOT_FOUND vira status error com esse valor', async () => {
     const fetcher = vi.fn(async () => jsonResponse({}, 404))

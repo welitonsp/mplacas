@@ -464,12 +464,30 @@ describe('Início de usina recém-conectada', () => {
 
   it('sem fatura (executivo 404): estado vazio com caminho, nunca "Erro ao buscar dados"', async () => {
     freezeToday()
-    await renderHome({ fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: 'x' }, 404)) })
+    await renderHome({ fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: 'confirmed bill not found for plant' }, 404)) })
 
     const card = await screen.findByTestId('home-no-cycle')
     expect(within(card).getByText('A economia aparece depois da primeira fatura')).toBeInTheDocument()
     expect(within(card).getByRole('link', { name: 'Enviar a fatura em Dinheiro' })).toBeInTheDocument()
     expect(screen.queryByText('Erro ao buscar dados.')).not.toBeInTheDocument()
+  })
+
+  it('executivo 404 "plant not found": erro com "Tentar novamente", não o estado de primeira fatura', async () => {
+    freezeToday()
+    await renderHome({ fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: 'plant not found' }, 404)) })
+
+    expect(await screen.findByText('Erro ao buscar dados.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument()
+    expect(screen.queryByTestId('home-no-cycle')).not.toBeInTheDocument()
+  })
+
+  it('executivo 500: erro com "Tentar novamente"', async () => {
+    freezeToday()
+    await renderHome({ fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: 'boom' }, 500)) })
+
+    expect(await screen.findByText('Erro ao buscar dados.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument()
+    expect(screen.queryByTestId('home-no-cycle')).not.toBeInTheDocument()
   })
 
   it('sem leitura: o ADMIN já busca a produção na marca e o Início recarrega', async () => {

@@ -4,7 +4,7 @@ import { fetchExecutiveDashboard, fetchFinancialReturn, fetchInvestorPanel } fro
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
 import { useModuleTitle } from '../../hooks/useModuleTitle'
-import { parseExecutiveDashboard } from '../../lib/dashboard/contracts'
+import { NO_CYCLE, classifyExecutiveFailure, parseExecutiveDashboard } from '../../lib/dashboard/contracts'
 import { parseFinancialReturn } from '../../lib/dashboard/financial-return-contracts'
 import { parseInvestorPanel } from '../../lib/dashboard/investor-contracts'
 import { CycleLedgerSection } from '../../components/CycleLedgerSection'
@@ -47,11 +47,14 @@ export function FinancialPage() {
   // Chamado antes de qualquer `return` condicional abaixo (regra dos hooks).
   const headingRef = useModuleTitle('Dinheiro')
 
-  const executive = usePlantResource({
+  // 404 "confirmed bill not found for plant" = usina sem fatura confirmada:
+  // estado vazio esperado (primeiro passo), não erro. Outros 404 (usina não
+  // encontrada), 5xx, rede e contrato continuam sendo erro com nova tentativa.
+  const executive = usePlantResource<ReturnType<typeof parseExecutiveDashboard>, string>({
     plantId,
     fetcher: fetchExecutiveDashboard,
     parse: parseExecutiveDashboard,
-    errorMessage: 'Erro ao buscar dados.',
+    classifyError: (failure) => classifyExecutiveFailure(failure, 'Erro ao buscar dados.'),
   })
   // `null` (`.data`) = ainda carregando `/energy/financial-return/latest`
   // (ADR-067). Erro de rede/servidor fica em `financialReturn.error`, tratado
@@ -139,7 +142,24 @@ export function FinancialPage() {
         headingRef={headingRef}
         actions={<RefreshBar onRefresh={refreshAll} loading={loading} className="mb-0 lg:justify-self-end" />}
       />
-      {executive.error && (
+      {executive.error === NO_CYCLE && (
+        <EmptyState
+          title="Sua conta aparece depois da primeira fatura"
+          description="Importe a fatura da distribuidora em PDF e confira os valores. Com a primeira fatura confirmada, o MPlacas mostra quanto você economizou no ciclo."
+          tone="brand"
+          className="mb-6"
+          action={
+            // Âncora comum: a rolagem até `#faturas` é nativa do navegador.
+            <a
+              href="#faturas"
+              className="inline-flex min-h-[44px] items-center rounded-lg bg-[var(--color-brand-primary)] px-4 text-sm font-semibold text-[var(--color-on-brand)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand-primary)] focus-visible:ring-offset-2"
+            >
+              Importar uma fatura
+            </a>
+          }
+        />
+      )}
+      {executive.error && executive.error !== NO_CYCLE && (
         <RetryableError
           message={executive.error}
           onRetry={executive.refetch}

@@ -294,6 +294,26 @@ export function classifyAnomalyErrorStatus(status: number): AnomalyFetchError | 
   return 'SERVER_ERROR'
 }
 
+// `/energy/executive/latest` responde 404 em dois casos distintos, separados
+// só pelo `detail` do corpo (`intelligence/router.py`): "confirmed bill not
+// found for plant" (`EnergyCycleNotFoundError`: usina existe, mas ainda não tem
+// fatura confirmada — estado esperado) e "plant not found" (usina fora do
+// escopo ou inexistente — erro de verdade). Qualquer outro 404 (rota
+// desconhecida, detail ausente) também é erro: só o texto exato vale como
+// "ainda sem fatura".
+export const NO_CONFIRMED_BILL_DETAIL = 'confirmed bill not found for plant'
+export const NO_CYCLE = 'NO_CYCLE'
+
+export function classifyExecutiveFailure(
+  failure: { kind: string; status?: number; detail?: string },
+  errorMessage: string,
+): string {
+  if (failure.kind === 'http' && failure.status === 404 && failure.detail === NO_CONFIRMED_BILL_DETAIL) {
+    return NO_CYCLE
+  }
+  return errorMessage
+}
+
 // Mais crítico primeiro — mesma ordem de gravidade usada no backend para decidir o
 // `status` executivo (ver intelligence/executive_service.py::_status_for_cycle).
 const DIAGNOSTIC_SEVERITY_ORDER: Record<DiagnosticSeverity, number> = {
