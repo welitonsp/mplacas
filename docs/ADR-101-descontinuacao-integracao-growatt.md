@@ -15,7 +15,7 @@ clássico do app (ADR-092), ambos frágeis e fora do contrato do fabricante. A N
 ## Decisão
 
 1. A integração Growatt está **descontinuada**. A NEPViewer permanece.
-2. **Mantido:** faturas dos clientes, relatórios mensais, produção já coletada,
+2. **~~Mantido~~ — substituído pela seção "Exclusão definitiva" (25/11/2026) para as usinas conectadas pela Growatt:** faturas dos clientes, relatórios mensais, produção já coletada,
    aparelhos (`devices`), a tabela `meter_readings` (congelada, sem novas escritas
    depois do desligamento), e `provider_plant_claims` (a ser generalizada para uma
    marca só).
@@ -44,11 +44,12 @@ clássico do app (ADR-092), ambos frágeis e fora do contrato do fabricante. A N
 ### Positivas
 
 Sem credencial de terceiros sem uso guardada, sem chamadas a uma API sem contrato, menos
-código a manter. Histórico dos clientes preservado.
+código a manter. ~~Histórico dos clientes preservado.~~ (Substituído: as usinas Growatt, com
+faturas e relatórios, são apagadas pelo comando de exclusão definitiva.)
 
 ### Negativas
 
-Clientes Growatt perdem a coleta nova a partir do passo 3 e ficam só com o histórico.
+~~Clientes Growatt perdem a coleta nova a partir do passo 3 e ficam só com o histórico.~~ (Substituído: perdem a usina inteira.)
 Há um intervalo entre os passos 1 e 3 em que a conexão existe, mas não aceita
 reimportação nem releitura do cadastro.
 
@@ -60,7 +61,8 @@ NEPViewer segue passando.
 ## Reversibilidade
 
 Até o passo 3, basta voltar `CONNECTABLE_PROVIDERS` a incluir as marcas Growatt. Depois
-do passo 3 as credenciais foram apagadas e os clientes precisariam reconectar.
+do passo 3 as credenciais foram apagadas e os clientes precisariam reconectar. **Depois do
+comando de exclusão definitiva, a única volta é restaurar o backup** feito antes dele.
 
 ## Exclusão definitiva (decisão do dono, 25/11/2026)
 
@@ -86,8 +88,23 @@ que só aplica com `confirmacao` = `EXCLUIR`).
   some com a linha), `devices`, `plants`. Antes, `organizations.default_plant_id` vira NULL e
   a usina sai de `api_credentials.plant_ids`. Depois, confere que nada das usinas restou e
   que nada do resto mudou; qualquer divergência desfaz a transação.
-- **Usuários e organizações** não são apagados. **Auditoria** (`audit_events`, sem FK para
-  usina e sem encadeamento) fica intacta; cada execução grava um evento de plataforma
-  `plant.purged_discontinued_provider` só com contagens.
+- **Usuários e organizações** não são apagados. Dois ajustes de referência: a usina padrão
+  da organização vira NULL e a usina sai de `api_credentials.plant_ids`; a credencial cujo
+  escopo ficaria vazio é **revogada** (`active=false`, `revoked_at`, `plant_ids=[]`; nunca
+  NULL, que significaria a organização inteira). Uma lista vazia é lida como escopo que não
+  permite nada (`PlantScope.empty()`), nunca como erro.
+- **Auditoria da usina também é apagada** (o dono escolheu apagar a usina inteira): os
+  `audit_events` com `resource_type` `plant` (id da usina), `utility_bill` (id das faturas
+  apagadas) ou `pipeline_execution` (id das execuções apagadas), mais qualquer evento cujo
+  `details.plant_id` seja uma das usinas (ex.: `plant.created_from_connection`). Os demais
+  tipos (`organization`, `api_credential`, `user_invitation`, `operational_user`) ficam.
+  Sobra apenas o evento de plataforma `plant.purged_discontinued_provider`, com contagens
+  (`{"plants": N, "reason": "provider_discontinued", "adr": "ADR-101"}`).
+- **Concorrência:** na PostgreSQL as linhas das usinas são travadas (`FOR UPDATE`) e a recusa
+  é reavaliada depois da trava. Rode fora do horário dos jobs agendados (coleta, leitura da
+  madrugada, pipeline diário). Um rollback por divergência na verificação é seguro e basta
+  repetir o comando.
+- Com 0 usinas selecionadas o `--apply` é um no-op com código 0 (a confirmação não é
+  comparada), para a reexecução do workflow não falhar.
 - Idempotente: a segunda execução seleciona 0 e não muda nada. O log público só mostra
   contagens e nomes de classe de exceção.

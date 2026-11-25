@@ -527,7 +527,7 @@ async def run_purge_discontinued_plants(
     async with SessionFactory() as session:
         await set_platform_context(session)
         try:
-            plan = await build_plan(session)
+            plan = await build_plan(session, lock=apply)
             if not apply:
                 return render_plan(plan, applied=False)
             if plan.selected and confirm_plant_count != plan.selected:

@@ -4,6 +4,8 @@
 #
 # Só manual. Sem `confirmacao` = EXCLUIR roda só a simulação (nada é gravado). Com EXCLUIR,
 # apaga, desde que `quantidade_de_usinas` seja igual ao número de usinas selecionadas.
+# Rode fora do horário dos jobs agendados (coleta, leitura da madrugada, pipeline diário).
+# Um rollback por divergência na verificação é seguro: basta repetir.
 # O repositório é público e o log também: o job roda com --totals-only e mostra APENAS
 # contagens — nunca nome, id, serial, coordenada ou valor.
 name: purge-discontinued-plants

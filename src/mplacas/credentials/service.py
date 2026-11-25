@@ -180,6 +180,10 @@ class CredentialService:
 
     async def _scope_for_credential(self, record: ApiCredentialRecord) -> PlantScope:
         if record.plant_ids is not None:
+            # Lista vazia (usinas apagadas pelo purge, ADR-101): escopo que não permite nada,
+            # nunca exceção (500) e nunca "organização inteira".
+            if not record.plant_ids:
+                return PlantScope.empty()
             return PlantScope.restricted(uuid.UUID(item) for item in record.plant_ids)
         if record.organization_id is not None:
             return await plant_scope_for_organization_in_session(

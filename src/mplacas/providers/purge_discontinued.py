@@ -18,9 +18,10 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Table, delete, func, select, update
+from sqlalchemy import String, Table, cast, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -151,7 +152,8 @@ CATEGORIES: tuple[_Category, ...] = (
 )
 
 # Tabelas que NÃO podem mudar de tamanho (usuários, organizações, credenciais,
-# convites). A auditoria é conferida à parte: só cresce em um evento.
+# convites). A auditoria é conferida à parte em ``_verify``: sai só o que foi levantado
+# (eventos ligados às usinas) e entra um único evento de plataforma.
 PRESERVED_TABLES: tuple[tuple[str, Table], ...] = (
     ("organizations", _table(OrganizationRecord)),
     ("operational_users", _table(OperationalUserRecord)),
@@ -175,8 +177,9 @@ class PurgePlan:
     plants_untouched: int
     default_plant_orgs: int
     scoped_credentials: int
-    scoped_credentials_emptied: int
-    audit_preserved: int
+    scoped_credentials_revoked: int
+    audit_ids: tuple[uuid.UUID, ...]
+    audit_total_before: int
 
     @property
     def selected(self) -> int:
@@ -243,36 +246,101 @@ async def _count(session: AsyncSession, table: Table, where: ColumnElement[bool]
 
 async def _scoped_credentials(
     session: AsyncSession, ids: Sequence[uuid.UUID]
-) -> list[tuple[uuid.UUID, list[str], list[str]]]:
-    """Credenciais com escopo de usina que citam alguma das usinas: (id, antes, depois)."""
+) -> list[tuple[uuid.UUID, bool, list[str]]]:
+    """Credenciais com escopo de usina que citam alguma das usinas: (id, ativa, lista depois)."""
     wanted = {str(plant_id) for plant_id in ids}
     rows = (
         await session.execute(
-            select(ApiCredentialRecord.id, ApiCredentialRecord.plant_ids).where(
-                ApiCredentialRecord.plant_ids.is_not(None)
-            )
+            select(
+                ApiCredentialRecord.id, ApiCredentialRecord.active, ApiCredentialRecord.plant_ids
+            ).where(ApiCredentialRecord.plant_ids.is_not(None))
         )
     ).all()
-    found: list[tuple[uuid.UUID, list[str], list[str]]] = []
-    for credential_id, plant_ids in rows:
+    found: list[tuple[uuid.UUID, bool, list[str]]] = []
+    for credential_id, active, plant_ids in rows:
         current = [str(item) for item in plant_ids or []]
         if wanted & set(current):
-            found.append((credential_id, current, [i for i in current if i not in wanted]))
+            found.append((credential_id, bool(active), [i for i in current if i not in wanted]))
     return found
 
 
-async def _audit_preserved(session: AsyncSession, ids: Sequence[uuid.UUID]) -> int:
-    return await _count(
-        session,
-        _table(AuditEventRecord),
-        (AuditEventRecord.resource_type == "plant")
-        & AuditEventRecord.resource_id.in_([str(plant_id) for plant_id in ids]),
+# Tipos de recurso da auditoria ligados a usina (levantamento em ``resource_type=`` dos
+# routers): ``plant`` (resource_id = usina), ``utility_bill`` (= fatura) e
+# ``pipeline_execution`` (= execução do pipeline da usina). ``organization``,
+# ``api_credential``, ``user_invitation`` e ``operational_user`` não são da usina e ficam
+# (salvo se ``details.plant_id`` citar a usina, caso de ``plant.created_from_connection``).
+async def _audit_ids_of(
+    session: AsyncSession, ids: Sequence[uuid.UUID]
+) -> tuple[uuid.UUID, ...]:
+    plants = {str(plant_id) for plant_id in ids}
+    bills = {
+        str(row[0])
+        for row in (
+            await session.execute(
+                select(UtilityBillRecord.id).where(UtilityBillRecord.plant_id.in_(ids))
+            )
+        ).all()
+    }
+    executions = {
+        str(row[0])
+        for row in (
+            await session.execute(
+                select(PipelineExecutionRecord.id).where(PipelineExecutionRecord.plant_id.in_(ids))
+            )
+        ).all()
+    }
+    by_resource = (
+        (AuditEventRecord.resource_type == "plant") & AuditEventRecord.resource_id.in_(plants)
+    ) | (
+        (AuditEventRecord.resource_type == "utility_bill")
+        & AuditEventRecord.resource_id.in_(bills)
+    ) | (
+        (AuditEventRecord.resource_type == "pipeline_execution")
+        & AuditEventRecord.resource_id.in_(executions)
     )
+    # ``details`` é JSON: filtra em SQL por texto (portável SQLite/PostgreSQL) e confere em Python.
+    by_details = or_(
+        *(cast(AuditEventRecord.details, String).like(f"%{plant_id}%") for plant_id in plants)
+    )
+    rows = (
+        await session.execute(
+            select(
+                AuditEventRecord.id,
+                AuditEventRecord.resource_type,
+                AuditEventRecord.resource_id,
+                AuditEventRecord.details,
+            ).where(by_resource | by_details)
+        )
+    ).all()
+    found: list[uuid.UUID] = []
+    for audit_id, resource_type, resource_id, details in rows:
+        in_details = isinstance(details, dict) and str(details.get("plant_id")) in plants
+        in_resource = (
+            (resource_type == "plant" and resource_id in plants)
+            or (resource_type == "utility_bill" and resource_id in bills)
+            or (resource_type == "pipeline_execution" and resource_id in executions)
+        )
+        if in_details or in_resource:
+            found.append(audit_id)
+    return tuple(sorted(found, key=str))
 
 
-async def build_plan(session: AsyncSession) -> PurgePlan:
-    """Lê e conta; não grava. Levanta ``PurgeError`` se a seleção deve ser recusada."""
+def _is_postgresql(session: AsyncSession) -> bool:
+    bind = session.get_bind()
+    return bool(bind is not None and bind.dialect.name == "postgresql")
+
+
+async def build_plan(session: AsyncSession, *, lock: bool = False) -> PurgePlan:
+    """Lê e conta; não grava. Levanta ``PurgeError`` se a seleção deve ser recusada.
+
+    ``lock``: na PostgreSQL trava as linhas das usinas selecionadas (``FOR UPDATE``) e
+    reavalia seleção e recusa já com a trava, para uma conexão concorrente não mudar o
+    quadro entre a leitura e a exclusão. No SQLite não há o que travar.
+    """
     ids, refused = await select_discontinued_plants(session)
+    if lock and ids and _is_postgresql(session):
+        await session.execute(select(Plant.id).where(Plant.id.in_(ids)).with_for_update())
+        ids, refused = await select_discontinued_plants(session)
     if refused:
         raise PurgeError(
             f"recusado: {refused} usina(s) selecionada(s) tem conexao, reserva ou aparelho "
@@ -305,8 +373,9 @@ async def build_plan(session: AsyncSession) -> PurgePlan:
         plants_untouched=totals["plants"] - owned["plants"],
         default_plant_orgs=default_orgs,
         scoped_credentials=len(scoped),
-        scoped_credentials_emptied=sum(1 for _, _, after in scoped if not after),
-        audit_preserved=await _audit_preserved(session, ids) if ids else 0,
+        scoped_credentials_revoked=sum(1 for _, active, after in scoped if active and not after),
+        audit_ids=await _audit_ids_of(session, ids) if ids else (),
+        audit_total_before=await _count(session, _table(AuditEventRecord), None),
     )
 
 
@@ -314,8 +383,9 @@ async def execute_purge(session: AsyncSession, plan: PurgePlan) -> PurgeResult:
     """Apaga na ordem segura e confere tudo; levanta ``PurgeError`` se algo diferir.
 
     Não faz commit: o chamador só confirma se esta função retornar. Usuários e
-    organizações não são apagados; ``audit_events`` não tem FK para usina e fica
-    intacto (só ganha o evento de plataforma desta execução).
+    organizações não são apagados. Os eventos de auditoria ligados às usinas (e aos
+    recursos apagados) são apagados junto, por decisão do dono; fica só o evento de
+    plataforma desta execução, com contagens.
     """
     ids = plan.plant_ids
     if not ids:
@@ -327,17 +397,36 @@ async def execute_purge(session: AsyncSession, plan: PurgePlan) -> PurgeResult:
         .where(OrganizationRecord.default_plant_id.in_(ids))
         .values(default_plant_id=None)
     )
-    for credential_id, _before, after in await _scoped_credentials(session, ids):
+    now = datetime.now(UTC)
+    for credential_id, active, after in await _scoped_credentials(session, ids):
+        values: dict[str, Any] = {"plant_ids": after}
+        if not after:
+            # Escopo vazio não pode ficar ativo: NULL seria "organização inteira" e a
+            # lista vazia não é um escopo válido para uma chave em uso. Revoga como
+            # ``CredentialService.revoke`` (active=False + revoked_at) e mantém ``[]``.
+            values["active"] = False
+            if active:
+                values["revoked_at"] = now
         await session.execute(
             update(ApiCredentialRecord)
             .where(ApiCredentialRecord.id == credential_id)
-            .values(plant_ids=after)
+            .values(**values)
         )
+
+    audit_table = _table(AuditEventRecord)
+    audit_deleted = 0
+    for start in range(0, len(plan.audit_ids), 500):
+        chunk = plan.audit_ids[start : start + 500]
+        result = await session.execute(
+            delete(audit_table).where(AuditEventRecord.id.in_(chunk))
+        )
+        audit_deleted += int(getattr(result, "rowcount", -1))
 
     deleted: dict[str, int] = {}
     for category in CATEGORIES:
         result = await session.execute(delete(category.table).where(category.owned(ids)))
         deleted[category.name] = int(getattr(result, "rowcount", -1))
+    deleted["audit_events"] = audit_deleted
 
     await _verify(session, plan, deleted)
 
@@ -359,6 +448,10 @@ async def execute_purge(session: AsyncSession, plan: PurgePlan) -> PurgeResult:
         )
     )
     await session.flush()
+    if await _count(session, audit_table, None) != plan.audit_total_before - audit_deleted + 1:
+        raise PurgeError(
+            "verificacao falhou (auditoria); transacao desfeita, nada foi gravado"
+        )
     return PurgeResult(plan=plan, deleted=deleted)
 
 
@@ -377,6 +470,14 @@ async def _verify(session: AsyncSession, plan: PurgePlan, deleted: dict[str, int
     for name, table in PRESERVED_TABLES:
         if await _count(session, table, None) != plan.preserved_before[name]:
             problems += 1
+    # Auditoria: saiu exatamente o que foi levantado (o evento de plataforma entra depois).
+    audit_table = _table(AuditEventRecord)
+    if deleted["audit_events"] != len(plan.audit_ids):
+        problems += 1
+    if await _count(session, audit_table, None) != plan.audit_total_before - len(plan.audit_ids):
+        problems += 1
+    if await _audit_ids_of(session, ids):
+        problems += 1
     if (
         await _count(
             session, _table(OrganizationRecord), OrganizationRecord.default_plant_id.in_(ids)
@@ -400,16 +501,16 @@ def render_plan(plan: PurgePlan, *, applied: bool, deleted: dict[str, int] | Non
     lines = [
         f"Exclusao definitiva de usinas de marca descontinuada ({AUDIT_ADR}) - {mode}",
         f"usinas_selecionadas={plan.selected}",
-        f"usinas_nepviewer_intocadas={plan.plants_untouched}",
+        f"usinas_nao_selecionadas_intocadas={plan.plants_untouched}",
     ]
     for category in CATEGORIES:
         lines.append(f"{verb}.{category.name}={counts.get(category.name, 0)}")
     lines.extend(
         [
+            f"eventos_de_auditoria_excluidos={len(plan.audit_ids)}",
             f"organizacoes_com_usina_padrao_ajustada={plan.default_plant_orgs}",
             f"credenciais_com_escopo_ajustado={plan.scoped_credentials}",
-            f"credenciais_com_escopo_ficou_vazio={plan.scoped_credentials_emptied}",
-            f"eventos_de_auditoria_preservados={plan.audit_preserved}",
+            f"credenciais_revogadas_por_escopo_vazio={plan.scoped_credentials_revoked}",
         ]
     )
     return "\n".join(lines)

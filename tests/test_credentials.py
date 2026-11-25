@@ -516,3 +516,29 @@ def test_credential_endpoints_isolate_organizations_for_org_admin(
     # ambiguous-organization scenario is avoided by using each org's own
     # admin token above; the static key path itself is covered by
     # ``test_credential_endpoints_require_admin_and_return_secret_once``.
+
+
+@pytest.mark.asyncio
+async def test_credential_with_empty_plant_scope_denies_everything_without_error() -> None:
+    """``plant_ids == []`` (usinas apagadas pelo purge, ADR-101) é escopo vazio: nenhuma
+    usina permitida, sem exceção (500) e nunca "organização inteira"."""
+    factory = await _factory()
+    async with factory() as session:
+        await _ensure_plants(session, PLANT_A)
+        record, secret = await CredentialService(session).create(
+            name="escopo-esvaziado",
+            role=OperationsRole.READ,
+            plant_ids=frozenset({PLANT_A}),
+        )
+        record.plant_ids = []
+        await session.commit()
+
+    async with factory() as session:
+        principal = await CredentialService(session).resolve(secret)
+
+    assert principal is not None
+    assert principal.plant_scope.is_restricted is True
+    assert principal.plant_scope.allows(PLANT_A) is False
+    with pytest.raises(HTTPException) as exc_info:
+        principal.require_plant_access(PLANT_A)
+    assert exc_info.value.status_code == 404
