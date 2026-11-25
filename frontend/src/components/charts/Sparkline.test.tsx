@@ -21,7 +21,10 @@ describe('Sparkline', () => {
     const width = Number.parseFloat(fill.style.width)
 
     expect(left).toBeLessThan(50)
-    expect(left + width).toBeCloseTo(50, 5)
+    // jsdom (cssstyle) serializa cada valor CSS com ~5 casas decimais, então
+    // a soma left+width pode diferir de 50 em ~1e-5; 3 casas (0,0005%) é
+    // muito abaixo de 1px e ainda detecta qualquer erro real de geometria.
+    expect(left + width).toBeCloseTo(50, 3)
   })
 
   it('largura da barra é proporcional a maxAbsPercent explícito', () => {
