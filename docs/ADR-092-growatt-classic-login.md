@@ -2,6 +2,8 @@
 
 ## Status
 
+**Substituído parcialmente pelo ADR-101: conexão nova encerrada; as conexões existentes seguem até serem desativadas pelo operador.**
+
 **Aceito — 2026-10-31.** Pedido do dono: o cliente escolhe a marca (NEPViewer ou Growatt) e digita o
 mesmo usuário e senha do app do celular, sem token nem passo técnico. Estende a ADR-091.
 

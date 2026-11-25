@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import mplacas.db.session as db_session
 import mplacas.providers.router as provider_router
+from mplacas.providers.accounts import SUPPORTED_PROVIDERS
 from mplacas.audit.db_models import AuditEventRecord
 from mplacas.core.config import get_settings
 from mplacas.core.jwt import encode_access_token
@@ -95,6 +96,18 @@ class FakeVerifier:
     async def __call__(self, provider: str, credentials: ProviderLogin) -> ProviderInspection:
         self.calls.append((provider, credentials))
         return ProviderInspection(list(self.serials), None)
+
+
+@pytest.fixture(autouse=True)
+def _gate_growatt_aberto(monkeypatch):
+    """Reabre, só neste arquivo, o que o ADR-101 fechou para conexão nova.
+
+    Estes testes cobrem código da Growatt que ainda existe (coleta, reservas,
+    troca de conexão, leitura ao vivo). A recusa em produção é testada em
+    ``test_provider_growatt_descontinuada.py``. Sai junto com o código da Growatt.
+    """
+    monkeypatch.setattr(provider_router, "_CONNECTABLE", SUPPORTED_PROVIDERS)
+    monkeypatch.setattr(provider_router, "DISCONTINUED_PROVIDERS", frozenset())
 
 
 @pytest.fixture

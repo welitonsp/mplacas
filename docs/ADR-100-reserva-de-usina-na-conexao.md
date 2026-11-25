@@ -2,6 +2,10 @@
 
 ## Status
 
+> Nota (ADR-101, 2026-11-25): a Growatt foi descontinuada. A "família" de marcas deste ADR
+> passa a ser uma marca só (NEPViewer); `provider_plant_claims` será generalizada para isso
+> em PR posterior. Nada do que está abaixo foi alterado.
+
 **Aceito — 2026-11-11.** Fecha a lacuna em que duas organizações conectam a mesma usina
 Growatt antes da primeira coleta. Depende da migration `20261111_0055` (tabela
 `provider_plant_claims`), que precisa estar aplicada antes do deploy deste código.
