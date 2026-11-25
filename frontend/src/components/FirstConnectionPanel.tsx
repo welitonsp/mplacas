@@ -11,7 +11,7 @@ import { BrandLoginForm, INPUT_CLASS, PRIMARY_BUTTON, SECONDARY_BUTTON, type Bra
 import { Card } from './Card'
 
 // Assistente de primeiro acesso (ADR-096). Três passos:
-// 1. Conectar — marca + usuário/senha ou token do app;
+// 1. Conectar — usuário e senha do app NEPViewer (única marca aceita hoje);
 // 2. Lendo sua usina — o servidor confere a conta e lê a usina na marca, sem
 //    salvar nada (a tela mostra cada etapa);
 // 3. Revisar e salvar — a usina já montada, cada campo com a origem ("Veio da
@@ -523,11 +523,11 @@ export function FirstConnectionPanel() {
       )}
 
       {/* O formulário fica montado (só escondido) durante a leitura: se a
-          marca recusar, o cliente volta com a marca e o usuário preenchidos. */}
+          marca recusar, o cliente volta com o usuário preenchido. */}
       <div hidden={step !== 'connect'} ref={connectRef} tabIndex={-1} className="focus:outline-none">
         <p className="mb-3 text-sm leading-6 text-[var(--color-text-secondary)]">
-          Escolha a marca do inversor e use o mesmo acesso do aplicativo do celular. O sistema lê os dados da sua usina na
-          marca e mostra tudo para você conferir antes de salvar.
+          Use o mesmo usuário e senha do aplicativo NEPViewer do celular. O sistema lê os dados da sua usina na marca e
+          mostra tudo para você conferir antes de salvar.
         </p>
         <Card className="sm:p-6">
           <BrandLoginForm ariaLabel="Conectar a usina" submitLabel="Ler minha usina" onSubmit={read} />

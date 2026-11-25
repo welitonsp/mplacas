@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { brandLabel, parseProviderAccount, providerAccountErrorMessage } from './provider-account-contracts'
+import {
+  brandLabel,
+  isGrowatt,
+  parseProviderAccount,
+  PROVIDER_BRANDS,
+  providerAccountErrorMessage,
+} from './provider-account-contracts'
 
 const BASE = {
   status: 'CONECTADA',
@@ -56,5 +62,34 @@ describe('mensagens por marca', () => {
     )
     expect(await providerAccountErrorMessage(response(), 'NEPVIEWER')).toContain('A NEPViewer recusou')
     expect(brandLabel('OUTRA')).toBe('fabricante')
+    expect(brandLabel(null)).toBe('fabricante')
+    expect(brandLabel('toString')).toBe('fabricante')
+  })
+})
+
+describe('Growatt fora das telas de conexão', () => {
+  it('só a NEPViewer pode ser escolhida', () => {
+    expect(PROVIDER_BRANDS.map((brand) => brand.value)).toEqual(['NEPVIEWER'])
+  })
+
+  it.each(['GROWATT', 'GROWATT_TOKEN'])('conexão %s existente continua sendo lida e nomeada', (provider) => {
+    expect(parseProviderAccount({ ...BASE, provider }).provider).toBe(provider)
+    expect(brandLabel(provider)).toBe('Growatt')
+    expect(isGrowatt(provider)).toBe(true)
+  })
+
+  it.each([
+    ['provider_unsupported', 'Essa marca não é mais suportada. Hoje a MPlacas conecta apenas inversores NEPViewer.'],
+    ['provider_discontinued', 'A integração com essa marca foi desativada. Seu histórico continua disponível.'],
+  ])('código %s vira texto em português', async (code, text) => {
+    const response = new Response(JSON.stringify({ detail: code }), { status: 422 })
+    expect(await providerAccountErrorMessage(response, 'GROWATT_TOKEN')).toBe(text)
+  })
+
+  it('códigos só da Growatt deixam de ter texto próprio e código herdado do protótipo não quebra', async () => {
+    for (const code of ['provider_token_failed', 'provider_token_invalid', 'provider_login_blocked', 'constructor']) {
+      const response = new Response(JSON.stringify({ detail: code }), { status: 422 })
+      expect(await providerAccountErrorMessage(response)).toBe('Não foi possível concluir agora. Tente novamente.')
+    }
   })
 })

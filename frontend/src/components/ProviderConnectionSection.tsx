@@ -7,7 +7,6 @@ import {
   isGrowatt,
   providerAccountErrorMessage,
   type ProviderAccount,
-  type ProviderBrand,
 } from '../lib/dashboard/provider-account-contracts'
 import { usePlantResource } from '../hooks/usePlantResource'
 import { Card } from './Card'
@@ -19,8 +18,9 @@ import { SectionTitle } from './SectionTitle'
 // da usina todo dia. Regras de segurança (skill secret-safe-ui):
 // - a senha só existe no estado deste componente, nunca em storage, URL ou log;
 // - o campo nunca vem preenchido e é limpo depois de salvar;
-// - o cliente escolhe a marca (NEPViewer ou Growatt, ADR-092) e digita o mesmo
-//   usuário e senha do app do celular;
+// - o cliente digita o mesmo usuário e senha do app NEPViewer do celular (a
+//   integração Growatt foi encerrada: conexão Growatt que ainda existe aparece
+//   com o estado de hoje, mas sem "Trocar senha ou conta");
 // - o servidor confere a conta no fabricante antes de guardar e nunca devolve
 //   login completo nem senha — a tela mostra só a dica mascarada.
 
@@ -45,8 +45,8 @@ function StatusSummary({ account }: { account: ProviderAccount }) {
       <div>
         <p className="text-sm font-semibold text-[var(--color-text-primary)]">Nenhuma conta conectada</p>
         <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
-          Sem a conta do inversor, o sistema não consegue buscar a produção da usina. Escolha a marca e use o
-          mesmo usuário e senha do aplicativo do celular.
+          Sem a conta do inversor, o sistema não consegue buscar a produção da usina. Use o mesmo usuário e
+          senha do aplicativo NEPViewer do celular.
         </p>
       </div>
     )
@@ -66,7 +66,9 @@ function StatusSummary({ account }: { account: ProviderAccount }) {
       </p>
       <p className="mt-1 text-[13px] leading-5 text-[var(--color-text-secondary)]">
         {account.status === 'FALHA'
-          ? `A leitura de ${lastFailure ?? 'hoje'} não deu certo. Se a senha mudou no aplicativo ${brandLabel(account.provider)}, informe a nova abaixo.`
+          ? isGrowatt(account.provider)
+            ? `A leitura de ${lastFailure ?? 'hoje'} não deu certo.`
+            : `A leitura de ${lastFailure ?? 'hoje'} não deu certo. Se a senha mudou no aplicativo ${brandLabel(account.provider)}, informe a nova abaixo.`
           : lastSuccess
             ? `Última leitura em ${lastSuccess}.`
             : 'A primeira leitura acontece na próxima coleta, de madrugada.'}
@@ -78,13 +80,11 @@ function StatusSummary({ account }: { account: ProviderAccount }) {
 function ConnectForm({
   plantId,
   connected,
-  initialBrand,
   focusOnMount,
   onSaved,
 }: {
   plantId: string
   connected: boolean
-  initialBrand: ProviderBrand
   focusOnMount: boolean
   onSaved: (message: string) => void
 }) {
@@ -98,16 +98,13 @@ function ConnectForm({
     onSaved(
       found === 0
         ? `Conta conectada, mas a ${label} não mostra nenhuma usina ou inversor nela. Confira se é a conta certa.`
-        : isGrowatt(credentials.provider)
-          ? `Conta conectada. ${found === 1 ? '1 usina encontrada' : `${found} usinas encontradas`} na Growatt.`
-          : `Conta conectada. ${found === 1 ? '1 inversor encontrado' : `${found} inversores encontrados`}.`,
+        : `Conta conectada. ${found === 1 ? '1 inversor encontrado' : `${found} inversores encontrados`}.`,
     )
     return null
   }
 
   return (
     <BrandLoginForm
-      initialBrand={initialBrand}
       focusOnMount={focusOnMount}
       ariaLabel="Conectar a conta do inversor"
       submitLabel={connected ? 'Conferir e trocar' : 'Conferir e conectar'}
@@ -154,7 +151,10 @@ export function ProviderConnectionSection({
 
   const account = resource.data
   const connected = account != null && account.status !== 'SEM_CONEXAO'
-  const showForm = account != null && (!connected || editing)
+  // Conexão Growatt ainda ativa: a marca não aceita mais conexão nova, então
+  // não há troca de senha/conta (seria reconectar numa marca encerrada).
+  const canReplace = connected && !isGrowatt(account.provider)
+  const showForm = account != null && (!connected || (editing && canReplace))
 
   async function handleRefreshProfile() {
     setRefreshing(true)
@@ -245,17 +245,19 @@ export function ProviderConnectionSection({
                 </div>
                 {connected && !editing && (
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={SECONDARY_BUTTON}
-                      onClick={() => {
-                        setNotice(null)
-                        setConfirmingRemoval(false)
-                        setEditing(true)
-                      }}
-                    >
-                      Trocar senha ou conta
-                    </button>
+                    {canReplace && (
+                      <button
+                        type="button"
+                        className={SECONDARY_BUTTON}
+                        onClick={() => {
+                          setNotice(null)
+                          setConfirmingRemoval(false)
+                          setEditing(true)
+                        }}
+                      >
+                        Trocar senha ou conta
+                      </button>
+                    )}
                     <button
                       type="button"
                       className={SECONDARY_BUTTON}
@@ -315,11 +317,6 @@ export function ProviderConnectionSection({
                   <ConnectForm
                     plantId={plantId}
                     connected={connected}
-                    initialBrand={
-                      account.provider === 'GROWATT' || account.provider === 'GROWATT_TOKEN'
-                        ? account.provider
-                        : 'NEPVIEWER'
-                    }
                     focusOnMount={editing}
                     onSaved={(message) => {
                       setEditing(false)

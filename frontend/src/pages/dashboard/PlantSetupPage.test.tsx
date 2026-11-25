@@ -647,68 +647,88 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
     expect(screen.getByText('Conta conectada. 1 inversor encontrado.')).toBeInTheDocument()
   })
 
-  it('escolhe a Growatt e conecta com usuário e senha do app, sem token', async () => {
+  it('o formulário mostra só a NEPViewer, como texto, sem escolha de marca nem campo de token', async () => {
     vi.resetModules()
-    const fetchProviderAccount = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(NO_CONNECTION))
-      .mockResolvedValue(jsonResponse({ ...CONNECTED, provider: 'GROWATT', login_hint: 'ro***io' }))
-    const saveProviderAccount = vi.fn(async () =>
-      jsonResponse({ ...CONNECTED, provider: 'GROWATT', login_hint: 'ro***io', devices_found: 1 }),
-    )
-    installApiMock({ fetchProviderAccount, saveProviderAccount })
+    const saveProviderAccount = vi.fn(async () => jsonResponse({ ...CONNECTED, devices_found: 1 }))
+    installApiMock({ saveProviderAccount })
 
     await renderPage()
     await screen.findByText('Nenhuma conta conectada')
-    const group = screen.getByRole('group', { name: 'Marca do inversor' })
-    expect(within(group).getByRole('radio', { name: 'NEPViewer' })).toBeChecked()
-    fireEvent.click(within(group).getByRole('radio', { name: 'Growatt — usuário e senha' }))
-    expect(screen.getByLabelText('Usuário do app Growatt')).toHaveAttribute(
-      'placeholder',
-      'O mesmo do app ShinePhone (Growatt)',
-    )
-    fireEvent.change(screen.getByLabelText('Usuário do app Growatt'), { target: { value: 'rogerio' } })
-    fireEvent.change(screen.getByLabelText('Senha do app Growatt'), { target: { value: SECRET } })
-    fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
+    const form = screen.getByRole('form', { name: 'Conectar a conta do inversor' })
+    expect(within(form).queryByRole('radio')).not.toBeInTheDocument()
+    expect(within(form).queryByRole('combobox')).not.toBeInTheDocument()
+    expect(within(form).queryByRole('group', { name: 'Marca do inversor' })).not.toBeInTheDocument()
+    expect(within(form).getByText('Marca do inversor')).toBeInTheDocument()
+    expect(within(form).getByText('Hoje a MPlacas conecta apenas inversores NEPViewer.')).toBeInTheDocument()
+    expect(within(form).queryByText(/Growatt|ShinePhone|token/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Usuário do app NEPViewer')).toHaveAttribute('placeholder', 'O mesmo do app NEPViewer')
 
+    fireEvent.change(screen.getByLabelText('Usuário do app NEPViewer'), { target: { value: 'a@b.c' } })
+    fireEvent.change(screen.getByLabelText('Senha do app NEPViewer'), { target: { value: SECRET } })
+    fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
     await waitFor(() =>
       expect(saveProviderAccount).toHaveBeenCalledWith(singlePlant.id, {
-        provider: 'GROWATT',
-        login: 'rogerio',
+        provider: 'NEPVIEWER',
+        login: 'a@b.c',
         password: SECRET,
       }),
     )
-    expect(await screen.findByText('Conta conectada. 1 usina encontrada na Growatt.')).toBeInTheDocument()
-    expect(await screen.findByText(/Growatt, conta ro\*\*\*io/)).toBeInTheDocument()
   })
 
-  it('bloqueio da Growatt pede para esperar, com o nome da marca', async () => {
+  it.each(['GROWATT', 'GROWATT_TOKEN'])(
+    'conexão %s que ainda existe aparece sem quebrar e sem caminho para reconectar na Growatt',
+    async (provider) => {
+      vi.resetModules()
+      const saveProviderAccount = vi.fn()
+      installApiMock({
+        fetchProviderAccount: vi.fn(async () =>
+          jsonResponse({ ...CONNECTED, provider, login_hint: 'ro***io' }),
+        ),
+        saveProviderAccount,
+      })
+
+      await renderPage()
+      expect(await screen.findByText(/Growatt, conta ro\*\*\*io/)).toBeInTheDocument()
+      expect(screen.getByText('Conectada')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Trocar senha ou conta' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('form', { name: 'Conectar a conta do inversor' })).not.toBeInTheDocument()
+      expect(screen.queryByLabelText(/Senha do app|Token da API/)).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Desconectar' })).toBeInTheDocument()
+      expect(saveProviderAccount).not.toHaveBeenCalled()
+    },
+  )
+
+  it('conexão Growatt com falha na leitura não pede senha nova', async () => {
     vi.resetModules()
     installApiMock({
-      saveProviderAccount: vi.fn(async () => jsonResponse({ detail: 'provider_rate_limited' }, 503)),
+      fetchProviderAccount: vi.fn(async () =>
+        jsonResponse({ ...CONNECTED, status: 'FALHA', provider: 'GROWATT_TOKEN', last_failure_at: '2026-11-20T06:00:00Z' }),
+      ),
     })
+
+    await renderPage()
+    expect(await screen.findByText('Conectada, mas a última leitura falhou')).toBeInTheDocument()
+    expect(screen.getByText(/não deu certo\.$/)).toBeInTheDocument()
+    expect(screen.queryByText(/informe a nova/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Trocar senha ou conta' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['provider_unsupported', 'Essa marca não é mais suportada. Hoje a MPlacas conecta apenas inversores NEPViewer.'],
+    ['provider_discontinued', 'A integração com essa marca foi desativada. Seu histórico continua disponível.'],
+  ])('erro %s do backend aparece em português', async (code, text) => {
+    vi.resetModules()
+    installApiMock({ saveProviderAccount: vi.fn(async () => jsonResponse({ detail: code }, 422)) })
 
     await renderPage()
     await screen.findByText('Nenhuma conta conectada')
-    fireEvent.click(screen.getByRole('radio', { name: 'Growatt — usuário e senha' }))
-    fireEvent.change(screen.getByLabelText('Usuário do app Growatt'), { target: { value: 'rogerio' } })
-    fireEvent.change(screen.getByLabelText('Senha do app Growatt'), { target: { value: 'x' } })
+    fireEvent.change(screen.getByLabelText('Usuário do app NEPViewer'), { target: { value: 'a@b.c' } })
+    fireEvent.change(screen.getByLabelText('Senha do app NEPViewer'), { target: { value: SECRET } })
     fireEvent.click(screen.getByRole('button', { name: 'Conferir e conectar' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('A Growatt bloqueou novas tentativas por um tempo.')
-  })
-
-  it('ao trocar uma conexão Growatt, a marca já vem marcada', async () => {
-    vi.resetModules()
-    installApiMock({
-      fetchProviderAccount: vi.fn(async () => jsonResponse({ ...CONNECTED, provider: 'GROWATT' })),
-    })
-
-    await renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Trocar senha ou conta' }))
-
-    expect(screen.getByRole('radio', { name: 'Growatt — usuário e senha' })).toBeChecked()
-    expect(screen.getByLabelText('Senha do app Growatt')).toHaveValue('')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(text)
+    expect(alert).not.toHaveTextContent(SECRET)
   })
 })
 
