@@ -73,6 +73,7 @@ async def test_exclusao_com_commit_sob_rls_force_com_papel_nao_superusuario() ->
     gw, nep_a, nep_b = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     marker_created = False
     roles_created = False
+    eventos_antes: set[uuid.UUID] = set()
     engine = create_async_engine(url, pool_size=1, max_overflow=0)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
@@ -108,6 +109,28 @@ async def test_exclusao_com_commit_sob_rls_force_com_papel_nao_superusuario() ->
             await _seed_world(session, org_a, org_b, gw, nep_a, nep_b)
             await session.commit()
 
+        # Controle negativo: o mesmo papel, SEM contexto de plataforma, não enxerga nenhuma
+        # usina (RLS FORCE de verdade), embora as três existam.
+        async with factory() as session:
+            await session.execute(text(f'SET LOCAL ROLE "{platform_role}"'))
+            assert (await session.execute(text("SELECT count(*) FROM plants"))).scalar_one() == 0
+        async with engine.connect() as connection:
+            assert (
+                await connection.execute(
+                    text("SELECT relforcerowsecurity FROM pg_class WHERE relname = 'plants'")
+                )
+            ).scalar_one() is True
+        async with factory() as session:
+            await set_platform_context(session)
+            eventos_antes = set(
+                (
+                    await session.execute(
+                        select(AuditEventRecord.id).where(
+                            AuditEventRecord.action == "plant.purged_discontinued_provider"
+                        )
+                    )
+                ).scalars()
+            )
         async with factory() as session:
             await set_platform_context(session)
             await session.execute(text(f'SET LOCAL ROLE "{platform_role}"'))
@@ -135,6 +158,23 @@ async def test_exclusao_com_commit_sob_rls_force_com_papel_nao_superusuario() ->
                 )
             ).scalars().all()
             assert event
+            # A auditoria da usina apagada sumiu e a credencial de escopo vazio está revogada.
+            assert (
+                await session.execute(
+                    select(AuditEventRecord.id).where(
+                        AuditEventRecord.resource_id == str(gw)
+                    )
+                )
+            ).first() is None
+            creds = (
+                await session.execute(
+                    select(ApiCredentialRecord.plant_ids, ApiCredentialRecord.active).where(
+                        ApiCredentialRecord.organization_id == org_a
+                    )
+                )
+            ).all()
+            vazias = [c for c in creds if c.plant_ids == []]
+            assert len(vazias) == 1 and vazias[0].active is False
     finally:
         async with engine.begin() as connection:
             ids = [gw, nep_a, nep_b]
@@ -147,6 +187,13 @@ async def test_exclusao_com_commit_sob_rls_force_com_papel_nao_superusuario() ->
             await connection.execute(
                 delete(AuditEventRecord).where(
                     AuditEventRecord.organization_id.in_([org_a, org_b])
+                )
+            )
+            # Evento de plataforma desta execução (organization_id NULL): só os novos.
+            await connection.execute(
+                delete(AuditEventRecord).where(
+                    AuditEventRecord.action == "plant.purged_discontinued_provider",
+                    AuditEventRecord.id.not_in(eventos_antes),
                 )
             )
             await connection.execute(

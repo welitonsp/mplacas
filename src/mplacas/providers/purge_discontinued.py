@@ -15,6 +15,8 @@ Quem chama decide: simulação termina sem commit, aplicação faz commit só se
 
 from __future__ import annotations
 
+import json
+import re
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -153,7 +155,7 @@ CATEGORIES: tuple[_Category, ...] = (
 
 # Tabelas que NÃO podem mudar de tamanho (usuários, organizações, credenciais,
 # convites). A auditoria é conferida à parte em ``_verify``: sai só o que foi levantado
-# (eventos ligados às usinas) e entra um único evento de plataforma.
+# (eventos ligados às usinas, conferidos por id) e entra um único evento de plataforma.
 PRESERVED_TABLES: tuple[tuple[str, Table], ...] = (
     ("organizations", _table(OrganizationRecord)),
     ("operational_users", _table(OperationalUserRecord)),
@@ -179,7 +181,9 @@ class PurgePlan:
     scoped_credentials: int
     scoped_credentials_revoked: int
     audit_ids: tuple[uuid.UUID, ...]
-    audit_total_before: int
+    # Capturados antes do DELETE: a re-checagem da auditoria não consulta o que já sumiu.
+    bill_ids: frozenset[str]
+    execution_ids: frozenset[str]
 
     @property
     def selected(self) -> int:
@@ -269,26 +273,47 @@ async def _scoped_credentials(
 # ``pipeline_execution`` (= execução do pipeline da usina). ``organization``,
 # ``api_credential``, ``user_invitation`` e ``operational_user`` não são da usina e ficam
 # (salvo se ``details.plant_id`` citar a usina, caso de ``plant.created_from_connection``).
-async def _audit_ids_of(
+def _mentions_plant(details: object, plants: set[str]) -> bool:
+    """O texto de ``details`` (qualquer chave, inclusive aninhada) cita o UUID de uma usina.
+
+    Regex exata do UUID em minúsculas, com limites (não vale pedaço de outro identificador).
+    """
+    text = json.dumps(details, default=str, sort_keys=True).lower()
+    return any(
+        re.search(rf"(?<![0-9a-f-]){re.escape(plant)}(?![0-9a-f-])", text) for plant in plants
+    )
+
+
+async def _owned_resource_ids(
     session: AsyncSession, ids: Sequence[uuid.UUID]
-) -> tuple[uuid.UUID, ...]:
-    plants = {str(plant_id) for plant_id in ids}
-    bills = {
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Ids (texto) das faturas e das execuções do pipeline das usinas, antes do DELETE."""
+    bills = frozenset(
         str(row[0])
         for row in (
             await session.execute(
                 select(UtilityBillRecord.id).where(UtilityBillRecord.plant_id.in_(ids))
             )
         ).all()
-    }
-    executions = {
+    )
+    executions = frozenset(
         str(row[0])
         for row in (
             await session.execute(
                 select(PipelineExecutionRecord.id).where(PipelineExecutionRecord.plant_id.in_(ids))
             )
         ).all()
-    }
+    )
+    return bills, executions
+
+
+async def _audit_ids_of(
+    session: AsyncSession,
+    ids: Sequence[uuid.UUID],
+    bills: frozenset[str],
+    executions: frozenset[str],
+) -> tuple[uuid.UUID, ...]:
+    plants = {str(plant_id) for plant_id in ids}
     by_resource = (
         (AuditEventRecord.resource_type == "plant") & AuditEventRecord.resource_id.in_(plants)
     ) | (
@@ -314,7 +339,7 @@ async def _audit_ids_of(
     ).all()
     found: list[uuid.UUID] = []
     for audit_id, resource_type, resource_id, details in rows:
-        in_details = isinstance(details, dict) and str(details.get("plant_id")) in plants
+        in_details = _mentions_plant(details, plants)
         in_resource = (
             (resource_type == "plant" and resource_id in plants)
             or (resource_type == "utility_bill" and resource_id in bills)
@@ -340,7 +365,13 @@ async def build_plan(session: AsyncSession, *, lock: bool = False) -> PurgePlan:
     ids, refused = await select_discontinued_plants(session)
     if lock and ids and _is_postgresql(session):
         await session.execute(select(Plant.id).where(Plant.id.in_(ids)).with_for_update())
+        first = ids
         ids, refused = await select_discontinued_plants(session)
+        if ids != first:
+            raise PurgeError(
+                "recusado: a selecao mudou durante a trava; nada foi gravado "
+                "(repita o comando)"
+            )
     if refused:
         raise PurgeError(
             f"recusado: {refused} usina(s) selecionada(s) tem conexao, reserva ou aparelho "
@@ -354,6 +385,9 @@ async def build_plan(session: AsyncSession, *, lock: bool = False) -> PurgePlan:
             await _count(session, category.table, category.owned(ids)) if ids else 0
         )
     preserved = {name: await _count(session, table, None) for name, table in PRESERVED_TABLES}
+    bills, executions = (
+        await _owned_resource_ids(session, ids) if ids else (frozenset[str](), frozenset[str]())
+    )
     scoped = await _scoped_credentials(session, ids) if ids else []
     default_orgs = (
         await _count(
@@ -374,8 +408,9 @@ async def build_plan(session: AsyncSession, *, lock: bool = False) -> PurgePlan:
         default_plant_orgs=default_orgs,
         scoped_credentials=len(scoped),
         scoped_credentials_revoked=sum(1 for _, active, after in scoped if active and not after),
-        audit_ids=await _audit_ids_of(session, ids) if ids else (),
-        audit_total_before=await _count(session, _table(AuditEventRecord), None),
+        audit_ids=await _audit_ids_of(session, ids, bills, executions) if ids else (),
+        bill_ids=bills,
+        execution_ids=executions,
     )
 
 
@@ -430,28 +465,27 @@ async def execute_purge(session: AsyncSession, plan: PurgePlan) -> PurgeResult:
 
     await _verify(session, plan, deleted)
 
-    session.add(
-        AuditEventRecord(
-            organization_id=None,
-            action=AUDIT_ACTION,
-            resource_type="platform",
-            resource_id=None,
-            outcome="success",
-            actor_role="PLATFORM",
-            actor_credential_id="cloud_jobs:purge-discontinued-plants",
-            request_id=None,
-            details={
-                "plants": plan.selected,
-                "reason": AUDIT_REASON,
-                "adr": AUDIT_ADR,
-            },
-        )
+    event = AuditEventRecord(
+        organization_id=None,
+        action=AUDIT_ACTION,
+        resource_type="platform",
+        resource_id=None,
+        outcome="success",
+        actor_role="PLATFORM",
+        actor_credential_id="cloud_jobs:purge-discontinued-plants",
+        request_id=None,
+        details={
+            "plants": plan.selected,
+            "reason": AUDIT_REASON,
+            "adr": AUDIT_ADR,
+        },
     )
+    session.add(event)
     await session.flush()
-    if await _count(session, audit_table, None) != plan.audit_total_before - audit_deleted + 1:
-        raise PurgeError(
-            "verificacao falhou (auditoria); transacao desfeita, nada foi gravado"
-        )
+    # Exatamente um evento de plataforma novo, conferido por id (o total global da tabela
+    # muda com qualquer requisição da API durante a transação, então não é conferido).
+    if await _count(session, audit_table, AuditEventRecord.id == event.id) != 1:
+        raise PurgeError("verificacao falhou (auditoria); transacao desfeita, nada foi gravado")
     return PurgeResult(plan=plan, deleted=deleted)
 
 
@@ -474,9 +508,11 @@ async def _verify(session: AsyncSession, plan: PurgePlan, deleted: dict[str, int
     audit_table = _table(AuditEventRecord)
     if deleted["audit_events"] != len(plan.audit_ids):
         problems += 1
-    if await _count(session, audit_table, None) != plan.audit_total_before - len(plan.audit_ids):
-        problems += 1
-    if await _audit_ids_of(session, ids):
+    for start in range(0, len(plan.audit_ids), 500):
+        chunk = plan.audit_ids[start : start + 500]
+        if await _count(session, audit_table, AuditEventRecord.id.in_(chunk)) != 0:
+            problems += 1
+    if await _audit_ids_of(session, ids, plan.bill_ids, plan.execution_ids):
         problems += 1
     if (
         await _count(

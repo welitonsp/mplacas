@@ -166,6 +166,8 @@ async def _seed_plant(
         ("utility_bill", str(bill.id), {}),
         ("pipeline_execution", str(execution.id), {}),
         ("organization", str(org_id), {"plant_id": str(plant_id)}),
+        # UUID da usina em chave aninhada de details (não só details.plant_id).
+        ("organization", str(org_id), {"a": {"b": [f"x {plant_id} y"]}}),
     ):
         session.add(
             AuditEventRecord(
@@ -237,6 +239,19 @@ async def _seed_world(
         energy.source = "GROWATT_TOTAL_DIFF"
     await _seed_plant(session, nep_a, org_a, "NEPVIEWER", name="Nep A")
     await _seed_plant(session, nep_b, org_b, "NEPVIEWER", name="Nep B")
+    # Texto que só PARECE conter o UUID (hex a mais colado no fim): não é da usina, fica.
+    session.add(
+        AuditEventRecord(
+            organization_id=org_a,
+            action="x.boundary",
+            resource_type="organization",
+            resource_id=str(org_a),
+            outcome="success",
+            actor_role="ADMIN",
+            actor_credential_id="c",
+            details={"nota": f"{gw}0"},
+        )
+    )
     if nep_claim_in_gw:
         session.add(
             ProviderPlantClaimRecord(
@@ -357,7 +372,7 @@ async def test_simulacao_nao_grava_e_conta(monkeypatch) -> None:
     assert "usinas_nao_selecionadas_intocadas=2" in out
     for cat in CATEGORIES:
         assert f"seriam_excluidos.{cat.name}=1" in out
-    assert "eventos_de_auditoria_excluidos=4" in out
+    assert "eventos_de_auditoria_excluidos=5" in out
     assert "organizacoes_com_usina_padrao_ajustada=1" in out
     assert "credenciais_com_escopo_ajustado=2" in out
     assert "credenciais_revogadas_por_escopo_vazio=1" in out
@@ -374,19 +389,24 @@ async def test_aplicar_apaga_tudo_da_usina_growatt_e_preserva_o_resto(monkeypatc
     out = await run_purge_discontinued_plants(apply=True, confirm_plant_count=1)
 
     assert "aplicado" in out and "excluidos.utility_bills=1" in out
-    assert "eventos_de_auditoria_excluidos=4" in out
+    assert "eventos_de_auditoria_excluidos=5" in out
     after = await _counts(factory)
     for cat in CATEGORIES:
         assert after[cat.table.name] == before[cat.table.name] - 1, cat.name
     for name, table in PRESERVED_TABLES:
         assert after[table.name] == before[table.name], name
-    # Auditoria: saem os 4 eventos ligados à usina e entra o evento de plataforma.
-    assert after["audit_events"] == before["audit_events"] - 4 + 1
+    # Auditoria: saem os 5 eventos ligados à usina e entra o evento de plataforma.
+    assert after["audit_events"] == before["audit_events"] - 5 + 1
     assert await _untouched_rows(factory) == untouched
     assert await _org_b(factory) == org_b
     assert await _auditoria_nep(factory) == audit_nep
     async with factory() as session:
         assert await session.get(Plant, GW) is None
+        # Nenhum evento cita o UUID da usina (nem aninhado); o texto com hex a mais fica.
+        todos = (await session.execute(select(AuditEventRecord))).scalars().all()
+        assert [e for e in todos if str(GW) in repr(e.details) + str(e.resource_id)
+                and not e.details.get("nota")] == []
+        assert any(e.action == "x.boundary" for e in todos)
         org = await session.get(OrganizationRecord, ORG_A)
         assert org is not None and org.default_plant_id is None
         creds = (
@@ -552,3 +572,22 @@ def test_todas_as_tabelas_ligadas_a_usina_estao_na_lista_de_exclusao() -> None:
             if column.name in {"plant_id", "device_id", "bill_id", "daily_energy_id"}:
                 missing.add(table.name)
     assert sorted(missing) == []
+
+
+async def test_segunda_passada_com_ids_diferentes_recusa(monkeypatch) -> None:
+    import mplacas.providers.purge_discontinued as module
+
+    factory = await _factory()
+    chamadas = {"n": 0}
+
+    async def instavel(session):
+        chamadas["n"] += 1
+        return ((GW,) if chamadas["n"] == 1 else (GW, NEP_A)), 0
+
+    monkeypatch.setattr(module, "select_discontinued_plants", instavel)
+    monkeypatch.setattr(module, "_is_postgresql", lambda _session: True)
+    async with factory() as session:
+        with pytest.raises(module.PurgeError) as info:
+            await module.build_plan(session, lock=True)
+    assert "mudou durante a trava" in str(info.value)
+    assert chamadas["n"] == 2

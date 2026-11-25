@@ -96,14 +96,19 @@ que só aplica com `confirmacao` = `EXCLUIR`).
 - **Auditoria da usina também é apagada** (o dono escolheu apagar a usina inteira): os
   `audit_events` com `resource_type` `plant` (id da usina), `utility_bill` (id das faturas
   apagadas) ou `pipeline_execution` (id das execuções apagadas), mais qualquer evento cujo
-  `details.plant_id` seja uma das usinas (ex.: `plant.created_from_connection`). Os demais
+  texto de `details` (qualquer chave, inclusive aninhada) contenha o UUID completo de uma das
+  usinas (ex.: `plant.created_from_connection`). Os demais
   tipos (`organization`, `api_credential`, `user_invitation`, `operational_user`) ficam.
   Sobra apenas o evento de plataforma `plant.purged_discontinued_provider`, com contagens
   (`{"plants": N, "reason": "provider_discontinued", "adr": "ADR-101"}`).
 - **Concorrência:** na PostgreSQL as linhas das usinas são travadas (`FOR UPDATE`) e a recusa
   é reavaliada depois da trava. Rode fora do horário dos jobs agendados (coleta, leitura da
   madrugada, pipeline diário). Um rollback por divergência na verificação é seguro e basta
-  repetir o comando.
+  repetir o comando. A verificação da auditoria é por id (os eventos levantados sumiram e
+  há exatamente um evento de plataforma novo), não pelo total da tabela, que muda com
+  qualquer requisição da API; as demais tabelas são conferidas por contagem global, porque
+  só os jobs escrevem nelas. Se a seleção mudar entre a primeira leitura e a trava, o comando
+  recusa e desfaz.
 - Com 0 usinas selecionadas o `--apply` é um no-op com código 0 (a confirmação não é
   comparada), para a reexecução do workflow não falhar.
 - Idempotente: a segunda execução seleciona 0 e não muda nada. O log público só mostra
