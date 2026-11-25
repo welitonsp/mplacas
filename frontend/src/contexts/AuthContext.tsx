@@ -2,12 +2,15 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { configureApi } from '../lib/api'
 import { TokenStore } from '../lib/auth'
 import {
+  adoptAccessToken,
+  announceSessionChange,
   authFetch,
   markSessionChanged,
   openSession,
   refreshSession,
   revokeSession,
   RequestTimeoutError,
+  subscribeSessionChanges,
 } from '../lib/session'
 import { SELECTED_PLANT_STORAGE_KEY } from './PlantContext'
 import { safeStorage } from '../lib/storage'
@@ -28,9 +31,11 @@ interface AuthContextValue {
   // recusado). Em memória, nunca persistido; logout voluntário não liga.
   sessionEnded: boolean
   login: (username: string, password: string) => Promise<void>
-  // Entra com a sessão que o servidor acabou de abrir (aceite de convite,
-  // ADR-093). Só o access token: o refresh token ficou no cookie HttpOnly.
-  adoptSession: (accessToken: string, username: string) => void
+  // Atualiza o estado React depois de uma sessão aberta fora do `login`
+  // (aceite de convite, ADR-093). O token já foi gravado por
+  // `adoptAccessToken` dentro do `openSession`; o refresh token ficou no
+  // cookie HttpOnly.
+  adoptSession: (username: string) => void
   // Encerra no servidor a sessão atual antes de abrir outra (aceite de convite
   // com alguém já logado nesta aba/navegador).
   endServerSession: () => Promise<void>
@@ -88,12 +93,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUsername(null)
   }, [])
 
-  // Logout voluntário: limpa local e revoga no servidor (apaga o cookie).
+  // Logout voluntário: limpa local, avisa as outras abas e revoga no servidor
+  // (apaga o cookie).
   const logout = useCallback(() => {
     clearLocal()
     setSessionEnded(false)
+    announceSessionChange()
     void revokeSession()
   }, [clearLocal])
+
+  // Outra aba entrou (talvez como outra pessoa), aceitou convite ou saiu: o
+  // cookie mudou para todas. Esta aba larga o que tinha e vai ao login (a rota
+  // protegida guarda `state.from`), sem o aviso de "sessão encerrada".
+  useEffect(
+    () =>
+      subscribeSessionChanges(() => {
+        clearLocal()
+        setSessionEnded(false)
+      }),
+    [clearLocal],
+  )
 
   // Chamado pelo api.ts quando a renovação é recusada: a sessão acabou sem o
   // usuário pedir. Vários 401 simultâneos compartilham a mesma renovação e
@@ -151,24 +170,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (accessToken === null) throw new Error('Erro ao autenticar. Tente novamente.')
 
       // Ainda dentro do lock: nova época (descarta refresh antigo) e o token.
-      markSessionChanged()
-      TokenStore.set(accessToken)
+      adoptAccessToken(accessToken)
     })
 
     generationRef.current += 1
     setStatus('authenticated')
     setSessionEnded(false)
     setUsername(name)
+    announceSessionChange()
   }, [])
 
-  const adoptSession = useCallback((accessToken: string, name: string) => {
+  const adoptSession = useCallback((name: string) => {
     generationRef.current += 1
-    markSessionChanged()
     safeStorage.remove(SELECTED_PLANT_STORAGE_KEY)
-    TokenStore.set(accessToken)
     setStatus('authenticated')
     setSessionEnded(false)
     setUsername(name)
+    announceSessionChange()
   }, [])
 
   const endServerSession = useCallback(() => revokeSession(), [])

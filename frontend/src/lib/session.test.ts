@@ -14,7 +14,8 @@ function json(body: unknown, status = 200): Response {
 function installFakeLocks() {
   const names: string[] = []
   let tail: Promise<unknown> = Promise.resolve()
-  const request = vi.fn((name: string, task: () => Promise<unknown>) => {
+  const request = vi.fn((name: string, optionsOrTask: unknown, maybeTask?: () => Promise<unknown>) => {
+    const task = (typeof optionsOrTask === 'function' ? optionsOrTask : maybeTask) as () => Promise<unknown>
     names.push(name)
     const run = tail.then(() => task())
     tail = run.catch(() => undefined)
@@ -169,5 +170,162 @@ describe('revokeSession (logout)', () => {
       throw new TypeError('Failed to fetch')
     }))
     await expect(revokeSession()).resolves.toBeUndefined()
+  })
+})
+
+// Web Locks com "dono externo": outra aba segura o lock até `release()`.
+// Respeita `options.signal` como o navegador (rejeita com o motivo do abort se
+// o lock não foi concedido a tempo).
+function installHeldLocks() {
+  let release: () => void = () => undefined
+  let held: Promise<void> = new Promise<void>((resolve) => { release = resolve })
+  const request = vi.fn((name: string, optionsOrTask: unknown, maybeTask?: () => Promise<unknown>) => {
+    const task = (typeof optionsOrTask === 'function' ? optionsOrTask : maybeTask) as () => Promise<unknown>
+    const signal = typeof optionsOrTask === 'function' ? undefined : (optionsOrTask as { signal?: AbortSignal }).signal
+    void name
+    return new Promise((resolve, reject) => {
+      let granted = false
+      signal?.addEventListener('abort', () => {
+        if (!granted) reject(signal.reason ?? new DOMException('aborted', 'AbortError'))
+      })
+      const mine = held.then(async () => {
+        if (signal?.aborted) return
+        granted = true
+        try {
+          resolve(await task())
+        } catch (error) {
+          reject(error)
+        }
+      })
+      held = mine.then(() => undefined)
+    })
+  })
+  vi.stubGlobal('navigator', { ...navigator, locks: { request } })
+  return { request, release: () => release() }
+}
+
+describe('revokeSession — lock ocupado por outra aba (revisão do 8eb5128)', () => {
+  it('lock ocupado: o logout sai em ~3 s sem o lock e, quando o lock vaga, sai um segundo logout', async () => {
+    const locks = installHeldLocks()
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const started = Date.now()
+
+    await revokeSession()
+
+    const elapsed = Date.now() - started
+    expect(elapsed).toBeGreaterThanOrEqual(2_900)
+    expect(elapsed).toBeLessThan(5_000)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/auth/logout')
+
+    // O refresh da outra aba termina e solta o lock: o cookie que sobrou é
+    // revogado por um segundo logout.
+    locks.release()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe('/api/auth/logout')
+  }, 10_000)
+
+  it('erro de rede no logout não é repetido (nem pelo caminho do lock ocupado)', async () => {
+    const locks = installHeldLocks()
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(revokeSession()).resolves.toBeUndefined()
+    locks.release()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  }, 10_000)
+
+  it('erro de rede com o lock livre também sai uma vez só', async () => {
+    installFakeLocks()
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await revokeSession()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('sem Web Locks: refresh em voo além de 3 s → logout já, e um segundo depois que o refresh termina', async () => {
+    vi.stubGlobal('navigator', { ...navigator, locks: undefined })
+    let answerRefresh: (response: Response) => void = () => undefined
+    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) =>
+      String(input).endsWith('/auth/refresh')
+        ? new Promise<Response>((resolve) => { answerRefresh = resolve })
+        : Promise.resolve(new Response(null, { status: 204 })),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const logouts = () => fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/auth/logout')).length
+
+    const refreshing = refreshSession()
+    await revokeSession()
+    expect(logouts()).toBe(1)
+
+    answerRefresh(json({ access_token: 'qualquer' }))
+    await refreshing
+    await vi.waitFor(() => expect(logouts()).toBe(2))
+  }, 10_000)
+})
+
+describe('aviso de troca de sessão entre abas (BroadcastChannel)', () => {
+  it('duas abas (dois módulos): o aviso de uma chega à outra, e não à própria', async () => {
+    vi.resetModules()
+    const tabA = await import('./session')
+    vi.resetModules()
+    const tabB = await import('./session')
+    const onA = vi.fn()
+    const onB = vi.fn()
+    const offA = tabA.subscribeSessionChanges(onA)
+    const offB = tabB.subscribeSessionChanges(onB)
+
+    tabA.announceSessionChange()
+
+    await vi.waitFor(() => expect(onB).toHaveBeenCalledTimes(1))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(onA).not.toHaveBeenCalled()
+    offA()
+    offB()
+  })
+
+  it('mensagem que não é o aviso esperado é ignorada', async () => {
+    vi.resetModules()
+    const tab = await import('./session')
+    const onChange = vi.fn()
+    const off = tab.subscribeSessionChanges(onChange)
+    const other = new BroadcastChannel(tab.SESSION_CHANNEL_NAME)
+
+    other.postMessage({ type: 'outra-coisa', token: 'x' })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect(onChange).not.toHaveBeenCalled()
+    other.close()
+    off()
+  })
+
+  it('sem BroadcastChannel: usa o evento storage de uma chave neutra, só com um número', async () => {
+    vi.stubGlobal('BroadcastChannel', undefined)
+    vi.resetModules()
+    const tab = await import('./session')
+    const onChange = vi.fn()
+    const off = tab.subscribeSessionChanges(onChange)
+
+    tab.announceSessionChange()
+    const stored = window.localStorage.getItem(tab.SESSION_SIGNAL_STORAGE_KEY)
+    expect(stored).toMatch(/^0\.\d+$/)
+
+    // O navegador entrega o `storage` às OUTRAS abas; aqui simulamos a outra.
+    window.dispatchEvent(new StorageEvent('storage', { key: tab.SESSION_SIGNAL_STORAGE_KEY, newValue: stored }))
+    window.dispatchEvent(new StorageEvent('storage', { key: 'mplacas:theme', newValue: 'dark' }))
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    off()
+    window.localStorage.removeItem(tab.SESSION_SIGNAL_STORAGE_KEY)
   })
 })

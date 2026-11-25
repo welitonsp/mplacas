@@ -4,7 +4,7 @@ import { BrandMark } from '../components/BrandMark'
 import { LoadingAnnouncement } from '../components/LoadingAnnouncement'
 import { useAuth } from '../contexts/AuthContext'
 import { acceptInvitation, inspectInvitation, warmUpApi } from '../lib/api'
-import { openSession } from '../lib/session'
+import { adoptAccessToken, openSession } from '../lib/session'
 import {
   INVITATION_MAX_PASSWORD,
   INVITATION_MIN_PASSWORD,
@@ -125,8 +125,19 @@ export function InvitePage() {
       // órfã, sem revogação. Sem cookie, o logout é um 204 inofensivo.
       await endServerSession()
       const invitationToken = tokenRef.current
-      // Atrás do lock do refresh: o `Set-Cookie` do aceite é o último a chegar.
-      const response = await openSession(() => acceptInvitation(invitationToken, password))
+      // Atrás do lock do refresh: o `Set-Cookie` do aceite é o último a chegar,
+      // e o token é gravado (com época nova) ainda dentro do lock, como no login.
+      const { response, adopted } = await openSession(async () => {
+        const reply = await acceptInvitation(invitationToken, password)
+        if (!reply.ok) return { response: reply, adopted: false }
+        // Só o access token: o refresh token veio no cookie HttpOnly (ADR-102);
+        // se o corpo ainda trouxer um, é ignorado.
+        const body = (await reply.json().catch(() => null)) as { access_token?: unknown } | null
+        const accessToken = body?.access_token
+        if (typeof accessToken !== 'string' || accessToken === '') return { response: reply, adopted: false }
+        adoptAccessToken(accessToken)
+        return { response: reply, adopted: true }
+      })
       if (response.status === 429) {
         setError('Muitas tentativas. Espere alguns minutos e tente de novo.')
         return
@@ -146,17 +157,14 @@ export function InvitePage() {
         setError('O sistema não conseguiu concluir agora. Seu convite continua valendo: tente de novo em instantes.')
         return
       }
-      // Só o access token: o refresh token veio no cookie HttpOnly (ADR-102);
-      // se o corpo ainda trouxer um, é ignorado.
-      const body = (await response.json()) as { access_token?: unknown }
-      if (typeof body.access_token !== 'string' || body.access_token === '') {
+      if (!adopted) {
         setError('Resposta inesperada do servidor. Tente entrar pela tela de login.')
         return
       }
       tokenRef.current = null
       setPassword('')
       setConfirm('')
-      adoptSession(body.access_token, stage.preview.username)
+      adoptSession(stage.preview.username)
       navigate(DASHBOARD_ROOT_PATH, { replace: true })
     } catch {
       setError('Não foi possível concluir agora. Verifique a internet e tente de novo.')

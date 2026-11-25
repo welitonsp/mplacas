@@ -102,8 +102,12 @@ no Cloudflare Pages, não no build:
 
 **Checklist do dono depois do primeiro deploy com o proxy:**
 
-- [ ] Os dois smoke tests do workflow passaram (`/api/health` = 200; `POST /api/auth/refresh` sem
-      cookie = 401 — um 403 ali significa `MPLACAS_CORS_ALLOWED_ORIGINS` sem a origem do Pages).
+- [ ] Os dois smoke tests do workflow passaram: `/api/health` = 200; `POST /api/auth/refresh` com
+      `Origin` do site, `X-Mplacas-Auth: 1` e um cookie de token inválido
+      (`__Secure-mplacas_rt=smoke-invalido`, que não revoga nada) = 401. Um 403 ali significa
+      `MPLACAS_CORS_ALLOWED_ORIGINS` sem a origem exata do Pages (ou proxy sem repassar
+      `Origin`/`Cookie`). O cookie é necessário porque o backend só confere `Origin` e o cabeçalho
+      quando o pedido traz cookie — sem ele, daria 401 com qualquer origem.
 - [ ] Fazer um login real pelo site e, nos logs do Render, confirmar que **não** aparece
       `proxy_shared_secret_mismatch` (apareceu = os dois segredos diferem; refaça os passos 2 e 3
       com o mesmo valor e faça novo deploy do frontend).

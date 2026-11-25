@@ -425,3 +425,31 @@ describe('LoginPage — volta para a página aberta', () => {
     expect(await screen.findByTestId('where')).toHaveTextContent(/^\/dashboard$/)
   })
 })
+
+// Revisão do 8eb5128: o cookie é um só para todas as abas. Outra aba entrou
+// como outra pessoa (ou saiu): esta larga o token, vai ao login sem o aviso de
+// "sessão encerrada" e, ao entrar de novo, volta à página onde estava.
+describe('LoginPage — sessão trocada em outra aba', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    TokenStore.clear()
+  })
+
+  it('aviso de outra aba: limpa a sessão local e vai ao login guardando a rota', async () => {
+    stubLogin()
+    TokenStore.set('token-de-A')
+    renderProtected('/dashboard/dinheiro?ciclo=2026-10')
+    expect(await screen.findByTestId('where')).toHaveTextContent('/dashboard/dinheiro?ciclo=2026-10')
+
+    const otherTab = new BroadcastChannel('mplacas-session')
+    otherTab.postMessage({ type: 'changed' })
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
+    expect(TokenStore.get()).toBeNull()
+    expect(screen.queryByText(SESSION_ENDED_TEXT)).not.toBeInTheDocument()
+    otherTab.close()
+
+    await submitLogin()
+    expect(await screen.findByTestId('where')).toHaveTextContent('/dashboard/dinheiro?ciclo=2026-10')
+  })
+})

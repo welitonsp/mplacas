@@ -101,17 +101,21 @@ jobs:
           echo "A API não respondeu pelo proxy /api." >&2
           exit 1
 
-      # Confere a defesa CSRF de ponta a ponta pelo proxy: sem cookie, o refresh
-      # com Origin do site e X-Mplacas-Auth tem de dar 401. 403 = a origem do
-      # Pages não está em MPLACAS_CORS_ALLOWED_ORIGINS no Render (ou o proxy não
-      # repassa Origin) — todo login de navegador falharia.
+      # Confere a defesa CSRF de ponta a ponta pelo proxy. O backend só aplica a
+      # checagem de Origin/X-Mplacas-Auth quando há cookie (auth/router.py,
+      # refresh): sem cookie, qualquer Origin daria 401 e o teste não provaria
+      # nada. Por isso vai um cookie com token inválido (desconhecido: não
+      # revoga nada). Esperado 401 = Origin aceito e token recusado. 403 = a
+      # origem do Pages não está em MPLACAS_CORS_ALLOWED_ORIGINS no Render (ou o
+      # proxy não repassa Origin/Cookie) — todo login de navegador falharia.
       - name: Smoke test do refresh pelo proxy (CSRF/Origin)
         run: |
           status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 -X POST \
             -H 'Origin: https://mplacas-frontend.pages.dev' \
             -H 'X-Mplacas-Auth: 1' \
+            -H 'Cookie: __Secure-mplacas_rt=smoke-invalido' \
             https://mplacas-frontend.pages.dev/api/auth/refresh || true)
-          echo "POST /api/auth/refresh sem cookie: HTTP $status (esperado 401)"
+          echo "POST /api/auth/refresh com cookie inválido: HTTP $status (esperado 401)"
           case "$status" in
             401) exit 0 ;;
             403) echo "403: a origem https://mplacas-frontend.pages.dev não está em MPLACAS_CORS_ALLOWED_ORIGINS no Render. Login pelo navegador vai falhar." >&2; exit 1 ;;

@@ -34,6 +34,11 @@ _ALLOWED_KEYS = {
         "UI preference (whether the technical performance section starts "
         "expanded) — not sensitive, no credential/token value"
     ),
+    "mplacas:account-switch": (
+        "ADR-102: aviso entre abas de que a sessão do navegador mudou, usado só "
+        "sem BroadcastChannel (evento storage). Guarda apenas um número "
+        "aleatório — nunca token, usuário ou dado de sessão"
+    ),
     "mplacas:theme": (
         "UI preference (explicit light/dark theme override; absence of the "
         "key means 'follow the OS preference', ADR-071) — not sensitive, no "
@@ -101,6 +106,13 @@ def test_logout_revokes_server_session_best_effort() -> None:
     assert "await openSession(" in frontend
     assert "epoch !== sessionEpoch" in session
     assert "LOGOUT_LOCK_WAIT_MS = 3_000" in session
+    # Troca de sessão em outra aba (cookie compartilhado): aviso por
+    # BroadcastChannel, com a chave neutra do storage como alternativa.
+    assert "'mplacas-session'" in session
+    assert "SESSION_SIGNAL_STORAGE_KEY = 'mplacas:account-switch'" in session
+    assert "String(Math.random())" in session
+    assert "subscribeSessionChanges(" in frontend
+    assert frontend.count("announceSessionChange()") >= 3
     # ADR-102: logout pelo cookie — sem corpo, mesma origem, com o cabeçalho
     # CSRF, e `keepalive` para terminar mesmo com a aba fechando.
     assert "`${API_URL}/auth/logout`" in session

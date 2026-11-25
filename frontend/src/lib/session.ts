@@ -1,5 +1,6 @@
 import { API_URL } from '../env'
 import { TokenStore } from './auth'
+import { safeStorage } from './storage'
 
 // Transporte da sessão (ADR-102). O refresh token mora num cookie
 // `__Secure-mplacas_rt` HttpOnly gravado pelo backend em `Path=/api/auth`: este
@@ -106,6 +107,62 @@ let sessionEpoch = 0
 
 export function markSessionChanged(): void {
   sessionEpoch += 1
+}
+
+// Grava o access token de uma sessão que acabou de abrir (login, aceite de
+// convite). Chamar DENTRO da task de `openSession`, para época e token mudarem
+// ainda atrás do lock.
+export function adoptAccessToken(accessToken: string): void {
+  markSessionChanged()
+  TokenStore.set(accessToken)
+}
+
+// Aviso entre abas de que a sessão do navegador mudou (login, convite, logout).
+// O cookie é um só para todas as abas: se a aba 1 entra como B, o próximo
+// refresh da aba 2 (que mostra A) receberia o token de B. Ao receber o aviso,
+// as outras abas limpam o estado local e vão ao login.
+//
+// Canal: `BroadcastChannel`. Sem ele (navegadores antigos), o evento `storage`
+// de uma chave neutra que guarda só um número aleatório — nunca dado de sessão.
+export const SESSION_CHANNEL_NAME = 'mplacas-session'
+export const SESSION_SIGNAL_STORAGE_KEY = 'mplacas:account-switch'
+
+let channel: BroadcastChannel | null | undefined
+
+// Uma única instância por aba, para enviar e receber: o `BroadcastChannel` não
+// entrega a mensagem ao próprio objeto que a enviou, então a aba que fez o
+// login não reage ao próprio aviso.
+function sessionChannel(): BroadcastChannel | null {
+  if (channel === undefined) {
+    channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(SESSION_CHANNEL_NAME) : null
+  }
+  return channel
+}
+
+export function announceSessionChange(): void {
+  const ch = sessionChannel()
+  if (ch) {
+    ch.postMessage({ type: 'changed' })
+    return
+  }
+  safeStorage.set(SESSION_SIGNAL_STORAGE_KEY, String(Math.random()))
+}
+
+export function subscribeSessionChanges(onChange: () => void): () => void {
+  const ch = sessionChannel()
+  if (ch) {
+    const listener = (event: MessageEvent) => {
+      if ((event.data as { type?: unknown } | null)?.type === 'changed') onChange()
+    }
+    ch.addEventListener('message', listener)
+    return () => ch.removeEventListener('message', listener)
+  }
+  if (typeof window === 'undefined') return () => undefined
+  const listener = (event: StorageEvent) => {
+    if (event.key === SESSION_SIGNAL_STORAGE_KEY) onChange()
+  }
+  window.addEventListener('storage', listener)
+  return () => window.removeEventListener('storage', listener)
 }
 
 // Duas abas pedindo refresh juntas: o backend tolera a perdedora por 10 s
@@ -217,28 +274,42 @@ function isLockWaitAbort(error: unknown): boolean {
 }
 
 // Encerra a sessão no servidor: revoga e apaga o cookie. Melhor esforço — falha
-// de rede não restaura nada localmente. `keepalive` deixa o pedido terminar
-// mesmo se a aba fechar logo em seguida. Passa pelo lock do refresh (até
-// `LOGOUT_LOCK_WAIT_MS`) para não cruzar com uma rotação de outra aba.
+// de rede não restaura nada localmente e não é repetida. `keepalive` deixa o
+// pedido terminar mesmo se a aba fechar logo em seguida.
+//
+// Passa pelo lock do refresh, esperando no máximo `LOGOUT_LOCK_WAIT_MS`. Se a
+// espera estourar (outra aba segurando o lock com o Render acordando), envia
+// sem o lock e, em segundo plano, manda um segundo logout quando o lock vagar:
+// o refresh que estava em voo pode ter gravado um cookie novo, que sobraria.
+// O segundo só sai se a sessão desta aba não mudou de novo nesse meio-tempo
+// (um login logo depois passaria pelo mesmo lock, depois deste pedido).
 export async function revokeSession(): Promise<void> {
+  const epoch = sessionEpoch
+  const secondLogout = () => (epoch === sessionEpoch ? sendLogout() : Promise.resolve(undefined))
   try {
     const locks = webLocks()
     if (!locks) {
-      if (refreshInFlight !== null) {
-        await Promise.race([
-          refreshInFlight.catch(() => undefined),
-          new Promise((resolve) => setTimeout(resolve, LOGOUT_LOCK_WAIT_MS)),
-        ])
+      const inFlight = refreshInFlight
+      if (inFlight === null) {
+        await sendLogout()
+        return
       }
+      const settled = await Promise.race([
+        inFlight.then(() => true, () => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), LOGOUT_LOCK_WAIT_MS)),
+      ])
       await sendLogout()
+      if (!settled) void inFlight.then(secondLogout, secondLogout).catch(() => undefined)
       return
     }
     try {
       await locks.request(REFRESH_LOCK_NAME, { signal: timeoutSignal(LOGOUT_LOCK_WAIT_MS) }, sendLogout)
     } catch (error) {
-      // Só a espera pelo lock estourou: envia sem o lock. Erro do próprio
-      // envio (rede) não é repetido.
-      if (isLockWaitAbort(error)) await sendLogout()
+      // Só a espera pelo lock estourou: envia sem o lock. Erro do próprio envio
+      // (rede) cai no `catch` de fora e não é repetido.
+      if (!isLockWaitAbort(error)) return
+      await sendLogout()
+      void Promise.resolve(locks.request(REFRESH_LOCK_NAME, secondLogout)).catch(() => undefined)
     }
   } catch {
     // melhor esforço

@@ -74,6 +74,21 @@ Decisão vigente: ADR-102 (substitui a ADR-073). Implantação em etapas; o que 
   do mesmo lock `mplacas-refresh`, gravando época e token ainda dentro dele — o `Set-Cookie` de quem
   entra é sempre o último. O formulário de login pode ser enviado durante "Conectando…"; ele só
   sai depois da checagem.
+  O aceite de convite faz o mesmo: o parse da resposta e `adoptAccessToken` (época + token) rodam
+  dentro da task do `openSession`; `adoptSession` só atualiza o estado React.
+  **Limite sem Web Locks** (navegador sem `navigator.locks`): `openSession` só espera o refresh
+  em voo **desta aba**. Se outra aba tiver um refresh da sessão anterior (A) em voo quando esta
+  entra como B, a resposta dele pode chegar depois e regravar o cookie com a sessão de A. A outra
+  aba descarta o token (aviso entre abas + época), mas o cookie fica com A: esta aba segue como B
+  até o access token vencer (15 min) e o refresh seguinte receberia A com a tela mostrando B.
+  Risco residual aceito: exige navegador sem Web Locks (todos os atuais têm; Safari ≥ 15.4),
+  duas abas e duas pessoas no mesmo navegador dentro de poucos segundos.
+- **Aviso entre abas** (`BroadcastChannel('mplacas-session')`): login, aceite de convite e logout
+  publicam `{type:'changed'}`. As outras abas fazem `clearLocal()` (sem "sessão encerrada") e a
+  rota protegida as leva ao login com `state.from`. Sem isso, como o cookie é um só, a aba 2
+  (mostrando A) receberia o token de B no próximo refresh depois de a aba 1 entrar como B. Sem
+  `BroadcastChannel`, a alternativa é o evento `storage` da chave `mplacas:account-switch`, que
+  guarda só um número aleatório.
 - O aceite de convite sempre chama `POST /auth/logout` antes (o cookie é do navegador, pode ser de
   outra aba ou pessoa; sem cookie, é um `204` inofensivo).
 - **Expiração** (refresh recusado no meio do uso) limpa só o estado local e **não** chama logout no
@@ -95,8 +110,10 @@ Decisão vigente: ADR-102 (substitui a ADR-073). Implantação em etapas; o que 
 
 O frontend primeiro limpa o access token em memória e muda o estado local para desautenticado.
 Envia `POST /auth/logout` sem corpo, com `keepalive`, `credentials: 'same-origin'` e
-`X-Mplacas-Auth: 1`, pelo mesmo lock do refresh, esperando por ele no máximo 3 s (depois envia
-mesmo assim); falha de rede não restaura a sessão local. O endpoint é
+`X-Mplacas-Auth: 1`, pelo mesmo lock do refresh, esperando por ele no máximo 3 s. Se a espera
+estourar, envia sem o lock e, quando o lock vagar (ou o refresh em voo terminar, sem Web Locks),
+manda um segundo logout para revogar o cookie que o refresh tenha gravado — só se a sessão desta
+aba não mudou de novo. Falha de rede não é repetida e não restaura a sessão local. O endpoint é
 idempotente, sempre responde `204` para token inválido, expirado, já revogado ou válido, e revoga a
 sessão persistida quando consegue autenticar o refresh token. Com o cookie, revoga e responde com o
 cookie apagado (`Max-Age=0`, mesmo `Path` e atributos); **[transitório]** sem cookie, aceita

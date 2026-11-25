@@ -20,6 +20,7 @@ vi.mock('../contexts/AuthContext', () => ({
 }))
 
 import { InvitePage } from './InvitePage'
+import { TokenStore } from '../lib/auth'
 
 const TOKEN = 'convite-secreto-123'
 const SENHA = 'uma frase longa'
@@ -50,6 +51,7 @@ beforeEach(() => {
 
 afterEach(() => {
   window.history.replaceState(null, '', '/')
+  TokenStore.clear()
 })
 
 describe('InvitePage (ADR-093)', () => {
@@ -93,8 +95,10 @@ describe('InvitePage (ADR-093)', () => {
 
     expect(await screen.findByText('painel')).toBeInTheDocument()
     expect(acceptInvitation).toHaveBeenCalledWith(TOKEN, SENHA)
-    // ADR-102: só o access token; o `refresh_token` do corpo é ignorado.
-    expect(adoptSession).toHaveBeenCalledWith('a', 'rogerio@example.com')
+    // ADR-102: só o access token, gravado dentro do `openSession`; o
+    // `refresh_token` do corpo é ignorado. `adoptSession` só leva o nome.
+    expect(adoptSession).toHaveBeenCalledWith('rogerio@example.com')
+    expect(TokenStore.get()).toBe('a')
     expect(JSON.stringify(adoptSession.mock.calls)).not.toContain('"r"')
   })
 
