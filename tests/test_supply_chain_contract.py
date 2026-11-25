@@ -163,8 +163,12 @@ def test_gitleaks_exceptions_are_exact_fingerprints() -> None:
     # o literal de teste `diagnostic-X1` em frontend/src/lib/dashboard/home.test.ts
     # passava do limiar de entropia da regra generic-api-key. O teste foi reescrito
     # sem o literal; as duas ocorrências já gravadas nos commits do PR ficam aqui.
+    # + 1 do PR #317: o segredo errado sintético de tests/test_auth_cookie_session.py
+    # passava do limiar; o teste passou a montá-lo em execução, e a ocorrência já
+    # gravada no commit aba3a2d fica aqui.
     # Nova exceção exige mudar este número de propósito, com o motivo.
-    assert len(entries) == 11
+    assert len(entries) == 12
+    assert sum("tests/test_auth_cookie_session.py" in entry for entry in entries) == 1
     assert sum("frontend/src/lib/dashboard/home.test.ts" in entry for entry in entries) == 2
     assert all(
         re.fullmatch(

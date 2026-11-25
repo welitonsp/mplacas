@@ -2,7 +2,9 @@
 
 ## Status
 
-Aceito (2026-08-12). Registra formalmente uma decisão **já em produção** desde a construção do
+Substituído pelo ADR-102 (2026-11-25) — sessão persistente por cookie first-party via proxy.
+
+Histórico: aceito (2026-08-12). Registra formalmente uma decisão **já em produção** desde a construção do
 `AuthContext`; este ADR documenta o trade-off, não o introduz.
 
 ## Contexto

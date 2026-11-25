@@ -136,7 +136,10 @@ def test_server_uses_port_and_host(monkeypatch) -> None:
     assert server.main() == 0
     assert captured["host"] == "0.0.0.0"
     assert captured["port"] == 9090
-    assert captured["proxy_headers"] is True
+    # ADR-102 § 6: os cabeçalhos de proxy são tratados pela cadeia montada em
+    # ``build_asgi_app`` (que guarda o par TCP real por fora), não pelo uvicorn.
+    assert captured["proxy_headers"] is False
+    assert isinstance(captured["args"][0], server.TcpPeerMiddleware)
     assert captured["access_log"] is False
     assert captured["log_config"] is None
     assert captured["observability_shutdown"] is True

@@ -23,7 +23,13 @@ from mplacas.auth.service import (
     load_active_user,
     verify_candidate_password,
 )
-from mplacas.auth.session_service import AuthSessionService, LoginRateLimitService
+from mplacas.auth.session_service import (
+    AuthSessionService,
+    IssuedRefreshSession,
+    LoginRateLimitService,
+    RotationRejection,
+)
+from mplacas.core.client_ip import log_client_ip_diagnostic, resolve_client_ip
 from mplacas.core.config import Settings, get_settings
 from mplacas.core.jwt import (
     JwtError,
@@ -51,6 +57,21 @@ from mplacas.organizations.invitation_service import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 _MIN_INVITATION_PASSWORD_LENGTH = 12
 
+# ADR-102 — cookie first-party do refresh token. O prefixo ``__Secure-`` faz o
+# navegador recusar o cookie se ele chegar sem ``Secure`` ou por HTTP.
+REFRESH_COOKIE_NAME = "__Secure-mplacas_rt"
+# Pedidos autenticados pelo cookie precisam deste cabeçalho (valor exato) E de
+# um ``Origin`` permitido. Um formulário de outro site não consegue mandar
+# cabeçalho customizado, e um ``fetch`` de outro site com ele cai no preflight
+# CORS, que só libera as origens configuradas.
+AUTH_REQUEST_HEADER = "X-Mplacas-Auth"
+_AUTH_REQUEST_HEADER_VALUE = "1"
+
+# Usado quando o endpoint é chamado direto (testes antigos chamam
+# ``logout(body, session)``): pedido vazio, sem cookie nem cabeçalhos — ou
+# seja, o fluxo de refresh token no corpo, exatamente como antes.
+_NO_HTTP_REQUEST = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
+
 
 class LoginRequest(BaseModel):
     username: str
@@ -64,6 +85,8 @@ class TokenResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
+    # Transitório (ADR-102): o corpo só é necessário enquanto o frontend não
+    # usa o cookie. Sem corpo, o refresh lê o cookie.
     refresh_token: str
 
 
@@ -137,12 +160,109 @@ def _require_jwt_configured(settings: Settings) -> None:
         )
 
 
-def _invalid_refresh_token() -> HTTPException:
+def _invalid_refresh_token(*, clear_cookie: str | None = None) -> HTTPException:
+    headers = {"WWW-Authenticate": "Bearer"}
+    if clear_cookie is not None:
+        headers["Set-Cookie"] = clear_cookie
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="invalid or expired refresh token",
-        headers={"WWW-Authenticate": "Bearer"},
+        headers=headers,
     )
+
+
+def _forbidden_auth_origin() -> HTTPException:
+    # Mesma resposta para cabeçalho ausente, Origin ausente ou Origin errado:
+    # não ajuda quem está sondando qual das regras falhou.
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="request origin not allowed",
+    )
+
+
+def _normalize_origin(value: str) -> str:
+    return value.strip().rstrip("/").lower()
+
+
+def _origin_allowed(origin: str, settings: Settings) -> bool:
+    allowed = {_normalize_origin(item) for item in settings.cors_allowed_origin_list}
+    return _normalize_origin(origin) in allowed
+
+
+def _require_cookie_request_guard(request: Request, settings: Settings) -> None:
+    """Defesa CSRF de pedido autenticado pelo cookie (refresh/logout).
+
+    Exige as duas coisas: ``X-Mplacas-Auth: 1`` e ``Origin`` presente e igual
+    a uma origem de ``MPLACAS_CORS_ALLOWED_ORIGINS``. Lista vazia → nada passa
+    (falha fechada).
+    """
+    if request.headers.get(AUTH_REQUEST_HEADER) != _AUTH_REQUEST_HEADER_VALUE:
+        raise _forbidden_auth_origin()
+    origin = request.headers.get("origin")
+    if origin is None or not _origin_allowed(origin, settings):
+        raise _forbidden_auth_origin()
+
+
+def _require_allowed_origin_if_present(request: Request, settings: Settings) -> None:
+    """Defesa contra login-CSRF em quem ABRE sessão (login, aceite de convite).
+
+    Navegador sempre manda ``Origin`` em POST cruzado (``fetch`` ou formulário),
+    então um site de terceiros que tente logar a vítima na conta do atacante é
+    barrado aqui. Sem ``Origin`` (cliente servidor-a-servidor, testes) segue
+    como antes: não é um navegador, logo não há vítima de CSRF. ``Origin: null``
+    conta como presente e é recusado.
+    """
+    origin = request.headers.get("origin")
+    if origin is not None and not _origin_allowed(origin, settings):
+        raise _forbidden_auth_origin()
+
+
+def _refresh_cookie_from(request: Request, settings: Settings) -> str | None:
+    if not settings.auth_cookie_enabled:
+        return None
+    value = request.cookies.get(REFRESH_COOKIE_NAME)
+    return value or None
+
+
+def _set_refresh_cookie(
+    response: Response, issued: IssuedRefreshSession, settings: Settings
+) -> None:
+    if not settings.auth_cookie_enabled:
+        return
+    remaining = issued.expires_at - datetime.now(UTC)
+    max_age = max(0, int(remaining.total_seconds()))
+    response.set_cookie(
+        REFRESH_COOKIE_NAME,
+        issued.token,
+        max_age=max_age,
+        path=settings.auth_cookie_path,
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def _clear_refresh_cookie(response: Response, settings: Settings) -> None:
+    response.delete_cookie(
+        REFRESH_COOKIE_NAME,
+        path=settings.auth_cookie_path,
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def _clear_refresh_cookie_header(settings: Settings) -> str:
+    scratch = Response()
+    _clear_refresh_cookie(scratch, settings)
+    return scratch.headers["set-cookie"]
+
+
+def _session_ttl_kwargs(settings: Settings) -> dict[str, int]:
+    return {
+        "ttl_seconds": settings.jwt_refresh_ttl_seconds,
+        "absolute_max_seconds": settings.auth_session_max_age_seconds,
+    }
 
 
 async def _consume_invitation_rate_limited(
@@ -159,7 +279,7 @@ async def _consume_invitation_rate_limited(
     committed — the caller commits with the rest of its work).
     """
     rate_limit = LoginRateLimitService(session)
-    client_host = request.client.host if request.client else None
+    client_host = resolve_client_ip(request, settings)
     rate_key = invitation_rate_key(token=token, client_host=client_host)
     if await rate_limit.is_locked(rate_key):
         raise _rate_limited()
@@ -183,14 +303,17 @@ async def _consume_invitation_rate_limited(
 @router.post("/login", response_model=TokenResponse, status_code=status.HTTP_200_OK)
 async def login(
     request: Request,
+    response: Response,
     body: LoginRequest,
     session: AsyncSession = Depends(_get_session),
 ) -> TokenResponse:
     settings = get_settings()
     _require_jwt_configured(settings)
+    _require_allowed_origin_if_present(request, settings)
 
     rate_limit = LoginRateLimitService(session)
-    client_host = request.client.host if request.client else None
+    client_host = resolve_client_ip(request, settings)
+    log_client_ip_diagnostic(request, settings, client_host)
     rate_key = LoginRateLimitService.key_for(
         username=body.username,
         client_host=client_host,
@@ -211,31 +334,52 @@ async def login(
 
     assert user is not None
     await rate_limit.clear(rate_key)
-    refresh_token = await AuthSessionService(session).create(
+    issued = await AuthSessionService(session).create_session(
         user_id=user.id,
         organization_id=user.organization_id,
-        ttl_seconds=settings.jwt_refresh_ttl_seconds,
+        **_session_ttl_kwargs(settings),
     )
     await session.commit()
 
+    _set_refresh_cookie(response, issued, settings)
     return TokenResponse(
         access_token=encode_access_token(user.id, user.organization_id, user.role),
-        refresh_token=refresh_token,
+        # Transitório (ADR-102): sai do corpo quando o frontend usar o cookie.
+        refresh_token=issued.token,
     )
 
 
 @router.post("/refresh", response_model=AccessTokenResponse, status_code=status.HTTP_200_OK)
 async def refresh(
-    body: RefreshRequest,
+    request: Request,
+    response: Response,
+    body: RefreshRequest | None = None,
     session: AsyncSession = Depends(_get_session),
 ) -> AccessTokenResponse:
+    """Rotaciona o refresh token. Cookie primeiro; corpo como fallback.
+
+    Com cookie presente, ele é a credencial — o corpo é ignorado — e a defesa
+    CSRF é obrigatória. Sem cookie, o fluxo do corpo segue idêntico ao de
+    antes do ADR-102 (sem exigir cabeçalho nem Origin).
+    """
     settings = get_settings()
     _require_jwt_configured(settings)
 
+    cookie_token = _refresh_cookie_from(request, settings)
+    if cookie_token is not None:
+        _require_cookie_request_guard(request, settings)
+        presented = cookie_token
+        clear_on_failure: str | None = _clear_refresh_cookie_header(settings)
+    elif body is not None:
+        presented = body.refresh_token
+        clear_on_failure = None
+    else:
+        raise _invalid_refresh_token()
+
     try:
-        claims = decode_token(body.refresh_token, expected_type="refresh")
+        claims = decode_token(presented, expected_type="refresh")
     except JwtError as exc:
-        raise _invalid_refresh_token() from exc
+        raise _invalid_refresh_token(clear_cookie=clear_on_failure) from exc
 
     user = await load_active_user(
         session,
@@ -243,39 +387,67 @@ async def refresh(
         organization_id=claims.org_id,
     )
     if user is None:
-        raise _invalid_refresh_token()
+        raise _invalid_refresh_token(clear_cookie=clear_on_failure)
 
-    new_refresh_token = await AuthSessionService(session).rotate(
-        token=body.refresh_token,
+    issued = await AuthSessionService(session).rotate_session(
+        token=presented,
         claims=claims,
-        ttl_seconds=settings.jwt_refresh_ttl_seconds,
+        reuse_grace_seconds=settings.auth_refresh_reuse_grace_seconds,
+        **_session_ttl_kwargs(settings),
     )
-    if new_refresh_token is None:
-        raise _invalid_refresh_token()
+    # Commit também na falha: a revogação da família (replay, teto absoluto)
+    # escrita por ``rotate_session`` não pode se perder num rollback.
     await session.commit()
+    if issued is RotationRejection.WITHIN_GRACE:
+        # Perdeu a corrida para outra aba: a vencedora já gravou o cookie
+        # novo. Apagar aqui poderia chegar depois e deslogar o usuário.
+        raise _invalid_refresh_token()
+    if isinstance(issued, RotationRejection):
+        raise _invalid_refresh_token(clear_cookie=clear_on_failure)
 
+    _set_refresh_cookie(response, issued, settings)
     return AccessTokenResponse(
         access_token=encode_access_token(claims.sub, claims.org_id, user.role),
-        refresh_token=new_refresh_token,
+        # Transitório (ADR-102): sai do corpo quando o frontend usar o cookie.
+        refresh_token=issued.token,
     )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    body: LogoutRequest,
+    body: LogoutRequest | None = None,
     session: AsyncSession = Depends(_get_session),
+    request: Request = _NO_HTTP_REQUEST,
 ) -> Response:
-    """Revoke the presented refresh session without exposing token validity."""
+    """Revoke the presented refresh session without exposing token validity.
+
+    ADR-102: com cookie, exige a mesma defesa CSRF do refresh (senão 403, sem
+    revogar nem apagar — um site de terceiros não consegue deslogar ninguém);
+    passando nela, revoga e apaga o cookie. Responde 204 para qualquer token
+    (válido, inválido, expirado, já revogado). O fluxo do corpo, sem cookie,
+    segue idêntico.
+    """
+    settings = get_settings()
+    cookie_token = _refresh_cookie_from(request, settings)
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    if cookie_token is not None:
+        _require_cookie_request_guard(request, settings)
+        _clear_refresh_cookie(response, settings)
+        presented: str | None = cookie_token
+    else:
+        presented = body.refresh_token if body is not None else None
+    if presented is None:
+        return response
 
     try:
-        claims = decode_token(body.refresh_token, expected_type="refresh")
+        claims = decode_token(presented, expected_type="refresh")
     except JwtError:
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+        return response
 
     if claims.jti is not None:
         await AuthSessionService(session).revoke(session_id=claims.jti)
         await session.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return response
 
 
 @router.post(
@@ -315,18 +487,23 @@ async def inspect_invitation(
 )
 async def accept_invitation(
     request: Request,
+    response: Response,
     body: InvitationAcceptRequest,
     session: AsyncSession = Depends(_get_session),
 ) -> TokenResponse:
     settings = get_settings()
     _require_jwt_configured(settings)
+    # Aceitar convite abre sessão: mesma regra de Origin do login (ADR-102).
+    _require_allowed_origin_if_present(request, settings)
 
     invitation = await _consume_invitation_rate_limited(
         session, request, token=body.token, settings=settings
     )
 
     if invitation.purpose == PURPOSE_RESET:
-        return await _accept_access_reset(session, request, invitation, body.password, settings)
+        return await _accept_access_reset(
+            session, request, response, invitation, body.password, settings
+        )
 
     try:
         user = await UserService(session).create(
@@ -359,10 +536,10 @@ async def accept_invitation(
         # close.
         raise _invalid_invitation()
 
-    refresh_token = await AuthSessionService(session).create(
+    issued = await AuthSessionService(session).create_session(
         user_id=user.id,
         organization_id=user.organization_id,
-        ttl_seconds=settings.jwt_refresh_ttl_seconds,
+        **_session_ttl_kwargs(settings),
     )
 
     await AuditEventRepository(session).record(
@@ -380,15 +557,17 @@ async def accept_invitation(
     )
     await session.commit()
 
+    _set_refresh_cookie(response, issued, settings)
     return TokenResponse(
         access_token=encode_access_token(user.id, user.organization_id, user.role),
-        refresh_token=refresh_token,
+        refresh_token=issued.token,
     )
 
 
 async def _accept_access_reset(
     session: AsyncSession,
     request: Request,
+    response: Response,
     invitation: UserInvitationRecord,
     password: str,
     settings: Settings,
@@ -419,10 +598,10 @@ async def _accept_access_reset(
         .where(AuthSessionRecord.user_id == user.id, AuthSessionRecord.active.is_(True))
         .values(active=False, revoked_at=datetime.now(UTC))
     )
-    refresh_token = await AuthSessionService(session).create(
+    issued = await AuthSessionService(session).create_session(
         user_id=user.id,
         organization_id=user.organization_id,
-        ttl_seconds=settings.jwt_refresh_ttl_seconds,
+        **_session_ttl_kwargs(settings),
     )
     await AuditEventRepository(session).record(
         request,
@@ -434,9 +613,11 @@ async def _accept_access_reset(
         details={"username": user.name, "user_id": str(user.id)},
     )
     await session.commit()
+    # Todas as sessões antigas caíram acima; o cookie novo substitui o velho.
+    _set_refresh_cookie(response, issued, settings)
     return TokenResponse(
         access_token=encode_access_token(user.id, user.organization_id, user.role),
-        refresh_token=refresh_token,
+        refresh_token=issued.token,
     )
 
 
