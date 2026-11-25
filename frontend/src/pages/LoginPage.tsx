@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { BrandMark } from '../components/BrandMark'
 import { LoadingAnnouncement } from '../components/LoadingAnnouncement'
 import { warmUpApi } from '../lib/api'
+import { resolvePostLoginPath } from '../lib/postLoginRedirect'
 
 const SLOW_START_HINT_MS = 6_000
 
@@ -26,7 +27,7 @@ const BENEFITS = [
 ]
 
 export function LoginPage() {
-  const { login, isAuthenticated } = useAuth()
+  const { login, isAuthenticated, sessionEnded } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [username, setUsername] = useState('')
@@ -53,11 +54,10 @@ export function LoginPage() {
     return () => clearTimeout(timer)
   }, [loading])
 
-  const sessionEnded =
-    (location.state as { reason?: string } | null)?.reason === 'SESSION_ENDED'
+  const destination = resolvePostLoginPath(location.state)
 
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={destination} replace />
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -72,7 +72,7 @@ export function LoginPage() {
     setLoading(true)
     try {
       await login(username, password)
-      navigate('/dashboard', { replace: true })
+      navigate(destination, { replace: true })
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message)

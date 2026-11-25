@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 
 // `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
 // módulo e lança se ausente — não há `.env.local` no ambiente de teste (é
@@ -12,6 +12,85 @@ vi.mock('../env', () => ({
 const { LoginPage } = await import('./LoginPage')
 const { AuthProvider } = await import('../contexts/AuthContext')
 const { TokenStore } = await import('../lib/auth')
+const { useAuth } = await import('../contexts/AuthContext')
+const { apiFetch } = await import('../lib/api')
+const { ProtectedRoute } = await import('../components/ProtectedRoute')
+
+const SESSION_ENDED_TEXT = 'Sua sessão foi encerrada. Entre novamente.'
+
+function Where() {
+  const l = useLocation()
+  return <p data-testid="where">{`${l.pathname}${l.search}${l.hash}`}</p>
+}
+
+function renderProtected(entry: string | { pathname: string; state: unknown }) {
+  return render(
+    <MemoryRouter initialEntries={[entry]}>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/dashboard/*"
+            element={
+              <ProtectedRoute>
+                <Where />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </AuthProvider>
+    </MemoryRouter>
+  )
+}
+
+function stubExpiringApi() {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/auth/login')) {
+        return new Response(JSON.stringify({ access_token: 'a1', refresh_token: 'r1' }), { status: 200 })
+      }
+      return new Response('{}', { status: 401 }) // dados e /auth/refresh
+    }),
+  )
+}
+
+function renderSessionProbe(onClick: () => void) {
+  function Probe() {
+    const { isAuthenticated } = useAuth()
+    return <button onClick={onClick}>{isAuthenticated ? 'logado' : 'deslogado'}</button>
+  }
+  return render(
+    <MemoryRouter initialEntries={['/login']}>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/dashboard" element={<ProtectedRoute><Probe /></ProtectedRoute>} />
+        </Routes>
+      </AuthProvider>
+    </MemoryRouter>
+  )
+}
+
+async function loginAndClickProbe() {
+  await submitLogin()
+  fireEvent.click(await screen.findByRole('button', { name: 'logado' }))
+}
+
+function stubLogin() {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      new Response(JSON.stringify({ access_token: 'a1', refresh_token: 'r1' }), { status: 200 }),
+    ),
+  )
+}
+
+async function submitLogin() {
+  fireEvent.change(screen.getByLabelText('Usuário'), { target: { value: 'demo' } })
+  fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'demo-pass' } })
+  fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
+}
 
 function renderLoginPage() {
   return render(
@@ -178,26 +257,78 @@ describe('LoginPage — erro do formulário associado ao campo', () => {
 })
 
 describe('LoginPage — aviso de sessão encerrada', () => {
-  it('exibe aviso neutro quando location.state.reason é SESSION_ENDED', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    TokenStore.clear()
+  })
+
+  it('visitante novo que abriu um link protegido vê só o login, sem "sessão encerrada"', () => {
+    renderProtected('/dashboard/dinheiro')
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
+    expect(screen.queryByText(SESSION_ENDED_TEXT)).not.toBeInTheDocument()
+  })
+
+  it('não exibe o aviso quando não há state', () => {
+    renderLoginPage()
+
+    expect(screen.queryByText(SESSION_ENDED_TEXT)).not.toBeInTheDocument()
+  })
+
+  it('exibe o aviso quando a sessão desta aba expirou (refresh recusado com 401)', async () => {
+    stubExpiringApi()
+    renderSessionProbe(() => void apiFetch('/plants'))
+
+    await loginAndClickProbe()
+
+    expect(await screen.findByText(SESSION_ENDED_TEXT)).toBeInTheDocument()
+  })
+
+  it('vários 401 simultâneos (refresh recusado) ainda deixam o aviso', async () => {
+    stubExpiringApi()
+    renderSessionProbe(() => void Promise.all([apiFetch('/a'), apiFetch('/b'), apiFetch('/c')]))
+
+    await loginAndClickProbe()
+
+    expect(await screen.findByText(SESSION_ENDED_TEXT)).toBeInTheDocument()
+  })
+
+  it('logout voluntário e depois rota protegida: sem aviso', async () => {
+    stubExpiringApi()
+    let doLogout: () => void = () => {}
+    function Out() {
+      const { logout } = useAuth()
+      doLogout = logout
+      return <p>dentro</p>
+    }
     render(
-      <MemoryRouter
-        initialEntries={[{ pathname: '/login', state: { reason: 'SESSION_ENDED' } }]}
-      >
+      <MemoryRouter initialEntries={['/login']}>
         <AuthProvider>
-          <LoginPage />
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/dashboard" element={<ProtectedRoute><Out /></ProtectedRoute>} />
+          </Routes>
         </AuthProvider>
       </MemoryRouter>
     )
+    await submitLogin()
+    await screen.findByText('dentro')
+    act(() => doLogout())
 
-    expect(screen.getByText('Sua sessão foi encerrada. Entre novamente.')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
+    expect(screen.queryByText(SESSION_ENDED_TEXT)).not.toBeInTheDocument()
   })
 
-  it('não exibe o aviso quando não há reason no state', () => {
-    renderLoginPage()
+  it('o aviso some depois de um novo login bem-sucedido', async () => {
+    stubExpiringApi()
+    renderSessionProbe(() => void apiFetch('/a'))
+    await loginAndClickProbe()
+    await screen.findByText(SESSION_ENDED_TEXT)
 
-    expect(
-      screen.queryByText('Sua sessão foi encerrada. Entre novamente.')
-    ).not.toBeInTheDocument()
+    await submitLogin()
+
+    expect(await screen.findByRole('button', { name: 'logado' })).toBeInTheDocument()
+    expect(screen.queryByText(SESSION_ENDED_TEXT)).not.toBeInTheDocument()
   })
 })
 
@@ -247,5 +378,39 @@ describe('LoginPage — servidor hibernando (plano grátis, ADR-076)', () => {
       await vi.advanceTimersByTimeAsync(0)
     })
     expect(screen.queryByText(/está iniciando/)).not.toBeInTheDocument()
+  })
+})
+
+describe('LoginPage — volta para a página aberta', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    TokenStore.clear()
+  })
+
+  it('link profundo -> login -> cai no link profundo, com search e hash', async () => {
+    stubLogin()
+    renderProtected('/dashboard/dinheiro?ciclo=2026-10#detalhe')
+
+    await submitLogin()
+
+    expect(await screen.findByTestId('where')).toHaveTextContent('/dashboard/dinheiro?ciclo=2026-10#detalhe')
+  })
+
+  it.each([
+    ['//evil.com'],
+    ['/\\evil'],
+    ['https://evil.com/dashboard'],
+    ['/login'],
+    ['/dashboardx'],
+    ['/dashboard/..\\evil'],
+    ['/dashboard/../login'],
+    ['/dashboard/./x'],
+  ])('from malicioso %s -> /dashboard', async (pathname) => {
+    stubLogin()
+    renderProtected({ pathname: '/login', state: { from: { pathname, search: '', hash: '' } } })
+
+    await submitLogin()
+
+    expect(await screen.findByTestId('where')).toHaveTextContent(/^\/dashboard$/)
   })
 })
