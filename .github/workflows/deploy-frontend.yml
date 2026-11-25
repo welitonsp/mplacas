@@ -83,20 +83,26 @@ jobs:
           --project-name=mplacas-frontend
           --branch=main
 
-      # Confere o proxy publicado. 503 = Function sem MPLACAS_API_ORIGIN ou
-      # MPLACAS_PROXY_SHARED_SECRET no Cloudflare Pages (falha fechada); 502/504
-      # = Render fora ou acordando. Repete porque o plano grátis hiberna.
+      # Confere o proxy publicado. A troca do domínio de produção para o deploy
+      # novo leva alguns segundos: até lá o deploy antigo responde (index.html
+      # com 200 em GET e 405 em POST). Por isso só vale um 200 com JSON da API.
+      # 503 = Function sem MPLACAS_API_ORIGIN ([vars] do wrangler.toml) ou sem o
+      # segredo MPLACAS_PROXY_SHARED_SECRET (painel do Pages, Production);
+      # 502/504 = Render fora ou acordando. Repete porque o plano grátis hiberna.
       - name: Smoke test do proxy /api
         run: |
-          for tentativa in 1 2 3; do
-            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 https://mplacas-frontend.pages.dev/api/health || true)
-            echo "tentativa $tentativa: HTTP $status"
-            [ "$status" = "200" ] && exit 0
-            if [ "$status" = "503" ]; then
-              echo "Proxy sem configuração: defina MPLACAS_API_ORIGIN e MPLACAS_PROXY_SHARED_SECRET (produção) no Cloudflare Pages e faça novo deploy." >&2
-              exit 1
-            fi
-            sleep 20
+          for tentativa in $(seq 1 12); do
+            resposta=$(curl -s -D - -o /dev/null --max-time 90 https://mplacas-frontend.pages.dev/api/health || true)
+            status=$(printf '%s' "$resposta" | awk 'NR==1{print $2}')
+            tipo=$(printf '%s' "$resposta" | tr -d '\r' | awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}')
+            echo "tentativa $tentativa: HTTP $status ($tipo)"
+            case "$status:$tipo" in
+              200:application/json*) exit 0 ;;
+              503:application/json*)
+                echo "Proxy sem configuração: MPLACAS_API_ORIGIN em [vars] do frontend/wrangler.toml e o segredo MPLACAS_PROXY_SHARED_SECRET (Production) no Cloudflare Pages." >&2
+                exit 1 ;;
+            esac
+            sleep 15
           done
           echo "A API não respondeu pelo proxy /api." >&2
           exit 1
@@ -110,12 +116,17 @@ jobs:
       # proxy não repassa Origin/Cookie) — todo login de navegador falharia.
       - name: Smoke test do refresh pelo proxy (CSRF/Origin)
         run: |
-          status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 -X POST \
-            -H 'Origin: https://mplacas-frontend.pages.dev' \
-            -H 'X-Mplacas-Auth: 1' \
-            -H 'Cookie: __Secure-mplacas_rt=smoke-invalido' \
-            https://mplacas-frontend.pages.dev/api/auth/refresh || true)
-          echo "POST /api/auth/refresh com cookie inválido: HTTP $status (esperado 401)"
+          for tentativa in $(seq 1 8); do
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 -X POST \
+              -H 'Origin: https://mplacas-frontend.pages.dev' \
+              -H 'X-Mplacas-Auth: 1' \
+              -H 'Cookie: __Secure-mplacas_rt=smoke-invalido' \
+              https://mplacas-frontend.pages.dev/api/auth/refresh || true)
+            echo "POST /api/auth/refresh com cookie inválido: HTTP $status (esperado 401)"
+            # 405 = ainda é o deploy antigo (estático); espera a troca.
+            [ "$status" = "405" ] || break
+            sleep 15
+          done
           case "$status" in
             401) exit 0 ;;
             403) echo "403: a origem https://mplacas-frontend.pages.dev não está em MPLACAS_CORS_ALLOWED_ORIGINS no Render. Login pelo navegador vai falhar." >&2; exit 1 ;;

@@ -5,11 +5,13 @@
 # no Render. `wrangler pages deploy` só envia `functions/` do diretório atual —
 # rode o deploy de dentro de `frontend/` (o workflow já faz isso).
 #
-# Variáveis do projeto no Cloudflare Pages (Settings → Variables and Secrets,
-# ambiente Production), lidas pela Function em tempo de execução:
-#   MPLACAS_API_ORIGIN           — origem https exata da API (sem caminho)
+# Com `pages_build_output_dir`, este arquivo é a fonte da verdade das variáveis
+# de texto do Pages: as variáveis de texto criadas no painel são IGNORADAS. Por
+# isso `MPLACAS_API_ORIGIN` (não é segredo) fica em [vars] abaixo.
+# O segredo continua só no painel (Settings → Variables and Secrets, Production,
+# tipo Secret), nunca aqui:
 #   MPLACAS_PROXY_SHARED_SECRET  — secret, ≥ 32 bytes, mesmo valor do Render
-# Faltando qualquer uma, `/api/*` responde 503 (falha fechada).
+# Faltando qualquer um, `/api/*` responde 503 (falha fechada).
 #
 # GitHub (deploy-frontend.yml):
 #   CLOUDFLARE_ACCOUNT_ID (variable), CLOUDFLARE_API_TOKEN (secret, Pages:Edit)
@@ -19,3 +21,6 @@
 
 name = "mplacas-frontend"
 pages_build_output_dir = "dist"
+
+[vars]
+MPLACAS_API_ORIGIN = "https://mplacas-api.onrender.com"
