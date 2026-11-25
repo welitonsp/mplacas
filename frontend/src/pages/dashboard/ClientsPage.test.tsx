@@ -178,6 +178,37 @@ describe('ClientsPage — ficha do cliente (ADR-095)', () => {
     expect(screen.queryByRole('button', { name: 'Novo convite' })).not.toBeInTheDocument()
   })
 
+  it('histórico traduz marca descontinuada e token da Growatt sem pedir ação', async () => {
+    meValue = { me: OPERATOR, loading: false }
+    fetchClients.mockResolvedValue(jsonResponse({ items: [{ ...CLIENT, users: 1, stage: 'ENTROU' }] }))
+    fetchClient.mockResolvedValue(
+      jsonResponse(
+        detailPayload({
+          activity: [
+            {
+              action: 'provider_account.verify_failed',
+              outcome: 'FAILED',
+              at: '2026-11-25T10:00:00Z',
+              details: { provider: 'GROWATT_TOKEN', reason: 'provider_unsupported' },
+            },
+            {
+              action: 'provider_account.history_import_failed',
+              outcome: 'FAILED',
+              at: '2026-11-24T10:00:00Z',
+              details: { provider: 'GROWATT_TOKEN', reason: 'provider_token_failed' },
+            },
+          ],
+        }),
+      ),
+    )
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir ficha de Rogério' }))
+    const history = await screen.findByRole('list', { name: 'Histórico do cliente' })
+    expect(within(history).getByText('Tentativa de conexão com a marca recusada: marca descontinuada')).toBeInTheDocument()
+    expect(within(history).getByText('Importação da produção falhou: token da Growatt recusado')).toBeInTheDocument()
+    expect(within(history).queryByText(/use o token|ShinePhone/)).not.toBeInTheDocument()
+  })
+
   it('redefinir acesso mostra o link uma vez, com a frase certa', async () => {
     meValue = { me: OPERATOR, loading: false }
     fetchClients.mockResolvedValue(jsonResponse({ items: [{ ...CLIENT, users: 1, stage: 'ENTROU' }] }))

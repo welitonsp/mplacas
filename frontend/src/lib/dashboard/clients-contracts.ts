@@ -141,8 +141,10 @@ const ACTIVITY_LABELS: Record<string, string> = {
 
 const REASON_LABELS: Record<string, string> = {
   provider_login_failed: 'a marca recusou o usuário ou a senha',
-  provider_token_failed: 'a Growatt recusou o token',
-  provider_login_blocked: 'a Growatt bloqueou o login por senha (use o token)',
+  provider_token_failed: 'token da Growatt recusado',
+  provider_login_blocked: 'a Growatt bloqueou o login por senha',
+  provider_unsupported: 'marca descontinuada',
+  provider_discontinued: 'integração da marca desativada',
   provider_unavailable: 'a marca não respondeu',
   provider_rate_limited: 'a marca bloqueou por excesso de tentativas',
   provider_inverter_in_another_plant: 'a usina já está ligada a outra conta',
@@ -152,7 +154,7 @@ const REASON_LABELS: Record<string, string> = {
 export function describeActivity(item: ClientActivity): string {
   const base = ACTIVITY_LABELS[item.action] ?? item.action
   const reason = item.details.reason
-  if (typeof reason === 'string' && reason in REASON_LABELS) return `${base}: ${REASON_LABELS[reason]}`
+  if (typeof reason === 'string' && Object.prototype.hasOwnProperty.call(REASON_LABELS, reason)) return `${base}: ${REASON_LABELS[reason]}`
   return base
 }
 

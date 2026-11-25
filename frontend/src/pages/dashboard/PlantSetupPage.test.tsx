@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { jsonResponse, singlePlant } from '../../test/dashboardFixtures'
 
 vi.mock('../../env', () => ({
@@ -698,6 +698,48 @@ describe('PlantSetupPage — conexão com o inversor (ADR-091)', () => {
     },
   )
 
+  it('conexão Growatt não oferece reler dados na marca; NEPViewer continua oferecendo', async () => {
+    vi.resetModules()
+    const refreshPlantProfile = vi.fn()
+    installApiMock({
+      fetchProviderAccount: vi.fn(async () => jsonResponse({ ...CONNECTED, provider: 'GROWATT_TOKEN' })),
+      refreshPlantProfile,
+    })
+    await renderPage()
+    await screen.findByRole('button', { name: 'Desconectar' })
+    expect(screen.queryByRole('button', { name: 'Buscar dados da usina na marca' })).not.toBeInTheDocument()
+    expect(refreshPlantProfile).not.toHaveBeenCalled()
+
+    vi.resetModules()
+    cleanup()
+    installApiMock({ fetchProviderAccount: vi.fn(async () => jsonResponse(CONNECTED)) })
+    await renderPage()
+    expect(await screen.findByRole('button', { name: 'Buscar dados da usina na marca' })).toBeInTheDocument()
+  })
+
+  it('desconectar uma conexão Growatt avisa que não dá para reconectar; NEPViewer não recebe o aviso', async () => {
+    vi.resetModules()
+    installApiMock({
+      fetchProviderAccount: vi.fn(async () => jsonResponse({ ...CONNECTED, provider: 'GROWATT' })),
+    })
+    await renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Desconectar' }))
+    expect(
+      screen.getByText(
+        /A Growatt não aceita mais conexão nova: depois de desconectar, não será possível reconectar\. Confirma\?/,
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sim, desconectar' })).toHaveFocus()
+
+    vi.resetModules()
+    cleanup()
+    installApiMock({ fetchProviderAccount: vi.fn(async () => jsonResponse(CONNECTED)) })
+    await renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Desconectar' }))
+    expect(screen.getByText(/deixa de ser buscada\. Confirma\?/)).toBeInTheDocument()
+    expect(screen.queryByText(/não será possível reconectar/)).not.toBeInTheDocument()
+  })
+
   it('conexão Growatt com falha na leitura não pede senha nova', async () => {
     vi.resetModules()
     installApiMock({
@@ -752,14 +794,14 @@ describe('PlantSetupPage — buscar dados da usina na marca (ADR-094)', () => {
     )
     installApiMock({
       fetchPlantSetup,
-      fetchProviderAccount: vi.fn(async () => jsonResponse({ ...CONNECTED, provider: 'GROWATT_TOKEN' })),
+      fetchProviderAccount: vi.fn(async () => jsonResponse(CONNECTED)),
       refreshPlantProfile,
     })
 
     await renderPage()
     fireEvent.click(await screen.findByRole('button', { name: 'Buscar dados da usina na marca' }))
 
-    expect(await screen.findByText(/Dados lidos na Growatt: Potência dos painéis, Localização/)).toBeInTheDocument()
+    expect(await screen.findByText(/Dados lidos na NEPViewer: Potência dos painéis, Localização/)).toBeInTheDocument()
     expect(refreshPlantProfile).toHaveBeenCalledWith(singlePlant.id)
     await waitFor(() => expect(fetchPlantSetup).toHaveBeenCalledTimes(2))
   })

@@ -153,7 +153,8 @@ export function ProviderConnectionSection({
   const connected = account != null && account.status !== 'SEM_CONEXAO'
   // Conexão Growatt ainda ativa: a marca não aceita mais conexão nova, então
   // não há troca de senha/conta (seria reconectar numa marca encerrada).
-  const canReplace = connected && !isGrowatt(account.provider)
+  const growatt = connected && isGrowatt(account.provider)
+  const canReplace = connected && !growatt
   const showForm = account != null && (!connected || (editing && canReplace))
 
   async function handleRefreshProfile() {
@@ -258,15 +259,19 @@ export function ProviderConnectionSection({
                         Trocar senha ou conta
                       </button>
                     )}
-                    <button
-                      type="button"
-                      className={SECONDARY_BUTTON}
-                      onClick={handleRefreshProfile}
-                      disabled={refreshing}
-                      aria-busy={refreshing}
-                    >
-                      {refreshing ? 'Buscando...' : 'Buscar dados da usina na marca'}
-                    </button>
+                    {/* Growatt desativada: o backend recusa reler (409), então nem
+                        oferece. */}
+                    {!growatt && (
+                      <button
+                        type="button"
+                        className={SECONDARY_BUTTON}
+                        onClick={handleRefreshProfile}
+                        disabled={refreshing}
+                        aria-busy={refreshing}
+                      >
+                        {refreshing ? 'Buscando...' : 'Buscar dados da usina na marca'}
+                      </button>
+                    )}
                     {!confirmingRemoval && (
                       <button
                         type="button"
@@ -285,7 +290,10 @@ export function ProviderConnectionSection({
               {confirmingRemoval && (
                 <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] px-3 py-3">
                   <p className="text-sm text-[var(--color-text-primary)]">
-                    Desconectar apaga a senha guardada e a produção deixa de ser buscada. Confirma?
+                    Desconectar apaga a senha guardada e a produção deixa de ser buscada.
+                    {growatt &&
+                      ' A Growatt não aceita mais conexão nova: depois de desconectar, não será possível reconectar.'}{' '}
+                    Confirma?
                   </p>
                   <div className="flex gap-2">
                     <button
