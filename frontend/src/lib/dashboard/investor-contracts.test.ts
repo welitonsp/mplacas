@@ -12,6 +12,30 @@ describe('investor-contracts', () => {
     expect(panel.projection?.patrimony).toHaveLength(26)
     expect(panel.realized?.cyclesCounted).toBe(1)
     expect(panel.premises?.inverterReplacementYear).toBe(12)
+    expect(panel.premises?.inverterReplacementYears).toEqual([12, 24])
+    expect(panel.projection?.baselineCycles).toBe(1)
+    expect(panel.projection?.annualSavingOverInvestment).toBe('0.2829')
+    expect(panel.projection?.irrSpreadOverCdiPerYear).toBe('0.1958')
+    expect(panel.projection?.patrimony[25].solarPathRealBrl).not.toBeNull()
+  })
+
+  it('backend antigo (sem os campos novos) vira null, nunca zero', () => {
+    const { baseline_cycles: _a, annual_saving_over_investment: _b, irr_spread_over_cdi_per_year: _c, ...legacyProjection } =
+      investorAvailablePayload.projection
+    const { inverter_replacement_years: _d, ...legacyPremises } = investorAvailablePayload.premises
+    const panel = parseInvestorPanel({
+      ...investorAvailablePayload,
+      projection: {
+        ...legacyProjection,
+        patrimony: [{ year: 0, cdi_path_brl: '11200', solar_path_brl: '0' }],
+      },
+      premises: legacyPremises,
+    })
+    expect(panel.projection?.baselineCycles).toBeNull()
+    expect(panel.projection?.annualSavingOverInvestment).toBeNull()
+    expect(panel.projection?.irrSpreadOverCdiPerYear).toBeNull()
+    expect(panel.projection?.patrimony[0].cdiPathRealBrl).toBeNull()
+    expect(panel.premises?.inverterReplacementYears).toEqual([12])
   })
 
   it('lê o estado indisponível com blocos nulos', () => {

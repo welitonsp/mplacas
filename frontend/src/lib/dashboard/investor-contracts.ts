@@ -22,6 +22,11 @@ export interface PatrimonyPoint {
   year: number
   cdiPathBrl: string
   solarPathBrl: string
+  // Em dinheiro de hoje (nominal ÷ (1 + IPCA)^ano), calculado no backend.
+  // `null` quando o backend ainda não envia a série: a tela esconde o gráfico
+  // em vez de cair para a série nominal ou para zero.
+  cdiPathRealBrl: string | null
+  solarPathRealBrl: string | null
 }
 
 export interface InvestorProjection {
@@ -34,6 +39,12 @@ export interface InvestorProjection {
   paybackDiscountedMonths: number | null
   lifetimeSavingsBrl: string
   wireBApplied: boolean
+  // Meses de economia real da média de partida (janela dos últimos 12).
+  baselineCycles: number | null
+  // Economia dos últimos 12 meses ÷ investimento (fração), pronta do backend.
+  annualSavingOverInvestment: string | null
+  // TIR − CDI líquido (fração), pronto do backend; `null` sem TIR.
+  irrSpreadOverCdiPerYear: string | null
   patrimony: PatrimonyPoint[]
 }
 
@@ -45,6 +56,7 @@ export interface InvestorPremises {
   degradationPerYear: string
   omPerYearFraction: string
   inverterReplacementYear: number
+  inverterReplacementYears: number[]
   inverterReplacementFraction: string
   longTermIncomeTax: string
 }
@@ -101,6 +113,13 @@ function intOrNull(source: Rec, key: string): number | null {
   if (value === null || value === undefined) return null
   return int(source, key)
 }
+// Lista de inteiros; chave ausente (backend uma versão atrás) usa `fallback`.
+function intList(source: Rec, key: string, fallback: number[]): number[] {
+  const value = source[key]
+  if (value === undefined || value === null) return fallback
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'number' && Number.isInteger(item))) fail(key)
+  return value as number[]
+}
 function bool(source: Rec, key: string): boolean {
   const value = source[key]
   if (typeof value === 'boolean') return value
@@ -143,12 +162,17 @@ export function parseInvestorPanel(payload: unknown): InvestorPanel {
       paybackDiscountedMonths: intOrNull(projection, 'payback_discounted_months'),
       lifetimeSavingsBrl: str(projection, 'lifetime_savings_brl'),
       wireBApplied: bool(projection, 'wire_b_applied'),
+      baselineCycles: intOrNull(projection, 'baseline_cycles'),
+      annualSavingOverInvestment: strOrNull(projection, 'annual_saving_over_investment'),
+      irrSpreadOverCdiPerYear: strOrNull(projection, 'irr_spread_over_cdi_per_year'),
       patrimony: patrimony.map((point) => {
         if (!isRecord(point)) fail('patrimony[]')
         return {
           year: int(point, 'year'),
           cdiPathBrl: str(point, 'cdi_path_brl'),
           solarPathBrl: str(point, 'solar_path_brl'),
+          cdiPathRealBrl: strOrNull(point, 'cdi_path_real_brl'),
+          solarPathRealBrl: strOrNull(point, 'solar_path_real_brl'),
         }
       }),
     }
@@ -191,6 +215,9 @@ export function parseInvestorPanel(payload: unknown): InvestorPanel {
           degradationPerYear: str(premises, 'degradation_per_year'),
           omPerYearFraction: str(premises, 'om_per_year_fraction'),
           inverterReplacementYear: int(premises, 'inverter_replacement_year'),
+          inverterReplacementYears: intList(premises, 'inverter_replacement_years', [
+            int(premises, 'inverter_replacement_year'),
+          ]),
           inverterReplacementFraction: str(premises, 'inverter_replacement_fraction'),
           longTermIncomeTax: str(premises, 'long_term_income_tax'),
         }

@@ -14,6 +14,7 @@ function buildAvailable(overrides: Partial<FinancialReturnResponse> = {}): Finan
     cycles_counted: 12,
     cycles_expected: 17,
     roi_percent: '19.0',
+    net_gain_percent: '-81.0',
     payback_projection_months: 64,
     unavailable_reason: null,
     payback_unavailable_reason: null,
@@ -48,14 +49,48 @@ describe('FinancialReturnSection', () => {
     ).toBeInTheDocument()
   })
 
-  it('não renderiza rótulo de cobertura quando os ciclos coincidem', () => {
+  it('com cobertura completa, ainda diz em quantos ciclos o retorno se baseia', () => {
     render(
       <FinancialReturnSection
         financialReturn={buildAvailable({ cycles_counted: 17, cycles_expected: 17 })}
       />
     )
 
-    expect(screen.queryByText(/ciclos com relatório consolidado/)).not.toBeInTheDocument()
+    expect(screen.getByText('Baseado em 17 ciclos com relatório consolidado.')).toBeInTheDocument()
+    expect(screen.queryByText(/de 17 ciclos/)).not.toBeInTheDocument()
+  })
+
+  it('mostra "Já voltou do investimento" e o lucro sobre o investimento vindo do backend', () => {
+    render(
+      <FinancialReturnSection
+        financialReturn={buildAvailable({
+          roi_percent: '151.0',
+          net_gain_percent: '51.0',
+          cycles_counted: 17,
+          cycles_expected: 17,
+          payback_projection_months: 17,
+        })}
+      />
+    )
+
+    expect(screen.getByText('Já voltou do investimento')).toBeInTheDocument()
+    expect(screen.getByText('151')).toBeInTheDocument()
+    expect(screen.getByText('Lucro sobre o investimento: 51%')).toBeInTheDocument()
+    expect(screen.queryByText('ROI acumulado')).not.toBeInTheDocument()
+  })
+
+  it('enquanto o investimento não voltou, diz quanto falta em vez de um lucro negativo', () => {
+    render(<FinancialReturnSection financialReturn={buildAvailable()} />)
+
+    expect(screen.getByText('Ainda falta recuperar 81% do investimento')).toBeInTheDocument()
+    expect(screen.queryByText(/Lucro sobre o investimento/)).not.toBeInTheDocument()
+  })
+
+  it('sem o lucro no payload (backend antigo), não inventa o número', () => {
+    render(<FinancialReturnSection financialReturn={buildAvailable({ net_gain_percent: null })} />)
+
+    expect(screen.queryByText(/Lucro sobre o investimento/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Ainda falta recuperar/)).not.toBeInTheDocument()
   })
 
   it('renderiza "investimento já recuperado" quando o payback já foi atingido', () => {

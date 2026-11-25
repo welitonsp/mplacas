@@ -253,7 +253,9 @@ async def get_investor_panel(
         cycles_counted=len(savings),
         calculation_versions=sorted_versions,
         includes_pre_correction_cycles=pre_correction,
-        low_confidence_baseline=len(savings) < MINIMUM_CYCLES_FOR_CONFIDENT_BASELINE,
+        # A média de partida usa só os últimos 12 meses: a confiança depende de
+        # quantos deles existem, não do total de faturas.
+        low_confidence_baseline=projection.baseline_cycles < MINIMUM_CYCLES_FOR_CONFIDENT_BASELINE,
         cdi_12m_per_year=premises.cdi_per_year,
         ipca_12m_per_year=premises.ipca_per_year,
         indices_as_of_month=as_of,

@@ -129,6 +129,17 @@ def test_service_returns_realized_and_projection_with_coverage_flags(monkeypatch
     assert panel.projection.irr_per_year is not None
     # CDI de 12 meses a 1,1% a.m. = 14,03% a.a.
     assert panel.cdi_12m_per_year == Decimal("0.1403")
+    # Média de partida: os 2 meses existentes (≤ 12) e, com 2 meses, a confiança
+    # continua baixa. Premissas conservadoras novas chegam ao painel.
+    assert panel.projection.baseline_cycles == 2
+    assert panel.projection.baseline_monthly_savings_brl == Decimal("257.00")
+    # (250 + 264) ÷ 2 × 12 ÷ 11.200 = 27,5% do investimento ao ano.
+    assert panel.projection.annual_saving_over_investment == Decimal("0.2754")
+    assert panel.projection.irr_spread_over_cdi_per_year is not None
+    assert panel.premises is not None
+    assert panel.premises.om_per_year_fraction == Decimal("0.01")
+    assert panel.premises.inverter_replacement_fraction == Decimal("0.35")
+    assert panel.premises.inverter_replacement_years == (12, 24)
 
 
 @pytest.mark.parametrize(
@@ -257,3 +268,44 @@ def test_cycle_computed_without_full_tariff_marks_the_estimate(monkeypatch) -> N
         commissioned_on=date(2025, 9, 1),
     )
     assert panel.includes_pre_correction_cycles is False
+
+
+def test_serializer_exposes_the_new_projection_fields(monkeypatch) -> None:
+    panel = _panel(
+        monkeypatch,
+        (_snapshot("2026-08", "250.00"), _snapshot("2026-09", "264.00")),
+        investment_amount_brl=Decimal("11200.00"),
+        commissioned_on=date(2025, 9, 1),
+    )
+    body = intelligence_router._serialize_investor(panel)
+    projection = body["projection"]
+    assert isinstance(projection, dict)
+    assert projection["baseline_cycles"] == 2
+    assert projection["annual_saving_over_investment"] == "0.2754"
+    spread = Decimal(str(projection["irr_spread_over_cdi_per_year"]))
+    assert spread == Decimal(str(projection["irr_per_year"])) - Decimal(
+        str(projection["cdi_net_per_year"])
+    )
+    last = projection["patrimony"][-1]  # type: ignore[index]
+    deflator = (Decimal("1") + panel.premises.ipca_per_year) ** 25  # type: ignore[union-attr]
+    nominal = Decimal(last["solar_path_brl"])
+    assert abs(Decimal(last["solar_path_real_brl"]) - nominal / deflator) < Decimal("0.02")
+    premises = body["premises"]
+    assert isinstance(premises, dict)
+    assert premises["inverter_replacement_years"] == [12, 24]
+    assert premises["inverter_replacement_year"] == 12
+    assert premises["om_per_year_fraction"] == "0.01"
+
+
+def test_low_confidence_follows_the_trailing_window_not_the_bill_count(monkeypatch) -> None:
+    # 14 faturas contíguas depois da ligação: a janela de 12 meses está cheia.
+    months = [add_months("2025-09", k) for k in range(1, 15)]
+    panel = _panel(
+        monkeypatch,
+        tuple(_snapshot(m, "250.00", "0.4.0") for m in months),
+        investment_amount_brl=Decimal("11200.00"),
+        commissioned_on=date(2025, 9, 1),
+    )
+    assert panel.cycles_counted == 14
+    assert panel.projection is not None and panel.projection.baseline_cycles == 12
+    assert panel.low_confidence_baseline is False

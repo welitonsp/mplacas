@@ -14,7 +14,15 @@ Funções puras, só ``Decimal``, sem I/O. Duas camadas que nunca se misturam:
   explícitas e devolvidas junto do resultado: reajuste da tarifa, degradação
   dos módulos, O&M, troca do inversor, aumento do Fio B (Lei 14.300, art. 27)
   e CDI futuro constante. Resulta em TIR, VPL ao CDI líquido, paybacks e a
-  evolução do patrimônio nos dois caminhos.
+  evolução do patrimônio nos dois caminhos, em valores nominais e em dinheiro
+  de hoje (deflacionados pelo próprio IPCA da premissa).
+
+Premissas de custo (conservadoras, revisadas na auditoria financeira de
+2026-11-25): O&M de 1% do investimento ao ano e troca do inversor a ~35% do
+investimento (em dinheiro de hoje, corrigida pelo IPCA) nos anos 12 e 24 — a
+garantia típica do inversor é de 5 a 10 anos e o prazo de 25 anos comporta
+duas trocas. A economia de partida é a média dos últimos 12 meses (a janela
+cobre as estações do ano), não a média de todas as faturas.
 """
 
 from __future__ import annotations
@@ -172,10 +180,18 @@ class InvestorPremises:
     tariff_growth_per_year: Decimal  # reajuste anual da tarifa (padrão: IPCA)
     horizon_years: int = 25
     degradation_per_year: Decimal = Decimal("0.005")
-    om_per_year_fraction: Decimal = Decimal("0.005")  # O&M: 0,5% do investimento ao ano
-    inverter_replacement_year: int = 12
-    inverter_replacement_fraction: Decimal = Decimal("0.15")
+    # O&M: 1% do investimento ao ano, corrigido pelo IPCA (era 0,5%).
+    om_per_year_fraction: Decimal = Decimal("0.01")
+    # Troca do inversor: ~35% do investimento em dinheiro de hoje (era 15%),
+    # corrigida pelo IPCA até o ano da troca, nos anos 12 e 24 (era só o 12).
+    inverter_replacement_years: tuple[int, ...] = (12, 24)
+    inverter_replacement_fraction: Decimal = Decimal("0.35")
     long_term_income_tax: Decimal = Decimal("0.15")
+
+    @property
+    def inverter_replacement_year(self) -> int:
+        """Primeiro ano de troca — mantido por compatibilidade do contrato."""
+        return self.inverter_replacement_years[0] if self.inverter_replacement_years else 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +199,9 @@ class PatrimonyPoint:
     year: int
     cdi_path_brl: Decimal
     solar_path_brl: Decimal
+    # Os mesmos valores em dinheiro de hoje: nominal ÷ (1 + IPCA)^ano.
+    cdi_path_real_brl: Decimal
+    solar_path_real_brl: Decimal
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +216,13 @@ class Projection:
     lifetime_savings_brl: Decimal
     wire_b_applied: bool
     patrimony: tuple[PatrimonyPoint, ...]
+    # Meses de economia real que entraram na média de partida (janela de 12).
+    baseline_cycles: int = 0
+    # Economia dos últimos 12 meses ÷ investimento (fração; anualizada pela
+    # média quando há menos de 12 meses). É a leitura simples: "devolve N% ao ano".
+    annual_saving_over_investment: Decimal = Decimal("0")
+    # TIR − CDI líquido, em fração (0.05 = 5 pontos percentuais); ``None`` sem TIR.
+    irr_spread_over_cdi_per_year: Decimal | None = None
 
 
 def _monthly_rate(per_year: Decimal) -> Decimal:
@@ -247,8 +273,13 @@ def project(
         return None
     with localcontext() as ctx:
         ctx.prec = 34
-        baseline = sum(realized.values(), Decimal("0")) / len(realized)
         last_realized = max(realized)
+        # Média de partida: só os últimos 12 meses (ou os que existirem), para
+        # cobrir um ano de estações e não carregar ciclos antigos.
+        window = {m: v for m, v in realized.items() if months_between(m, last_realized) < 12}
+        window_cycles = len(window)
+        recent_average = sum(window.values(), Decimal("0")) / window_cycles
+        annual_saving_over_investment = recent_average * 12 / investment_brl
         anchor = months_between(start_month, last_realized)
         growth = _ONE + premises.tariff_growth_per_year
         inflation = _ONE + premises.ipca_per_year
@@ -269,6 +300,23 @@ def project(
             if wire_b_applied and wire_b_tariff_brl_kwh is not None
             else Decimal("0")
         )
+        # Consistência com o Fio B: a janela pode misturar anos com parcelas
+        # diferentes. Cada mês é levado à parcela do ano de referência antes da
+        # média, e só depois a projeção soma o aumento futuro além dela
+        # (aproximação: usa a tarifa cheia atual para todos os meses da janela).
+        if wire_b_applied and compensated_kwh_per_month is not None:
+            baseline = sum(
+                (
+                    saving
+                    - compensated_kwh_per_month
+                    * wire_b_full
+                    * (reference_share - wire_b_share(int(month[:4])))
+                    for month, saving in window.items()
+                ),
+                Decimal("0"),
+            ) / window_cycles
+        else:
+            baseline = recent_average
 
         horizon = premises.horizon_years * 12
         flows: list[Decimal] = [-investment_brl]
@@ -289,11 +337,11 @@ def project(
             lifetime_savings += saving
             years = Decimal(k) / Decimal(12)
             cost = investment_brl * premises.om_per_year_fraction / Decimal(12) * (inflation**years)
-            if k == premises.inverter_replacement_year * 12:
+            if k % 12 == 0 and k // 12 in premises.inverter_replacement_years:
                 cost += (
                     investment_brl
                     * premises.inverter_replacement_fraction
-                    * (inflation ** Decimal(premises.inverter_replacement_year))
+                    * (inflation ** Decimal(k // 12))
                 )
             flows.append(saving - cost)
 
@@ -369,6 +417,8 @@ def project(
                 year=k // 12,
                 cdi_path_brl=_q(cdi_path(k)),
                 solar_path_brl=_q(solar_series[k]),
+                cdi_path_real_brl=_q(cdi_path(k) / inflation ** Decimal(k // 12)),
+                solar_path_real_brl=_q(solar_series[k] / inflation ** Decimal(k // 12)),
             )
             for k in range(0, horizon + 1, 12)
         ]
@@ -386,6 +436,17 @@ def project(
             lifetime_savings_brl=_q(lifetime_savings),
             wire_b_applied=wire_b_applied,
             patrimony=tuple(patrimony),
+            baseline_cycles=window_cycles,
+            annual_saving_over_investment=annual_saving_over_investment.quantize(
+                Decimal("0.0001")
+            ),
+            # Diferença dos valores JÁ arredondados que a tela mostra, para a
+            # conta fechar com os números à vista.
+            irr_spread_over_cdi_per_year=(
+                irr_year.quantize(Decimal("0.0001")) - cdi_net_year.quantize(Decimal("0.0001"))
+                if irr_year is not None
+                else None
+            ),
         )
 
 

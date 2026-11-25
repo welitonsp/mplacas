@@ -155,7 +155,8 @@ function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndi
   const total = toNumber(indicators.total_amount_brl)
   const energy = toNumber(indicators.bill_energy_component_brl)
   const lighting = toNumber(indicators.public_lighting_brl)
-  const other = total != null && energy != null && lighting != null ? total - energy - lighting : null
+  // Vem pronto do backend (total − energia − iluminação); a tela só formata.
+  const other = toNumber(indicators.other_charges_brl ?? null)
   const billTariffWithTaxes = toNumber(indicators.tariff_with_taxes_brl_kwh)
   const billTariffWithoutTaxes = toNumber(indicators.tariff_without_taxes_brl_kwh)
   const savingsTariff = toNumber(indicators.savings_tariff_brl_kwh ?? null)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -97,7 +98,11 @@ def test_realized_is_unavailable_when_a_cdi_month_is_missing() -> None:
 
 def test_projection_reproduces_the_documented_example() -> None:
     # Exemplo do documento de diagnóstico: R$ 20 mil, R$ 400/mês, tarifa +6%,
-    # degradação 0,5%, O&M 0,5%, inversor no ano 12, sem Fio B (GD I).
+    # degradação 0,5%, sem Fio B (GD I). Premissas de custo conservadoras
+    # (auditoria 2026-11-25): O&M 1% e inversor a 35% nos anos 12 e 24. Delta
+    # frente às premissas antigas (O&M 0,5%, inversor 15% só no ano 12): TIR
+    # 32,6% → 31,6%, payback simples 47 → 48 meses, payback contando o CDI
+    # 60 → 62 meses.
     result = project(
         investment_brl=Decimal("20000"),
         start_month="2025-09",
@@ -112,7 +117,8 @@ def test_projection_reproduces_the_documented_example() -> None:
     assert result.wire_b_applied is False  # GD I: fora da transição do Fio B
     assert result.irr_per_year is not None
     assert Decimal("0.31") < result.irr_per_year < Decimal("0.34")
-    assert result.payback_simple_months == 47
+    assert result.payback_simple_months == 48
+    assert result.payback_discounted_months == 62
     assert result.payback_discounted_months is not None
     assert result.payback_discounted_months > result.payback_simple_months
     ten_years = next(p for p in result.patrimony if p.year == 10)
@@ -260,3 +266,101 @@ def test_npv_sign_matches_the_patrimony_lines_near_break_even() -> None:
         gap = final.solar_path_brl - final.cdi_path_brl
         assert (result.npv_at_cdi_net_brl > 0) == (gap > 0), monthly
         assert (result.payback_discounted_months is not None) == (gap >= 0), monthly
+
+
+def _basic_project(**overrides):  # type: ignore[no-untyped-def]
+    args = dict(
+        investment_brl=Decimal("20000"),
+        start_month="2025-09",
+        commissioned_on=date(2022, 6, 1),
+        savings_by_month={"2025-10": Decimal("400")},
+        compensated_kwh_per_month=None,
+        wire_b_tariff_brl_kwh=None,
+        wire_b_reference_year=None,
+        premises=PREMISES,
+    )
+    args.update(overrides)
+    return project(**args)
+
+
+def test_default_premises_are_the_conservative_ones() -> None:
+    assert PREMISES.om_per_year_fraction == Decimal("0.01")
+    assert PREMISES.inverter_replacement_fraction == Decimal("0.35")
+    assert PREMISES.inverter_replacement_years == (12, 24)
+    assert PREMISES.inverter_replacement_year == 12
+
+
+def test_two_inverter_replacements_cost_more_than_one_or_none() -> None:
+    def irr(years: tuple[int, ...]) -> Decimal:
+        premises = replace(PREMISES, inverter_replacement_years=years)
+        result = _basic_project(premises=premises)
+        assert result is not None and result.irr_per_year is not None
+        return result.irr_per_year
+
+    assert irr((12, 24)) < irr((12,)) < irr(())
+
+
+def test_real_patrimony_is_the_nominal_one_deflated_by_the_ipca_premise() -> None:
+    result = _basic_project()
+    assert result is not None
+    deflator = (1 + PREMISES.ipca_per_year) ** 25
+    last = result.patrimony[-1]
+    assert abs(last.solar_path_real_brl - last.solar_path_brl / deflator) < Decimal("0.02")
+    assert abs(last.cdi_path_real_brl - last.cdi_path_brl / deflator) < Decimal("0.02")
+    assert last.solar_path_real_brl < last.solar_path_brl
+    first = result.patrimony[0]  # ano 0: sem inflação acumulada
+    assert first.cdi_path_real_brl == first.cdi_path_brl == Decimal("20000.00")
+
+
+def test_baseline_uses_only_the_trailing_twelve_months() -> None:
+    savings = {add_months("2025-09", k): Decimal("100") for k in range(1, 9)}
+    savings.update({add_months("2025-09", k): Decimal("200") for k in range(9, 21)})
+    result = _basic_project(savings_by_month=savings)
+    assert result is not None
+    assert result.baseline_cycles == 12
+    assert result.baseline_monthly_savings_brl == Decimal("200.00")  # não 160
+    # 12 × 200 ÷ 20.000 = 12% do investimento por ano.
+    assert result.annual_saving_over_investment == Decimal("0.1200")
+
+
+def test_baseline_with_fewer_than_twelve_months_reports_how_many() -> None:
+    savings = {"2025-10": Decimal("300"), "2025-12": Decimal("100")}  # com buraco
+    result = _basic_project(savings_by_month=savings)
+    assert result is not None
+    assert result.baseline_cycles == 2
+    assert result.baseline_monthly_savings_brl == Decimal("200.00")
+    # Média × 12 ÷ investimento (anualizada, pois faltam meses): 2.400 ÷ 20.000.
+    assert result.annual_saving_over_investment == Decimal("0.1200")
+
+
+def test_wire_b_baseline_is_normalized_to_the_reference_year_share() -> None:
+    # Janela de 2025-10 a 2026-09: 3 meses em 2025 (Fio B 45%) e 9 em 2026 (60%).
+    # Cada mês de 2025 é levado à parcela de 2026 antes da média: a economia de
+    # partida fica abaixo da média simples, sem contar o aumento duas vezes.
+    savings = {add_months("2025-09", k): Decimal("264") for k in range(1, 13)}
+    common = dict(
+        savings_by_month=savings,
+        compensated_kwh_per_month=Decimal("221"),
+        wire_b_tariff_brl_kwh=Decimal("0.175126"),
+        wire_b_reference_year=2026,
+        commissioned_on=date(2025, 9, 1),
+    )
+    result = _basic_project(**common)
+    assert result is not None and result.wire_b_applied
+    # 3 meses × 221 kWh × (0,175126 ÷ 0,60) × (0,60 − 0,45) = R$ 29,03 a menos no total.
+    expected = Decimal("264") - Decimal("221") * (
+        Decimal("0.175126") / Decimal("0.60")
+    ) * Decimal("0.15") * 3 / 12
+    assert abs(result.baseline_monthly_savings_brl - expected) < Decimal("0.01")
+    # A reta "o que realmente foi economizado" não é normalizada:
+    assert result.annual_saving_over_investment == Decimal("0.1584")  # 264×12÷20.000
+
+
+def test_irr_spread_over_cdi_is_computed_from_the_displayed_rates() -> None:
+    result = _basic_project()
+    assert result is not None and result.irr_per_year is not None
+    assert result.irr_spread_over_cdi_per_year == result.irr_per_year - result.cdi_net_per_year
+    never = _basic_project(
+        investment_brl=Decimal("100000"), savings_by_month={"2025-10": Decimal("5")}
+    )
+    assert never is not None and never.irr_spread_over_cdi_per_year is None

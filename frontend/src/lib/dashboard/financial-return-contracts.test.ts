@@ -20,6 +20,7 @@ function buildPayload(overrides: Record<string, unknown> = {}) {
     cycles_counted: 12,
     cycles_expected: 17,
     roi_percent: '19.0',
+    net_gain_percent: '-81.0',
     payback_projection_months: 64,
     unavailable_reason: null,
     payback_unavailable_reason: null,
@@ -40,6 +41,7 @@ describe('parseFinancialReturn', () => {
       cycles_counted: 12,
       cycles_expected: 17,
       roi_percent: '19.0',
+      net_gain_percent: '-81.0',
       payback_projection_months: 64,
       unavailable_reason: null,
       payback_unavailable_reason: null,
@@ -142,7 +144,18 @@ describe('coverageLabel / hasPartialCoverage', () => {
   it('não indica cobertura parcial quando os ciclos coincidem', () => {
     const result = parseFinancialReturn(buildPayload({ cycles_counted: 17, cycles_expected: 17 }))
     expect(hasPartialCoverage(result)).toBe(false)
+    expect(coverageLabel(result)).toBe('Baseado em 17 ciclos com relatório consolidado.')
+  })
+
+  it('sem ciclos contados, não há rótulo de cobertura', () => {
+    const result = parseFinancialReturn(buildPayload({ cycles_counted: null }))
     expect(coverageLabel(result)).toBeNull()
+  })
+
+  it('lê o lucro sobre o investimento; ausente vira null', () => {
+    expect(parseFinancialReturn(buildPayload({ net_gain_percent: '51.0' })).net_gain_percent).toBe('51.0')
+    const { net_gain_percent: _omitted, ...legacy } = buildPayload({})
+    expect(parseFinancialReturn(legacy).net_gain_percent).toBeNull()
   })
 
   it('não indica cobertura parcial quando cycles_expected é nulo', () => {

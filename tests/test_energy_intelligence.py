@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -43,6 +44,8 @@ def test_builds_auditable_cycle_indicators() -> None:
     assert result.exported_generation_rate_percent == Decimal("60.7")
     assert result.credit_coverage_rate_percent == Decimal("100.0")
     assert result.bill_energy_component_brl == Decimal("50.00")
+    # "Outros encargos" vem do backend (total − energia − iluminação): aqui 0,00.
+    assert result.other_charges_brl == Decimal("0.00")
     assert result.health_score == 100
     assert result.diagnostics[0].code == "CYCLE_WITHIN_EXPECTED_PARAMETERS"
 
@@ -339,3 +342,17 @@ def test_cycle_without_any_production_day_leaves_savings_unavailable() -> None:
     assert without.bill_without_solar_brl is None
     assert partial.estimated_savings_brl is not None
     assert legacy.estimated_savings_brl is not None
+
+
+def test_other_charges_is_total_minus_energy_minus_lighting_in_the_backend() -> None:
+    # Iluminação maior que o total: a energia é limitada a zero e a sobra
+    # aparece como encargo negativo, calculada aqui e não na tela.
+    result = analyze_energy_cycle(
+        bill=replace(
+            _bill(), total_amount_brl=Decimal("20.00"), public_lighting_brl=Decimal("30.21")
+        ),
+        cycle_production_kwh=Decimal("300"),
+        expected_production_kwh=Decimal("320"),
+    )
+    assert result.bill_energy_component_brl == Decimal("0.00")
+    assert result.other_charges_brl == Decimal("-10.21")

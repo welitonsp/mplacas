@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { InvestorPanelSection } from './InvestorPanelSection'
 import { parseInvestorPanel } from '../lib/dashboard/investor-contracts'
@@ -18,11 +18,82 @@ describe('InvestorPanelSection', () => {
   it('mostra TIR contra CDI líquido, VPL, payback e o veredito', () => {
     renderSection(investorAvailablePayload)
     expect(screen.getByRole('heading', { name: /Usina × CDI/ })).toBeInTheDocument()
+    expect(screen.getByText('Projeção: retorno anual (TIR)')).toBeInTheDocument()
     expect(screen.getByText('32,9% a.a.')).toBeInTheDocument()
     expect(screen.getByText('13,3% a.a.')).toBeInTheDocument()
     expect(screen.getByText('3 anos e 8 meses')).toBeInTheDocument()
     expect(screen.getByText(/19,6 pontos acima do CDI líquido de IR/)).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: /Patrimônio em 25 anos/ })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /Patrimônio em 25 anos, em dinheiro de hoje/ })).toBeInTheDocument()
+    // VPL: a base de comparação é dita, não "em dinheiro de hoje".
+    expect(screen.getAllByText(/a mais que o CDI, trazido a valor presente pelo próprio CDI/).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Em dinheiro de hoje')).not.toBeInTheDocument()
+  })
+
+  it('o selo de projeção aparece sempre, mesmo sem aviso de poucas faturas', () => {
+    renderSection({ ...investorAvailablePayload, low_confidence_baseline: false, includes_pre_correction_cycles: false })
+    expect(screen.queryByRole('note', { name: 'Avisos sobre a projeção' })).toBeNull()
+    const group = screen.getByRole('group', { name: 'Projeção' })
+    expect(within(group).getByText('Projeção')).toBeInTheDocument()
+    expect(within(group).getByText(/não é resultado já obtido/)).toBeInTheDocument()
+    expect(within(group).getByText('Projeção: retorno anual (TIR)')).toBeInTheDocument()
+  })
+
+  it('diz em linguagem simples quanto do investimento a usina devolve por ano', () => {
+    renderSection(investorAvailablePayload)
+    // 0,2829 vindo do backend → 28%.
+    expect(screen.getByText(/A usina devolve cerca de 28% do investimento por ano/)).toBeInTheDocument()
+    expect(screen.getByText(/Economia dos últimos 1 mês de faturas confirmadas/)).toBeInTheDocument()
+  })
+
+  it('mostra o patrimônio em dinheiro de hoje, com a inflação e o CDI usados, e a premissa visível', () => {
+    renderSection(investorAvailablePayload)
+    expect(screen.getByText(/Em dinheiro de hoje \(corrigido pela inflação de 4,6% a\.a\.\)/)).toBeInTheDocument()
+    expect(screen.getByText('Supõe aplicar toda a economia no CDI de 14% a.a. por 25 anos.')).toBeInTheDocument()
+  })
+
+  it('resume as premissas à vista, sem abrir o bloco recolhido', () => {
+    renderSection(investorAvailablePayload)
+    const summary = screen.getByText(/^Premissas: CDI 14% a\.a\./)
+    expect(summary).toHaveTextContent('inflação 4,6% a.a.')
+    expect(summary).toHaveTextContent('placas perdem 0,5% a.a.')
+    expect(summary).toHaveTextContent('Fio B subindo até 100% em 2029')
+    expect(summary).toHaveTextContent('inversor trocado nos anos 12 e 24 (35% do investimento)')
+    expect(summary).toHaveTextContent('manutenção 1% do investimento ao ano')
+  })
+
+  it('sem a série em dinheiro de hoje, esconde o gráfico em vez de usar zero ou o nominal', () => {
+    renderSection({
+      ...investorAvailablePayload,
+      projection: {
+        ...investorAvailablePayload.projection,
+        patrimony: investorAvailablePayload.projection.patrimony.map((point) => ({
+          year: point.year,
+          cdi_path_brl: point.cdi_path_brl,
+          solar_path_brl: point.solar_path_brl,
+        })),
+      },
+    })
+    expect(screen.queryByRole('img', { name: /Patrimônio em/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/evolução do patrimônio em dinheiro de hoje não está disponível/)).toBeInTheDocument()
+  })
+
+  it('sem o campo da diferença TIR − CDI, o veredito não inventa pontos', () => {
+    renderSection({
+      ...investorAvailablePayload,
+      projection: { ...investorAvailablePayload.projection, irr_spread_over_cdi_per_year: null },
+    })
+    expect(screen.queryByText(/pontos acima/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/pontos abaixo/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Projeção: a usina rende 32,9% ao ano\./)).toBeInTheDocument()
+  })
+
+  it('sem VPL, não escreve "R$ 0,00 a mais/menos"', () => {
+    renderSection({
+      ...investorAvailablePayload,
+      projection: { ...investorAvailablePayload.projection, npv_at_cdi_net_brl: 'nao-numero' },
+    })
+    expect(screen.queryByText(/Vale R\$/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/R\$\s*0,00/)).not.toBeInTheDocument()
   })
 
   it('com poucas faturas, não compara o realizado: mostra o que falta', () => {
@@ -47,6 +118,9 @@ describe('InvestorPanelSection', () => {
     expect(screen.getByText(/75% em 2027, 90% em 2028/)).toBeInTheDocument()
     expect(screen.getByText(/a lei usa a data do pedido de conexão/)).toBeInTheDocument()
     expect(screen.getByText(/IR regressivo sobre o ganho/)).toBeInTheDocument()
+    expect(screen.getByText(/Premissas de custo conservadoras: manutenção de 1%/)).toBeInTheDocument()
+    expect(screen.getByText(/troca do inversor nos anos 12 e 24, cada uma a 35% do investimento em dinheiro de hoje/)).toBeInTheDocument()
+    expect(screen.getByText(/Em valores nominais \(sem descontar a inflação\), em 25 anos/)).toBeInTheDocument()
   })
 
   it('com poucas faturas, avisa ACIMA dos números que a projeção é preliminar', () => {
@@ -55,7 +129,7 @@ describe('InvestorPanelSection', () => {
     expect(note).toHaveTextContent('Estimativa preliminar')
     expect(note).toHaveTextContent(/1 fatura confirmada: ainda não cobre as estações do ano/)
     // O aviso vem antes dos indicadores na ordem de leitura.
-    const tir = screen.getByText('Rendimento da usina (TIR)')
+    const tir = screen.getByText('Projeção: retorno anual (TIR)')
     expect(note.compareDocumentPosition(tir) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 

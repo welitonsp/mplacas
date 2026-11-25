@@ -122,28 +122,51 @@ export function InvestorPanelSection({
   )
 }
 
+// Pontos percentuais (valor absoluto) a partir de uma fração já calculada no backend.
+function pointsOf(fraction: number): string {
+  return formatNumber(Math.abs(fraction) * 100, 1)
+}
+
+function replacementYears(years: number[]): string {
+  return years.length <= 1 ? `no ano ${years[0] ?? '—'}` : `nos anos ${years.join(' e ')}`
+}
+
 function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
   const projection = panel.projection!
+  const premises = panel.premises
   const irr = toNumber(projection.irrPerYear)
-  const cdiNet = toNumber(projection.cdiNetPerYear)
-  const spreadPoints = irr != null && cdiNet != null ? (irr - cdiNet) * 100 : null
+  // Diferença TIR − CDI líquido vem pronta do backend (ADR-012).
+  const spread = toNumber(projection.irrSpreadOverCdiPerYear)
   const npv = toNumber(projection.npvAtCdiNetBrl)
   const beatsCdi = npv != null && npv > 0
+  const annualReturn = toNumber(projection.annualSavingOverInvestment)
+  const baselineCycles = projection.baselineCycles ?? panel.cyclesCounted
 
+  const spreadText =
+    spread == null
+      ? null
+      : `${pointsOf(spread)} pontos ${spread >= 0 ? 'acima' : 'abaixo'} do CDI líquido de IR (${percent(projection.cdiNetPerYear)})`
+  const npvText =
+    npv == null
+      ? null
+      : `Vale ${formatCurrency(Math.abs(npv))} ${beatsCdi ? 'a mais' : 'a menos'} que o CDI, trazido a valor presente pelo próprio CDI.`
   const verdict =
     irr == null
       ? 'Nas premissas atuais, a economia não chega a pagar o investimento no horizonte de 25 anos.'
-      : `Projeção: a usina rende ${percent(projection.irrPerYear)} ao ano, ${formatNumber(Math.abs(spreadPoints ?? 0), 1)} pontos ${
-          (spreadPoints ?? 0) >= 0 ? 'acima' : 'abaixo'
-        } do CDI líquido de IR (${percent(projection.cdiNetPerYear)}). Em dinheiro de hoje, vale ${formatCurrency(
-          Math.abs(npv ?? 0),
-        )} ${beatsCdi ? 'a mais' : 'a menos'} do que ter deixado o investimento no CDI.`
+      : `Projeção: a usina rende ${percent(projection.irrPerYear)} ao ano${spreadText ? `, ${spreadText}` : ''}.${npvText ? ` ${npvText}` : ''}`
 
-  const points = projection.patrimony.map((point) => ({
+  // Série em dinheiro de hoje (deflacionada no backend pelo IPCA da premissa).
+  // Sem ela (backend antigo) o gráfico some: nunca zero, nunca o nominal sem rótulo.
+  const realPoints = projection.patrimony.map((point) => ({
     year: point.year,
-    cdi: toNumber(point.cdiPathBrl) ?? 0,
-    solar: toNumber(point.solarPathBrl) ?? 0,
+    cdi: toNumber(point.cdiPathRealBrl),
+    solar: toNumber(point.solarPathRealBrl),
   }))
+  const chartPoints = realPoints.every((point) => point.cdi != null && point.solar != null)
+    ? realPoints.map((point) => ({ year: point.year, cdi: point.cdi as number, solar: point.solar as number }))
+    : null
+  const horizonYears = premises?.horizonYears ?? chartPoints?.[chartPoints.length - 1]?.year ?? null
+  const lastNominal = projection.patrimony[projection.patrimony.length - 1]
 
   const realized = panel.realized
   const coverage = realized ? realized.cyclesCounted / Math.max(1, realized.monthsElapsed) : 0
@@ -154,7 +177,7 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
   const cautions: string[] = []
   if (panel.lowConfidenceBaseline) {
     cautions.push(
-      `A projeção parte de ${panel.cyclesCounted} ${panel.cyclesCounted === 1 ? 'fatura confirmada' : 'faturas confirmadas'}: ainda não cobre as estações do ano e pode mudar bastante. Fica firme com 12 meses de faturas.`,
+      `A projeção parte de ${baselineCycles} ${baselineCycles === 1 ? 'fatura confirmada' : 'faturas confirmadas'}: ainda não cobre as estações do ano e pode mudar bastante. Fica firme com 12 meses de faturas.`,
     )
   }
   if (panel.includesPreCorrectionCycles) {
@@ -185,46 +208,98 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
           )}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-        <SummaryTile
-          label="Rendimento da usina (TIR)"
-          value={irr == null ? '—' : `${percent(projection.irrPerYear)} a.a.`}
-          supportingText={`Real: ${percent(projection.irrRealPerYear)} a.a. acima da inflação`}
-          tone={beatsCdi ? 'success' : 'warning'}
-        />
-        <SummaryTile
-          label="CDI líquido de IR"
-          value={`${percent(projection.cdiNetPerYear)} a.a.`}
-          supportingText={`CDI 12 meses ${percent(panel.indices.cdi12mPerYear)}, IR no resgate`}
-          tone="neutral"
-        />
-        <SummaryTile
-          label="Ganho sobre o CDI (VPL)"
-          value={npv == null ? '—' : formatCurrency(npv)}
-          supportingText="Em dinheiro de hoje"
-          tone={beatsCdi ? 'success' : 'warning'}
-        />
-        <SummaryTile
-          label="Tempo para se pagar"
-          value={months(projection.paybackSimpleMonths)}
-          supportingText={`Contando o CDI: ${months(projection.paybackDiscountedMonths)}`}
-          tone="neutral"
-        />
-      </div>
 
-      <Card className="sm:p-6">
-        <p className="text-sm font-semibold leading-6 text-[var(--color-text-primary)]">{verdict}</p>
-        <p className="mt-1 text-[13px] text-[var(--color-text-secondary)]">
-          Patrimônio nos dois caminhos: a usina com cada economia aplicada no CDI, e o mesmo investimento só no CDI.
-        </p>
-        <div className="mt-4">
-          <PatrimonyLines
-            points={points}
-            crossover={projection.paybackDiscountedMonths == null ? null : projection.paybackDiscountedMonths / 12}
-            ariaLabel={`Patrimônio em ${points[points.length - 1]?.year ?? 0} anos: usina com economias no CDI contra o investimento só no CDI`}
+      {/* Selo de projeção: SEMPRE presente, com ou sem poucas faturas. O bloco
+          abaixo é uma estimativa com premissas, não resultado já obtido (o
+          realizado vem mais adiante, separado). */}
+      <div
+        role="group"
+        aria-label="Projeção"
+        className="space-y-4 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] p-3 sm:p-4"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-[var(--color-brand-primary)] px-3 py-0.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-brand-primary)]">
+            Projeção
+          </span>
+          <span className="text-[13px] text-[var(--color-text-secondary)]">
+            Estimativa com premissas, não é resultado já obtido.
+          </span>
+        </div>
+
+        {annualReturn != null && (
+          <p className="text-base font-semibold leading-6 text-[var(--color-text-primary)]">
+            {`A usina devolve cerca de ${formatNumber(annualReturn * 100, 0)}% do investimento por ano`}
+            <span className="block text-[13px] font-normal text-[var(--color-text-secondary)]">
+              {`Economia dos últimos ${baselineCycles} ${baselineCycles === 1 ? 'mês' : 'meses'} de faturas confirmadas, em relação ao valor investido.`}
+            </span>
+          </p>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          <SummaryTile
+            label="Projeção: retorno anual (TIR)"
+            value={irr == null ? '—' : `${percent(projection.irrPerYear)} a.a.`}
+            supportingText={`Real: ${percent(projection.irrRealPerYear)} a.a. acima da inflação`}
+            tone={beatsCdi ? 'success' : 'warning'}
+          />
+          <SummaryTile
+            label="CDI líquido de IR"
+            value={`${percent(projection.cdiNetPerYear)} a.a.`}
+            supportingText={`CDI 12 meses ${percent(panel.indices.cdi12mPerYear)}, IR no resgate`}
+            tone="neutral"
+          />
+          <SummaryTile
+            label="Ganho sobre o CDI (VPL)"
+            value={npv == null ? '—' : formatCurrency(npv)}
+            supportingText={`${beatsCdi ? 'a mais' : 'a menos'} que o CDI, trazido a valor presente pelo próprio CDI`}
+            tone={beatsCdi ? 'success' : 'warning'}
+          />
+          <SummaryTile
+            label="Tempo para se pagar"
+            value={months(projection.paybackSimpleMonths)}
+            supportingText={`Contando o CDI: ${months(projection.paybackDiscountedMonths)}`}
+            tone="neutral"
           />
         </div>
-      </Card>
+
+        {premises && (
+          <p className="text-xs leading-5 text-[var(--color-text-secondary)]">
+            {`Premissas: CDI ${percent(premises.cdiPerYear)} a.a. · inflação ${percent(premises.ipcaPerYear)} a.a. · placas perdem ${percent(premises.degradationPerYear)} a.a. · Fio B ${
+              projection.wireBApplied ? 'subindo até 100% em 2029' : 'não aplicado'
+            } · inversor trocado ${replacementYears(premises.inverterReplacementYears)} (${percent(premises.inverterReplacementFraction, 0)} do investimento) · manutenção ${percent(premises.omPerYearFraction)} do investimento ao ano.`}
+          </p>
+        )}
+
+        <Card className="sm:p-6">
+          <p className="text-sm font-semibold leading-6 text-[var(--color-text-primary)]">{verdict}</p>
+          <p className="mt-1 text-[13px] text-[var(--color-text-secondary)]">
+            Patrimônio nos dois caminhos: a usina com cada economia aplicada no CDI, e o mesmo investimento só no CDI.
+          </p>
+          {premises && horizonYears != null && (
+            <p className="mt-1 text-[13px] text-[var(--color-text-secondary)]">
+              {`Em dinheiro de hoje (corrigido pela inflação de ${percent(premises.ipcaPerYear)} a.a.).`}
+            </p>
+          )}
+          {premises && horizonYears != null && (
+            <p className="mt-1 text-[13px] font-medium text-[var(--color-text-primary)]">
+              {`Supõe aplicar toda a economia no CDI de ${percent(premises.cdiPerYear)} a.a. por ${horizonYears} anos.`}
+            </p>
+          )}
+          <div className="mt-4">
+            {chartPoints == null ? (
+              <p className="text-sm text-[var(--color-text-secondary)]">
+                A evolução do patrimônio em dinheiro de hoje não está disponível agora.
+              </p>
+            ) : (
+              <PatrimonyLines
+                points={chartPoints}
+                crossover={projection.paybackDiscountedMonths == null ? null : projection.paybackDiscountedMonths / 12}
+                ariaLabel={`Patrimônio em ${horizonYears ?? chartPoints[chartPoints.length - 1].year} anos, em dinheiro de hoje: usina com economias no CDI contra o investimento só no CDI`}
+              />
+            )}
+          </div>
+        </Card>
+      </div>
 
       {/* Uma coluna: lado a lado, "Premissas" (fechado) ficava como um cartão
           órfão de meia largura ao lado do realizado. */}
@@ -277,16 +352,24 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
             {panel.premises && (
               <ul className="mt-3 space-y-1.5 text-[13px] leading-5 text-[var(--color-text-secondary)]">
                 <li>
-                  Economia de partida: {formatCurrency(projection.baselineMonthlySavingsBrl)}/mês, média de{' '}
-                  {panel.cyclesCounted} {panel.cyclesCounted === 1 ? 'fatura' : 'faturas'} confirmadas
-                  posteriores à ligação.
+                  Economia de partida: {formatCurrency(projection.baselineMonthlySavingsBrl)}/mês, média dos
+                  últimos {baselineCycles} {baselineCycles === 1 ? 'mês' : 'meses'} de faturas confirmadas
+                  posteriores à ligação (no máximo 12), ajustada à parcela do Fio B do ano da última fatura.
+                  Meses usados: {baselineCycles} de {panel.cyclesCounted} {panel.cyclesCounted === 1 ? 'fatura' : 'faturas'}.
                 </li>
                 <li>Tarifa reajustada pelo IPCA de 12 meses: {percent(panel.premises.tariffGrowthPerYear)} ao ano.</li>
                 <li>Perda de rendimento das placas: {percent(panel.premises.degradationPerYear)} ao ano.</li>
                 <li>
-                  Manutenção: {percent(panel.premises.omPerYearFraction)} do investimento ao ano; troca do inversor no ano{' '}
-                  {panel.premises.inverterReplacementYear} ({percent(panel.premises.inverterReplacementFraction, 0)} do
-                  investimento).
+                  Premissas de custo conservadoras: manutenção de {percent(panel.premises.omPerYearFraction)} do
+                  investimento ao ano e troca do inversor {replacementYears(panel.premises.inverterReplacementYears)},
+                  cada uma a {percent(panel.premises.inverterReplacementFraction, 0)} do investimento em dinheiro de hoje
+                  (corrigida pelo IPCA até o ano da troca).
+                </li>
+                <li>
+                  Os valores do gráfico estão em dinheiro de hoje: o patrimônio de cada ano é dividido pela inflação
+                  acumulada ({percent(panel.premises.ipcaPerYear)} ao ano).
+                  {lastNominal?.solarPathBrl != null &&
+                    ` Em valores nominais (sem descontar a inflação), em ${panel.premises.horizonYears} anos: usina ${formatCurrency(lastNominal.solarPathBrl)} contra ${formatCurrency(lastNominal.cdiPathBrl)} só no CDI.`}
                 </li>
                 <li>
                   Fio B (Lei 14.300):{' '}

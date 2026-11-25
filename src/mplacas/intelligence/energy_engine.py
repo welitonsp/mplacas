@@ -100,6 +100,17 @@ class EnergyCycleIntelligence:
     tariff_class: str | None = None
     tariff_class_presumed: bool = False
 
+    @property
+    def other_charges_brl(self) -> Decimal:
+        """Total da fatura − energia − iluminação (calculado no backend, ADR-012).
+
+        Como a energia é definida como total − iluminação (limitada a zero),
+        isto só é diferente de zero quando a iluminação supera o total.
+        """
+        return (
+            self.total_amount_brl - self.bill_energy_component_brl - self.public_lighting_brl
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
 
 def _savings_tariff(
     bill: UtilityBill, full_tariff_without_taxes: Decimal | None

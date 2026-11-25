@@ -54,6 +54,8 @@ def test_serialize_includes_full_financial_shape_when_tariff_registered() -> Non
     indicators = payload["indicators"]
     assert indicators["total_amount_brl"] == "80.21"
     assert indicators["public_lighting_brl"] == "30.21"
+    # Calculado no backend: total - energia - iluminacao (ADR-012).
+    assert indicators["other_charges_brl"] == "0.00"
     assert indicators["tariff_with_taxes_brl_kwh"] == "0.85"
     assert indicators["tariff_without_taxes_brl_kwh"] == "0.60"
     assert indicators["credit_balance_kwh"] == "63.98"
