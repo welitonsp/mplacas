@@ -11,7 +11,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 export type ResourceStatus = 'idle' | 'loading' | 'success' | 'error'
 
 export type ResourceFailure =
-  | { kind: 'http'; status: number }
+  // `detail`: texto do `detail` do corpo JSON de erro do backend, quando houver
+  // (distingue 404 "sem fatura" de 404 "usina não encontrada").
+  | { kind: 'http'; status: number; detail?: string }
   | { kind: 'network'; cause: unknown }
   | { kind: 'contract'; cause: unknown } // o `parse` (ou o `.json()` da resposta) lançou
 
@@ -58,6 +60,21 @@ interface InternalState<T, E> {
 
 function createInitialState<T, E>(): InternalState<T, E> {
   return { plantId: null, data: null, status: 'idle', error: null, lastUpdated: null }
+}
+
+// Lê `{"detail": "..."}` do corpo de erro sem nunca lançar: corpo ausente,
+// não-JSON ou `detail` que não seja texto devolvem `undefined`.
+async function readErrorDetail(response: Response): Promise<string | undefined> {
+  try {
+    const body: unknown = await response.clone().json()
+    if (typeof body === 'object' && body !== null && 'detail' in body) {
+      const detail = (body as { detail: unknown }).detail
+      return typeof detail === 'string' ? detail : undefined
+    }
+  } catch {
+    // corpo ilegível: só o status vale
+  }
+  return undefined
 }
 
 export function usePlantResource<T, E = string>(
@@ -157,7 +174,13 @@ export function usePlantResource<T, E = string>(
       if (isStale()) return
 
       if (!response.ok) {
-        writeFailure({ kind: 'http', status: response.status })
+        const detail = await readErrorDetail(response)
+        if (isStale()) return
+        writeFailure(
+          detail === undefined
+            ? { kind: 'http', status: response.status }
+            : { kind: 'http', status: response.status, detail },
+        )
         return
       }
 

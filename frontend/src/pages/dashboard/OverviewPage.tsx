@@ -10,6 +10,7 @@ import {
 import { usePlant } from '../../contexts/PlantContext'
 import { usePlantResource } from '../../hooks/usePlantResource'
 import type { AnomalyDashboardResponse, AnomalyFetchError } from '../../lib/dashboard/contracts'
+import { NO_CYCLE, classifyExecutiveFailure } from '../../lib/dashboard/contracts'
 import {
   classifyAnomalyErrorStatus,
   combineDiagnostics,
@@ -62,7 +63,6 @@ import { DASHBOARD_FINANCIAL_PATH } from '../../routes'
 // investimento, cadastro da usina (para tarefas pendentes) e os 2 últimos
 // ciclos do histórico mensal (créditos e lembrete de fatura). Falha dos três
 // últimos não derruba a tela: o cartão correspondente só omite a parte.
-const NO_CYCLE = 'NO_CYCLE'
 
 export function OverviewPage() {
   const { plantId, plants, loading: plantsLoading, error: plantsError, reload: reloadPlants } = usePlant()
@@ -77,8 +77,7 @@ export function OverviewPage() {
     plantId,
     fetcher: fetchExecutiveDashboard,
     parse: parseExecutiveDashboard,
-    classifyError: (failure) =>
-      failure.kind === 'http' && failure.status === 404 ? NO_CYCLE : 'Erro ao buscar dados.',
+    classifyError: (failure) => classifyExecutiveFailure(failure, 'Erro ao buscar dados.'),
   })
   const anomalies = usePlantResource<AnomalyDashboardResponse, AnomalyFetchError>({
     plantId,

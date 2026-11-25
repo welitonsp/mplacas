@@ -57,6 +57,18 @@ async function renderProductionPage() {
 }
 
 describe('ProductionPage — módulo Produção (ADR-072, Etapa 4)', () => {
+  it('usina sem fatura (executivo 404 "confirmed bill not found"): a página não mostra erro de ciclo', async () => {
+    vi.resetModules()
+    installApiMock({
+      fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: 'confirmed bill not found for plant' }, 404)),
+    })
+
+    await renderProductionPage()
+
+    await waitFor(() => expect(screen.queryByText(/Erro ao buscar o ciclo da fatura/)).not.toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument()
+  })
+
   it('dispara exatamente 4 requisições de dados — /energy/executive/latest, /energy/anomalies/latest, /photovoltaic/summary e /reports/monthly/history, nenhuma outra', async () => {
     vi.resetModules()
     const fetchExecutiveDashboardMock = vi.fn(async () => jsonResponse(executivePayload))

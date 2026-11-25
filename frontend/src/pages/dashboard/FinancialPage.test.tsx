@@ -220,6 +220,61 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     expect(fetchExecutiveMock).toHaveBeenCalledTimes(2)
   })
 
+  const NO_BILL_DETAIL = 'confirmed bill not found for plant'
+
+  it('usina sem fatura confirmada (404 "confirmed bill not found"): mostra o primeiro passo, sem erro nem "Tentar novamente"', async () => {
+    vi.resetModules()
+    const fetchExecutiveMock = vi.fn(async () => jsonResponse({ detail: NO_BILL_DETAIL }, 404))
+    // Irmãos: sem fatura o backend responde 200 com motivo de indisponibilidade.
+    installApiMock({ fetchExecutiveDashboard: fetchExecutiveMock })
+    const { container } = await renderFinancialPage()
+
+    expect(await screen.findByText('Sua conta aparece depois da primeira fatura')).toBeInTheDocument()
+    expect(
+      screen.getByText(/Importe a fatura da distribuidora em PDF e confira os valores\. Com a primeira fatura confirmada/),
+    ).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: 'Importar uma fatura' })
+    expect(link).toHaveAttribute('href', '#faturas')
+    expect(container.querySelector('#faturas')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('Não foi possível carregar os dados')).not.toBeInTheDocument()
+    expect(screen.queryByText('Erro ao buscar dados.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Tentar novamente' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Faturas de energia' })).toBeInTheDocument()
+  })
+
+  it('404 "plant not found" no executivo: erro com "Tentar novamente", não o estado vazio', async () => {
+    vi.resetModules()
+    installApiMock({ fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: 'plant not found' }, 404)) })
+    await renderFinancialPage()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Erro ao buscar dados.')
+    expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument()
+    expect(screen.queryByText('Sua conta aparece depois da primeira fatura')).not.toBeInTheDocument()
+  })
+
+  it('404 sem corpo reconhecível no executivo continua sendo erro', async () => {
+    vi.resetModules()
+    installApiMock({ fetchExecutiveDashboard: vi.fn(async () => new Response('Not Found', { status: 404 })) })
+    await renderFinancialPage()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Erro ao buscar dados.')
+    expect(screen.queryByText('Sua conta aparece depois da primeira fatura')).not.toBeInTheDocument()
+  })
+
+  it('sem fatura, os irmãos (retorno, investidor, ampliação) falhando com 404 "plant not found" não somem em silêncio nem viram o estado vazio de fatura', async () => {
+    vi.resetModules()
+    installApiMock({
+      fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: NO_BILL_DETAIL }, 404)),
+      fetchFinancialReturn: vi.fn(async () => jsonResponse(financialReturnUnavailablePayload)),
+      fetchInvestorPanel: vi.fn(async () => jsonResponse(investorUnavailablePayload)),
+    })
+    await renderFinancialPage()
+
+    await screen.findByText('Sua conta aparece depois da primeira fatura')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('sem investimento cadastrado, Dinheiro não tem formulário de investimento: o cadastro fica só em Minha usina', async () => {
     vi.resetModules()
     installApiMock()
