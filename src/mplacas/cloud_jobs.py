@@ -277,6 +277,28 @@ def _build_parser() -> argparse.ArgumentParser:
         help="before the report, insert the missing claims for active connections (insert only)",
     )
     claims.set_defaults(handler=_handle_provider_claims_report)
+
+    purge = subparsers.add_parser(
+        "purge-discontinued-plants",
+        help="permanently delete plants connected through a discontinued brand (ADR-101)",
+    )
+    purge.add_argument(
+        "--apply",
+        action="store_true",
+        help="really delete (default: dry-run); requires --confirm-plant-count",
+    )
+    purge.add_argument(
+        "--confirm-plant-count",
+        type=int,
+        default=None,
+        help="number of plants expected to be selected; must match for --apply",
+    )
+    purge.add_argument(
+        "--totals-only",
+        action="store_true",
+        help="accepted for symmetry: the output is always aggregate counts only",
+    )
+    purge.set_defaults(handler=_handle_purge_discontinued_plants)
     return parser
 
 
@@ -474,6 +496,52 @@ def _handle_provider_claims_report(args: argparse.Namespace) -> int:
         return 1
     print(text)
     return 0
+
+
+def _handle_purge_discontinued_plants(args: argparse.Namespace) -> int:
+    # Saída sempre só com contagens; falhas pelo caminho público de main().
+    if args.apply and args.confirm_plant_count is None:
+        raise OperatorError("--apply exige --confirm-plant-count com a quantidade esperada")
+    text = asyncio.run(
+        run_purge_discontinued_plants(
+            apply=args.apply, confirm_plant_count=args.confirm_plant_count
+        )
+    )
+    print(text)
+    return 0
+
+
+async def run_purge_discontinued_plants(
+    *, apply: bool = False, confirm_plant_count: int | None = None
+) -> str:
+    """Exclusão definitiva (ADR-101): simulação por padrão; ``apply`` em UMA transação."""
+    from mplacas.providers.purge_discontinued import (
+        PurgeError,
+        build_plan,
+        execute_purge,
+        render_plan,
+    )
+
+    if apply and confirm_plant_count is None:
+        raise OperatorError("--apply exige --confirm-plant-count com a quantidade esperada")
+    async with SessionFactory() as session:
+        await set_platform_context(session)
+        try:
+            plan = await build_plan(session, lock=apply)
+            if not apply:
+                return render_plan(plan, applied=False)
+            if plan.selected and confirm_plant_count != plan.selected:
+                raise PurgeError(
+                    "recusado: a quantidade confirmada difere da selecionada "
+                    f"(confirmada={confirm_plant_count}, selecionada={plan.selected}); "
+                    "nada foi gravado"
+                )
+            result = await execute_purge(session, plan)
+        except PurgeError as exc:
+            await session.rollback()
+            raise OperatorError(str(exc)) from None
+        await session.commit()
+    return render_plan(result.plan, applied=True, deleted=result.deleted)
 
 
 async def run_provider_claims_report(

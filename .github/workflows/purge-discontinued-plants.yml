@@ -1,0 +1,62 @@
+# Exclusão DEFINITIVA das usinas conectadas por marca descontinuada (ADR-101, decisão do
+# dono de 25/11/2026): a usina inteira, com faturas e relatórios. Irreversível: faça o
+# backup do banco antes de rodar com EXCLUIR.
+#
+# Só manual. Sem `confirmacao` = EXCLUIR roda só a simulação (nada é gravado). Com EXCLUIR,
+# apaga, desde que `quantidade_de_usinas` seja igual ao número de usinas selecionadas.
+# Rode fora do horário dos jobs agendados (coleta, leitura da madrugada, pipeline diário).
+# Um rollback por divergência na verificação é seguro: basta repetir.
+# O repositório é público e o log também: o job roda com --totals-only e mostra APENAS
+# contagens — nunca nome, id, serial, coordenada ou valor.
+name: purge-discontinued-plants
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmacao:
+        description: "Vazio = só simulação. Digite EXCLUIR para apagar de verdade (irreversível)"
+        required: false
+        default: ""
+      quantidade_de_usinas:
+        description: "Quantidade de usinas que a simulação anunciou (obrigatória para EXCLUIR)"
+        required: false
+        default: ""
+
+concurrency:
+  group: purge-discontinued-plants
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  excluir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MPLACAS_ENVIRONMENT: production
+      PYTHONPATH: ${{ github.workspace }}/src
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements.lock
+      # O valor digitado em `confirmacao` nunca entra no comando: só é comparado nos `if:`.
+      - name: Simular (nada é gravado)
+        if: inputs.confirmacao != 'EXCLUIR'
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+        run: python -m mplacas.cloud_jobs purge-discontinued-plants --totals-only
+      - name: Excluir definitivamente
+        if: inputs.confirmacao == 'EXCLUIR'
+        env:
+          MPLACAS_DATABASE_URL: ${{ secrets.MPLACAS_DATABASE_URL }}
+          MPLACAS_OPERATIONS_API_KEY: ${{ secrets.MPLACAS_OPERATIONS_API_KEY }}
+          QUANTIDADE_DE_USINAS: ${{ inputs.quantidade_de_usinas }}
+        run: >-
+          python -m mplacas.cloud_jobs purge-discontinued-plants --apply --totals-only
+          --confirm-plant-count "$QUANTIDADE_DE_USINAS"
