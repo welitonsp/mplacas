@@ -1,0 +1,415 @@
+"""Exclusão definitiva das usinas conectadas por marca descontinuada (ADR-101).
+
+Decisão do dono (25/11/2026): toda usina conectada pela Growatt é apagada por
+inteiro e para sempre — faturas confirmadas e relatórios mensais incluídos. As
+usinas da NEPViewer não são tocadas. Este módulo é a **única** via dessa
+exclusão: nunca por migração nem por SQL avulso.
+
+O repositório é público e o log do job também: nada aqui devolve id de usina,
+nome, serial, coordenada, login ou valor — só contagens por categoria.
+
+Contexto de plataforma definido por quem chama; **este módulo não faz commit**.
+Quem chama decide: simulação termina sem commit, aplicação faz commit só se
+``execute_purge`` não levantar ``PurgeError``.
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from typing import Any
+
+from sqlalchemy import Table, delete, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
+
+from mplacas.alerts.db_models import AlertDeliveryRecord
+from mplacas.audit.db_models import AuditEventRecord
+from mplacas.billing.db_models import UtilityBillRecord
+from mplacas.climate.db_models import DailyClimateObservationRecord
+from mplacas.collection.db_models import CollectionTaskRecord
+from mplacas.credentials.db_models import ApiCredentialRecord, OperationalUserRecord
+from mplacas.db.models import DailyEnergy, DailyEnergyVersion, Device, MeterReading, Plant
+from mplacas.events.db_models import OutboxEventRecord
+from mplacas.orchestration.db_models import PipelineExecutionRecord
+from mplacas.organizations.db_models import OrganizationRecord
+from mplacas.organizations.invitation_db_models import UserInvitationRecord
+from mplacas.photovoltaic.db_models import (
+    DailyPvLossAssessmentRecord,
+    DailyPvPerformanceRecord,
+    DailySolarModelResultRecord,
+    SeasonalPvBaselineRecord,
+)
+from mplacas.providers.accounts import DISCONTINUED_PROVIDERS
+from mplacas.providers.db_models import ProviderAccountRecord, ProviderPlantClaimRecord
+from mplacas.reports.db_models import MonthlyReportSnapshotRecord, ReportExportTask
+
+GROWATT_PREFIX = "GROWATT"
+AUDIT_ACTION = "plant.purged_discontinued_provider"
+AUDIT_ADR = "ADR-101"
+AUDIT_REASON = "provider_discontinued"
+
+
+class PurgeError(RuntimeError):
+    """Recusa ou falha de verificação. O texto é escrito aqui e é seguro para o log público."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Category:
+    name: str
+    table: Table
+    owned: Callable[[Sequence[uuid.UUID]], ColumnElement[bool]]
+
+
+def _table(model: Any) -> Table:
+    table = model.__table__
+    assert isinstance(table, Table)
+    return table
+
+
+def _by_plant(model: Any, column: str = "plant_id") -> Callable[
+    [Sequence[uuid.UUID]], ColumnElement[bool]
+]:
+    def owned(ids: Sequence[uuid.UUID]) -> ColumnElement[bool]:
+        result: ColumnElement[bool] = getattr(model, column).in_(ids)
+        return result
+
+    return owned
+
+
+# Ordem de exclusão (filhos antes dos pais). As FKs RESTRICT para ``plants`` e
+# ``utility_bills`` (faturas, relatórios, exportações, tarefas de coleta, outbox)
+# exigem exclusão explícita; as CASCADE são apagadas explicitamente também, para
+# serem contadas e verificadas uma a uma.
+CATEGORIES: tuple[_Category, ...] = (
+    _Category(
+        "daily_energy_versions",
+        _table(DailyEnergyVersion),
+        lambda ids: DailyEnergyVersion.daily_energy_id.in_(
+            select(DailyEnergy.id).where(
+                DailyEnergy.device_id.in_(select(Device.id).where(Device.plant_id.in_(ids)))
+            )
+        ),
+    ),
+    _Category(
+        "daily_energy",
+        _table(DailyEnergy),
+        lambda ids: DailyEnergy.device_id.in_(select(Device.id).where(Device.plant_id.in_(ids))),
+    ),
+    _Category("meter_readings", _table(MeterReading), _by_plant(MeterReading)),
+    # RESTRICT para utility_bills: relatório antes da fatura.
+    _Category(
+        "monthly_report_snapshots",
+        _table(MonthlyReportSnapshotRecord),
+        _by_plant(MonthlyReportSnapshotRecord),
+    ),
+    _Category("report_export_tasks", _table(ReportExportTask), _by_plant(ReportExportTask)),
+    _Category("utility_bills", _table(UtilityBillRecord), _by_plant(UtilityBillRecord)),
+    _Category("collection_tasks", _table(CollectionTaskRecord), _by_plant(CollectionTaskRecord)),
+    _Category("outbox_events", _table(OutboxEventRecord), _by_plant(OutboxEventRecord)),
+    _Category(
+        "alert_delivery_records", _table(AlertDeliveryRecord), _by_plant(AlertDeliveryRecord)
+    ),
+    _Category(
+        "daily_climate_observations",
+        _table(DailyClimateObservationRecord),
+        _by_plant(DailyClimateObservationRecord),
+    ),
+    _Category(
+        "daily_solar_model_results",
+        _table(DailySolarModelResultRecord),
+        _by_plant(DailySolarModelResultRecord),
+    ),
+    _Category(
+        "daily_pv_performance_results",
+        _table(DailyPvPerformanceRecord),
+        _by_plant(DailyPvPerformanceRecord),
+    ),
+    _Category(
+        "seasonal_pv_baseline_results",
+        _table(SeasonalPvBaselineRecord),
+        _by_plant(SeasonalPvBaselineRecord),
+    ),
+    _Category(
+        "daily_pv_loss_assessments",
+        _table(DailyPvLossAssessmentRecord),
+        _by_plant(DailyPvLossAssessmentRecord),
+    ),
+    _Category(
+        "pipeline_executions", _table(PipelineExecutionRecord), _by_plant(PipelineExecutionRecord)
+    ),
+    _Category(
+        "provider_plant_claims",
+        _table(ProviderPlantClaimRecord),
+        _by_plant(ProviderPlantClaimRecord),
+    ),
+    # A credencial cifrada vai embora junto com a linha.
+    _Category("provider_accounts", _table(ProviderAccountRecord), _by_plant(ProviderAccountRecord)),
+    _Category("devices", _table(Device), _by_plant(Device)),
+    _Category("plants", _table(Plant), _by_plant(Plant, "id")),
+)
+
+# Tabelas que NÃO podem mudar de tamanho (usuários, organizações, credenciais,
+# convites). A auditoria é conferida à parte: só cresce em um evento.
+PRESERVED_TABLES: tuple[tuple[str, Table], ...] = (
+    ("organizations", _table(OrganizationRecord)),
+    ("operational_users", _table(OperationalUserRecord)),
+    ("api_credentials", _table(ApiCredentialRecord)),
+    ("user_invitations", _table(UserInvitationRecord)),
+)
+
+
+def _is_growatt(column: Any) -> ColumnElement[bool]:
+    result: ColumnElement[bool] = column.startswith(GROWATT_PREFIX)
+    return result
+
+
+@dataclass(frozen=True, slots=True)
+class PurgePlan:
+    plant_ids: tuple[uuid.UUID, ...]
+    refused_plants: int
+    owned: dict[str, int]
+    totals_before: dict[str, int]
+    preserved_before: dict[str, int]
+    plants_untouched: int
+    default_plant_orgs: int
+    scoped_credentials: int
+    scoped_credentials_emptied: int
+    audit_preserved: int
+
+    @property
+    def selected(self) -> int:
+        return len(self.plant_ids)
+
+
+@dataclass(frozen=True, slots=True)
+class PurgeResult:
+    plan: PurgePlan
+    deleted: dict[str, int] = field(default_factory=dict)
+
+
+async def select_discontinued_plants(session: AsyncSession) -> tuple[tuple[uuid.UUID, ...], int]:
+    """Usinas conectadas pela marca descontinuada e quantas delas a recusa barra.
+
+    Seleciona por conexão (ativa ou não) de marca descontinuada, por aparelho
+    ``GROWATT*`` ou por produção com origem ``GROWATT*``. Retorna ``(ids, recusadas)``:
+    ``recusadas`` > 0 quando alguma selecionada também tem conexão, reserva ou aparelho
+    de outra marca (a execução inteira é recusada).
+    """
+    from_accounts = select(ProviderAccountRecord.plant_id).where(
+        ProviderAccountRecord.provider.in_(sorted(DISCONTINUED_PROVIDERS))
+        | _is_growatt(ProviderAccountRecord.provider)
+    )
+    from_devices = select(Device.plant_id).where(_is_growatt(Device.provider))
+    from_energy = (
+        select(Device.plant_id)
+        .join(DailyEnergy, DailyEnergy.device_id == Device.id)
+        .where(_is_growatt(DailyEnergy.source))
+    )
+    selected = {
+        row[0]
+        for query in (from_accounts, from_devices, from_energy)
+        for row in (await session.execute(query)).all()
+    }
+    ids = tuple(sorted(selected, key=str))
+    if not ids:
+        return ids, 0
+
+    foreign: set[uuid.UUID] = set()
+    queries = (
+        select(ProviderAccountRecord.plant_id).where(
+            ProviderAccountRecord.plant_id.in_(ids),
+            ProviderAccountRecord.provider.not_in(sorted(DISCONTINUED_PROVIDERS)),
+            ~_is_growatt(ProviderAccountRecord.provider),
+        ),
+        select(Device.plant_id).where(Device.plant_id.in_(ids), ~_is_growatt(Device.provider)),
+        select(ProviderPlantClaimRecord.plant_id).where(
+            ProviderPlantClaimRecord.plant_id.in_(ids),
+            ~_is_growatt(ProviderPlantClaimRecord.provider_family),
+        ),
+    )
+    for query in queries:
+        foreign.update(row[0] for row in (await session.execute(query)).all())
+    return ids, len(foreign)
+
+
+async def _count(session: AsyncSession, table: Table, where: ColumnElement[bool] | None) -> int:
+    query = select(func.count()).select_from(table)
+    if where is not None:
+        query = query.where(where)
+    return int((await session.execute(query)).scalar_one())
+
+
+async def _scoped_credentials(
+    session: AsyncSession, ids: Sequence[uuid.UUID]
+) -> list[tuple[uuid.UUID, list[str], list[str]]]:
+    """Credenciais com escopo de usina que citam alguma das usinas: (id, antes, depois)."""
+    wanted = {str(plant_id) for plant_id in ids}
+    rows = (
+        await session.execute(
+            select(ApiCredentialRecord.id, ApiCredentialRecord.plant_ids).where(
+                ApiCredentialRecord.plant_ids.is_not(None)
+            )
+        )
+    ).all()
+    found: list[tuple[uuid.UUID, list[str], list[str]]] = []
+    for credential_id, plant_ids in rows:
+        current = [str(item) for item in plant_ids or []]
+        if wanted & set(current):
+            found.append((credential_id, current, [i for i in current if i not in wanted]))
+    return found
+
+
+async def _audit_preserved(session: AsyncSession, ids: Sequence[uuid.UUID]) -> int:
+    return await _count(
+        session,
+        _table(AuditEventRecord),
+        (AuditEventRecord.resource_type == "plant")
+        & AuditEventRecord.resource_id.in_([str(plant_id) for plant_id in ids]),
+    )
+
+
+async def build_plan(session: AsyncSession) -> PurgePlan:
+    """Lê e conta; não grava. Levanta ``PurgeError`` se a seleção deve ser recusada."""
+    ids, refused = await select_discontinued_plants(session)
+    if refused:
+        raise PurgeError(
+            f"recusado: {refused} usina(s) selecionada(s) tem conexao, reserva ou aparelho "
+            "de outra marca; nada foi gravado"
+        )
+    owned: dict[str, int] = {}
+    totals: dict[str, int] = {}
+    for category in CATEGORIES:
+        totals[category.name] = await _count(session, category.table, None)
+        owned[category.name] = (
+            await _count(session, category.table, category.owned(ids)) if ids else 0
+        )
+    preserved = {name: await _count(session, table, None) for name, table in PRESERVED_TABLES}
+    scoped = await _scoped_credentials(session, ids) if ids else []
+    default_orgs = (
+        await _count(
+            session,
+            _table(OrganizationRecord),
+            OrganizationRecord.default_plant_id.in_(ids),
+        )
+        if ids
+        else 0
+    )
+    return PurgePlan(
+        plant_ids=ids,
+        refused_plants=0,
+        owned=owned,
+        totals_before=totals,
+        preserved_before=preserved,
+        plants_untouched=totals["plants"] - owned["plants"],
+        default_plant_orgs=default_orgs,
+        scoped_credentials=len(scoped),
+        scoped_credentials_emptied=sum(1 for _, _, after in scoped if not after),
+        audit_preserved=await _audit_preserved(session, ids) if ids else 0,
+    )
+
+
+async def execute_purge(session: AsyncSession, plan: PurgePlan) -> PurgeResult:
+    """Apaga na ordem segura e confere tudo; levanta ``PurgeError`` se algo diferir.
+
+    Não faz commit: o chamador só confirma se esta função retornar. Usuários e
+    organizações não são apagados; ``audit_events`` não tem FK para usina e fica
+    intacto (só ganha o evento de plataforma desta execução).
+    """
+    ids = plan.plant_ids
+    if not ids:
+        return PurgeResult(plan=plan)
+
+    # Referências de usuários/organizações que não podem ficar apontando para o nada.
+    await session.execute(
+        update(OrganizationRecord)
+        .where(OrganizationRecord.default_plant_id.in_(ids))
+        .values(default_plant_id=None)
+    )
+    for credential_id, _before, after in await _scoped_credentials(session, ids):
+        await session.execute(
+            update(ApiCredentialRecord)
+            .where(ApiCredentialRecord.id == credential_id)
+            .values(plant_ids=after)
+        )
+
+    deleted: dict[str, int] = {}
+    for category in CATEGORIES:
+        result = await session.execute(delete(category.table).where(category.owned(ids)))
+        deleted[category.name] = int(getattr(result, "rowcount", -1))
+
+    await _verify(session, plan, deleted)
+
+    session.add(
+        AuditEventRecord(
+            organization_id=None,
+            action=AUDIT_ACTION,
+            resource_type="platform",
+            resource_id=None,
+            outcome="success",
+            actor_role="PLATFORM",
+            actor_credential_id="cloud_jobs:purge-discontinued-plants",
+            request_id=None,
+            details={
+                "plants": plan.selected,
+                "reason": AUDIT_REASON,
+                "adr": AUDIT_ADR,
+            },
+        )
+    )
+    await session.flush()
+    return PurgeResult(plan=plan, deleted=deleted)
+
+
+async def _verify(session: AsyncSession, plan: PurgePlan, deleted: dict[str, int]) -> None:
+    ids = plan.plant_ids
+    problems = 0
+    for category in CATEGORIES:
+        if deleted[category.name] != plan.owned[category.name]:
+            problems += 1
+        if await _count(session, category.table, category.owned(ids)) != 0:
+            problems += 1
+        # Tudo que não era das usinas selecionadas segue com a mesma contagem.
+        expected = plan.totals_before[category.name] - plan.owned[category.name]
+        if await _count(session, category.table, None) != expected:
+            problems += 1
+    for name, table in PRESERVED_TABLES:
+        if await _count(session, table, None) != plan.preserved_before[name]:
+            problems += 1
+    if (
+        await _count(
+            session, _table(OrganizationRecord), OrganizationRecord.default_plant_id.in_(ids)
+        )
+        != 0
+    ):
+        problems += 1
+    if await _scoped_credentials(session, ids):
+        problems += 1
+    if problems:
+        raise PurgeError(
+            f"verificacao falhou ({problems} divergencia(s)); transacao desfeita, nada foi gravado"
+        )
+
+
+def render_plan(plan: PurgePlan, *, applied: bool, deleted: dict[str, int] | None = None) -> str:
+    """Só contagens agregadas por categoria — nunca nome, id, serial, valor ou coordenada."""
+    mode = "aplicado" if applied else "simulacao (nada foi gravado)"
+    counts = deleted if deleted is not None else plan.owned
+    verb = "excluidos" if applied else "seriam_excluidos"
+    lines = [
+        f"Exclusao definitiva de usinas de marca descontinuada ({AUDIT_ADR}) - {mode}",
+        f"usinas_selecionadas={plan.selected}",
+        f"usinas_nepviewer_intocadas={plan.plants_untouched}",
+    ]
+    for category in CATEGORIES:
+        lines.append(f"{verb}.{category.name}={counts.get(category.name, 0)}")
+    lines.extend(
+        [
+            f"organizacoes_com_usina_padrao_ajustada={plan.default_plant_orgs}",
+            f"credenciais_com_escopo_ajustado={plan.scoped_credentials}",
+            f"credenciais_com_escopo_ficou_vazio={plan.scoped_credentials_emptied}",
+            f"eventos_de_auditoria_preservados={plan.audit_preserved}",
+        ]
+    )
+    return "\n".join(lines)
