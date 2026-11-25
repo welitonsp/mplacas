@@ -167,7 +167,10 @@ def test_gitleaks_exceptions_are_exact_fingerprints() -> None:
     # passava do limiar; o teste passou a montá-lo em execução, e a ocorrência já
     # gravada no commit aba3a2d fica aqui.
     # Nova exceção exige mudar este número de propósito, com o motivo.
-    assert len(entries) == 12
+    # + 1 do PR #319: o segredo sintético de frontend/edge/apiProxy.test.ts (commit
+    # ef622f9), trocado em seguida por um valor montado em execução.
+    assert len(entries) == 13
+    assert sum("frontend/edge/apiProxy.test.ts" in entry for entry in entries) == 1
     assert sum("tests/test_auth_cookie_session.py" in entry for entry in entries) == 1
     assert sum("frontend/src/lib/dashboard/home.test.ts" in entry for entry in entries) == 2
     assert all(

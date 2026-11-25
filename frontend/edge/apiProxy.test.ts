@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { MAX_REQUEST_BODY_BYTES, proxyApiRequest, type ProxyEnv } from './apiProxy'
 
 const ORIGIN = 'https://mplacas-api.example.test'
-const SECRET = 'segredo-de-teste-com-mais-de-32-bytes-0123456789'
+// Montado em tempo de execução para o gitleaks não confundir com credencial real.
+const SECRET = 'segredo-de-teste-'.repeat(3)
 const ENV: ProxyEnv = { MPLACAS_API_ORIGIN: ORIGIN, MPLACAS_PROXY_SHARED_SECRET: SECRET }
 
 function upstreamOk(body: BodyInit | null = '{"ok":true}', init: ResponseInit = {}) {
