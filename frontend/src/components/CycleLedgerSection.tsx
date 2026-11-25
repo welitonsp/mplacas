@@ -5,10 +5,12 @@ import { parseCycleLedger, type CycleLedger, type LedgerCycle } from '../lib/das
 import {
   LEDGER_BILL_NOTE,
   LEDGER_COMMISSIONING_UNKNOWN_NOTE,
+  LEDGER_COMMISSIONING_UNKNOWN_NO_TOTAL_NOTE,
   LEDGER_NEGATIVE_NOTE,
   LEDGER_SEAL_ESTIMATED,
   LEDGER_SNAPSHOT_NOTE,
   formatCalculatedOn,
+  formatLedgerMoney,
   isNegativeMoney,
   ledgerExclusionText,
   ledgerExtraSeals,
@@ -17,7 +19,7 @@ import {
   ledgerReasonText,
   ledgerTotalLine,
 } from '../lib/dashboard/cycle-ledger-text'
-import { formatCurrency, formatCycleLabel } from '../lib/format'
+import { formatCycleLabel } from '../lib/format'
 import { usePlantResource } from '../hooks/usePlantResource'
 import { DASHBOARD_SETUP_PATH } from '../routes'
 import { EmptyState } from './EmptyState'
@@ -42,7 +44,7 @@ function SavingsCell({ cycle }: { cycle: LedgerCycle }) {
     <td className="py-2.5 pl-2 align-top">
       {cycle.estimatedSavingsBrl !== null ? (
         <>
-          <span className="font-semibold">{formatCurrency(cycle.estimatedSavingsBrl)}</span>{' '}
+          <span className="font-semibold">{formatLedgerMoney(cycle.estimatedSavingsBrl)}</span>{' '}
           <span className="text-xs font-semibold text-[var(--color-chart-reference)]">{LEDGER_SEAL_ESTIMATED}</span>
           {isNegativeMoney(cycle.estimatedSavingsBrl) && <p className={`mt-1 ${NOTE_CLASS}`}>{LEDGER_NEGATIVE_NOTE}</p>}
           {ledgerExtraSeals(cycle).map((seal) => (
@@ -86,7 +88,7 @@ function LedgerContent({ ledger }: { ledger: CycleLedger }) {
               </th>
               <td className="px-2 py-2.5 align-top">
                 {cycle.billTotalAmountBrl !== null ? (
-                  formatCurrency(cycle.billTotalAmountBrl)
+                  formatLedgerMoney(cycle.billTotalAmountBrl)
                 ) : (
                   <span className={NOTE_CLASS}>Valor indisponível</span>
                 )}
@@ -111,7 +113,9 @@ function LedgerContent({ ledger }: { ledger: CycleLedger }) {
             {quality && <p className={`mt-1 ${NOTE_CLASS}`}>{quality}</p>}
             {!window.commissioningKnown && (
               <p className={`mt-1 ${NOTE_CLASS}`}>
-                {LEDGER_COMMISSIONING_UNKNOWN_NOTE}{' '}
+                {window.totalEstimatedSavingsBrl === null
+                  ? LEDGER_COMMISSIONING_UNKNOWN_NO_TOTAL_NOTE
+                  : LEDGER_COMMISSIONING_UNKNOWN_NOTE}{' '}
                 <Link to={DASHBOARD_SETUP_PATH} className="font-semibold text-[var(--color-brand-primary)] underline">
                   Minha usina
                 </Link>
@@ -159,8 +163,8 @@ export function CycleLedgerSection({ plantId, refreshKey = 0 }: { plantId: strin
         />
       ) : resource.data.cycles.length === 0 ? (
         <EmptyState
-          title="Nenhuma fatura confirmada ainda"
-          description="Quando você confirmar a primeira fatura, a conta de cada ciclo aparece aqui."
+          title="Nenhum ciclo com relatório ainda"
+          description="Quando uma fatura for confirmada e o relatório do ciclo for gerado, a conta aparece aqui."
           action={
             <a
               href="#faturas"

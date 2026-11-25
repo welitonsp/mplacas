@@ -95,6 +95,14 @@ function nullableBoolean(source: Record<string, unknown>, key: string): boolean 
   return invalid(key)
 }
 
+// Chave ausente = false (API anterior); presente com tipo errado lança.
+function optionalBoolean(source: Record<string, unknown>, key: string): boolean {
+  const value = source[key]
+  if (value === undefined) return false
+  if (typeof value === 'boolean') return value
+  return invalid(key)
+}
+
 function requireCount(source: Record<string, unknown>, key: string): number {
   const value = source[key]
   if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value
@@ -138,7 +146,7 @@ function parseCycle(value: unknown): LedgerCycle {
     reportCreatedAt: nullableString(value, 'report_created_at'),
     isCommissioningMonth: nullableBoolean(value, 'is_commissioning_month'),
     isBeforeCommissioning: nullableBoolean(value, 'is_before_commissioning'),
-    supersededByRebilling: value.superseded_by_rebilling === true,
+    supersededByRebilling: optionalBoolean(value, 'superseded_by_rebilling'),
   }
 }
 
@@ -165,7 +173,8 @@ export function parseCycleLedger(payload: unknown): CycleLedger {
   if (!isRecord(payload)) throw new Error('Resposta inválida da API.')
   if (!Array.isArray(payload.cycles)) return invalid('cycles')
   return {
-    // `slice().reverse()` mantém, dentro do mesmo mês, o cálculo mais novo primeiro.
+    // `map` devolve um array novo, então `reverse()` não altera o payload; dentro do
+    // mesmo mês, o cálculo mais novo fica primeiro.
     cycles: payload.cycles.map(parseCycle).reverse(),
     window: parseWindow(payload.savings_window),
   }

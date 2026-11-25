@@ -83,10 +83,10 @@ function installApiMock(overrides: ApiMockOverrides = {}) {
     // Meses a recalcular (ADR-081), dentro do card de faturas.
     fetchSavingsGaps: overrides.fetchSavingsGaps ?? vi.fn(async () => jsonResponse({ count: 0, items: [] })),
     reprocessSavingsGaps: vi.fn(async () => jsonResponse({ count: 0, items: [] })),
-    // Análise de ampliação (ADR-089), chunk próprio com a própria leitura.
+    // Análise de ampliação (ADR-089), com a própria leitura.
     fetchExpansionAssessment:
       overrides.fetchExpansionAssessment ?? vi.fn(async () => jsonResponse(expansionUnavailablePayload)),
-    // Conta ciclo a ciclo: histórico mensal (limite 12), chunk próprio.
+    // Conta ciclo a ciclo: histórico mensal (limite 12).
     fetchMonthlyProductionHistory:
       overrides.fetchMonthlyProductionHistory ?? vi.fn(async () => jsonResponse(cycleLedgerPayload)),
     configureApi: vi.fn(),
@@ -267,6 +267,16 @@ describe('FinancialPage — módulo Financeiro (ADR-072, Etapa 3)', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Faturas de energia' })).toBeInTheDocument()
     const faturas = container.querySelector('#faturas') as HTMLElement
     expect(alert.compareDocumentPosition(faturas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('executivo falha: a conta ciclo a ciclo continua aparecendo (leitura própria)', async () => {
+    vi.resetModules()
+    installApiMock({ fetchExecutiveDashboard: vi.fn(async () => jsonResponse({ detail: 'erro' }, 500)) })
+    await renderFinancialPage()
+
+    await screen.findByRole('alert')
+    expect(await screen.findByRole('heading', { level: 2, name: 'A conta, ciclo a ciclo' })).toBeInTheDocument()
+    expect(await screen.findByRole('table', { name: /Valor da fatura e economia estimada/ })).toBeInTheDocument()
   })
 
   it('chegando por #faturas, rola até as faturas uma vez, quando elas já estão na tela', async () => {

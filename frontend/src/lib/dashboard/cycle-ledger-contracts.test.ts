@@ -70,6 +70,7 @@ describe('parseCycleLedger', () => {
     ['economia como número', { cycles: [{ ...base, estimated_savings_brl: 10 }] }],
     ['economia ilegível', { cycles: [{ ...base, estimated_savings_brl: 'abc' }] }],
     ['fatura com tipo errado', { cycles: [{ ...base, bill_total_amount_brl: 5 }] }],
+    ['superseded_by_rebilling com tipo errado', { cycles: [{ ...base, superseded_by_rebilling: 'sim' }] }],
     ['booleano com tipo errado', { cycles: [{ ...base, is_commissioning_month: 'sim' }] }],
     ['janela com contador inválido', { cycles: [], savings_window: { cycles_in_window: 'x' } }],
   ])('malformado (%s) lança', (_name, payload) => {
