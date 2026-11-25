@@ -1,171 +1,45 @@
 import { API_URL } from '../env'
 import { TokenStore } from './auth'
+import {
+  AUTH_TIMEOUT_MS,
+  DATA_TIMEOUT_MS,
+  RequestTimeoutError,
+  authFetch,
+  refreshSession,
+  withTimeout,
+} from './session'
 import { parsePlantsResponse, type Plant } from './dashboard/plant-contracts'
 
-// Timeout de rede (auditoria v6, achado A-03). Nenhuma chamada tinha limite:
-// uma conexão que abre e nunca responde — rede móvel instável, captive portal,
-// balanceador que engole a requisição — deixava a interface em "carregando"
-// para sempre, sem erro e sem saída. `fetch` não expira sozinho.
-//
-// Dois valores porque as operações não têm o mesmo perfil: autenticação é
-// interativa e o usuário está olhando; leitura de dados pode legitimamente
-// demorar mais (relatório, janela de 90 dias). Ambos generosos o bastante para
-// não cortar requisição sadia em rede ruim.
-//
-// Desde a ida para o Render no plano grátis (ADR-076), a API hiberna após
-// 15 minutos sem tráfego e a primeira requisição depois disso leva de 30 a
-// 60 s para acordar. Prazos menores que isso transformavam o primeiro acesso
-// do dia em falha garantida ("o servidor demorou"), mesmo com tudo sadio.
-export const AUTH_TIMEOUT_MS = 60_000
-export const DATA_TIMEOUT_MS = 60_000
+// Prazos, `withTimeout` e `RequestTimeoutError` moram em `session.ts` (o
+// transporte da sessão precisa deles sem depender deste módulo); reexportados
+// aqui para quem já os importava daqui.
+export { AUTH_TIMEOUT_MS, DATA_TIMEOUT_MS, RequestTimeoutError, withTimeout }
 
 // Acorda a API sem bloquear nada: a tela de login chama isto ao abrir, para o
 // servidor já estar de pé quando o usuário terminar de digitar a senha. Falha
 // é ignorada de propósito — é só um aquecimento; o login trata os erros reais.
 export function warmUpApi(): void {
-  fetch(`${API_URL}/health`, { method: 'GET', cache: 'no-store' }).catch(() => undefined)
+  fetch(`${API_URL}/health`, { method: 'GET', cache: 'no-store', credentials: 'same-origin' }).catch(() => undefined)
 }
 
-// Combina o prazo interno com um `AbortController` externo, quando o chamador
-// tiver um (desmontagem de componente, troca de usina). Cancelar por qualquer
-// um dos dois motivos aborta a requisição; o `clear` devolvido evita que o
-// timer sobreviva à resposta e dispare um abort tardio sobre nada.
-export function withTimeout(
-  timeoutMs: number,
-  externalSignal?: AbortSignal | null
-): { signal: AbortSignal; clear: () => void; timedOut: () => boolean } {
-  const controller = new AbortController()
-  let expired = false
+type SessionExpiredFn = () => void
 
-  const timer = setTimeout(() => {
-    expired = true
-    controller.abort()
-  }, timeoutMs)
+let _onSessionExpired: SessionExpiredFn = () => {}
 
-  const forward = () => controller.abort()
-  if (externalSignal) {
-    if (externalSignal.aborted) controller.abort()
-    else externalSignal.addEventListener('abort', forward, { once: true })
-  }
-
-  return {
-    signal: controller.signal,
-    clear: () => {
-      clearTimeout(timer)
-      externalSignal?.removeEventListener('abort', forward)
-    },
-    timedOut: () => expired,
-  }
+// O `AuthContext` registra aqui o que fazer quando a renovação é recusada (a
+// sessão acabou sem o usuário pedir). Desde a ADR-102 não há refresh token a
+// entregar: ele vive no cookie HttpOnly que este código não lê.
+export function configureApi(onSessionExpired: SessionExpiredFn) {
+  _onSessionExpired = onSessionExpired
 }
 
-// Erro distinto para o caso de prazo esgotado. A interface precisa poder
-// diferenciar "servidor demorou demais" de "servidor recusou" e de "usuário
-// saiu da tela" — as três situações pedem mensagens e ações diferentes, e
-// tratar todas como falha genérica de rede foi o que a auditoria apontou.
-export class RequestTimeoutError extends Error {
-  constructor(path: string, timeoutMs: number) {
-    super(`A requisição para ${path} excedeu ${timeoutMs}ms.`)
-    this.name = 'RequestTimeoutError'
+// Renovação indisponível (rede, prazo, servidor acordando): a sessão pode estar
+// viva, então NÃO desloga — a tela mostra erro e deixa tentar de novo.
+export class SessionRefreshUnavailableError extends Error {
+  constructor() {
+    super('Não foi possível renovar a sessão agora. Tente de novo em instantes.')
+    this.name = 'SessionRefreshUnavailableError'
   }
-}
-
-type RefreshTokenGetter = () => string | null
-type RefreshTokenSetter = (token: string) => void
-type LogoutFn = () => void
-
-let _getRefreshToken: RefreshTokenGetter = () => null
-let _setRefreshToken: RefreshTokenSetter = () => {}
-let _logout: LogoutFn = () => {}
-
-export function configureApi(
-  getRefreshToken: RefreshTokenGetter,
-  setRefreshToken: RefreshTokenSetter,
-  logout: LogoutFn,
-) {
-  _getRefreshToken = getRefreshToken
-  _setRefreshToken = setRefreshToken
-  _logout = logout
-}
-
-// Renovação em voo, compartilhada por todas as requisições concorrentes
-// (single-flight). Achado A-02 da auditoria de frontend v6, severidade S1.
-//
-// O backend ROTACIONA o refresh token a cada renovação e, ao detectar
-// reutilização de um token já consumido, revoga a FAMÍLIA inteira de sessões
-// (`src/mplacas/auth/session_service.py`, `_handle_failed_rotation`). Isso é
-// política de segurança correta — o problema estava aqui.
-//
-// Antes desta correção cada requisição que recebia 401 disparava seu próprio
-// refresh. Com duas chamadas em paralelo expirando juntas — situação normal nos
-// módulos do painel, que buscam vários recursos ao mesmo tempo — a sequência
-// era: ambas recebem 401, ambas renovam, a primeira consome e rotaciona o
-// token, a segunda apresenta o token já consumido, o backend classifica como
-// reutilização e derruba a família. O usuário era deslogado pelo controle de
-// segurança funcionando exatamente como projetado.
-//
-// Agora a primeira requisição a precisar de renovação cria a promessa; as
-// demais aguardam a MESMA promessa e reexecutam com o token que ela produziu.
-// O refresh token é apresentado uma única vez por rotação.
-let refreshInFlight: Promise<string | null> | null = null
-
-async function performRefresh(): Promise<string | null> {
-  const refreshToken = _getRefreshToken()
-  if (!refreshToken) return null
-
-  const deadline = withTimeout(AUTH_TIMEOUT_MS)
-  let refreshResponse: Response
-  try {
-    refreshResponse = await fetch(`${API_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-      signal: deadline.signal,
-    })
-  } catch {
-    // Timeout ou falha de rede na renovação: tratado como renovação falha, o
-    // que leva a `_logout()` no chamador. Deixar a promessa pendurada aqui
-    // travaria toda requisição que estivesse aguardando esta renovação.
-    return null
-  } finally {
-    deadline.clear()
-  }
-
-  if (!refreshResponse.ok) return null
-
-  const payload = (await refreshResponse.json()) as unknown
-  // Validação em runtime: uma asserção de tipo não existe depois da
-  // compilação, e uma resposta 200 malformada gravaria lixo no `TokenStore`,
-  // deixando a sessão num estado pior que o 401 original.
-  if (
-    typeof payload !== 'object' ||
-    payload === null ||
-    typeof (payload as { access_token?: unknown }).access_token !== 'string' ||
-    typeof (payload as { refresh_token?: unknown }).refresh_token !== 'string'
-  ) {
-    return null
-  }
-
-  const { access_token, refresh_token } = payload as {
-    access_token: string
-    refresh_token: string
-  }
-  TokenStore.set(access_token)
-  _setRefreshToken(refresh_token)
-  return access_token
-}
-
-// Devolve o novo token de acesso, ou `null` quando a renovação falhou. Uma
-// única renovação roda por vez; chamadas concorrentes compartilham o resultado.
-// O `finally` limpa a referência mesmo em caso de exceção — sem isso, uma falha
-// de rede deixaria uma promessa rejeitada em cache e toda requisição seguinte
-// herdaria esse erro para sempre.
-function refreshAccessToken(): Promise<string | null> {
-  if (refreshInFlight === null) {
-    refreshInFlight = performRefresh().finally(() => {
-      refreshInFlight = null
-    })
-  }
-  return refreshInFlight
 }
 
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -182,7 +56,12 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   const deadline = withTimeout(DATA_TIMEOUT_MS, init.signal)
   let response: Response
   try {
-    response = await fetch(`${API_URL}${path}`, { ...init, headers, signal: deadline.signal })
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers,
+      credentials: 'same-origin',
+      signal: deadline.signal,
+    })
   } catch (error) {
     // Distingue prazo esgotado de cancelamento do usuário: a interface trata
     // os dois de forma diferente — o primeiro merece mensagem e nova
@@ -195,11 +74,18 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 
   if (response.status !== 401) return response
 
-  const accessToken = await refreshAccessToken()
-  if (accessToken === null) {
-    _logout()
+  // Renovação pelo cookie (single-flight na aba, serializada entre abas).
+  const outcome = await refreshSession()
+  if (outcome.kind === 'unreachable') throw new SessionRefreshUnavailableError()
+  if (outcome.kind === 'unauthenticated') {
+    _onSessionExpired()
     return response
   }
+  // A sessão mudou durante a renovação (logout, login de outra pessoa): a
+  // resposta original fica como está e a chamada NÃO é repetida com token de
+  // outra sessão.
+  if (outcome.kind === 'superseded') return response
+  const { accessToken } = outcome
 
   // Repete a chamada original com o token renovado.
   const retryHeaders = new Headers(init.headers)
@@ -210,6 +96,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     return await fetch(`${API_URL}${path}`, {
       ...init,
       headers: retryHeaders,
+      credentials: 'same-origin',
       signal: retryDeadline.signal,
     })
   } catch (error) {
@@ -493,22 +380,14 @@ export async function reinviteClient(organizationId: string): Promise<Response> 
 }
 
 // Convite (tela /convite, sem login). O token vai no corpo — nunca na URL
-// enviada ao servidor — com o mesmo prazo do login.
+// enviada ao servidor — com o mesmo prazo e os mesmos cabeçalhos do login: o
+// aceite abre sessão e grava o cookie (ADR-102).
 async function publicPost(path: string, body: unknown): Promise<Response> {
-  const deadline = withTimeout(AUTH_TIMEOUT_MS)
-  try {
-    return await fetch(`${API_URL}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: deadline.signal,
-    })
-  } catch (error) {
-    if (deadline.timedOut()) throw new RequestTimeoutError(path, AUTH_TIMEOUT_MS)
-    throw error
-  } finally {
-    deadline.clear()
-  }
+  return authFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
 }
 
 export async function inspectInvitation(token: string): Promise<Response> {

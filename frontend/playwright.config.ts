@@ -54,11 +54,8 @@ export default defineConfig({
     command: `npm run build && npx vite preview --port ${PORTA} --strictPort`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
+    // A API (`/api/*`, mesma origem desde a ADR-102) é interceptada pelo
+    // Playwright; nenhuma variável de ambiente é necessária.
     timeout: 180_000,
-    env: {
-      // A API é interceptada pelo Playwright; este valor só precisa passar na
-      // validação de `env.ts` (URL absoluta, HTTPS em produção).
-      VITE_API_URL: 'https://api.captura.test',
-    },
   },
 })

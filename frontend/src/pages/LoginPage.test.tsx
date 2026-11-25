@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 
-// `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
-// módulo e lança se ausente — não há `.env.local` no ambiente de teste (é
-// valor de configuração de deploy, não segredo versionado).
+// Base da API fixa para o teste. Desde a ADR-102 `env.ts` não valida mais
+// variável nenhuma (a base é sempre `/api`); o mock só torna as URLs
+// esperadas explícitas neste arquivo.
 vi.mock('../env', () => ({
   API_URL: 'https://api.example.test',
 }))
@@ -77,16 +77,20 @@ async function loginAndClickProbe() {
   fireEvent.click(await screen.findByRole('button', { name: 'logado' }))
 }
 
+// Sem cookie de sessão: o refresh do carregamento responde 401 e o login abre.
 function stubLogin() {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () =>
-      new Response(JSON.stringify({ access_token: 'a1', refresh_token: 'r1' }), { status: 200 }),
+    vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith('/auth/refresh')
+        ? new Response('{}', { status: 401 })
+        : new Response(JSON.stringify({ access_token: 'a1', refresh_token: 'r1' }), { status: 200 }),
     ),
   )
 }
 
 async function submitLogin() {
+  await screen.findByLabelText('Usuário')
   fireEvent.change(screen.getByLabelText('Usuário'), { target: { value: 'demo' } })
   fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'demo-pass' } })
   fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
@@ -191,10 +195,13 @@ describe('LoginPage — anúncio acessível de carregamento (T10)', () => {
   })
 
   it('anuncia "Entrando" por uma live region "polite" separada do botão, e volta a ficar em silêncio ao terminar', async () => {
-    let resolveFetch: (value: Response) => void = () => {}
+    let resolveFetch: ((value: Response) => void) | null = null
     vi.stubGlobal(
       'fetch',
-      vi.fn(() => new Promise<Response>((resolve) => { resolveFetch = resolve }))
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).endsWith('/auth/login')
+          ? new Promise<Response>((resolve) => { resolveFetch = resolve })
+          : Promise.resolve(new Response('{}', { status: 401 })))
     )
 
     const { container } = renderLoginPage()
@@ -216,7 +223,10 @@ describe('LoginPage — anúncio acessível de carregamento (T10)', () => {
     // Caminho de erro (credenciais recusadas) mantém a página montada — evita
     // acoplar este teste ao redirecionamento de login bem-sucedido, que é
     // comportamento de outro conjunto de testes.
-    resolveFetch(new Response(JSON.stringify({ detail: 'unauthorized' }), { status: 401 }))
+    // O login só sai depois da checagem de sessão do carregamento (ADR-102,
+    // `openSession`); espera o pedido existir antes de respondê-lo.
+    await waitFor(() => expect(resolveFetch).not.toBeNull())
+    resolveFetch!(new Response(JSON.stringify({ detail: 'unauthorized' }), { status: 401 }))
 
     await waitFor(() => expect(liveRegion).toHaveTextContent(''))
     expect(screen.getByRole('button', { name: /entrar/i })).toHaveAttribute('aria-busy', 'false')
@@ -262,10 +272,11 @@ describe('LoginPage — aviso de sessão encerrada', () => {
     TokenStore.clear()
   })
 
-  it('visitante novo que abriu um link protegido vê só o login, sem "sessão encerrada"', () => {
+  it('visitante novo que abriu um link protegido vê só o login, sem "sessão encerrada"', async () => {
+    stubLogin()
     renderProtected('/dashboard/dinheiro')
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
     expect(screen.queryByText(SESSION_ENDED_TEXT)).not.toBeInTheDocument()
   })
 
@@ -354,8 +365,8 @@ describe('LoginPage — servidor hibernando (plano grátis, ADR-076)', () => {
     vi.useFakeTimers()
     let resolveLogin: (response: Response) => void = () => undefined
     vi.stubGlobal('fetch', vi.fn((url: string) =>
-      url.endsWith('/health')
-        ? Promise.resolve(new Response('{}', { status: 200 }))
+      url.endsWith('/health') || url.endsWith('/auth/refresh')
+        ? Promise.resolve(new Response('{}', { status: url.endsWith('/health') ? 200 : 401 }))
         : new Promise<Response>((resolve) => {
             resolveLogin = resolve
           }),
@@ -412,5 +423,33 @@ describe('LoginPage — volta para a página aberta', () => {
     await submitLogin()
 
     expect(await screen.findByTestId('where')).toHaveTextContent(/^\/dashboard$/)
+  })
+})
+
+// Revisão do 8eb5128: o cookie é um só para todas as abas. Outra aba entrou
+// como outra pessoa (ou saiu): esta larga o token, vai ao login sem o aviso de
+// "sessão encerrada" e, ao entrar de novo, volta à página onde estava.
+describe('LoginPage — sessão trocada em outra aba', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    TokenStore.clear()
+  })
+
+  it('aviso de outra aba: limpa a sessão local e vai ao login guardando a rota', async () => {
+    stubLogin()
+    TokenStore.set('token-de-A')
+    renderProtected('/dashboard/dinheiro?ciclo=2026-10')
+    expect(await screen.findByTestId('where')).toHaveTextContent('/dashboard/dinheiro?ciclo=2026-10')
+
+    const otherTab = new BroadcastChannel('mplacas-session')
+    otherTab.postMessage({ type: 'changed' })
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
+    expect(TokenStore.get()).toBeNull()
+    expect(screen.queryByText(SESSION_ENDED_TEXT)).not.toBeInTheDocument()
+    otherTab.close()
+
+    await submitLogin()
+    expect(await screen.findByTestId('where')).toHaveTextContent('/dashboard/dinheiro?ciclo=2026-10')
   })
 })

@@ -56,3 +56,7 @@ services:
       # Chaveiro das senhas dos inversores por usina (ADR-091).
       - key: MPLACAS_PROVIDER_SECRET_KEYS
         sync: false
+      # Segredo compartilhado com a Pages Function do proxy /api (ADR-102 § 6):
+      # mesmo valor de MPLACAS_PROXY_SHARED_SECRET no Cloudflare Pages, >= 32 bytes.
+      - key: MPLACAS_PROXY_SHARED_SECRET
+        sync: false

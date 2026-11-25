@@ -34,8 +34,9 @@ configure({ asyncUtilTimeout: 15000 })
 // garante que nenhum app de um teste sobreviva no DOM do seguinte.
 afterEach(cleanup)
 
-// `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
-// módulo — não há `.env.local` no ambiente de teste (ver `LoginPage.test.tsx`).
+// Base da API fixa para o teste. Desde a ADR-102 `env.ts` não valida mais
+// variável nenhuma (a base é sempre `/api`); o mock só torna as URLs
+// esperadas explícitas neste arquivo.
 vi.mock('./env', () => ({
   API_URL: 'https://api.example.test',
 }))
@@ -105,9 +106,21 @@ vi.mock('./lib/api', () => ({
 
 async function renderApp(
   initialPath: string,
-  { authenticated = true, plants = [P1] }: { authenticated?: boolean; plants?: unknown[] } = {}
+  {
+    authenticated = true,
+    plants = [P1],
+    refresh = () => new Response('{}', { status: 401 }),
+  }: { authenticated?: boolean; plants?: unknown[]; refresh?: () => Response | Promise<Response> } = {}
 ) {
   vi.resetModules()
+  // Só o transporte da sessão (`lib/session.ts`) usa `fetch` aqui: o resto da
+  // API está mockado acima. Padrão: sem cookie de sessão (401).
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const url = String(input)
+    if (url.endsWith('/auth/refresh')) return refresh()
+    return new Response(null, { status: 204 })
+  })
+  vi.stubGlobal('fetch', fetchMock)
   const fetchPlants = vi.fn(async () => plants)
   apiMock.fetchPlants = fetchPlants
 
@@ -119,11 +132,15 @@ async function renderApp(
   window.history.pushState({}, '', initialPath)
   const { App } = await import('./App')
   const result = render(<App />)
-  return { ...result, fetchPlants }
+  return { ...result, fetchPlants, fetchMock }
 }
 
 beforeEach(() => {
   window.localStorage.clear()
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe('App — redirect de /dashboard preserva a query string (ADR-072, Decisão 1)', () => {
@@ -205,5 +222,86 @@ describe('App — URLs da organização anterior redirecionam para a aba nova (A
 
     await waitFor(() => expect(window.location.pathname).toBe(target))
     expect(window.location.search).toBe(`?plant=${P1.id}`)
+  })
+})
+
+// ADR-102: a sessão sobrevive ao recarregar. Um carregamento completo (F5, link
+// direto, aba nova) começa sem token em memória e pergunta ao servidor pelo
+// cookie antes de decidir mandar ao login.
+describe('App — sessão restaurada pelo cookie ao recarregar (ADR-102)', () => {
+  it('recarregar num link profundo com cookie válido continua logado no mesmo link', async () => {
+    const { fetchMock } = await renderApp(`${DASHBOARD_FINANCIAL_PATH}?plant=${P1.id}`, {
+      authenticated: false,
+      refresh: () => new Response(JSON.stringify({ access_token: 'restaurado' }), { status: 200 }),
+    })
+
+    expect(await screen.findByRole('link', { name: 'Dinheiro' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe(DASHBOARD_FINANCIAL_PATH)
+    expect(window.location.search).toBe(`?plant=${P1.id}`)
+    const refreshCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/auth/refresh'))
+    expect(refreshCalls).toHaveLength(1)
+    const init = refreshCalls[0]?.[1] as RequestInit
+    expect(init.body).toBeUndefined()
+    expect(init.credentials).toBe('same-origin')
+    expect(new Headers(init.headers).get('X-Mplacas-Auth')).toBe('1')
+  })
+
+  it('recarregar sem cookie vai ao login sem "sessão encerrada" e guarda o destino', async () => {
+    await renderApp(DASHBOARD_FINANCIAL_PATH, { authenticated: false })
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/login')
+    expect(screen.queryByText(/sessão foi encerrada/)).not.toBeInTheDocument()
+  })
+
+  it('enquanto pergunta, mostra "Conectando…" e não manda ao login; depois de 10 s explica o servidor acordando', async () => {
+    let answer: (response: Response) => void = () => undefined
+    await renderApp(DASHBOARD_DEFAULT_PATH, {
+      authenticated: false,
+      refresh: () => new Promise<Response>((resolve) => { answer = resolve }),
+    })
+
+    expect(await screen.findByText('Conectando…')).toBeInTheDocument()
+    expect(window.location.pathname).toBe(DASHBOARD_DEFAULT_PATH)
+    expect(screen.queryByText(/servidor está acordando/)).not.toBeInTheDocument()
+
+    expect(
+      await screen.findByText('O servidor está acordando, pode levar até um minuto.', undefined, { timeout: 12_000 })
+    ).toBeInTheDocument()
+    expect(window.location.pathname).toBe(DASHBOARD_DEFAULT_PATH)
+
+    answer(new Response(JSON.stringify({ access_token: 'restaurado' }), { status: 200 }))
+    expect(await screen.findByRole('link', { name: 'Início' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe(DASHBOARD_DEFAULT_PATH)
+  }, 20_000)
+
+  it('falha de rede oferece "Tentar de novo" em vez do login, e a nova tentativa entra', async () => {
+    let attempt = 0
+    await renderApp(DASHBOARD_PRODUCTION_PATH, {
+      authenticated: false,
+      refresh: () => {
+        attempt += 1
+        if (attempt === 1) throw new TypeError('Failed to fetch')
+        return new Response(JSON.stringify({ access_token: 'restaurado' }), { status: 200 })
+      },
+    })
+
+    const retry = await screen.findByRole('button', { name: 'Tentar de novo' })
+    expect(window.location.pathname).toBe(DASHBOARD_PRODUCTION_PATH)
+
+    fireEvent.click(retry)
+
+    expect(await screen.findByRole('link', { name: 'Energia' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe(DASHBOARD_PRODUCTION_PATH)
+  })
+
+  it('servidor fora (504 do proxy) também oferece "Tentar de novo"', async () => {
+    await renderApp(DASHBOARD_DEFAULT_PATH, {
+      authenticated: false,
+      refresh: () => new Response('{}', { status: 504 }),
+    })
+
+    expect(await screen.findByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument()
+    expect(window.location.pathname).toBe(DASHBOARD_DEFAULT_PATH)
   })
 })

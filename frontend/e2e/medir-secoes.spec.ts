@@ -24,7 +24,7 @@ test('medir seções por módulo', async ({ page }) => {
   test.setTimeout(120_000)
 
   await page.route(
-    (url) => url.hostname === 'api.captura.test',
+    (url) => url.pathname.startsWith('/api/'),
     (rota) => rota.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
   )
   const rotas: Array<[string, unknown]> = [
@@ -45,6 +45,8 @@ test('medir seções por módulo', async ({ page }) => {
     ['**/devices/daily-status*', deviceDailyStatusPayload],
     ['**/reports/monthly/history*', monthlyHistoryPayload],
   ]
+  // ADR-102: sem cookie de sessão, o refresh do carregamento responde 401.
+  await page.route('**/api/auth/refresh', (r) => r.fulfill({ status: 401, contentType: 'application/json', body: '{}' }))
   for (const [padrao, corpo] of rotas) {
     await page.route(padrao, (r) =>
       r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(corpo) })

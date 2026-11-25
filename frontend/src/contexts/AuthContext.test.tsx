@@ -1,12 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useAuth, AuthProvider } from './AuthContext'
 import { TokenStore } from '../lib/auth'
 import { SELECTED_PLANT_STORAGE_KEY } from './PlantContext'
-
-vi.mock('../env', () => ({
-  API_URL: 'https://api.example.test',
-}))
 
 beforeEach(() => {
   TokenStore.clear()
@@ -125,7 +121,9 @@ describe('AuthContext — falha antes de qualquer resposta HTTP', () => {
   it('prazo esgotado explica que o servidor pode estar iniciando', async () => {
     vi.useFakeTimers()
     try {
-      vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) =>
+      vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) =>
+        // Sem cookie: o refresh do carregamento responde na hora; só o login trava.
+        url.endsWith('/auth/refresh') ? Promise.resolve(new Response('', { status: 401 })) :
         new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener('abort', () =>
             reject(new DOMException('aborted', 'AbortError')),
@@ -136,7 +134,7 @@ describe('AuthContext — falha antes de qualquer resposta HTTP', () => {
       const message = await captureLoginError(async (login) => {
         await act(async () => {
           const pending = login()
-          await vi.advanceTimersByTimeAsync(60_000)
+          await vi.advanceTimersByTimeAsync(61_000)
           await pending
         })
       })
@@ -145,5 +143,190 @@ describe('AuthContext — falha antes de qualquer resposta HTTP', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('AuthContext — sessão pelo cookie (ADR-102)', () => {
+  const renderAuth = () =>
+    renderHook(() => useAuth(), {
+      wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
+    })
+
+  it('login guarda só o access token: o refresh_token do corpo nunca entra em memória', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      if (String(input).endsWith('/auth/login')) {
+        return new Response(JSON.stringify({ access_token: 'acesso-1', refresh_token: 'REFRESH-SECRETO' }), { status: 200 })
+      }
+      return new Response(null, { status: 401 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { result } = renderAuth()
+
+    await act(async () => {
+      await result.current.login('maria', 'senha')
+    })
+
+    expect(result.current.status).toBe('authenticated')
+    expect(TokenStore.get()).toBe('acesso-1')
+    // Nada exposto pelo contexto carrega o refresh token.
+    expect(JSON.stringify(result.current)).not.toContain('REFRESH-SECRETO')
+
+    const [, loginInit] = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/auth/login')) as [string, RequestInit]
+    expect(loginInit.credentials).toBe('same-origin')
+    expect(new Headers(loginInit.headers).get('X-Mplacas-Auth')).toBe('1')
+
+    // O logout depois do login também não leva o refresh token (só o cookie).
+    act(() => result.current.logout())
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/auth/logout'))).toBe(true),
+    )
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(String(init?.body ?? '')).not.toContain('REFRESH-SECRETO')
+    }
+  })
+
+  it('logout limpa a memória e chama /auth/logout com keepalive, credentials e o cabeçalho', async () => {
+    TokenStore.set('acesso')
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { result } = renderAuth()
+    expect(result.current.status).toBe('authenticated')
+
+    act(() => result.current.logout())
+
+    expect(TokenStore.get()).toBeNull()
+    expect(result.current.isAuthenticated).toBe(false)
+    expect(result.current.sessionEnded).toBe(false)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/auth/logout')
+    expect(init.keepalive).toBe(true)
+    expect(init.credentials).toBe('same-origin')
+    expect(init.body).toBeUndefined()
+    expect(new Headers(init.headers).get('X-Mplacas-Auth')).toBe('1')
+  })
+
+  it('ao montar sem token, pergunta pelo cookie e adota o access token', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ access_token: 'do-cookie' }), { status: 200 })))
+    const { result } = renderAuth()
+
+    expect(result.current.status).toBe('checking')
+    await waitFor(() => expect(result.current.status).toBe('authenticated'))
+    expect(TokenStore.get()).toBe('do-cookie')
+    expect(result.current.sessionEnded).toBe(false)
+  })
+})
+
+// Revisão do 8f125df (corrida de identidade): computador compartilhado com o
+// cookie de A, B entra enquanto o refresh de A ainda está em voo.
+describe('AuthContext — corrida entre refresh em voo e mudança de sessão', () => {
+  const renderAuth = () =>
+    renderHook(() => useAuth(), {
+      wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
+    })
+
+  function deferred() {
+    let resolve: (response: Response) => void = () => undefined
+    const promise = new Promise<Response>((r) => { resolve = r })
+    return { promise, resolve }
+  }
+
+  it('login durante "checking" espera o refresh e o 200 atrasado de A não sobrescreve o token de B', async () => {
+    const refreshA = deferred()
+    const order: string[] = []
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/auth/refresh')) {
+        order.push('refresh')
+        return refreshA.promise
+      }
+      if (url.endsWith('/auth/login')) {
+        order.push('login')
+        return Promise.resolve(new Response(JSON.stringify({ access_token: 'token-de-B' }), { status: 200 }))
+      }
+      return Promise.resolve(new Response(null, { status: 204 }))
+    }))
+    const { result } = renderAuth()
+    expect(result.current.status).toBe('checking')
+
+    let loginDone = false
+    let pending: Promise<void> = Promise.resolve()
+    act(() => {
+      pending = result.current.login('b', 'senha').then(() => { loginDone = true })
+    })
+    // O login não sai enquanto o refresh de A não terminar (Set-Cookie de B
+    // tem de ser o último).
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(order).toEqual(['refresh'])
+    expect(loginDone).toBe(false)
+
+    await act(async () => {
+      refreshA.resolve(new Response(JSON.stringify({ access_token: 'token-de-A' }), { status: 200 }))
+      await pending
+    })
+
+    expect(order).toEqual(['refresh', 'login'])
+    expect(result.current.status).toBe('authenticated')
+    expect(result.current.username).toBe('b')
+    expect(TokenStore.get()).toBe('token-de-B')
+  })
+
+  it('refresh com 200 que chega depois do login (sem lock) é descartado: fica o token do login', async () => {
+    // Login já gravou B; um refresh pedido ANTES do login responde depois.
+    const { refreshSession, markSessionChanged } = await import('../lib/session')
+    const late = deferred()
+    vi.stubGlobal('fetch', vi.fn(() => late.promise))
+    const inFlight = refreshSession()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    markSessionChanged()
+    TokenStore.set('token-do-login')
+
+    late.resolve(new Response(JSON.stringify({ access_token: 'token-antigo' }), { status: 200 }))
+
+    expect(await inFlight).toEqual({ kind: 'superseded' })
+    expect(TokenStore.get()).toBe('token-do-login')
+  })
+
+  it('refresh 200 depois do logout deixa o TokenStore vazio e a chamada não é repetida', async () => {
+    TokenStore.set('token-velho')
+    const late = deferred()
+    const dataCalls: string[] = []
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/auth/refresh')) return late.promise
+      if (url.endsWith('/auth/logout')) return Promise.resolve(new Response(null, { status: 204 }))
+      dataCalls.push(url)
+      return Promise.resolve(new Response('', { status: 401 }))
+    }))
+    const { apiFetch } = await import('../lib/api')
+    const { result } = renderAuth()
+
+    const call = apiFetch('/plants')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    act(() => result.current.logout())
+    late.resolve(new Response(JSON.stringify({ access_token: 'token-pos-logout' }), { status: 200 }))
+    const response = await call
+
+    expect(response.status).toBe(401)
+    expect(TokenStore.get()).toBeNull()
+    expect(dataCalls).toEqual(['/api/plants'])
+    expect(result.current.isAuthenticated).toBe(false)
+  })
+
+  it('expiração (refresh recusado) limpa só o local: não chama logout no servidor', async () => {
+    TokenStore.set('token-velho')
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response('', { status: 401 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { apiFetch } = await import('../lib/api')
+    const { result } = renderAuth()
+
+    await act(async () => {
+      await apiFetch('/plants')
+    })
+
+    expect(result.current.sessionEnded).toBe(true)
+    expect(TokenStore.get()).toBeNull()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/auth/logout'))).toBe(false)
   })
 })

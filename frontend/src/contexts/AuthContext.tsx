@@ -1,166 +1,212 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react'
-import { AUTH_TIMEOUT_MS, configureApi, apiFetch, withTimeout } from '../lib/api'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { configureApi } from '../lib/api'
 import { TokenStore } from '../lib/auth'
-import { API_URL } from '../env'
+import {
+  adoptAccessToken,
+  announceSessionChange,
+  authFetch,
+  markSessionChanged,
+  openSession,
+  refreshSession,
+  revokeSession,
+  RequestTimeoutError,
+  subscribeSessionChanges,
+} from '../lib/session'
 import { SELECTED_PLANT_STORAGE_KEY } from './PlantContext'
 import { safeStorage } from '../lib/storage'
 
+// Estado da sessão nesta aba (ADR-102):
+// - `checking`: perguntando ao servidor se o cookie da sessão ainda vale;
+// - `authenticated`: há access token em memória;
+// - `unauthenticated`: o servidor disse que não há sessão (vai ao login);
+// - `unreachable`: não deu para perguntar (rede, servidor acordando) — a
+//   sessão pode estar viva, então oferece "Tentar de novo", nunca o login.
+export type SessionStatus = 'checking' | 'authenticated' | 'unauthenticated' | 'unreachable'
+
 interface AuthContextValue {
+  status: SessionStatus
   isAuthenticated: boolean
   username: string | null
   // Verdadeiro só se esta aba teve sessão e o servidor a encerrou (refresh
   // recusado). Em memória, nunca persistido; logout voluntário não liga.
   sessionEnded: boolean
   login: (username: string, password: string) => Promise<void>
-  // Entra com a sessão que o servidor acabou de abrir (aceite de convite,
-  // ADR-093): os tokens ficam só em memória, como no login.
-  adoptSession: (accessToken: string, refreshToken: string, username: string) => void
+  // Atualiza o estado React depois de uma sessão aberta fora do `login`
+  // (aceite de convite, ADR-093). O token já foi gravado por
+  // `adoptAccessToken` dentro do `openSession`; o refresh token ficou no
+  // cookie HttpOnly.
+  adoptSession: (username: string) => void
+  // Encerra no servidor a sessão atual antes de abrir outra (aceite de convite
+  // com alguém já logado nesta aba/navegador).
+  endServerSession: () => Promise<void>
+  // Pergunta de novo ao servidor depois de `unreachable`.
+  retrySession: () => void
   logout: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => !!TokenStore.get())
-  // Em memória, mesma vida útil de `refreshTokenRef` abaixo — nunca persistido
-  // em armazenamento do navegador, nunca derivado de decodificação do JWT.
-  const [username, setUsername] = useState<string | null>(null)
-  const refreshTokenRef = useRef<string | null>(null)
-  const [sessionEnded, setSessionEnded] = useState(false)
+function readAccessToken(payload: unknown): string | null {
+  const token = (payload as { access_token?: unknown } | null)?.access_token
+  return typeof token === 'string' && token !== '' ? token : null
+}
 
-  // Limpeza da sessão sem mexer em `sessionEnded` (quem chama decide o flag).
-  const clearSession = useCallback(() => {
-    const refreshToken = refreshTokenRef.current
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [status, setStatus] = useState<SessionStatus>(() => (TokenStore.get() ? 'authenticated' : 'checking'))
+  // Em memória — nunca persistido, nunca derivado de decodificação do JWT.
+  const [username, setUsername] = useState<string | null>(null)
+  const [sessionEnded, setSessionEnded] = useState(false)
+  // Cada mudança de sessão (login, convite, logout, expiração, nova checagem)
+  // incrementa a geração; um resultado de checagem de uma geração antiga é
+  // descartado e nunca sobrescreve um login feito enquanto ela rodava.
+  const generationRef = useRef(0)
+
+  const checkSession = useCallback(() => {
+    const generation = ++generationRef.current
+    setStatus('checking')
+    void refreshSession().then((outcome) => {
+      if (generation !== generationRef.current || outcome.kind === 'superseded') return
+      if (outcome.kind === 'ok') setStatus('authenticated')
+      else setStatus(outcome.kind)
+    })
+  }, [])
+
+  // Ao carregar o app (F5, link direto, aba nova) sem token em memória,
+  // pergunta ao servidor pelo cookie ANTES de qualquer rota protegida decidir
+  // mandar ao login.
+  useEffect(() => {
+    if (!TokenStore.get()) checkSession()
+  }, [checkSession])
+
+  // Limpeza local da sessão, sem mexer em `sessionEnded` (quem chama decide).
+  // Não fala com o servidor: a expiração usa só isto, porque um logout no
+  // servidor ali poderia revogar o token novo que outra aba acabou de receber.
+  const clearLocal = useCallback(() => {
+    generationRef.current += 1
+    // Descarta qualquer refresh em voo: a resposta dele não grava mais nada.
+    markSessionChanged()
     TokenStore.clear()
     // A usina selecionada é estado de sessão (ADR-069, seção 5) — limpa junto
-    // do token para não vazar seleção entre logins de usuários diferentes no
-    // mesmo navegador.
+    // do token para não vazar seleção entre logins diferentes no navegador.
     safeStorage.remove(SELECTED_PLANT_STORAGE_KEY)
-    refreshTokenRef.current = null
-    setIsAuthenticated(false)
+    setStatus('unauthenticated')
     setUsername(null)
-
-    if (refreshToken) {
-      void fetch(`${API_URL}/auth/logout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-        keepalive: true,
-      }).catch(() => undefined)
-    }
   }, [])
 
+  // Logout voluntário: limpa local, avisa as outras abas e revoga no servidor
+  // (apaga o cookie).
   const logout = useCallback(() => {
-    clearSession()
+    clearLocal()
     setSessionEnded(false)
-  }, [clearSession])
+    announceSessionChange()
+    void revokeSession()
+  }, [clearLocal])
 
-  const getRefreshToken = useCallback(() => refreshTokenRef.current, [])
-  const setRefreshToken = useCallback((token: string) => {
-    refreshTokenRef.current = token
-  }, [])
+  // Outra aba entrou (talvez como outra pessoa), aceitou convite ou saiu: o
+  // cookie mudou para todas. Esta aba larga o que tinha e vai ao login (a rota
+  // protegida guarda `state.from`), sem o aviso de "sessão encerrada".
+  useEffect(
+    () =>
+      subscribeSessionChanges(() => {
+        clearLocal()
+        setSessionEnded(false)
+      }),
+    [clearLocal],
+  )
 
   // Chamado pelo api.ts quando a renovação é recusada: a sessão acabou sem o
-  // usuário pedir. Só conta se havia sessão nesta aba.
+  // usuário pedir. Vários 401 simultâneos compartilham a mesma renovação e
+  // chamam isto em sequência: só a primeira encontra token.
   const expireSession = useCallback(() => {
-    // Vários 401 simultâneos compartilham o mesmo refresh recusado e chamam
-    // isto em sequência: só a primeira encontra sessão; as demais não fazem nada.
-    const hadSession = !!TokenStore.get() || refreshTokenRef.current !== null
-    if (!hadSession) return
-    clearSession()
+    if (!TokenStore.get()) return
+    clearLocal()
     setSessionEnded(true)
-  }, [clearSession])
+  }, [clearLocal])
 
-  // Configura o api.ts com as funções do contexto.
-  configureApi(getRefreshToken, setRefreshToken, expireSession)
+  configureApi(expireSession)
 
-  const login = useCallback(async (username: string, password: string) => {
-    // Prazo de autenticação (auditoria v6, A-03): sem ele, um servidor que
-    // aceita a conexão e não responde deixava o botão em "Entrando..." para
-    // sempre, sem erro e sem saída — o pior estado possível numa tela de
-    // login, porque o usuário não sabe se deve esperar ou tentar de novo.
-    const deadline = withTimeout(AUTH_TIMEOUT_MS)
-    let response: Response
-    try {
-      response = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-        signal: deadline.signal,
-      })
-    } catch {
-      // Prazo esgotado e falha de conexão pedem ações diferentes: no primeiro
-      // caso o servidor provavelmente está acordando (plano grátis); no
-      // segundo, a rede do usuário ou o servidor estão fora. Respostas 5xx não
-      // caem mais aqui — a API passou a devolvê-las com CORS (2026-10-13).
-      if (deadline.timedOut()) {
+  const login = useCallback(async (name: string, password: string) => {
+    // Atrás de qualquer refresh em voo e do lock (ver `openSession`): a
+    // resposta de um refresh da sessão anterior nunca chega depois desta.
+    await openSession(async () => {
+      let response: Response
+      try {
+        response = await authFetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: name, password }),
+        })
+      } catch (error) {
+        // Prazo esgotado e falha de conexão pedem ações diferentes: no primeiro
+        // caso o servidor provavelmente está acordando (plano grátis); no
+        // segundo, a rede do usuário ou o servidor estão fora.
+        if (error instanceof RequestTimeoutError) {
+          throw new Error(
+            'O servidor não respondeu a tempo. Ele pode estar iniciando — aguarde um minuto e tente novamente.',
+          )
+        }
         throw new Error(
-          'O servidor não respondeu a tempo. Ele pode estar iniciando — aguarde um minuto e tente novamente.',
+          'Não foi possível conectar ao servidor. Verifique sua internet e tente novamente em instantes.',
         )
       }
-      throw new Error(
-        'Não foi possível conectar ao servidor. Verifique sua internet e tente novamente em instantes.',
-      )
-    } finally {
-      deadline.clear()
-    }
 
-    if (!response.ok) {
-      const status = response.status
-      if (status === 401) throw new Error('Credenciais inválidas.')
-      if (status === 429) throw new Error('Muitas tentativas. Aguarde e tente novamente.')
-      // Falha do lado do servidor (incidente de 2026-08-21): o banco recusou
-      // conexão por cota esgotada e /auth/login passou a devolver 500. A
-      // mensagem antiga para 5xx era "Erro ao autenticar. Tente novamente.",
-      // que mandava o usuário repetir uma ação que não podia dar certo por
-      // dias, e sugeria que o problema era a senha dele. Todo 5xx é falha
-      // nossa, e a mensagem tem que dizer isso — sem prometer que a próxima
-      // tentativa resolve.
-      if (status >= 500) {
-        throw new Error(
-          'O sistema está indisponível no momento. Não é a sua senha — a falha é nossa. Tente mais tarde.',
-        )
+      if (!response.ok) {
+        const code = response.status
+        if (code === 401) throw new Error('Credenciais inválidas.')
+        if (code === 429) throw new Error('Muitas tentativas. Aguarde e tente novamente.')
+        // Todo 5xx é falha nossa (incidente de 2026-08-21): a mensagem não pode
+        // mandar repetir nem sugerir que o problema é a senha.
+        if (code >= 500) {
+          throw new Error(
+            'O sistema está indisponível no momento. Não é a sua senha — a falha é nossa. Tente mais tarde.',
+          )
+        }
+        throw new Error('Erro ao autenticar. Tente novamente.')
       }
-      throw new Error('Erro ao autenticar. Tente novamente.')
-    }
 
-    const { access_token, refresh_token } = await response.json() as {
-      access_token: string
-      refresh_token: string
-    }
+      // Só o access token é lido; o refresh token que o corpo ainda traz
+      // (transitório no backend) é ignorado — a sessão persistente é o cookie.
+      const accessToken = readAccessToken(await response.json().catch(() => null))
+      if (accessToken === null) throw new Error('Erro ao autenticar. Tente novamente.')
 
-    TokenStore.set(access_token)
-    refreshTokenRef.current = refresh_token
-    setIsAuthenticated(true)
-    setSessionEnded(false)
-    setUsername(username)
-  }, [])
+      // Ainda dentro do lock: nova época (descarta refresh antigo) e o token.
+      adoptAccessToken(accessToken)
+    })
 
-  const adoptSession = useCallback((accessToken: string, refreshToken: string, name: string) => {
-    // Mesma limpeza do logout para a sessão anterior desta aba (ex.: o dono
-    // testando o próprio convite): seleção de usina e refresh token antigos.
-    const previous = refreshTokenRef.current
-    if (previous && previous !== refreshToken) {
-      void fetch(`${API_URL}/auth/logout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: previous }),
-        keepalive: true,
-      }).catch(() => undefined)
-    }
-    safeStorage.remove(SELECTED_PLANT_STORAGE_KEY)
-    TokenStore.set(accessToken)
-    refreshTokenRef.current = refreshToken
-    setIsAuthenticated(true)
+    generationRef.current += 1
+    setStatus('authenticated')
     setSessionEnded(false)
     setUsername(name)
+    announceSessionChange()
   }, [])
 
-  return (
-    <AuthContext.Provider value={{ isAuthenticated, username, sessionEnded, login, adoptSession, logout }}>
-      {children}
-    </AuthContext.Provider>
+  const adoptSession = useCallback((name: string) => {
+    generationRef.current += 1
+    safeStorage.remove(SELECTED_PLANT_STORAGE_KEY)
+    setStatus('authenticated')
+    setSessionEnded(false)
+    setUsername(name)
+    announceSessionChange()
+  }, [])
+
+  const endServerSession = useCallback(() => revokeSession(), [])
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      status,
+      isAuthenticated: status === 'authenticated',
+      username,
+      sessionEnded,
+      login,
+      adoptSession,
+      endServerSession,
+      retrySession: checkSession,
+      logout,
+    }),
+    [status, username, sessionEnded, login, adoptSession, endServerSession, checkSession, logout],
   )
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth(): AuthContextValue {
@@ -168,6 +214,3 @@ export function useAuth(): AuthContextValue {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')
   return ctx
 }
-
-// Re-export apiFetch so pages can import from a single auth module if desired
-export { apiFetch }

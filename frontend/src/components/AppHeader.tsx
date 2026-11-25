@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, LogOut, Moon, Sun } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useMe } from '../contexts/MeContext'
 import { BrandMark } from './BrandMark'
 import { PlantSelector } from './PlantSelector'
 import {
@@ -55,7 +56,11 @@ function describeThemeControl(preference: ThemePreference, effectiveTheme: Theme
 // com uma só, nada com zero. `AppHeader` só precisa estar dentro do
 // `PlantProvider`, o que já é garantido pela composição em `App.tsx`.
 export function AppHeader() {
-  const { username, logout } = useAuth()
+  const { username: loginName, logout } = useAuth()
+  // Depois de um F5 a sessão volta pelo cookie e o nome digitado no login não
+  // existe mais nesta aba; `GET /auth/me` (MeContext) supre.
+  const { me } = useMe()
+  const username = loginName ?? me?.username ?? null
   const [menuOpen, setMenuOpen] = useState(false)
   const [themePreference, setThemePreferenceState] = useState<ThemePreference>(() => getThemePreference())
   const [effectiveTheme, setEffectiveThemeState] = useState<Theme>(() => resolveEffectiveTheme(getThemePreference()))

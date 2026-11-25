@@ -4,6 +4,7 @@ import { BrandMark } from '../components/BrandMark'
 import { LoadingAnnouncement } from '../components/LoadingAnnouncement'
 import { useAuth } from '../contexts/AuthContext'
 import { acceptInvitation, inspectInvitation, warmUpApi } from '../lib/api'
+import { adoptAccessToken, openSession } from '../lib/session'
 import {
   INVITATION_MAX_PASSWORD,
   INVITATION_MIN_PASSWORD,
@@ -40,7 +41,7 @@ function formatDate(iso: string): string {
 }
 
 export function InvitePage() {
-  const { adoptSession } = useAuth()
+  const { adoptSession, endServerSession } = useAuth()
   const navigate = useNavigate()
   // Lido uma vez só, na primeira renderização: o efeito pode rodar duas vezes
   // em desenvolvimento, e na segunda o fragmento já foi apagado. Fica só aqui
@@ -118,7 +119,25 @@ export function InvitePage() {
     }
     setSaving(true)
     try {
-      const response = await acceptInvitation(tokenRef.current, password)
+      // Qualquer sessão que este navegador tenha (mesmo de outra aba, mesmo
+      // sem esta aba saber — o cookie é do navegador): encerra no servidor
+      // antes, porque o aceite sobrescreve o cookie e a sessão antiga ficaria
+      // órfã, sem revogação. Sem cookie, o logout é um 204 inofensivo.
+      await endServerSession()
+      const invitationToken = tokenRef.current
+      // Atrás do lock do refresh: o `Set-Cookie` do aceite é o último a chegar,
+      // e o token é gravado (com época nova) ainda dentro do lock, como no login.
+      const { response, adopted } = await openSession(async () => {
+        const reply = await acceptInvitation(invitationToken, password)
+        if (!reply.ok) return { response: reply, adopted: false }
+        // Só o access token: o refresh token veio no cookie HttpOnly (ADR-102);
+        // se o corpo ainda trouxer um, é ignorado.
+        const body = (await reply.json().catch(() => null)) as { access_token?: unknown } | null
+        const accessToken = body?.access_token
+        if (typeof accessToken !== 'string' || accessToken === '') return { response: reply, adopted: false }
+        adoptAccessToken(accessToken)
+        return { response: reply, adopted: true }
+      })
       if (response.status === 429) {
         setError('Muitas tentativas. Espere alguns minutos e tente de novo.')
         return
@@ -138,15 +157,14 @@ export function InvitePage() {
         setError('O sistema não conseguiu concluir agora. Seu convite continua valendo: tente de novo em instantes.')
         return
       }
-      const body = (await response.json()) as { access_token?: unknown; refresh_token?: unknown }
-      if (typeof body.access_token !== 'string' || typeof body.refresh_token !== 'string') {
+      if (!adopted) {
         setError('Resposta inesperada do servidor. Tente entrar pela tela de login.')
         return
       }
       tokenRef.current = null
       setPassword('')
       setConfirm('')
-      adoptSession(body.access_token, body.refresh_token, stage.preview.username)
+      adoptSession(stage.preview.username)
       navigate(DASHBOARD_ROOT_PATH, { replace: true })
     } catch {
       setError('Não foi possível concluir agora. Verifique a internet e tente de novo.')

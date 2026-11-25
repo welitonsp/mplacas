@@ -216,22 +216,16 @@ jobs:
         run: npm run type-check
       - name: Lint
         run: npm run lint
+      # ADR-102: sem VITE_API_URL. O frontend chama sempre `/api` (mesma origem,
+      # proxy da Pages Function) e o build falha se a variável aparecer.
       - name: Tests
-        env:
-          # env.ts throws at import time if VITE_API_URL is absent, and test
-          # files transitively import it, so the suite needs this set too —
-          # not the Build step's placeholder below, but the same value local
-          # dev uses (.env.example/.env.local), since src/lib/api.test.ts
-          # asserts against this exact URL string.
-          VITE_API_URL: https://api.example.com
         run: npm test
       - name: Build
-        env:
-          # These are non-sensitive build-time configuration values included in the
-          # browser bundle. Real values are provided by GitHub Variables (not Secrets)
-          # in the deployment workflow. Placeholder values are used here for CI only.
-          VITE_API_URL: https://ci-placeholder.example.com
         run: npm run build
+      - name: Compile Pages Function
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: npx wrangler pages functions build --outdir "$RUNNER_TEMP/pages-functions" --output-routes-path "$RUNNER_TEMP/pages-functions-routes.json"
       - name: Check bundle budget
         # T8, plano de auditoria de frontend 2026-08-12: falha o build se
         # qualquer chunk de dist/assets/ (vendor, CSS, cada módulo do
@@ -270,8 +264,6 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Capturar telas
         working-directory: frontend
-        env:
-          VITE_API_URL: https://api.captura.test
         run: npm run capturar
       - name: Upload das capturas
         if: always()

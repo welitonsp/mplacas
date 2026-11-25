@@ -1,68 +1,55 @@
-// Guarda do achado A-01 da auditoria 2026-08-26.
+// Guarda do CSP same-origin (ADR-102), sucessora da guarda do achado A-01 da
+// auditoria 2026-08-26.
 //
-// A origem da API ficava escrita à mão no CSP de `public/_headers` e sobreviveu
-// à migração de plataforma apontando para um projeto do Google Cloud excluído.
-// O modo de falha era silencioso: a aplicação carregava, o navegador bloqueava
-// todo `fetch`, e não havia erro de servidor, log ou CI vermelho.
-//
-// Estes testes cobrem a lógica; o teste de contrato em Python
-// (`tests/test_frontend_auth_contract.py`) garante que o template continua com
-// o marcador e sem origem fixa.
+// Antes, a origem da API entrava no `connect-src` a partir de `VITE_API_URL`.
+// Agora o navegador só fala com a própria origem (proxy `/api/*`) e o CSP é
+// fixo. Estes testes cobrem a lógica do script; o teste de contrato em Python
+// (`tests/test_frontend_auth_contract.py`) confere o arquivo versionado.
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { PLACEHOLDER, apiOrigin, renderHeaders } from '../../scripts/render-csp.mjs'
+import {
+  EXPECTED_CONNECT_SRC,
+  LEGACY_PLACEHOLDER,
+  assertNoLegacyApiUrl,
+  assertSameOriginCsp,
+} from '../../scripts/render-csp.mjs'
 
-const TEMPLATE =
-  "  Content-Security-Policy: default-src 'self'; connect-src 'self' " +
-  `${PLACEHOLDER}; img-src 'self' data:; script-src 'self'`
+const policy = (connectSrc: string) =>
+  `  Content-Security-Policy: default-src 'self'; ${connectSrc} img-src 'self' data:; script-src 'self'`
 
-describe('apiOrigin', () => {
-  it('reduz a URL da API à origem, porque connect-src não aceita caminho', () => {
-    expect(apiOrigin('https://mplacas-api-abc.onrender.com/v1/base')).toBe(
-      'https://mplacas-api-abc.onrender.com'
-    )
+describe('assertSameOriginCsp', () => {
+  it("aceita exatamente connect-src 'self'", () => {
+    expect(() => assertSameOriginCsp(policy(EXPECTED_CONNECT_SRC))).not.toThrow()
   })
 
-  it('preserva porta não padrão', () => {
-    expect(apiOrigin('https://api.exemplo.com:8443')).toBe('https://api.exemplo.com:8443')
-  })
-
-  it('aceita http apenas em localhost', () => {
-    expect(apiOrigin('http://localhost:8080')).toBe('http://localhost:8080')
-    expect(() => apiOrigin('http://api.exemplo.com')).toThrow(/HTTPS/)
+  it('o _headers versionado passa na guarda', () => {
+    const headers = readFileSync(path.resolve(process.cwd(), 'public/_headers'), 'utf-8')
+    expect(() => assertSameOriginCsp(headers)).not.toThrow()
   })
 
   it.each([
-    ['ausente', undefined],
-    ['vazia', ''],
-    ['só espaços', '   '],
-    ['sem esquema', 'api.exemplo.com'],
-  ])('recusa VITE_API_URL %s em vez de emitir CSP quebrado', (_nome, valor) => {
-    expect(() => apiOrigin(valor as string)).toThrow()
+    ['origem do Render', "connect-src 'self' https://mplacas-api.onrender.com;"],
+    ['https genérico', "connect-src 'self' https:;"],
+    ['curinga', "connect-src *;"],
+    ['marcador antigo', `connect-src 'self' ${LEGACY_PLACEHOLDER};`],
+  ])('recusa %s', (_nome, directive) => {
+    expect(() => assertSameOriginCsp(policy(directive))).toThrow()
+  })
+
+  it('recusa CSP sem connect-src (cairia no default-src sem a guarda saber)', () => {
+    expect(() => assertSameOriginCsp("Content-Security-Policy: default-src 'self'")).toThrow()
   })
 })
 
-describe('renderHeaders', () => {
-  it('substitui o marcador pela origem da API', () => {
-    const rendered = renderHeaders(TEMPLATE, 'https://mplacas-api-abc.onrender.com')
-
-    expect(rendered).toContain("connect-src 'self' https://mplacas-api-abc.onrender.com;")
-    expect(rendered).not.toContain(PLACEHOLDER)
+describe('assertNoLegacyApiUrl', () => {
+  it('passa quando VITE_API_URL não existe ou está vazia', () => {
+    expect(() => assertNoLegacyApiUrl({})).not.toThrow()
+    expect(() => assertNoLegacyApiUrl({ VITE_API_URL: '  ' })).not.toThrow()
   })
 
-  it('falha quando o marcador sumiu, que é a regressão a prevenir', () => {
-    const comOrigemFixa = "connect-src 'self' https://fixo.exemplo.com;"
-
-    expect(() => renderHeaders(comOrigemFixa, 'https://novo.onrender.com')).toThrow(
-      /marcador/
-    )
-  })
-
-  it('não relaxa o restante da política', () => {
-    const rendered = renderHeaders(TEMPLATE, 'https://api.exemplo.com')
-
-    expect(rendered).toContain("default-src 'self'")
-    expect(rendered).toContain("script-src 'self'")
-    expect(rendered).not.toContain("connect-src 'self' https:;")
+  it('falha o build quando VITE_API_URL ainda está configurada, apontando a variável certa', () => {
+    expect(() => assertNoLegacyApiUrl({ VITE_API_URL: 'https://api.exemplo.com' })).toThrow(/MPLACAS_API_ORIGIN/)
   })
 })

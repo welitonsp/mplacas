@@ -10,3 +10,4 @@
 1d311c7d236867a4d141730392314dea9b3ccf4e:frontend/src/lib/dashboard/home.test.ts:generic-api-key:105
 ffc82d054a11d653d5fc23291de6223cfb9c4b5e:frontend/src/lib/dashboard/home.test.ts:generic-api-key:112
 aba3a2da4e84bb897ef958682b71b7e28d0b8046:tests/test_auth_cookie_session.py:generic-api-key:766
+ef622f9dd0d0b0b34a07cadbb1520e4fd2d734f3:frontend/edge/apiProxy.test.ts:generic-api-key:8

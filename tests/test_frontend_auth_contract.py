@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -32,6 +33,11 @@ _ALLOWED_KEYS = {
     "mplacas:technical-performance-expanded": (
         "UI preference (whether the technical performance section starts "
         "expanded) — not sensitive, no credential/token value"
+    ),
+    "mplacas:account-switch": (
+        "ADR-102: aviso entre abas de que a sessão do navegador mudou, usado só "
+        "sem BroadcastChannel (evento storage). Guarda apenas um número "
+        "aleatório — nunca token, usuário ou dado de sessão"
     ),
     "mplacas:theme": (
         "UI preference (explicit light/dark theme override; absence of the "
@@ -84,15 +90,107 @@ def test_logout_revokes_server_session_best_effort() -> None:
     frontend = (ROOT / "frontend" / "src" / "contexts" / "AuthContext.tsx").read_text(
         encoding="utf-8"
     )
+    session = (ROOT / "frontend" / "src" / "lib" / "session.ts").read_text(encoding="utf-8")
     backend = (ROOT / "src" / "mplacas" / "auth" / "router.py").read_text(
         encoding="utf-8"
     )
 
     assert "TokenStore.clear()" in frontend
-    assert "refreshTokenRef.current = null" in frontend
-    assert "`${API_URL}/auth/logout`" in frontend
-    assert "keepalive: true" in frontend
+    assert "void revokeSession()" in frontend
+    # Expiração limpa só o local; o revoke no servidor é só do logout voluntário.
+    expire = frontend.split("const expireSession")[1].split("}, [")[0]
+    assert "revokeSession" not in expire
+    # Corrida de identidade (revisão do 8f125df): época da sessão e abertura de
+    # sessão atrás do lock do refresh.
+    assert "markSessionChanged()" in frontend
+    assert "await openSession(" in frontend
+    assert "epoch !== sessionEpoch" in session
+    assert "LOGOUT_LOCK_WAIT_MS = 3_000" in session
+    # Troca de sessão em outra aba (cookie compartilhado): aviso por
+    # BroadcastChannel, com a chave neutra do storage como alternativa.
+    assert "'mplacas-session'" in session
+    assert "SESSION_SIGNAL_STORAGE_KEY = 'mplacas:account-switch'" in session
+    assert "String(Math.random())" in session
+    assert "subscribeSessionChanges(" in frontend
+    assert frontend.count("announceSessionChange()") >= 3
+    # ADR-102: logout pelo cookie — sem corpo, mesma origem, com o cabeçalho
+    # CSRF, e `keepalive` para terminar mesmo com a aba fechando.
+    assert "`${API_URL}/auth/logout`" in session
+    assert "keepalive: true" in session
     assert '@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)' in backend
+
+
+def _frontend_app_sources() -> dict[str, str]:
+    """Código de aplicação do frontend, sem testes (que podem citar o proibido)."""
+    sources: dict[str, str] = {}
+    for path in (ROOT / "frontend" / "src").rglob("*"):
+        if not path.is_file() or path.suffix not in {".ts", ".tsx", ".js", ".mjs"}:
+            continue
+        rel = path.relative_to(ROOT).as_posix()
+        if ".test." in path.name or "/src/test/" in rel:
+            continue
+        sources[rel] = path.read_text(encoding="utf-8")
+    return sources
+
+
+def test_frontend_never_touches_cookies_or_refresh_tokens() -> None:
+    """ADR-102: o refresh token mora num cookie HttpOnly que o JS não lê.
+
+    Nenhum código de aplicação pode mexer em `document.cookie` nem mencionar
+    `refresh_token` (ler do corpo, guardar ou enviar). Os testes ficam de fora
+    porque simulam respostas do backend que ainda trazem o campo.
+    """
+    sources = _frontend_app_sources()
+    assert sources, "nenhum arquivo de frontend encontrado"
+    touching_cookie = sorted(p for p, c in sources.items() if "document.cookie" in c)
+    assert not touching_cookie, f"document.cookie no frontend: {touching_cookie}"
+    mentioning_refresh = sorted(
+        p for p, c in sources.items() if re.search(r"refresh_?token", c, re.IGNORECASE)
+    )
+    assert not mentioning_refresh, f"refresh token tratado no frontend: {mentioning_refresh}"
+
+
+def test_auth_client_uses_same_origin_credentials_and_csrf_header() -> None:
+    session = (ROOT / "frontend" / "src" / "lib" / "session.ts").read_text(encoding="utf-8")
+    api = (ROOT / "frontend" / "src" / "lib" / "api.ts").read_text(encoding="utf-8")
+    env = (ROOT / "frontend" / "src" / "env.ts").read_text(encoding="utf-8")
+
+    assert "credentials: 'same-origin'" in session
+    assert "headers.set('X-Mplacas-Auth', '1')" in session
+    # Com a página em `Referrer-Policy: no-referrer`, a especificação manda
+    # `Origin: null` em POST — que o backend recusa. Por pedido, mantém o Origin.
+    assert "referrerPolicy: 'same-origin'" in session
+    # Serialização entre abas (rotação do refresh token).
+    assert "navigator.locks" in session
+    assert "'mplacas-refresh'" in session
+    # Todas as chamadas de dados também ficam na própria origem.
+    assert api.count("credentials: 'same-origin'") >= 3
+    assert "export const API_URL = '/api'" in env
+    assert "VITE_API_URL" not in env.split("export const API_URL")[1]
+    assert "include'" not in session and "include'" not in api
+
+
+def test_cloudflare_proxy_routes_only_api() -> None:
+    routes = json.loads(
+        (ROOT / "frontend" / "public" / "_routes.json").read_text(encoding="utf-8")
+    )
+    assert routes == {"version": 1, "include": ["/api/*"], "exclude": []}
+    assert (ROOT / "frontend" / "functions" / "api" / "[[path]].ts").is_file()
+    # Só o ponto de entrada mora em `functions/`: todo arquivo lá vira rota.
+    function_files = sorted(
+        p.relative_to(ROOT).as_posix()
+        for p in (ROOT / "frontend" / "functions").rglob("*")
+        if p.is_file()
+    )
+    assert function_files == ["frontend/functions/api/[[path]].ts"]
+
+    proxy = (ROOT / "frontend" / "edge" / "apiProxy.ts").read_text(encoding="utf-8")
+    # Falha fechada e nada de log.
+    assert "genericError(503" in proxy
+    assert "console." not in proxy
+    for header in ("'x-mplacas-client-ip'", "'x-mplacas-proxy-secret'", "'x-forwarded-for'"):
+        assert header not in proxy.split("FORWARDED_REQUEST_HEADERS")[1].split("]")[0]
+    assert "getSetCookie()" in proxy
 
 
 def test_canonical_contract_and_cloudflare_headers_are_complete() -> None:
@@ -121,20 +219,21 @@ def test_canonical_contract_and_cloudflare_headers_are_complete() -> None:
         "Permissions-Policy: camera=(), microphone=(), geolocation=(self), payment=()"
         in header_lines
     )
-    assert "connect-src 'self' https:;" not in headers
-    # A origem da API no CSP e a origem que o cliente HTTP chama vêm da MESMA
-    # variável (VITE_API_URL), resolvida no build por
-    # `frontend/scripts/render-csp.mjs`. Antes disso a origem ficava escrita à
-    # mão aqui e sobreviveu à migração de plataforma apontando para um projeto
-    # do Google Cloud excluído — a aplicação carregava e o navegador bloqueava
-    # todo `fetch`, sem erro de servidor, log ou CI vermelho para acusar
-    # (auditoria 2026-08-26, achado A-01).
-    #
-    # O contrato aqui é sobre o TEMPLATE versionado, não sobre o arquivo gerado:
-    # o marcador precisa estar presente e nenhuma origem concreta pode aparecer.
-    assert "connect-src 'self' __API_ORIGIN__;" in headers
-    assert not re.search(r"connect-src[^;]*https://[^;]*\.(run\.app|onrender\.com)", headers)
+    # ADR-102: a API é a própria origem (proxy `/api/*` da Pages Function).
+    # `connect-src` é exatamente `'self'`: nenhum host externo, nenhum
+    # `https:` genérico, nenhum marcador do antigo `render-csp.mjs`.
+    connect_src = re.findall(r"connect-src[^;]*;", headers)
+    assert connect_src == ["connect-src 'self';"]
+    assert "__API_ORIGIN__" not in headers
     assert "/assets/*" in headers
     assert "Cache-Control: public, max-age=31536000, immutable" in headers
-    for term in ("somente em memória", "POST /auth/logout", "redirecionamento `308`", "Wildcard"):
+    for term in (
+        "somente em memória",
+        "POST /auth/logout",
+        "redirecionamento `308`",
+        "Wildcard",
+        "connect-src 'self'",
+        "MPLACAS_PROXY_SHARED_SECRET",
+        "_routes.json",
+    ):
         assert term in contract

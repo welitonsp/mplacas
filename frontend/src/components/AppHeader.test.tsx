@@ -56,11 +56,14 @@ const mockedUsePlant = vi.mocked(usePlant)
 
 function setAuth(overrides: Partial<ReturnType<typeof useAuth>> = {}) {
   mockedUseAuth.mockReturnValue({
+    status: 'authenticated',
     isAuthenticated: true,
     username: 'maria',
     sessionEnded: false,
     login: vi.fn(),
     adoptSession: vi.fn(),
+    endServerSession: vi.fn(),
+    retrySession: vi.fn(),
     logout: vi.fn(),
     ...overrides,
   })

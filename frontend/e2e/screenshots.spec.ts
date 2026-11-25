@@ -195,9 +195,13 @@ async function interceptarApi(page: import('@playwright/test').Page) {
   // Ele existe para que um endpoint novo, não previsto abaixo, apareça como
   // estado de erro na captura em vez de vazar para a rede e morrer em timeout.
   await page.route(
-    (url) => url.hostname === 'api.captura.test',
+    (url) => url.pathname.startsWith('/api/'),
     (rota) => rota.fulfill({ status: 404, contentType: 'application/json', body: '{}' })
   )
+
+  // ADR-102: sem cookie de sessão, o refresh do carregamento responde 401.
+
+  await page.route('**/api/auth/refresh', (r) => r.fulfill({ status: 401, contentType: 'application/json', body: '{}' }))
 
   for (const [padrao, corpo] of rotas) {
     await page.route(padrao, (rota) =>
