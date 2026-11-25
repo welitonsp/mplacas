@@ -27,7 +27,14 @@ GROWATT = "GROWATT"
 # Growatt pela OpenAPI oficial (token do app ShinePhone), ADR-094. O token vai
 # no lugar da senha; o "login" é derivado no servidor (nunca é o token).
 GROWATT_TOKEN = "GROWATT_TOKEN"
+# Marcas que o sistema ainda sabe ler (coleta agendada das conexões que já
+# existem). Não decide o que pode ser conectado: ver CONNECTABLE_PROVIDERS.
 SUPPORTED_PROVIDERS = frozenset({NEPVIEWER, GROWATT, GROWATT_TOKEN})
+# Única marca que aceita conexão nova (ADR-101: Growatt descontinuada).
+CONNECTABLE_PROVIDERS = frozenset({NEPVIEWER})
+# Marcas descontinuadas: conexões existentes seguem coletando até o comando do
+# operador desativá-las; nenhuma conexão nova, importação ou releitura (ADR-101).
+DISCONTINUED_PROVIDERS = frozenset({GROWATT, GROWATT_TOKEN})
 _GROWATT_FAMILY = frozenset({GROWATT, GROWATT_TOKEN})
 _MAX_LOGIN = 254
 _MAX_PASSWORD = 256

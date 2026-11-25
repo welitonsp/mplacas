@@ -2,6 +2,8 @@
 
 ## Status
 
+**Substituído pelo ADR-101** (descontinuação da integração Growatt, 2026-11-25).
+
 **Aceito — 2026-10-31.** Complementa a ADR-092 (Growatt por usuário e senha) e a ADR-093
 (entrada de clientes).
 

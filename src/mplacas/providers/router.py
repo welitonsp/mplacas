@@ -45,6 +45,8 @@ from mplacas.db.tenant_context import set_platform_context, set_principal_contex
 from mplacas.providers.accounts import (
     GROWATT_TOKEN,
     NEPVIEWER,
+    CONNECTABLE_PROVIDERS,
+    DISCONTINUED_PROVIDERS,
     SUPPORTED_PROVIDERS,
     ProviderAccountConflictError,
     ProviderAccountError,
@@ -104,7 +106,7 @@ ConnectionStatus = Literal["SEM_CONEXAO", "CONECTADA", "FALHA"]
 # FastAPI repete o valor recebido (``input``) em erros de tipo, campo faltando
 # ou campo a mais — e um ``passwd`` digitado errado devolveria a senha.
 _MAX_BODY_BYTES = 4096
-_SUPPORTED = SUPPORTED_PROVIDERS
+_CONNECTABLE = CONNECTABLE_PROVIDERS
 # Teto de conferências de login por usina (sucesso ou recusa), para a rota não
 # virar um testador de senhas da NEPViewer.
 VERIFY_LIMIT = 5
@@ -127,7 +129,9 @@ def _parse_body(raw: bytes) -> tuple[str, ProviderLogin]:
     if not isinstance(body, dict) or set(body) - {"provider", "login", "password"}:
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_account_invalid")
     provider = body.get("provider", NEPVIEWER)
-    if provider not in _SUPPORTED:
+    # ADR-101: só a NEPViewer aceita conexão. A recusa vem antes de qualquer
+    # leitura de credencial: nada é cifrado, gravado, logado nem enviado à marca.
+    if provider not in _CONNECTABLE:
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_unsupported")
     login = body.get("login")
     password = body.get("password")
@@ -737,6 +741,10 @@ async def confirm_first_plant(
         # Vencido, adulterado ou de outra pessoa: fica na auditoria (sem o bilhete).
         await refuse("unknown", "connect_ticket_invalid")
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "connect_ticket_invalid") from None
+    if ticket.provider not in _CONNECTABLE:
+        # Bilhete emitido antes da descontinuação (ADR-101): não vira conexão.
+        await refuse(ticket.provider, "provider_unsupported")
+        raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_unsupported")
     if await _inverter_in_another_plant(ticket.provider, ticket.serials, None):
         await refuse(ticket.provider, "provider_inverter_in_another_plant")
         raise _error(status.HTTP_409_CONFLICT, "provider_inverter_in_another_plant")
@@ -960,6 +968,8 @@ async def refresh_plant_profile(request: Request, scoped: AdminPlantPath) -> Pro
         record = await ProviderAccountService(session, box).get(scoped.plant_id)
         if record is None or not record.active:
             raise _error(status.HTTP_404_NOT_FOUND, "provider_account_not_found")
+        if record.provider in DISCONTINUED_PROVIDERS:
+            raise _error(status.HTTP_409_CONFLICT, "provider_discontinued")
         provider = record.provider
         try:
             credentials = ProviderAccountService(session, box).open(record)
@@ -1101,6 +1111,8 @@ async def import_production_history(
         record = await ProviderAccountService(session, box).get(scoped.plant_id)
         if record is None or not record.active:
             raise _error(status.HTTP_404_NOT_FOUND, "provider_account_not_found")
+        if record.provider in DISCONTINUED_PROVIDERS:
+            raise _error(status.HTTP_409_CONFLICT, "provider_discontinued")
         known = await _history_known_unavailable(session, scoped.plant_id, record)
     if known is not None:
         # Já sabemos que esta conexão não tem histórico (ADR-098): não gasta a

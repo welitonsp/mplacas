@@ -2,6 +2,8 @@
 
 ## Status
 
+**Substituído pelo ADR-101** (descontinuação da integração Growatt, 2026-11-25).
+
 **Aceito — 2026-11-03.** O cliente com token Growatt restrito (ADR-098) só ganha produção
 diária depois de duas noites de leitura. Até lá, e depois também, a lista de usinas já
 informa o **total gerado desde a instalação** e a **potência no momento**.

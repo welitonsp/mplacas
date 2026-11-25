@@ -2,6 +2,8 @@
 
 ## Status
 
+**Substituído pelo ADR-101** (descontinuação da integração Growatt, 2026-11-25).
+
 **Aceito — 2026-10-31.** Pedido do dono: o cliente escolhe a marca (NEPViewer ou Growatt) e digita o
 mesmo usuário e senha do app do celular, sem token nem passo técnico. Estende a ADR-091.
 
