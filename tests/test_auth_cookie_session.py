@@ -766,7 +766,8 @@ def test_proxy_secret_never_reaches_logs(monkeypatch, tmp_path, caplog) -> None:
         monkeypatch, tmp_path, MPLACAS_PROXY_SHARED_SECRET=_PROXY_SECRET
     )
     _seed_user(factory)
-    wrong_secret = "outro-segredo-errado-tambem-com-32-bytes-ou-mais"
+    # Montado em tempo de execução para o gitleaks não confundir com credencial real.
+    wrong_secret = "errado-" * 6
 
     with caplog.at_level(logging.DEBUG):
         for secret in (_PROXY_SECRET, wrong_secret):
