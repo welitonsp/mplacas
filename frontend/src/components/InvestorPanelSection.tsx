@@ -261,8 +261,9 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
                 </dd>
               </div>
               <p className="col-span-2 text-xs leading-5 text-[var(--color-text-secondary)]">
-                Líquidos de IR, até {formatCycleLabel(realized.asOfMonth)}. O caminho da usina não inclui o valor da
-                própria usina, que continua gerando.
+                Líquidos de IR, até {formatCycleLabel(realized.asOfMonth)}, último mês com CDI publicado: faturas
+                de meses seguintes entram quando o CDI do mês for divulgado. O caminho da usina não inclui o valor
+                da própria usina, que continua gerando.
               </p>
             </dl>
           )}

@@ -72,6 +72,15 @@ describe('parsePhotovoltaicSummary', () => {
     expect(summary.reference_complete_on).toBe('2027-03-14')
   })
 
+  it('REFERENCE_YEAR_INCOMPLETE: fala em 12 meses de leituras do inversor e informa desde quando', () => {
+    const msg = baselineUnavailableMessage('REFERENCE_YEAR_INCOMPLETE', '2027-08-06')
+    expect(msg).toContain('a partir de 06/08/2027')
+    expect(msg).toContain('12 meses de leituras do inversor')
+    expect(msg).toContain('começaram em 05/08/2026')
+    expect(msg).not.toContain('primeiro ano')
+    expect(baselineUnavailableMessage('REFERENCE_YEAR_INCOMPLETE', null)).toContain('12 meses de leituras')
+  })
+
   it('lança erro para payload que não é um objeto', () => {
     expect(() => parsePhotovoltaicSummary(null)).toThrow('Resposta inválida da API.')
   })

@@ -294,6 +294,21 @@ function formatIsoDate(isoDate: string): string {
   return `${day}/${month}/${year}`
 }
 
+// Janela de referência do baseline sazonal (espelha REFERENCE_WINDOW_DAYS = 366
+// de `seasonal_baseline.py`): `reference_complete_on` = 1ª leitura válida + 366 dias.
+const REFERENCE_WINDOW_DAYS = 366
+
+// Data (dd/mm/aaaa) em que as leituras do inversor começaram, derivada de
+// `reference_complete_on` — aritmética de calendário, não de grandeza física.
+function readingsStartDate(referenceCompleteOn: string): string | null {
+  const [year, month, day] = referenceCompleteOn.split('-').map(Number)
+  if (!year || !month || !day) return null
+  const start = new Date(Date.UTC(year, month - 1, day - REFERENCE_WINDOW_DAYS))
+  const dd = String(start.getUTCDate()).padStart(2, '0')
+  const mm = String(start.getUTCMonth() + 1).padStart(2, '0')
+  return `${dd}/${mm}/${start.getUTCFullYear()}`
+}
+
 // Mensagem específica ao motivo, exibida no lugar do percentual de desempenho e
 // da linha tracejada de "esperado" quando a produção esperada não está disponível
 // — nunca um card vazio silencioso (ver skill frontend-design).
@@ -305,9 +320,13 @@ export function baselineUnavailableMessage(
     case 'NO_PERFORMANCE_HISTORY':
       return 'Produção esperada ainda não disponível — histórico de desempenho insuficiente para esta usina.'
     case 'REFERENCE_YEAR_INCOMPLETE':
-      return referenceCompleteOn
-        ? `Produção esperada disponível a partir de ${formatIsoDate(referenceCompleteOn)} — o primeiro ano de referência da usina ainda está em formação.`
-        : 'Produção esperada ainda não disponível — o primeiro ano de referência da usina ainda está em formação.'
+    {
+      const since = referenceCompleteOn ? readingsStartDate(referenceCompleteOn) : null
+      if (referenceCompleteOn && since) {
+        return `Produção esperada disponível a partir de ${formatIsoDate(referenceCompleteOn)} — aguardando 12 meses de leituras do inversor (as leituras começaram em ${since}).`
+      }
+      return 'Produção esperada ainda não disponível — aguardando 12 meses de leituras do inversor.'
+    }
     case 'INSUFFICIENT_SEASONAL_SAMPLES':
       return 'Produção esperada ainda não disponível — amostras sazonais insuficientes para esta época do ano.'
     case 'INCOMPLETE_EXPECTATION_INPUTS':

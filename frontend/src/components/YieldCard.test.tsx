@@ -168,6 +168,20 @@ describe('YieldCard', () => {
   })
 
   // Compatibilidade com backend uma versão atrás (`contracts.ts::
+  it('o período coberto termina no último dia com dado, não no fim do recorte pedido (hoje)', () => {
+    render(
+      <YieldCard
+        daily={[buildDaily({ date: '2026-11-22' }), buildDaily({ date: '2026-11-23' })]}
+        periodYieldKwhPerKwhM2="8"
+        yieldAtypicalThresholdPercent="20"
+        periodYieldSampleDays={2}
+        period={{ start_date: '2026-08-28', end_date: '2026-11-25' }}
+      />
+    )
+
+    expect(screen.getByText('Período coberto: 28/08–23/11')).toBeInTheDocument()
+  })
+
   // optionalPeriodOrMissing`): `period` ausente/`null` não pode derrubar o
   // card nem deixar um traço de texto quebrado — só a linha de data some.
   it('não renderiza a linha de período quando o backend ainda não envia o campo', () => {

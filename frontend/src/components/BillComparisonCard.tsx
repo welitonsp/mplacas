@@ -22,11 +22,13 @@ function BillBar({
   value,
   max,
   tone,
+  note,
 }: {
   label: string
   value: number
   max: number
   tone: 'muted' | 'brand'
+  note?: string
 }) {
   const percent = max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0
   return (
@@ -49,6 +51,7 @@ function BillBar({
           style={{ width: `${percent}%` }}
         />
       </div>
+      {note && <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{note}</p>}
     </div>
   )
 }
@@ -128,6 +131,7 @@ export function BillComparisonCard({
             </p>
             <p className="mt-1 font-display text-[28px] font-semibold leading-tight tabular-nums text-[var(--color-success-text)]">
               {formatCurrency(savings)}
+              <span className="ml-2 align-middle font-sans text-xs font-semibold text-[var(--color-chart-reference)]">Estimado</span>
             </p>
           </div>
           {tariffLabel && (
@@ -139,7 +143,7 @@ export function BillComparisonCard({
 
         <div className="mt-5 space-y-4">
           <BillBar label="Sem a usina, você pagaria" value={withoutSolar} max={max} tone="muted" />
-          <BillBar label="Com a usina, você pagou" value={paid} max={max} tone="brand" />
+          <BillBar label="Valor da fatura com a usina" value={paid} max={max} tone="brand" note="Inclui a iluminação pública." />
         </div>
 
         <dl className="mt-6 grid grid-cols-1 gap-x-6 gap-y-4 border-t border-[var(--color-border)] pt-5 sm:grid-cols-2 xl:grid-cols-3">

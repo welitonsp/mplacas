@@ -1,5 +1,5 @@
 import type { ExecutiveTrend, Severity } from '../lib/dashboard/contracts'
-import { formatNumber, toNumber } from '../lib/format'
+import { formatCycleLabel, formatNumber, toNumber } from '../lib/format'
 import { SEVERITY_TEXT } from '../lib/dashboard/visuals'
 import { Card } from './Card'
 import { TrendMetricItem } from './TrendMetricItem'
@@ -9,17 +9,9 @@ function formatPoints(value: number): string {
   return `${Math.abs(value).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} p.p.`
 }
 
-function formatScorePoints(value: number): string {
-  return `${Math.abs(value).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} pts`
-}
-
 export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
   const points = toNumber(trend.metrics.self_sufficiency_delta_points)
   const pointsSeverity: Severity = points == null || points === 0 ? 'neutral' : points > 0 ? 'success' : 'danger'
-
-  const healthDelta = toNumber(trend.metrics.health_score_delta)
-  const healthDeltaSeverity: Severity =
-    healthDelta == null || healthDelta === 0 ? 'neutral' : healthDelta > 0 ? 'success' : 'danger'
 
   return (
     <Card>
@@ -27,7 +19,7 @@ export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
         Comparação com o ciclo anterior
       </p>
       <p className="mt-1 text-xs text-gray-500">
-        {trend.previous_reference_month} → {trend.current_reference_month}
+        {formatCycleLabel(trend.previous_reference_month)} → {formatCycleLabel(trend.current_reference_month)}
       </p>
       <div className="mt-2 divide-y divide-gray-100">
         <TrendMetricItem
@@ -61,24 +53,6 @@ export function TrendCard({ trend }: { trend: ExecutiveTrend }) {
                 label="Autossuficiência"
                 valueFormatter={formatPoints}
                 tone={pointsSeverity}
-                className="w-24"
-              />
-            )}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5">
-          <span className="text-sm text-gray-600">Índice de saúde</span>
-          <div className="flex flex-col items-end gap-1">
-            <span className={`text-sm font-semibold tabular-nums ${SEVERITY_TEXT[healthDeltaSeverity]}`}>
-              {healthDelta != null && healthDelta > 0 ? '+' : ''}
-              {formatNumber(healthDelta, 1)} pts
-            </span>
-            {healthDelta != null && (
-              <Sparkline
-                percentDelta={healthDelta}
-                label="Índice de saúde"
-                valueFormatter={formatScorePoints}
-                tone={healthDeltaSeverity}
                 className="w-24"
               />
             )}
