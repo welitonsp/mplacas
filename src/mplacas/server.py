@@ -23,7 +23,9 @@ def main() -> int:
             host="0.0.0.0",
             port=settings.port,
             proxy_headers=True,
-            forwarded_allow_ips="*",
+            # ADR-102: nunca "*". Só o proxy do Render (rede privada) pode
+            # informar o IP do cliente por X-Forwarded-For.
+            forwarded_allow_ips=settings.forwarded_allow_ips,
             log_level=settings.log_level.lower(),
             log_config=None,
             access_log=False,

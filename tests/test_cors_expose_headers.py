@@ -103,3 +103,35 @@ def test_unhandled_error_returns_500_that_the_browser_can_read(monkeypatch) -> N
         monkeypatch.delenv("MPLACAS_CORS_ALLOWED_ORIGINS", raising=False)
         get_settings.cache_clear()
         importlib.reload(main_module)
+
+
+def test_cors_preflight_allows_auth_header_with_credentials(monkeypatch) -> None:
+    """ADR-102: o frontend manda ``X-Mplacas-Auth: 1`` com credenciais; o
+    preflight precisa liberar esse cabeçalho para a origem configurada — e só
+    para ela."""
+    monkeypatch.setenv("MPLACAS_CORS_ALLOWED_ORIGINS", _ALLOWED_ORIGIN)
+    get_settings.cache_clear()
+    importlib.reload(main_module)
+    try:
+        client = TestClient(main_module.app)
+        preflight = {
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "x-mplacas-auth, content-type",
+        }
+
+        allowed = client.options(
+            "/auth/refresh", headers={"Origin": _ALLOWED_ORIGIN, **preflight}
+        )
+        foreign = client.options(
+            "/auth/refresh", headers={"Origin": "https://evil.example", **preflight}
+        )
+
+        assert allowed.status_code == 200
+        assert allowed.headers["access-control-allow-origin"] == _ALLOWED_ORIGIN
+        assert allowed.headers["access-control-allow-credentials"] == "true"
+        assert "x-mplacas-auth" in allowed.headers["access-control-allow-headers"].lower()
+        assert "access-control-allow-origin" not in foreign.headers
+    finally:
+        monkeypatch.delenv("MPLACAS_CORS_ALLOWED_ORIGINS", raising=False)
+        get_settings.cache_clear()
+        importlib.reload(main_module)

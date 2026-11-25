@@ -137,6 +137,10 @@ def test_server_uses_port_and_host(monkeypatch) -> None:
     assert captured["host"] == "0.0.0.0"
     assert captured["port"] == 9090
     assert captured["proxy_headers"] is True
+    # ADR-102: "*" deixava qualquer cliente forjar o IP por X-Forwarded-For.
+    assert captured["forwarded_allow_ips"] != "*"
+    assert captured["forwarded_allow_ips"] == get_settings().forwarded_allow_ips
+    assert "10.0.0.0/8" in str(captured["forwarded_allow_ips"])
     assert captured["access_log"] is False
     assert captured["log_config"] is None
     assert captured["observability_shutdown"] is True

@@ -109,6 +109,29 @@ class Settings(BaseSettings):
     auth_login_window_seconds: int = 900
     auth_login_lockout_seconds: int = 900
     auth_invitation_ttl_seconds: int = 259_200
+    # ADR-102 — sessão persistente por cookie first-party (via proxy do Pages).
+    # Liga/desliga a emissão e a leitura do cookie ``__Secure-mplacas_rt``;
+    # desligado, só o fluxo de refresh token no corpo JSON continua valendo.
+    auth_cookie_enabled: bool = True
+    # Caminho do cookie COMO O NAVEGADOR O VÊ: com o proxy do Cloudflare Pages
+    # em ``/api/*``, as rotas ``/auth/*`` do backend aparecem em ``/api/auth``.
+    auth_cookie_path: str = "/api/auth"
+    # Dois pedidos de refresh quase simultâneos (duas abas) apresentam o mesmo
+    # token: o perdedor recebe 401 sem derrubar a família, desde que o token
+    # tenha sido rotacionado há menos que esta janela. Depois dela, é replay.
+    auth_refresh_reuse_grace_seconds: int = 10
+    # Teto absoluto: uma sessão (família) não se estende além disso a partir do
+    # login, por mais que o refresh rotacione. Depois, só com nova senha.
+    auth_session_max_age_days: int = 30
+    # Segredo compartilhado com o proxy (Pages Function). Sem ele, o cabeçalho
+    # ``X-Mplacas-Client-IP`` é ignorado. Nunca logado nem exposto.
+    proxy_shared_secret: SecretStr | None = Field(default=None, repr=False)
+    # Redes cujo ``X-Forwarded-For`` o uvicorn aceita (o proxy do Render chega
+    # por endereço privado). ``*`` é proibido: deixava o cliente forjar o IP e
+    # escapar do limite de tentativas de login.
+    forwarded_allow_ips: str = (
+        "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,fc00::/7"
+    )
     cors_allowed_origins: str | None = None
     dashboard_url: HttpUrl = HttpUrl("https://mplacas-frontend.pages.dev/dashboard")
     fanout_max_plants: int = 10
@@ -122,6 +145,10 @@ class Settings(BaseSettings):
         if not self.cors_allowed_origins:
             return []
         return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
+    @property
+    def auth_session_max_age_seconds(self) -> int:
+        return self.auth_session_max_age_days * 86_400
 
     @property
     def telegram_configured(self) -> bool:
@@ -197,6 +224,52 @@ class Settings(BaseSettings):
     def _validate_positive_auth_value(cls, value: int) -> int:
         if value < 1:
             raise ValueError("authentication timing and limit values must be positive")
+        return value
+
+    @field_validator("auth_session_max_age_days")
+    @classmethod
+    def _validate_session_max_age(cls, value: int) -> int:
+        if not 1 <= value <= 365:
+            raise ValueError("session max age must be between 1 and 365 days")
+        return value
+
+    @field_validator("auth_refresh_reuse_grace_seconds")
+    @classmethod
+    def _validate_reuse_grace(cls, value: int) -> int:
+        # Janela curta de propósito: ela é exatamente o tempo em que um token
+        # roubado e usado antes do dono não dispara a revogação da família.
+        if not 0 <= value <= 60:
+            raise ValueError("refresh reuse grace must be between 0 and 60 seconds")
+        return value
+
+    @field_validator("auth_cookie_path")
+    @classmethod
+    def _validate_cookie_path(cls, value: str) -> str:
+        cleaned = value.strip()
+        allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./")
+        if not cleaned.startswith("/") or any(char not in allowed for char in cleaned):
+            raise ValueError("auth cookie path must be an absolute URL path")
+        return cleaned
+
+    @field_validator("forwarded_allow_ips")
+    @classmethod
+    def _validate_forwarded_allow_ips(cls, value: str) -> str:
+        entries = [entry.strip() for entry in value.split(",") if entry.strip()]
+        if any(entry == "*" for entry in entries):
+            raise ValueError(
+                "MPLACAS_FORWARDED_ALLOW_IPS must not be '*': it lets clients spoof their IP"
+            )
+        return ",".join(entries)
+
+    @field_validator("proxy_shared_secret")
+    @classmethod
+    def _validate_proxy_shared_secret(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
+        if not value.get_secret_value().strip():
+            return None
+        if len(value.get_secret_value().encode("utf-8")) < 32:
+            raise ValueError("proxy shared secret must contain at least 32 bytes")
         return value
 
     @field_validator("jwt_audience", "jwt_key_id", "jwt_previous_key_id")
@@ -357,6 +430,8 @@ class Settings(BaseSettings):
             "provider_secret_keys_configured": self.provider_secret_keys is not None,
             "jwt_auth_configured": self.jwt_configured,
             "auth_login_max_attempts": self.auth_login_max_attempts,
+            "auth_cookie_enabled": self.auth_cookie_enabled,
+            "proxy_shared_secret_configured": self.proxy_shared_secret is not None,
             "external_http_allowed_host_count": len(self.external_http_allowed_host_set),
         }
 

@@ -13,19 +13,58 @@ contrato.
 
 ## Tokens
 
-- Access e refresh tokens existem somente em memória JavaScript; recarregar a página exige login.
-- Nenhum token, senha ou chave é gravado em `localStorage`, `sessionStorage`, URL ou cookie.
-- A única operação em `localStorage` é remover, sem ler, a chave legada `mplacas_creds_v1`.
-- O access token dura 15 minutos. O refresh token rotaciona a cada uso e replay revoga a família.
-- `apiFetch` tenta um único refresh após 401 e repete a requisição uma única vez.
+Decisão vigente: ADR-102 (substitui a ADR-073). Implantação em etapas; o que está marcado
+**[transitório]** some na etapa 4 da ADR-102.
+
+- O access token existe somente em memória JavaScript e dura 15 minutos.
+- Nenhum token, senha ou chave é gravado em `localStorage`, `sessionStorage` ou URL. O único
+  cookie permitido é o do refresh token, abaixo, que o JavaScript não lê.
+- A única operação em `localStorage` com chave de credencial é remover, sem ler, a chave legada
+  `mplacas_creds_v1`.
+- **Cookie do refresh token:** `__Secure-mplacas_rt`, `HttpOnly; Secure; SameSite=Strict;
+  Path=/api/auth` (configurável por `MPLACAS_AUTH_COOKIE_PATH`), `Max-Age` = tempo restante da
+  sessão, nunca além do teto absoluto. Gravado por `POST /auth/login`, `POST /auth/refresh` e
+  `POST /auth/invitations/accept` (convite e redefinição de acesso). Liga/desliga por
+  `MPLACAS_AUTH_COOKIE_ENABLED` (padrão ligado).
+- O refresh token rotaciona a cada uso. Replay revoga a família; reapresentar um token
+  rotacionado há menos de 10 s (`MPLACAS_AUTH_REFRESH_REUSE_GRACE_SECONDS`) recebe 401 **sem**
+  revogar a família (duas abas). A família nunca passa de 30 dias desde o login
+  (`MPLACAS_AUTH_SESSION_MAX_AGE_DAYS`); depois disso, 401 e login com senha.
+- `POST /auth/refresh` lê o cookie primeiro; com cookie, ele é a credencial e o corpo é ignorado.
+  **[transitório]** Sem cookie, aceita `{"refresh_token": ...}` no corpo, como antes.
+- **[transitório]** As respostas de login, refresh e aceite ainda trazem `refresh_token` no corpo
+  JSON. Até a etapa 3, o frontend guarda esse valor só em memória (nunca em storage).
+- `apiFetch` tenta um único refresh após 401 e repete a requisição uma única vez. Com o cookie
+  (etapa 3), um 401 do próprio refresh pode ser repetido uma vez (outra aba acabou de rotacionar).
+
+## Defesa CSRF
+
+- Pedido autenticado pelo cookie (`/auth/refresh`, `/auth/logout`) exige `X-Mplacas-Auth: 1` **e**
+  `Origin` igual a uma origem de `MPLACAS_CORS_ALLOWED_ORIGINS`. Falhou → `403`, sem rotacionar,
+  revogar nem apagar o cookie.
+- `POST /auth/login` e `POST /auth/invitations/accept`: se houver `Origin`, ele precisa estar na
+  lista (senão `403`); sem `Origin` (cliente que não é navegador), segue como antes.
+- O fluxo do corpo, sem cookie, não exige cabeçalho novo **[transitório]**.
 
 ## Logout
 
-O frontend primeiro limpa ambos os tokens em memória e muda o estado local para desautenticado.
-Se havia refresh token, envia `POST /auth/logout` com `keepalive`; falha de rede não restaura a
-sessão local. O endpoint é idempotente, sempre responde `204` para token inválido, expirado, já
-revogado ou válido, e revoga a sessão persistida quando consegue autenticar o refresh token.
-Access tokens já emitidos continuam válidos até o TTL, conforme decisão explícita da ADR-052.
+O frontend primeiro limpa os tokens em memória e muda o estado local para desautenticado. Envia
+`POST /auth/logout` com `keepalive`; falha de rede não restaura a sessão local. O endpoint é
+idempotente, sempre responde `204` para token inválido, expirado, já revogado ou válido, e revoga a
+sessão persistida quando consegue autenticar o refresh token. Com o cookie, revoga e responde com o
+cookie apagado (`Max-Age=0`, mesmo `Path` e atributos); **[transitório]** sem cookie, aceita
+`{"refresh_token": ...}` no corpo. Access tokens já emitidos continuam válidos até o TTL, conforme
+decisão explícita da ADR-052.
+
+## Proxy e IP do cliente
+
+- Etapa 2 da ADR-102: Cloudflare Pages Function em `mplacas-frontend.pages.dev/api/*` repassa ao
+  backend, preservando `Origin`, `Cookie`, `Set-Cookie` e `X-Mplacas-Auth`. Para o navegador, a
+  API passa a ser same-origin.
+- O proxy envia `X-Mplacas-Client-IP` (do `CF-Connecting-IP`) com `X-Mplacas-Proxy-Secret`; o
+  backend só honra o IP quando o segredo confere com `MPLACAS_PROXY_SHARED_SECRET` (sem segredo
+  configurado, o cabeçalho é ignorado). O segredo nunca é logado.
+- O uvicorn só aceita `X-Forwarded-For` das redes de `MPLACAS_FORWARDED_ALLOW_IPS` (nunca `*`).
 
 ## Headers e origens
 

@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, UTC
 
-from sqlalchemy import update
+from sqlalchemy import or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +31,19 @@ def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True)
+class IssuedRefreshSession:
+    """Refresh token emitido e o instante em que a sessão persistida expira.
+
+    ``expires_at`` é o que vale (não o ``exp`` do JWT, que é sempre o TTL
+    cheio): já vem limitado pelo teto absoluto da família (ADR-102) e é dele
+    que sai o ``Max-Age`` do cookie.
+    """
+
+    token: str
+    expires_at: datetime
+
+
 class AuthSessionService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -41,6 +55,24 @@ class AuthSessionService:
         organization_id: uuid.UUID,
         ttl_seconds: int,
     ) -> str:
+        issued = await self.create_session(
+            user_id=user_id,
+            organization_id=organization_id,
+            ttl_seconds=ttl_seconds,
+        )
+        return issued.token
+
+    async def create_session(
+        self,
+        *,
+        user_id: uuid.UUID,
+        organization_id: uuid.UUID,
+        ttl_seconds: int,
+        absolute_max_seconds: int | None = None,
+    ) -> IssuedRefreshSession:
+        """Abre uma família nova (raiz: ``id == family_id``)."""
+        if absolute_max_seconds is not None:
+            ttl_seconds = min(ttl_seconds, absolute_max_seconds)
         expires_at = _utc_now() + timedelta(seconds=ttl_seconds)
         session_id = uuid.uuid4()
         token = encode_refresh_token(user_id, organization_id, jti=session_id)
@@ -56,7 +88,7 @@ class AuthSessionService:
             )
         )
         await self._session.flush()
-        return token
+        return IssuedRefreshSession(token=token, expires_at=expires_at)
 
     async def rotate(
         self,
@@ -65,6 +97,31 @@ class AuthSessionService:
         claims: JwtClaims,
         ttl_seconds: int,
     ) -> str | None:
+        issued = await self.rotate_session(
+            token=token, claims=claims, ttl_seconds=ttl_seconds
+        )
+        return issued.token if issued is not None else None
+
+    async def rotate_session(
+        self,
+        *,
+        token: str,
+        claims: JwtClaims,
+        ttl_seconds: int,
+        reuse_grace_seconds: int = 0,
+        absolute_max_seconds: int | None = None,
+    ) -> IssuedRefreshSession | None:
+        """Troca o refresh token por um novo da mesma família.
+
+        Devolve ``None`` em qualquer falha. O chamador DEVE fazer commit mesmo
+        no ``None``: a revogação da família (replay ou teto absoluto) é escrita
+        aqui e se perderia num rollback.
+
+        - ``reuse_grace_seconds``: token autêntico rotacionado há menos que
+          isso (duas abas) → ``None`` sem revogar a família (ADR-102).
+        - ``absolute_max_seconds``: a família não passa disso desde a criação
+          da raiz; passou → família encerrada e ``None``.
+        """
         if claims.jti is None:
             return None
         now = _utc_now()
@@ -93,8 +150,21 @@ class AuthSessionService:
                 token_hash=token_hash,
                 claims=claims,
                 now=now,
+                reuse_grace_seconds=reuse_grace_seconds,
             )
             return None
+
+        new_expires_at = now + timedelta(seconds=ttl_seconds)
+        if absolute_max_seconds is not None:
+            family_deadline = await self._family_deadline(
+                family_id=claimed_family_id, absolute_max_seconds=absolute_max_seconds
+            )
+            if family_deadline is None or family_deadline <= now:
+                await self._end_family_at_cap(
+                    family_id=claimed_family_id, presented_session_id=claims.jti, now=now
+                )
+                return None
+            new_expires_at = min(new_expires_at, family_deadline)
 
         self._session.add(
             AuthSessionRecord(
@@ -104,7 +174,7 @@ class AuthSessionService:
                 family_id=claimed_family_id,
                 refresh_token_hash=hash_refresh_token(new_token),
                 active=True,
-                expires_at=now + timedelta(seconds=ttl_seconds),
+                expires_at=new_expires_at,
             )
         )
         await self._session.flush()
@@ -113,7 +183,43 @@ class AuthSessionService:
             .where(AuthSessionRecord.id == claims.jti)
             .values(replaced_by_session_id=new_session_id)
         )
-        return new_token
+        return IssuedRefreshSession(token=new_token, expires_at=new_expires_at)
+
+    async def _family_deadline(
+        self, *, family_id: uuid.UUID, absolute_max_seconds: int
+    ) -> datetime | None:
+        """Instante-limite da família: criação da raiz + teto absoluto.
+
+        A raiz é a sessão com ``id == family_id`` (criada por
+        ``create_session``). Sem raiz (expurgada pela retenção) não há como
+        provar a idade da família — falha fechada: ``None`` encerra a família.
+        """
+        root_created_at = await self._session.scalar(
+            select(AuthSessionRecord.created_at).where(AuthSessionRecord.id == family_id)
+        )
+        if root_created_at is None:
+            return None
+        return _as_utc(root_created_at) + timedelta(seconds=absolute_max_seconds)
+
+    async def _end_family_at_cap(
+        self, *, family_id: uuid.UUID, presented_session_id: uuid.UUID, now: datetime
+    ) -> None:
+        await self._session.execute(
+            update(AuthSessionRecord)
+            .where(
+                AuthSessionRecord.family_id == family_id,
+                or_(
+                    AuthSessionRecord.active.is_(True),
+                    AuthSessionRecord.id == presented_session_id,
+                ),
+            )
+            .values(active=False, revoked_at=now)
+        )
+        logger.info(
+            "auth_session_absolute_cap_reached",
+            extra={"auth_session_family_id": str(family_id)},
+        )
+        await self._session.flush()
 
     async def _handle_failed_rotation(
         self,
@@ -122,6 +228,7 @@ class AuthSessionService:
         token_hash: str,
         claims: JwtClaims,
         now: datetime,
+        reuse_grace_seconds: int = 0,
     ) -> None:
         record = await self._session.get(AuthSessionRecord, session_id)
         if record is None:
@@ -139,6 +246,23 @@ class AuthSessionService:
             await self._session.flush()
             return
         if record.active:
+            return
+        if (
+            reuse_grace_seconds > 0
+            and record.revoked_at is None
+            and record.rotated_at is not None
+            and now - _as_utc(record.rotated_at) < timedelta(seconds=reuse_grace_seconds)
+        ):
+            # Rotacionado agorinha por outro pedido (duas abas, ou a resposta
+            # do refresh anterior se perdeu): recusa sem derrubar a família e
+            # sem emitir sessão nova (ADR-102).
+            logger.info(
+                "refresh_token_reused_within_grace",
+                extra={
+                    "auth_session_id": str(session_id),
+                    "auth_session_family_id": str(record.family_id),
+                },
+            )
             return
 
         # O token autêntico já foi consumido/revogado: isso é replay. A
