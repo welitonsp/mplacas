@@ -15,6 +15,7 @@ vi.mock('../contexts/PlantContext', () => ({
 vi.mocked(useAuth).mockReturnValue({
   isAuthenticated: true,
   username: null,
+  sessionEnded: false,
   login: vi.fn(),
   adoptSession: vi.fn(),
   logout: vi.fn(),

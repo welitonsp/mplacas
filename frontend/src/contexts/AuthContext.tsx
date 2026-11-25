@@ -8,6 +8,9 @@ import { safeStorage } from '../lib/storage'
 interface AuthContextValue {
   isAuthenticated: boolean
   username: string | null
+  // Verdadeiro só se esta aba teve sessão e o servidor a encerrou (refresh
+  // recusado). Em memória, nunca persistido; logout voluntário não liga.
+  sessionEnded: boolean
   login: (username: string, password: string) => Promise<void>
   // Entra com a sessão que o servidor acabou de abrir (aceite de convite,
   // ADR-093): os tokens ficam só em memória, como no login.
@@ -23,6 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // em armazenamento do navegador, nunca derivado de decodificação do JWT.
   const [username, setUsername] = useState<string | null>(null)
   const refreshTokenRef = useRef<string | null>(null)
+  const [sessionEnded, setSessionEnded] = useState(false)
 
   const logout = useCallback(() => {
     const refreshToken = refreshTokenRef.current
@@ -33,6 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     safeStorage.remove(SELECTED_PLANT_STORAGE_KEY)
     refreshTokenRef.current = null
     setIsAuthenticated(false)
+    setSessionEnded(false)
     setUsername(null)
 
     if (refreshToken) {
@@ -50,8 +55,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshTokenRef.current = token
   }, [])
 
+  // Chamado pelo api.ts quando a renovação é recusada: a sessão acabou sem o
+  // usuário pedir. Só conta se havia sessão nesta aba.
+  const expireSession = useCallback(() => {
+    const hadSession = !!TokenStore.get() || refreshTokenRef.current !== null
+    logout()
+    if (hadSession) setSessionEnded(true)
+  }, [logout])
+
   // Configura o api.ts com as funções do contexto.
-  configureApi(getRefreshToken, setRefreshToken, logout)
+  configureApi(getRefreshToken, setRefreshToken, expireSession)
 
   const login = useCallback(async (username: string, password: string) => {
     // Prazo de autenticação (auditoria v6, A-03): sem ele, um servidor que
@@ -111,6 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     TokenStore.set(access_token)
     refreshTokenRef.current = refresh_token
     setIsAuthenticated(true)
+    setSessionEnded(false)
     setUsername(username)
   }, [])
 
@@ -130,11 +144,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     TokenStore.set(accessToken)
     refreshTokenRef.current = refreshToken
     setIsAuthenticated(true)
+    setSessionEnded(false)
     setUsername(name)
   }, [])
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, username, login, adoptSession, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, username, sessionEnded, login, adoptSession, logout }}>
       {children}
     </AuthContext.Provider>
   )

@@ -58,6 +58,7 @@ function setAuth(overrides: Partial<ReturnType<typeof useAuth>> = {}) {
   mockedUseAuth.mockReturnValue({
     isAuthenticated: true,
     username: 'maria',
+    sessionEnded: false,
     login: vi.fn(),
     adoptSession: vi.fn(),
     logout: vi.fn(),
