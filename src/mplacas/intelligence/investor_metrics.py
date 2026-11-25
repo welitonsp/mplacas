@@ -85,6 +85,10 @@ def _q(value: Decimal) -> Decimal:
     return value.quantize(_CENTS, rounding=ROUND_HALF_UP)
 
 
+def _q4(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
 def _net_of_tax(principal: Decimal, gross: Decimal, months_held: int) -> Decimal:
     gain = gross - principal
     if gain <= 0:
@@ -164,7 +168,9 @@ def realized_comparison(
             cycles_counted=counted,
             cdi_path_net_brl=_q(cdi_net),
             solar_path_net_brl=_q(solar_net),
-            cdi_accumulated_percent=((total_factor - _ONE) * _HUNDRED).quantize(Decimal("0.01")),
+            cdi_accumulated_percent=((total_factor - _ONE) * _HUNDRED).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            ),
         )
 
 
@@ -223,6 +229,9 @@ class Projection:
     annual_saving_over_investment: Decimal = Decimal("0")
     # TIR − CDI líquido, em fração (0.05 = 5 pontos percentuais); ``None`` sem TIR.
     irr_spread_over_cdi_per_year: Decimal | None = None
+    # Fluxo de caixa mensal (índice 0 = −investimento); não serializado, existe
+    # para conferência dos custos nos testes.
+    cash_flows: tuple[Decimal, ...] = ()
 
 
 def _monthly_rate(per_year: Decimal) -> Decimal:
@@ -266,8 +275,15 @@ def project(
     wire_b_tariff_brl_kwh: Decimal | None,
     wire_b_reference_year: int | None,
     premises: InvestorPremises,
+    months_elapsed: int = 0,
 ) -> Projection | None:
-    """Fluxo de caixa mensal da vida útil. ``None`` sem nenhuma economia real."""
+    """Fluxo de caixa mensal da vida útil. ``None`` sem nenhuma economia real.
+
+    ``months_elapsed``: meses entre a ligação e hoje. A série "em dinheiro de
+    hoje" é deflacionada a partir de HOJE (não da ligação): o patrimônio do mês
+    k é dividido por (1 + IPCA)^((k − months_elapsed) ÷ 12). Com 0 (projeção que
+    começa hoje, como a ampliação), coincide com deflacionar desde o início.
+    """
     realized = {m: v for m, v in savings_by_month.items() if m > start_month}
     if not realized or investment_brl <= 0:
         return None
@@ -328,7 +344,9 @@ def project(
             else:
                 years_after_anchor = Decimal(max(0, k - anchor)) / Decimal(12)
                 tariff_factor = growth**years_after_anchor
-                degradation = (_ONE - premises.degradation_per_year) ** (Decimal(k) / Decimal(12))
+                # A economia de partida já é a das placas no mês-âncora: a
+                # degradação só vale dali em diante, não desde a ligação.
+                degradation = (_ONE - premises.degradation_per_year) ** years_after_anchor
                 saving = baseline * tariff_factor * degradation
                 if wire_b_applied and compensated_kwh_per_month is not None:
                     year = int(month[:4])
@@ -412,38 +430,38 @@ def project(
             else:
                 break
 
+        def deflator(k: int) -> Decimal:
+            return inflation ** (Decimal(k - months_elapsed) / Decimal(12))
+
         patrimony = [
             PatrimonyPoint(
                 year=k // 12,
                 cdi_path_brl=_q(cdi_path(k)),
                 solar_path_brl=_q(solar_series[k]),
-                cdi_path_real_brl=_q(cdi_path(k) / inflation ** Decimal(k // 12)),
-                solar_path_real_brl=_q(solar_series[k] / inflation ** Decimal(k // 12)),
+                cdi_path_real_brl=_q(cdi_path(k) / deflator(k)),
+                solar_path_real_brl=_q(solar_series[k] / deflator(k)),
             )
             for k in range(0, horizon + 1, 12)
         ]
 
         return Projection(
             baseline_monthly_savings_brl=_q(baseline),
-            irr_per_year=irr_year.quantize(Decimal("0.0001")) if irr_year is not None else None,
-            irr_real_per_year=irr_real.quantize(Decimal("0.0001"))
-            if irr_real is not None
-            else None,
-            cdi_net_per_year=cdi_net_year.quantize(Decimal("0.0001")),
+            irr_per_year=_q4(irr_year) if irr_year is not None else None,
+            irr_real_per_year=_q4(irr_real) if irr_real is not None else None,
+            cdi_net_per_year=_q4(cdi_net_year),
             npv_at_cdi_net_brl=_q(npv),
             payback_simple_months=payback_simple,
             payback_discounted_months=payback_disc,
             lifetime_savings_brl=_q(lifetime_savings),
             wire_b_applied=wire_b_applied,
             patrimony=tuple(patrimony),
+            cash_flows=tuple(flows),
             baseline_cycles=window_cycles,
-            annual_saving_over_investment=annual_saving_over_investment.quantize(
-                Decimal("0.0001")
-            ),
+            annual_saving_over_investment=_q4(annual_saving_over_investment),
             # Diferença dos valores JÁ arredondados que a tela mostra, para a
             # conta fechar com os números à vista.
             irr_spread_over_cdi_per_year=(
-                irr_year.quantize(Decimal("0.0001")) - cdi_net_year.quantize(Decimal("0.0001"))
+                _q4(irr_year) - _q4(cdi_net_year)
                 if irr_year is not None
                 else None
             ),

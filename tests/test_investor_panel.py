@@ -287,7 +287,8 @@ def test_serializer_exposes_the_new_projection_fields(monkeypatch) -> None:
         str(projection["cdi_net_per_year"])
     )
     last = projection["patrimony"][-1]  # type: ignore[index]
-    deflator = (Decimal("1") + panel.premises.ipca_per_year) ** 25  # type: ignore[union-attr]
+    # Deflacionado a partir de hoje: 13 meses desde a ligação (set/2025 → out/2026).
+    deflator = (Decimal("1") + panel.premises.ipca_per_year) ** (Decimal(25 * 12 - 13) / 12)  # type: ignore[union-attr]
     nominal = Decimal(last["solar_path_brl"])
     assert abs(Decimal(last["solar_path_real_brl"]) - nominal / deflator) < Decimal("0.02")
     premises = body["premises"]
@@ -309,3 +310,61 @@ def test_low_confidence_follows_the_trailing_window_not_the_bill_count(monkeypat
     assert panel.cycles_counted == 14
     assert panel.projection is not None and panel.projection.baseline_cycles == 12
     assert panel.low_confidence_baseline is False
+
+
+def test_warning_flags_are_separated_by_cause(monkeypatch) -> None:
+    kwargs = dict(investment_amount_brl=Decimal("11200.00"), commissioned_on=date(2025, 9, 1))
+    # Versão anterior à 0.4.0: subestima; não é piso de tarifa.
+    old = _panel(monkeypatch, (_snapshot("2026-08", "250.00", "0.2.0"),), **kwargs)
+    assert old.pre_injection_fix is True and old.bill_tariff_floor is False
+    assert old.includes_pre_correction_cycles is True
+    # 0.4.0 sem tarifa homologada: piso; não é versão antiga.
+    floor = _snapshot("2026-08", "250.00", "0.4.0")
+    floor.report.metrics = floor.report.metrics + (
+        SimpleNamespace(key="savings_tariff_source", value="BILL_TARIFF"),
+    )
+    only_floor = _panel(monkeypatch, (floor,), **kwargs)
+    assert only_floor.pre_injection_fix is False and only_floor.bill_tariff_floor is True
+    clean = _panel(monkeypatch, (_snapshot("2026-08", "250.00", "0.4.0"),), **kwargs)
+    assert clean.pre_injection_fix is False and clean.bill_tariff_floor is False
+    assert clean.includes_pre_correction_cycles is False
+    body = intelligence_router._serialize_investor(old)
+    assert body["pre_injection_fix"] is True and body["bill_tariff_floor"] is False
+
+
+def test_commissioning_month_bill_does_not_raise_warnings_or_versions(monkeypatch) -> None:
+    # A fatura do mês da ligação (setembro/2025) é antiga e BILL_TARIFF, mas está
+    # fora da conta: não pode acender avisos nem entrar nas versões.
+    partial = _snapshot("2025-09", "50.00", "0.1.0")
+    partial.report.metrics = partial.report.metrics + (
+        SimpleNamespace(key="savings_tariff_source", value="BILL_TARIFF"),
+    )
+    panel = _panel(
+        monkeypatch,
+        (partial, _snapshot("2026-08", "250.00", "0.4.0")),
+        investment_amount_brl=Decimal("11200.00"),
+        commissioned_on=date(2025, 9, 1),
+    )
+    assert panel.calculation_versions == ("0.4.0",)
+    assert panel.pre_injection_fix is False
+    assert panel.bill_tariff_floor is False
+    assert panel.includes_pre_correction_cycles is False
+
+
+def test_real_series_is_deflated_from_today(monkeypatch) -> None:
+    panel = _panel(
+        monkeypatch,
+        (_snapshot("2026-08", "250.00", "0.4.0"),),
+        investment_amount_brl=Decimal("11200.00"),
+        commissioned_on=date(2025, 9, 1),
+    )
+    assert panel.projection is not None and panel.premises is not None
+    # TODAY = 2026-10-19, ligação em 2025-09: 13 meses. No ano 1 (mês 12) o real
+    # (k − 13 < 0) o real fica acima do nominal: ainda não passou a inflação até hoje.
+    year1 = panel.projection.patrimony[1]
+    year2 = panel.projection.patrimony[2]
+    inflation = Decimal("1") + panel.premises.ipca_per_year
+    exp1 = year1.cdi_path_brl / inflation ** (Decimal(-1) / 12)
+    exp2 = year2.cdi_path_brl / inflation ** (Decimal(11) / 12)
+    assert abs(year1.cdi_path_real_brl - exp1) < Decimal("0.02")
+    assert abs(year2.cdi_path_real_brl - exp2) < Decimal("0.02")

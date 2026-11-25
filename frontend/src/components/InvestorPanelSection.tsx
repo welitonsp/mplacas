@@ -180,9 +180,14 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
       `A projeção parte de ${baselineCycles} ${baselineCycles === 1 ? 'fatura confirmada' : 'faturas confirmadas'}: ainda não cobre as estações do ano e pode mudar bastante. Fica firme com 12 meses de faturas.`,
     )
   }
-  if (panel.includesPreCorrectionCycles) {
+  if (panel.preInjectionFix) {
     cautions.push(
-      'Parte das faturas foi calculada antes da correção da energia injetada e pode superestimar a economia em cerca de R$ 11 por mês.',
+      'Parte das faturas foi calculada por uma versão anterior do cálculo (antes da correção da energia injetada e da tarifa cheia) e tende a subestimar a economia.',
+    )
+  }
+  if (panel.billTariffFloor) {
+    cautions.push(
+      'Em parte das faturas não há tarifa homologada cadastrada para o ciclo: a economia usa o preço da própria fatura e é um valor mínimo (piso), podendo ser maior na realidade.',
     )
   }
 
@@ -209,6 +214,25 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
         </div>
       )}
 
+      {/* Leitura simples do que JÁ aconteceu (economia das faturas ÷ valor
+          investido): é realizado, não projeção, e por isso fica fora do grupo
+          "Projeção". Com menos de 12 meses é uma média anualizada. */}
+      {annualReturn != null && (
+        <div className="space-y-1 rounded-[var(--radius-card)] border border-[var(--color-border)] p-3 sm:p-4">
+          <span className="inline-flex rounded-full border border-[var(--color-success-text)] px-3 py-0.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-success-text)]">
+            Realizado
+          </span>
+          <p className="text-base font-semibold leading-6 text-[var(--color-text-primary)]">
+            {`A usina devolve cerca de ${formatNumber(annualReturn * 100, 0)}% do investimento por ano`}
+          </p>
+          <p className="text-[13px] text-[var(--color-text-secondary)]">
+            {baselineCycles >= 12
+              ? 'Economia dos últimos 12 meses de faturas confirmadas, em relação ao valor investido.'
+              : `Média anualizada: economia ${baselineCycles === 1 ? 'do último mês' : `dos últimos ${baselineCycles} meses`} de faturas confirmadas, projetada para 12 meses, em relação ao valor investido.`}
+          </p>
+        </div>
+      )}
+
       {/* Selo de projeção: SEMPRE presente, com ou sem poucas faturas. O bloco
           abaixo é uma estimativa com premissas, não resultado já obtido (o
           realizado vem mais adiante, separado). */}
@@ -226,15 +250,6 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
           </span>
         </div>
 
-        {annualReturn != null && (
-          <p className="text-base font-semibold leading-6 text-[var(--color-text-primary)]">
-            {`A usina devolve cerca de ${formatNumber(annualReturn * 100, 0)}% do investimento por ano`}
-            <span className="block text-[13px] font-normal text-[var(--color-text-secondary)]">
-              {`Economia dos últimos ${baselineCycles} ${baselineCycles === 1 ? 'mês' : 'meses'} de faturas confirmadas, em relação ao valor investido.`}
-            </span>
-          </p>
-        )}
-
         <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           <SummaryTile
             label="Projeção: retorno anual (TIR)"
@@ -249,15 +264,15 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
             tone="neutral"
           />
           <SummaryTile
-            label="Ganho sobre o CDI (VPL)"
-            value={npv == null ? '—' : formatCurrency(npv)}
+            label="Diferença para o CDI (VPL)"
+            value={npv == null ? '—' : formatCurrency(Math.abs(npv))}
             supportingText={`${beatsCdi ? 'a mais' : 'a menos'} que o CDI, trazido a valor presente pelo próprio CDI`}
             tone={beatsCdi ? 'success' : 'warning'}
           />
           <SummaryTile
             label="Tempo para se pagar"
             value={months(projection.paybackSimpleMonths)}
-            supportingText={`Contando o CDI: ${months(projection.paybackDiscountedMonths)}`}
+            supportingText={`Projeção com manutenção e inversor. Contando o CDI: ${months(projection.paybackDiscountedMonths)}`}
             tone="neutral"
           />
         </div>
@@ -313,7 +328,7 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
           ) : coverage < MIN_REALIZED_COVERAGE ? (
             <>
               <p className="mt-2 text-sm font-semibold text-[var(--color-text-primary)]">
-                {formatCurrency(realized.accumulatedSavingsBrl)} de economia confirmada em {realized.cyclesCounted}{' '}
+                {formatCurrency(realized.accumulatedSavingsBrl)} de economia calculada a partir das faturas confirmadas, em {realized.cyclesCounted}{' '}
                 {realized.cyclesCounted === 1 ? 'fatura' : 'faturas'}
               </p>
               <p className="mt-1 text-[13px] leading-5 text-[var(--color-warning-text)]">
@@ -352,8 +367,8 @@ function InvestorPanelContent({ panel }: { panel: InvestorPanel }) {
             {panel.premises && (
               <ul className="mt-3 space-y-1.5 text-[13px] leading-5 text-[var(--color-text-secondary)]">
                 <li>
-                  Economia de partida: {formatCurrency(projection.baselineMonthlySavingsBrl)}/mês, média dos
-                  últimos {baselineCycles} {baselineCycles === 1 ? 'mês' : 'meses'} de faturas confirmadas
+                  Economia de partida: {formatCurrency(projection.baselineMonthlySavingsBrl)}/mês, média d{baselineCycles === 1 ? 'o' : 'os'}
+                  {baselineCycles === 1 ? ' último mês' : ` últimos ${baselineCycles} meses`} de faturas confirmadas
                   posteriores à ligação (no máximo 12), ajustada à parcela do Fio B do ano da última fatura.
                   Meses usados: {baselineCycles} de {panel.cyclesCounted} {panel.cyclesCounted === 1 ? 'fatura' : 'faturas'}.
                 </li>

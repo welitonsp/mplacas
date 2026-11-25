@@ -15,6 +15,7 @@ function buildAvailable(overrides: Partial<FinancialReturnResponse> = {}): Finan
     cycles_expected: 17,
     roi_percent: '19.0',
     net_gain_percent: '-81.0',
+    investment_recovered: false,
     payback_projection_months: 64,
     unavailable_reason: null,
     payback_unavailable_reason: null,
@@ -69,6 +70,7 @@ describe('FinancialReturnSection', () => {
           cycles_counted: 17,
           cycles_expected: 17,
           payback_projection_months: 17,
+          investment_recovered: true,
         })}
       />
     )
@@ -96,7 +98,7 @@ describe('FinancialReturnSection', () => {
   it('renderiza "investimento já recuperado" quando o payback já foi atingido', () => {
     render(
       <FinancialReturnSection
-        financialReturn={buildAvailable({ cycles_counted: 20, payback_projection_months: 20 })}
+        financialReturn={buildAvailable({ cycles_counted: 20, payback_projection_months: 20, investment_recovered: true })}
       />
     )
 
@@ -115,7 +117,7 @@ describe('FinancialReturnSection', () => {
     expect(screen.getAllByText(/64/).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Média mensal')).toBeInTheDocument()
     expect(screen.getByText(/R\$\s*760,05/)).toBeInTheDocument()
-    expect(screen.getByText(/mantida a média de economia dos últimos ciclos/)).toBeInTheDocument()
+    expect(screen.getByText(/Projeção pela média de economia dos ciclos, sem custos de manutenção e inversor/)).toBeInTheDocument()
   })
 
   it('renderiza mensagem específica para INVESTMENT_NOT_REGISTERED sem formulário (o cadastro fica só em Minha usina)', () => {
@@ -186,5 +188,22 @@ describe('FinancialReturnSection', () => {
       <FinancialReturnSection financialReturn={null} />
     )
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
+  it('mostra "Investimento já recuperado" com menos de 6 ciclos quando o backend diz que voltou', () => {
+    render(
+      <FinancialReturnSection
+        financialReturn={buildAvailable({
+          cycles_counted: 3,
+          payback_projection_months: null,
+          payback_unavailable_reason: 'INSUFFICIENT_HISTORY',
+          roi_percent: '120.0',
+          net_gain_percent: '20.0',
+          investment_recovered: true,
+        })}
+      />
+    )
+    expect(screen.getAllByText('Investimento já recuperado').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('Lucro sobre o investimento: 20%')).toBeInTheDocument()
   })
 })

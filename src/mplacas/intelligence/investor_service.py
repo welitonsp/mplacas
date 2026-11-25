@@ -62,6 +62,13 @@ class InvestorPanel:
     cycles_counted: int
     calculation_versions: tuple[str, ...]
     includes_pre_correction_cycles: bool
+    # Separação das duas causas (cada uma com a sua frase na tela):
+    # - ``pre_injection_fix``: ciclos calculados antes da correção 0.4.0
+    #   (injeção pelo medidor + tarifa cheia): TENDEM A SUBESTIMAR a economia.
+    # - ``bill_tariff_floor``: ciclo sem tarifa homologada cadastrada; a
+    #   economia usa o preço da fatura e é um PISO.
+    pre_injection_fix: bool
+    bill_tariff_floor: bool
     low_confidence_baseline: bool
     cdi_12m_per_year: Decimal | None
     ipca_12m_per_year: Decimal | None
@@ -123,11 +130,18 @@ async def get_investor_panel(
     snapshots = await MonthlyReportSnapshotRepository(
         session, plant_scope=plant_scope
     ).list_for_plant(plant_id=plant_id)
+    investment = plant.investment_amount_brl
+    commissioned_on = plant.commissioned_on
+    commissioned_month = commissioning_month(commissioned_on)
     savings: dict[str, Decimal] = {}
     versions: set[str] = set()
     bill_tariff_cycles = 0
     for snapshot in snapshots:
         report = snapshot.report
+        # Mês da ligação (e anteriores) fora de tudo, inclusive versões e avisos:
+        # a regra única do painel (ADR-079).
+        if not counts_in_savings(report.reference_month, commissioned_month):
+            continue
         metric = next((m for m in report.metrics if m.key == _SAVINGS_METRIC_KEY), None)
         if metric is None or metric.value == "":
             continue
@@ -147,17 +161,11 @@ async def get_investor_panel(
         if tariff_source and tariff_source != "DISTRIBUTOR_FULL_TARIFF":
             bill_tariff_cycles += 1
     sorted_versions = tuple(sorted(versions, key=calculation_version_tuple))
-    pre_correction = bill_tariff_cycles > 0 or any(
+    pre_injection_fix = any(
         calculation_version_tuple(v) < CORRECTED_CALCULATION_VERSION for v in sorted_versions
     )
-
-    investment = plant.investment_amount_brl
-    commissioned_on = plant.commissioned_on
-    commissioned_month = commissioning_month(commissioned_on)
-    # Só ciclos posteriores ao mês da ligação: a fatura do mês da ligação é de
-    # geração parcial e o realizado e a projeção usam a mesma regra (ADR-079).
-    if commissioned_month is not None:
-        savings = {m: v for m, v in savings.items() if counts_in_savings(m, commissioned_month)}
+    bill_tariff_floor = bill_tariff_cycles > 0
+    pre_correction = pre_injection_fix or bill_tariff_floor
 
     def unavailable(reason: InvestorUnavailableReason, **extra: object) -> InvestorPanel:
         base: dict[str, object] = dict(
@@ -169,6 +177,8 @@ async def get_investor_panel(
             cycles_counted=len(savings),
             calculation_versions=sorted_versions,
             includes_pre_correction_cycles=pre_correction,
+            pre_injection_fix=pre_injection_fix,
+            bill_tariff_floor=bill_tariff_floor,
             low_confidence_baseline=len(savings) < MINIMUM_CYCLES_FOR_CONFIDENT_BASELINE,
             cdi_12m_per_year=None,
             ipca_12m_per_year=None,
@@ -230,8 +240,11 @@ async def get_investor_panel(
         cdi_by_month=cdi,
         as_of_month=as_of,
     )
+    year, month = (int(part) for part in commissioned_month.split("-"))
+    months_since = (today.year - year) * 12 + (today.month - month)
     projection = project(
         investment_brl=investment,
+        months_elapsed=max(0, months_since),
         start_month=commissioned_month,
         commissioned_on=commissioned_on,
         savings_by_month=savings,
@@ -242,8 +255,6 @@ async def get_investor_panel(
     )
     if projection is None:
         return unavailable(InvestorUnavailableReason.NO_CONSOLIDATED_SAVINGS)
-    year, month = (int(part) for part in commissioned_month.split("-"))
-    months_since = (today.year - year) * 12 + (today.month - month)
     return InvestorPanel(
         plant_id=plant_id,
         unavailable_reason=None,
@@ -253,6 +264,8 @@ async def get_investor_panel(
         cycles_counted=len(savings),
         calculation_versions=sorted_versions,
         includes_pre_correction_cycles=pre_correction,
+        pre_injection_fix=pre_injection_fix,
+        bill_tariff_floor=bill_tariff_floor,
         # A média de partida usa só os últimos 12 meses: a confiança depende de
         # quantos deles existem, não do total de faturas.
         low_confidence_baseline=projection.baseline_cycles < MINIMUM_CYCLES_FOR_CONFIDENT_BASELINE,

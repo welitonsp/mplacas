@@ -410,6 +410,7 @@ def test_payback_already_reached_returns_cycles_counted(
     assert body["accumulated_savings_brl"] == "600.00"
     assert body["roi_percent"] == "100.0"
     assert body["net_gain_percent"] == "0.0"
+    assert body["investment_recovered"] is True
     assert body["payback_unavailable_reason"] is None
     assert body["payback_projection_months"] == 6
 
@@ -464,6 +465,7 @@ def test_full_response_matches_expected_shape_with_healthy_coverage(
         "cycles_expected": 7,
         "roi_percent": "35.0",
         "net_gain_percent": "-65.0",
+        "investment_recovered": False,
         "payback_projection_months": 20,
         "unavailable_reason": None,
         "payback_unavailable_reason": None,
@@ -583,3 +585,59 @@ def test_net_gain_is_positive_once_the_investment_is_recovered(
     body = response.json()
     assert body["roi_percent"] == "151.0"
     assert body["net_gain_percent"] == "51.0"
+
+
+def test_recovered_flag_has_no_cycle_floor_and_net_gain_is_never_negative_zero(
+    tenancy_setup, client: TestClient
+) -> None:
+    # 3 ciclos (< 6: sem payback projetado) mas economia ≥ investimento:
+    # `investment_recovered` é verdadeiro mesmo assim.
+    factory = tenancy_setup
+    org_a, org_b = asyncio.run(
+        _seed(
+            factory,
+            investment_amount_brl=Decimal("250.00"),
+            commissioned_on=date(2023, 12, 1),
+        )
+    )
+    token_a_read, _ = _tokens(org_a, org_b)
+    for month in ("2024-01", "2024-02", "2024-03"):
+        asyncio.run(
+            _add_snapshot(factory, plant_id=PLANT_A, reference_month=month, savings_value="100.00")
+        )
+    body = client.get(
+        "/energy/financial-return/latest",
+        headers={"Authorization": f"Bearer {token_a_read}"},
+        params={"plant_id": str(PLANT_A)},
+    ).json()
+    assert body["cycles_counted"] == 3
+    assert body["roi_percent"] == "120.0"
+    assert body["investment_recovered"] is True
+    assert body["payback_unavailable_reason"] == "INSUFFICIENT_HISTORY"
+
+
+def test_net_gain_just_below_zero_is_normalized_to_zero(
+    tenancy_setup, client: TestClient
+) -> None:
+    # 999,99 de 1.000,00: ganho −0,001% arredondaria para "-0.0".
+    factory = tenancy_setup
+    org_a, org_b = asyncio.run(
+        _seed(
+            factory,
+            investment_amount_brl=Decimal("100000.00"),
+            commissioned_on=date(2023, 12, 1),
+        )
+    )
+    token_a_read, _ = _tokens(org_a, org_b)
+    asyncio.run(
+        _add_snapshot(
+            factory, plant_id=PLANT_A, reference_month="2024-01", savings_value="99999.99"
+        )
+    )
+    body = client.get(
+        "/energy/financial-return/latest",
+        headers={"Authorization": f"Bearer {token_a_read}"},
+        params={"plant_id": str(PLANT_A)},
+    ).json()
+    assert body["net_gain_percent"] == "0.0"
+    assert body["investment_recovered"] is False

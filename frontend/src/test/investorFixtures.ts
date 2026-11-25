@@ -9,6 +9,8 @@ export const investorAvailablePayload = {
   cycles_counted: 1,
   calculation_versions: ['0.3.0'],
   includes_pre_correction_cycles: false,
+  pre_injection_fix: false,
+  bill_tariff_floor: false,
   low_confidence_baseline: true,
   indices: {
     cdi_12m_per_year: '0.1403',

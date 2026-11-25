@@ -731,3 +731,22 @@ def test_service_computes_payback_with_saved_proposal(monkeypatch) -> None:  # t
     assert payback.first_year_monthly_saving_brl == D("21.50")
     assert payback.payback_months_with_ipca is not None
     assert payback.indices_as_of_month == "2026-09"
+
+
+def test_payback_evaluated_in_december_starts_from_next_year_wire_b() -> None:
+    # Em dezembro a economia projetada começa em janeiro (ano seguinte). A partida
+    # e a referência do Fio B usam a parcela de 2027 — não a de 2026 com o aumento
+    # 2026→2027 descontado de novo por 25 anos.
+    inputs = dataclasses.replace(MONEY, reference_month="2026-11")
+    assessment = _assess(_year(), money_inputs=inputs, request_year=2026)
+    assert assessment.money is not None
+    by_year = {value.year: value for value in assessment.money.values_by_year}
+    monthly_kwh = assessment.deficit_kwh_year / 12  # type: ignore[operator]
+    december = _payback(assessment, money_inputs=inputs, today=date(2026, 12, 10))
+    november = _payback(assessment, money_inputs=inputs, today=date(2026, 11, 10))
+    expected_2027 = (monthly_kwh * by_year[2027].value_brl_kwh).quantize(D("0.01"))
+    assert december.first_year_monthly_saving_brl == expected_2027
+    # Mesma trajetória a partir de 2027 (± o mês de dez/2026 que novembro conta):
+    assert december.lifetime_savings_brl is not None and november.lifetime_savings_brl is not None
+    ratio = december.lifetime_savings_brl / november.lifetime_savings_brl
+    assert D("0.97") < ratio < D("1.03")

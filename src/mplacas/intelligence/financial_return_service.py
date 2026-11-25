@@ -65,6 +65,9 @@ class FinancialReturnResult:
     # (economia acumulada − investimento) ÷ investimento, em %: o lucro real
     # sobre o investimento. Negativo enquanto o investimento não voltou.
     net_gain_percent: Decimal | None
+    # Economia acumulada ≥ investimento, sem piso de ciclos (o payback projetado
+    # exige 6 ciclos; o fato de já ter voltado, não). ``False`` se indisponível.
+    investment_recovered: bool
     payback_projection_months: int | None
     unavailable_reason: FinancialReturnUnavailableReason | None
     payback_unavailable_reason: FinancialReturnUnavailableReason | None
@@ -155,6 +158,7 @@ async def get_latest_financial_return(
             cycles_expected=None,
             roi_percent=None,
             net_gain_percent=None,
+            investment_recovered=False,
             payback_projection_months=None,
             unavailable_reason=FinancialReturnUnavailableReason.INVESTMENT_NOT_REGISTERED,
             payback_unavailable_reason=None,
@@ -185,6 +189,7 @@ async def get_latest_financial_return(
             cycles_expected=cycles_expected,
             roi_percent=None,
             net_gain_percent=None,
+            investment_recovered=False,
             payback_projection_months=None,
             unavailable_reason=FinancialReturnUnavailableReason.NO_CONSOLIDATED_SAVINGS,
             payback_unavailable_reason=None,
@@ -200,6 +205,8 @@ async def get_latest_financial_return(
     net_gain_percent = (
         (accumulated_savings_brl - investment_amount_brl) / investment_amount_brl * 100
     ).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    if net_gain_percent == 0:
+        net_gain_percent = Decimal("0.0")  # nunca "-0.0" (ganho negativo minúsculo)
 
     payback_unavailable_reason: FinancialReturnUnavailableReason | None = None
     payback_projection_months: int | None = None
@@ -225,6 +232,7 @@ async def get_latest_financial_return(
         cycles_expected=cycles_expected,
         roi_percent=roi_percent,
         net_gain_percent=net_gain_percent,
+        investment_recovered=accumulated_savings_brl >= investment_amount_brl,
         payback_projection_months=payback_projection_months,
         unavailable_reason=None,
         payback_unavailable_reason=payback_unavailable_reason,

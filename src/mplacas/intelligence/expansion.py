@@ -468,7 +468,16 @@ def expansion_payback(
     monthly_kwh = assessment.deficit_kwh_year / 12
     # Partida no ano corrente, com a parcela do Fio B DESTE ano — o mesmo valor
     # da etapa 1 (``values_by_year[0]``), não o do ano da fatura.
-    first = money.values_by_year[0]
+    # A economia projetada começa no mês SEGUINTE ao de hoje: em dezembro isso
+    # já é o ano seguinte, e a partida (e a referência do Fio B) precisam usar a
+    # parcela desse ano, senão a projeção desconta o aumento do Fio B duas vezes.
+    first_month = add_months(today.strftime("%Y-%m"), 1)
+    first_year = int(first_month[:4])
+    years = money.values_by_year
+    first = next(
+        (value for value in years if value.year == first_year),
+        years[-1] if first_year > years[-1].year else years[0],
+    )
     baseline = monthly_kwh * first.value_brl_kwh
     if baseline <= 0:
         return unavailable(PAYBACK_NOT_APPLICABLE)

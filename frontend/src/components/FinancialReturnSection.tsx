@@ -59,7 +59,7 @@ export function FinancialReturnSection({
   const paybackSupportingText = paybackReached
     ? 'Investimento já recuperado'
     : financialReturn.payback_projection_months !== null
-      ? 'Projeção, mantida a média recente'
+      ? 'Pela média das faturas, sem custos de manutenção e inversor'
       : 'Aguardando histórico suficiente'
 
   return (
@@ -71,11 +71,11 @@ export function FinancialReturnSection({
               Retorno do investimento
             </p>
             <p className="mt-2 text-sm leading-6 text-gray-600">
-              Quanto do valor investido já voltou em economia confirmada.
+              Quanto do valor investido já voltou em economia calculada a partir das faturas confirmadas.
             </p>
           </div>
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm sm:min-w-40 sm:text-right">
-            <p className="text-xs font-medium text-gray-500">Payback</p>
+            <p className="text-xs font-medium text-gray-500">Payback simples (pela média das faturas)</p>
             <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-gray-950">
               {paybackLabel}
             </p>
@@ -88,7 +88,7 @@ export function FinancialReturnSection({
             <div>
               <p className="text-xs font-medium text-gray-500">Já voltou do investimento</p>
               <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-gray-950">
-                {formatNumber(roiPercent, 1)}
+                {formatNumber(roiPercent, 0)}
                 <span className="ml-1 text-base font-semibold text-gray-500">%</span>
               </p>
             </div>
@@ -99,8 +99,8 @@ export function FinancialReturnSection({
           {netGain != null && (
             <p className="mt-2 text-sm font-semibold tabular-nums text-gray-900">
               {netGain >= 0
-                ? `Lucro sobre o investimento: ${formatNumber(netGain, 1)}%`
-                : `Ainda falta recuperar ${formatNumber(Math.abs(netGain), 1)}% do investimento`}
+                ? `Lucro sobre o investimento: ${formatNumber(netGain, 0)}%`
+                : `Ainda falta recuperar ${formatNumber(Math.abs(netGain), 0)}% do investimento`}
             </p>
           )}
 
@@ -168,7 +168,8 @@ export function FinancialReturnSection({
               {/* Sempre rotulado como PROJEÇÃO, com a premissa visível — nunca uma
                   data certa (ADR-067, Decisão item 7). */}
               <p className="mt-1 text-xs text-gray-500">
-                Projeção, mantida a média de economia dos últimos ciclos.
+                Projeção pela média de economia dos ciclos, sem custos de manutenção e inversor. A projeção com
+                esses custos está em &quot;Usina × CDI&quot;, mais abaixo.
               </p>
             </>
           ) : null}

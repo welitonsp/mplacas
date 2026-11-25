@@ -101,8 +101,9 @@ def test_projection_reproduces_the_documented_example() -> None:
     # degradação 0,5%, sem Fio B (GD I). Premissas de custo conservadoras
     # (auditoria 2026-11-25): O&M 1% e inversor a 35% nos anos 12 e 24. Delta
     # frente às premissas antigas (O&M 0,5%, inversor 15% só no ano 12): TIR
-    # 32,6% → 31,6%, payback simples 47 → 48 meses, payback contando o CDI
-    # 60 → 62 meses.
+    # 32,6% → 31,6%, payback simples 47 → 47 meses (a degradação passou a contar
+    # só a partir do mês-âncora, o que compensa os custos novos), payback
+    # contando o CDI 60 → 62 meses.
     result = project(
         investment_brl=Decimal("20000"),
         start_month="2025-09",
@@ -117,7 +118,7 @@ def test_projection_reproduces_the_documented_example() -> None:
     assert result.wire_b_applied is False  # GD I: fora da transição do Fio B
     assert result.irr_per_year is not None
     assert Decimal("0.31") < result.irr_per_year < Decimal("0.34")
-    assert result.payback_simple_months == 48
+    assert result.payback_simple_months == 47
     assert result.payback_discounted_months == 62
     assert result.payback_discounted_months is not None
     assert result.payback_discounted_months > result.payback_simple_months
@@ -364,3 +365,52 @@ def test_irr_spread_over_cdi_is_computed_from_the_displayed_rates() -> None:
         investment_brl=Decimal("100000"), savings_by_month={"2025-10": Decimal("5")}
     )
     assert never is not None and never.irr_spread_over_cdi_per_year is None
+
+
+def test_inverter_cost_at_month_144_is_35_percent_of_investment_inflated_by_ipca() -> None:
+    # Com e sem a troca (só o ano 12), os fluxos são iguais em todos os meses
+    # menos no 144; lá a diferença é exatamente o custo absoluto do inversor.
+    with_inverter = _basic_project(premises=replace(PREMISES, inverter_replacement_years=(12,)))
+    without = _basic_project(premises=replace(PREMISES, inverter_replacement_years=()))
+    assert with_inverter is not None and without is not None
+    expected = Decimal("0.35") * Decimal("20000") * (Decimal("1") + PREMISES.ipca_per_year) ** 12
+    assert abs(without.cash_flows[144] - with_inverter.cash_flows[144] - expected) < Decimal("1e-9")
+    assert without.cash_flows[143] == with_inverter.cash_flows[143]
+    assert without.cash_flows[145] == with_inverter.cash_flows[145]
+
+
+def test_real_series_is_deflated_from_today_not_from_commissioning() -> None:
+    # 24 meses depois da ligação: o patrimônio do ano 2 já está em reais de hoje
+    # (real = nominal); o do ano 0 vale mais em reais de hoje que o nominal.
+    result = _basic_project(months_elapsed=24)
+    assert result is not None
+    by_year = {p.year: p for p in result.patrimony}
+    assert by_year[2].solar_path_real_brl == by_year[2].solar_path_brl
+    assert by_year[2].cdi_path_real_brl == by_year[2].cdi_path_brl
+    inflation = Decimal("1") + PREMISES.ipca_per_year
+    assert abs(by_year[0].cdi_path_real_brl - Decimal("20000") * inflation**2) < Decimal("0.02")
+    deflator = inflation ** (Decimal(25 * 12 - 24) / 12)
+    last = by_year[25]
+    assert abs(last.solar_path_real_brl - last.solar_path_brl / deflator) < Decimal("0.02")
+
+
+def test_degradation_starts_at_the_anchor_month() -> None:
+    # Sem reajuste de tarifa e sem Fio B, a economia do mês seguinte à âncora é
+    # a de partida × (1 − d)^(1/12), não × (1 − d)^(k/12) desde a ligação.
+    premises = replace(PREMISES, tariff_growth_per_year=Decimal("0"))
+    savings = {add_months("2025-09", k): Decimal("100") for k in range(1, 25)}
+    result = _basic_project(savings_by_month=savings, premises=premises)
+    assert result is not None
+    # 24 meses reais (2.400) + 276 projetados: 100 × (1 − d)^(j/12), j = 1..276,
+    # contados a partir da âncora (mês 24), não da ligação.
+    d = Decimal("1") - premises.degradation_per_year
+    expected = sum((Decimal("100") * d ** (Decimal(j) / 12) for j in range(1, 277)), Decimal("0"))
+    assert abs(result.lifetime_savings_brl - Decimal("2400") - expected) < Decimal("0.02")
+
+
+def test_rounding_is_half_up_on_four_decimals() -> None:
+    # 0,12345 deve virar 0,1235 (e não 0,1234 do arredondamento do banqueiro).
+    from mplacas.intelligence.investor_metrics import _q4
+
+    assert _q4(Decimal("0.12345")) == Decimal("0.1235")
+    assert _q4(Decimal("0.12355")) == Decimal("0.1236")

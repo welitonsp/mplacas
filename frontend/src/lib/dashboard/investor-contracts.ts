@@ -70,6 +70,10 @@ export interface InvestorPanel {
   cyclesCounted: number
   calculationVersions: string[]
   includesPreCorrectionCycles: boolean
+  // Causas separadas do aviso (cada uma com a sua frase): ciclos de versão anterior
+  // à 0.4.0 tendem a SUBESTIMAR; ciclo sem tarifa homologada é um PISO.
+  preInjectionFix: boolean
+  billTariffFloor: boolean
   lowConfidenceBaseline: boolean
   indices: { cdi12mPerYear: string | null; ipca12mPerYear: string | null; asOfMonth: string | null; source: string }
   realized: InvestorRealized | null
@@ -187,6 +191,8 @@ export function parseInvestorPanel(payload: unknown): InvestorPanel {
     cyclesCounted: int(payload, 'cycles_counted'),
     calculationVersions: versions as string[],
     includesPreCorrectionCycles: bool(payload, 'includes_pre_correction_cycles'),
+    preInjectionFix: payload.pre_injection_fix === true,
+    billTariffFloor: payload.bill_tariff_floor === true,
     lowConfidenceBaseline: bool(payload, 'low_confidence_baseline'),
     indices: {
       cdi12mPerYear: strOrNull(indices, 'cdi_12m_per_year'),

@@ -83,8 +83,6 @@ def _serialize(result) -> dict[str, object]:
             "health_score": intelligence.health_score,
             "total_amount_brl": str(intelligence.total_amount_brl),
             "public_lighting_brl": str(intelligence.public_lighting_brl),
-            # total − energia − iluminação, calculado aqui (ADR-012).
-            "other_charges_brl": str(intelligence.other_charges_brl),
             "tariff_with_taxes_brl_kwh": (
                 str(intelligence.tariff_with_taxes_brl_kwh)
                 if intelligence.tariff_with_taxes_brl_kwh is not None
@@ -363,6 +361,7 @@ def _serialize_financial_return(result: FinancialReturnResult) -> dict[str, obje
         "cycles_counted": result.cycles_counted,
         "cycles_expected": result.cycles_expected,
         "roi_percent": (str(result.roi_percent) if result.roi_percent is not None else None),
+        "investment_recovered": result.investment_recovered,
         "net_gain_percent": (
             str(result.net_gain_percent) if result.net_gain_percent is not None else None
         ),
@@ -418,6 +417,8 @@ def _serialize_investor(panel: InvestorPanel) -> dict[str, object]:
         "cycles_counted": panel.cycles_counted,
         "calculation_versions": list(panel.calculation_versions),
         "includes_pre_correction_cycles": panel.includes_pre_correction_cycles,
+        "pre_injection_fix": panel.pre_injection_fix,
+        "bill_tariff_floor": panel.bill_tariff_floor,
         "low_confidence_baseline": panel.low_confidence_baseline,
         "indices": {
             "cdi_12m_per_year": _dec(panel.cdi_12m_per_year),

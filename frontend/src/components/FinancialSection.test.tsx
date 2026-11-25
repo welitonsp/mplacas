@@ -49,6 +49,7 @@ function buildFinancialReturn(
       cycles_expected: null,
       roi_percent: null,
       net_gain_percent: null,
+      investment_recovered: false,
       payback_projection_months: null,
       unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
       payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
@@ -300,6 +301,7 @@ describe('FinancialSection', () => {
             cycles_expected: 1,
             roi_percent: '2.36',
             net_gain_percent: '-97.6',
+            investment_recovered: false,
             payback_projection_months: 42,
             unavailable_reason: null,
             payback_unavailable_reason: null,
@@ -343,31 +345,5 @@ describe('FinancialSection', () => {
 
     screen.getByRole('button', { name: 'Tentar novamente' }).click()
     expect(refetch).toHaveBeenCalledTimes(1)
-  })
-  it('"Outros encargos" vem pronto do backend: mostrado quando o campo é positivo, ausente quando falta', () => {
-    const { rerender } = render(
-      <FinancialSection
-        indicators={buildIndicators({ other_charges_brl: 12.34 })}
-        referenceMonth="2026-07"
-        financialReturn={buildFinancialReturn()}
-      />
-    )
-    let details = screen.getByText('Detalhes da fatura de jul/26').closest('details') as HTMLElement
-    expect(within(details).getByRole('img', { name: /Total R\$\s*420,71/ }).getAttribute('aria-label')).toMatch(
-      /Outros encargos R\$\s*12,34/
-    )
-
-    // Sem o campo (backend antigo), a tela NÃO refaz a conta total − energia − iluminação.
-    rerender(
-      <FinancialSection
-        indicators={buildIndicators({ total_amount_brl: 500, other_charges_brl: undefined })}
-        referenceMonth="2026-07"
-        financialReturn={buildFinancialReturn()}
-      />
-    )
-    details = screen.getByText('Detalhes da fatura de jul/26').closest('details') as HTMLElement
-    expect(
-      within(details).getByRole('img', { name: /Total R\$\s*500,00/ }).getAttribute('aria-label')
-    ).not.toMatch(/Outros encargos/)
   })
 })

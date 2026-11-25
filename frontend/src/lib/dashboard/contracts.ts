@@ -23,9 +23,6 @@ export interface ExecutiveIndicators {
   health_score: MetricValue
   total_amount_brl: MetricValue
   public_lighting_brl: MetricValue
-  // total − energia − iluminação, calculado no backend (ADR-012); ausente em
-  // backend antigo — a tela então não mostra "Outros encargos".
-  other_charges_brl?: MetricValue
   tariff_with_taxes_brl_kwh: MetricValue
   tariff_without_taxes_brl_kwh: MetricValue
   credit_balance_kwh: MetricValue
@@ -638,7 +635,6 @@ export function parseExecutiveDashboard(payload: unknown): ExecutiveDashboardRes
         health_score: metricValue(indicators, 'health_score'),
         total_amount_brl: metricValue(indicators, 'total_amount_brl'),
         public_lighting_brl: metricValue(indicators, 'public_lighting_brl'),
-        other_charges_brl: metricValueOrMissing(indicators, 'other_charges_brl'),
         tariff_with_taxes_brl_kwh: metricValue(indicators, 'tariff_with_taxes_brl_kwh'),
         tariff_without_taxes_brl_kwh: metricValue(indicators, 'tariff_without_taxes_brl_kwh'),
         credit_balance_kwh: metricValue(indicators, 'credit_balance_kwh'),

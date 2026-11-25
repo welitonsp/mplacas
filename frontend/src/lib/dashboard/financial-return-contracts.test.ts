@@ -21,6 +21,7 @@ function buildPayload(overrides: Record<string, unknown> = {}) {
     cycles_expected: 17,
     roi_percent: '19.0',
     net_gain_percent: '-81.0',
+    investment_recovered: false,
     payback_projection_months: 64,
     unavailable_reason: null,
     payback_unavailable_reason: null,
@@ -42,6 +43,7 @@ describe('parseFinancialReturn', () => {
       cycles_expected: 17,
       roi_percent: '19.0',
       net_gain_percent: '-81.0',
+      investment_recovered: false,
       payback_projection_months: 64,
       unavailable_reason: null,
       payback_unavailable_reason: null,
@@ -165,18 +167,21 @@ describe('coverageLabel / hasPartialCoverage', () => {
 })
 
 describe('isPaybackAlreadyReached', () => {
-  it('identifica payback já atingido quando payback_projection_months == cycles_counted', () => {
-    const result = parseFinancialReturn(
-      buildPayload({ cycles_counted: 20, payback_projection_months: 20 })
+  it('usa o campo investment_recovered do backend, não a igualdade com cycles_counted', () => {
+    const recovered = parseFinancialReturn(
+      buildPayload({ cycles_counted: 3, payback_projection_months: null, investment_recovered: true })
     )
-    expect(isPaybackAlreadyReached(result)).toBe(true)
+    expect(isPaybackAlreadyReached(recovered)).toBe(true)
+    // Coincidência numérica não conta mais como "já voltou".
+    const coincidence = parseFinancialReturn(
+      buildPayload({ cycles_counted: 20, payback_projection_months: 20, investment_recovered: false })
+    )
+    expect(isPaybackAlreadyReached(coincidence)).toBe(false)
   })
 
-  it('não identifica payback atingido quando a projeção está no futuro', () => {
-    const result = parseFinancialReturn(
-      buildPayload({ cycles_counted: 12, payback_projection_months: 64 })
-    )
-    expect(isPaybackAlreadyReached(result)).toBe(false)
+  it('backend antigo, sem o campo, não afirma que o investimento voltou', () => {
+    const { investment_recovered: _omitted, ...legacy } = buildPayload({})
+    expect(isPaybackAlreadyReached(parseFinancialReturn(legacy))).toBe(false)
   })
 })
 

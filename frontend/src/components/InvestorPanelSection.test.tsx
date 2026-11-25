@@ -38,11 +38,40 @@ describe('InvestorPanelSection', () => {
     expect(within(group).getByText('Projeção: retorno anual (TIR)')).toBeInTheDocument()
   })
 
-  it('diz em linguagem simples quanto do investimento a usina devolve por ano', () => {
+  it('diz quanto do investimento a usina devolve por ano, como REALIZADO e fora do grupo Projeção', () => {
     renderSection(investorAvailablePayload)
     // 0,2829 vindo do backend → 28%.
-    expect(screen.getByText(/A usina devolve cerca de 28% do investimento por ano/)).toBeInTheDocument()
-    expect(screen.getByText(/Economia dos últimos 1 mês de faturas confirmadas/)).toBeInTheDocument()
+    const line = screen.getByText(/A usina devolve cerca de 28% do investimento por ano/)
+    expect(screen.getByRole('group', { name: 'Projeção' })).not.toContainElement(line)
+    expect(screen.getByText('Realizado', { exact: true })).toBeInTheDocument()
+    // Com 1 mês de faturas é média anualizada, e o texto diz "último mês".
+    expect(screen.getByText(/Média anualizada: economia do último mês de faturas confirmadas/)).toBeInTheDocument()
+    expect(screen.queryByText(/últimos 1 mês/)).not.toBeInTheDocument()
+  })
+
+  it('com 12 meses de faturas, não fala em média anualizada', () => {
+    renderSection({
+      ...investorAvailablePayload,
+      projection: { ...investorAvailablePayload.projection, baseline_cycles: 12 },
+    })
+    expect(screen.getByText(/Economia dos últimos 12 meses de faturas confirmadas/)).toBeInTheDocument()
+    expect(screen.queryByText(/Média anualizada/)).not.toBeInTheDocument()
+  })
+
+  it('rotula a diferença entre os dois paybacks da aba', () => {
+    renderSection(investorAvailablePayload)
+    expect(screen.getByText(/Projeção com manutenção e inversor\. Contando o CDI/)).toBeInTheDocument()
+  })
+
+  it('VPL: rótulo neutro, valor absoluto e "a mais/a menos"', () => {
+    renderSection({
+      ...investorAvailablePayload,
+      projection: { ...investorAvailablePayload.projection, npv_at_cdi_net_brl: '-4200.50' },
+    })
+    expect(screen.getByText('Diferença para o CDI (VPL)')).toBeInTheDocument()
+    expect(screen.getByText('R$ 4.200,50')).toBeInTheDocument()
+    expect(screen.getAllByText(/a menos que o CDI, trazido a valor presente pelo próprio CDI/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/-4\.200/)).not.toBeInTheDocument()
   })
 
   it('mostra o patrimônio em dinheiro de hoje, com a inflação e o CDI usados, e a premissa visível', () => {
@@ -133,9 +162,19 @@ describe('InvestorPanelSection', () => {
     expect(note.compareDocumentPosition(tir) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('sinaliza faturas calculadas antes da correção 0.3.0', () => {
-    renderSection({ ...investorAvailablePayload, includes_pre_correction_cycles: true })
-    expect(screen.getByRole('note', { name: 'Avisos sobre a projeção' })).toHaveTextContent(/antes da correção/)
+  it('versão antiga do cálculo: avisa que tende a SUBESTIMAR (e não que superestima)', () => {
+    renderSection({ ...investorAvailablePayload, includes_pre_correction_cycles: true, pre_injection_fix: true })
+    const note = screen.getByRole('note', { name: 'Avisos sobre a projeção' })
+    expect(note).toHaveTextContent(/tende a subestimar a economia/)
+    expect(note).not.toHaveTextContent(/superestimar/)
+    expect(note).not.toHaveTextContent(/valor mínimo \(piso\)/)
+  })
+
+  it('ciclo sem tarifa homologada: avisa que é um piso, com frase própria', () => {
+    renderSection({ ...investorAvailablePayload, includes_pre_correction_cycles: true, bill_tariff_floor: true })
+    const note = screen.getByRole('note', { name: 'Avisos sobre a projeção' })
+    expect(note).toHaveTextContent(/valor mínimo \(piso\)/)
+    expect(note).not.toHaveTextContent(/versão anterior do cálculo/)
   })
 
   it('com 12 faturas e versão corrigida, não mostra aviso', () => {

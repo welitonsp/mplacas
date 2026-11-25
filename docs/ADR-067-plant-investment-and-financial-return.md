@@ -389,3 +389,19 @@ indisponibilidade. Reviewer obrigatório.
 progresso em `brand-primary`, rótulo de cobertura, projeção rotulada como projeção,
 diálogo de cadastro do CAPEX visível apenas para ADMIN. Testes de componente mais
 `npm run build` com verificação das classes no CSS gerado. Sem reviewer.
+
+## Adendo (2026-11-25): o retorno exclui o mês da ligação
+
+O retorno financeiro (`financial_return_service.py`) passou a usar a mesma regra do
+painel do investidor (ADR-079): só entram na soma, na contagem de ciclos e na cobertura
+os meses ESTRITAMENTE posteriores ao mês da ligação (`counts_in_savings`). A fatura do
+mês da ligação é de geração parcial; antes, o retorno a contava e o painel do investidor
+não, e as duas telas da mesma aba mostravam conjuntos de faturas diferentes. Efeito
+visível: o número de ciclos cai em um (por exemplo, "27 ciclos" passa a 26, também em
+`cycles_expected`) e o percentual de retorno acumulado diminui na economia daquele mês.
+
+Campos aditivos do mesmo ajuste: `net_gain_percent` (lucro sobre o investimento,
+(economia − investimento) ÷ investimento, nunca `-0.0`) e `investment_recovered`
+(economia acumulada ≥ investimento, sem o piso de 6 ciclos do payback projetado, que
+substitui a igualdade `payback_projection_months == cycles_counted` como sinal de
+"já voltou").

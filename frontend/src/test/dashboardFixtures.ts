@@ -182,6 +182,7 @@ export const financialReturnUnavailablePayload = {
   cycles_expected: null,
   roi_percent: null,
   net_gain_percent: null,
+  investment_recovered: false,
   payback_projection_months: null,
   unavailable_reason: 'INVESTMENT_NOT_REGISTERED',
   payback_unavailable_reason: 'INVESTMENT_NOT_REGISTERED',

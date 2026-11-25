@@ -112,6 +112,8 @@ const returnReached = {
   cycles_counted: 25,
   cycles_expected: 26,
   roi_percent: '137.8',
+  net_gain_percent: '37.8',
+  investment_recovered: true,
   payback_projection_months: 25,
   unavailable_reason: null,
   payback_unavailable_reason: null,
@@ -188,8 +190,9 @@ describe('OverviewPage — aba Início (ADR-083)', () => {
     expect(within(savings).getByText('Estimado', { exact: true })).toBeInTheDocument()
     expect(within(savings).getByText('R$ 682,38')).toBeInTheDocument()
     expect(within(savings).getByText('R$ 70,22')).toBeInTheDocument()
-    expect(await within(savings).findByText('Investimento já recuperado')).toBeInTheDocument()
-    expect(within(savings).getByRole('img', { name: '137,8% do investimento já voltou em economia' })).toBeInTheDocument()
+    expect(await within(savings).findByText('Já voltou do investimento')).toBeInTheDocument()
+    expect(within(savings).getByRole('img', { name: '138% do investimento já voltou em economia' })).toBeInTheDocument()
+    expect(within(savings).getByText('Lucro de 38% sobre o investimento')).toBeInTheDocument()
     expect(within(savings).getByText('R$ 15.435,79 economizados de R$ 11.200,00 investidos')).toBeInTheDocument()
     expect(within(savings).getByRole('link', { name: /Ver meu dinheiro/ })).toHaveAttribute('href', '/dashboard/dinheiro')
   })
