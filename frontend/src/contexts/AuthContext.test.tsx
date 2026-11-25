@@ -1,12 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useAuth, AuthProvider } from './AuthContext'
 import { TokenStore } from '../lib/auth'
 import { SELECTED_PLANT_STORAGE_KEY } from './PlantContext'
-
-vi.mock('../env', () => ({
-  API_URL: 'https://api.example.test',
-}))
 
 beforeEach(() => {
   TokenStore.clear()
@@ -145,5 +141,98 @@ describe('AuthContext — falha antes de qualquer resposta HTTP', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('AuthContext — sessão pelo cookie (ADR-102)', () => {
+  const renderAuth = () =>
+    renderHook(() => useAuth(), {
+      wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
+    })
+
+  it('login guarda só o access token: o refresh_token do corpo nunca entra em memória', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      if (String(input).endsWith('/auth/login')) {
+        return new Response(JSON.stringify({ access_token: 'acesso-1', refresh_token: 'REFRESH-SECRETO' }), { status: 200 })
+      }
+      return new Response(null, { status: 401 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { result } = renderAuth()
+
+    await act(async () => {
+      await result.current.login('maria', 'senha')
+    })
+
+    expect(result.current.status).toBe('authenticated')
+    expect(TokenStore.get()).toBe('acesso-1')
+    // Nada exposto pelo contexto carrega o refresh token.
+    expect(JSON.stringify(result.current)).not.toContain('REFRESH-SECRETO')
+
+    const [, loginInit] = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/auth/login')) as [string, RequestInit]
+    expect(loginInit.credentials).toBe('same-origin')
+    expect(new Headers(loginInit.headers).get('X-Mplacas-Auth')).toBe('1')
+
+    // O logout depois do login também não leva o refresh token (só o cookie).
+    act(() => result.current.logout())
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/auth/logout'))).toBe(true),
+    )
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(String(init?.body ?? '')).not.toContain('REFRESH-SECRETO')
+    }
+  })
+
+  it('logout limpa a memória e chama /auth/logout com keepalive, credentials e o cabeçalho', async () => {
+    TokenStore.set('acesso')
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { result } = renderAuth()
+    expect(result.current.status).toBe('authenticated')
+
+    act(() => result.current.logout())
+
+    expect(TokenStore.get()).toBeNull()
+    expect(result.current.isAuthenticated).toBe(false)
+    expect(result.current.sessionEnded).toBe(false)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/auth/logout')
+    expect(init.keepalive).toBe(true)
+    expect(init.credentials).toBe('same-origin')
+    expect(init.body).toBeUndefined()
+    expect(new Headers(init.headers).get('X-Mplacas-Auth')).toBe('1')
+  })
+
+  it('ao montar sem token, pergunta pelo cookie e adota o access token', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ access_token: 'do-cookie' }), { status: 200 })))
+    const { result } = renderAuth()
+
+    expect(result.current.status).toBe('checking')
+    await waitFor(() => expect(result.current.status).toBe('authenticated'))
+    expect(TokenStore.get()).toBe('do-cookie')
+    expect(result.current.sessionEnded).toBe(false)
+  })
+
+  it('um login feito enquanto a checagem roda não é desfeito pela resposta atrasada dela', async () => {
+    let answerRefresh: (response: Response) => void = () => undefined
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      if (String(input).endsWith('/auth/refresh')) {
+        return new Promise<Response>((resolve) => { answerRefresh = resolve })
+      }
+      return Promise.resolve(new Response(JSON.stringify({ access_token: 'do-login' }), { status: 200 }))
+    }))
+    const { result } = renderAuth()
+
+    await act(async () => {
+      await result.current.login('maria', 'senha')
+    })
+    await act(async () => {
+      answerRefresh(new Response('', { status: 401 }))
+      await new Promise((resolve) => setTimeout(resolve, 400))
+    })
+
+    expect(result.current.status).toBe('authenticated')
+    expect(TokenStore.get()).toBe('do-login')
   })
 })

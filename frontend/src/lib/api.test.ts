@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { API_URL } from '../env'
-import { DATA_TIMEOUT_MS, RequestTimeoutError, apiFetch, configureApi, downloadMonthlyReportExport, fetchMonthlyReportExport, fetchPlants, uploadBillPdf, withTimeout } from './api'
+import { DATA_TIMEOUT_MS, RequestTimeoutError, SessionRefreshUnavailableError, apiFetch, configureApi, downloadMonthlyReportExport, fetchMonthlyReportExport, fetchPlants, uploadBillPdf, withTimeout } from './api'
 import { TokenStore } from './auth'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -324,37 +324,28 @@ describe('downloadMonthlyReportExport', () => {
   })
 })
 
-// A-02 da auditoria v6 (S1). O backend rotaciona o refresh token e revoga a
-// FAMÍLIA inteira ao detectar reutilização de um token já consumido
-// (`src/mplacas/auth/session_service.py::_handle_failed_rotation`). Antes do
-// single-flight, cada 401 disparava seu próprio refresh: duas requisições
-// concorrentes apresentavam o mesmo refresh token, a segunda caía como
-// reutilização, e o usuário era deslogado pelo controle de segurança
-// funcionando como projetado.
-describe('apiFetch — renovação single-flight (A-02)', () => {
+// A-02 da auditoria v6 (S1), agora com o cookie da ADR-102. O backend
+// rotaciona o refresh token e revoga a família ao detectar reutilização; por
+// isso uma única renovação por vez (single-flight na aba, lock entre abas).
+describe('apiFetch — renovação pelo cookie (A-02, ADR-102)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     TokenStore.clear()
-    configureApi(() => null, () => {}, () => {})
+    configureApi(() => {})
   })
 
-  it('duas requisições com 401 simultâneo usam UMA única renovação', async () => {
+  it('duas requisições com 401 simultâneo usam UMA única renovação, sem corpo e com o cabeçalho', async () => {
     TokenStore.set('token-velho')
-    const setRefresh = vi.fn()
-    const logout = vi.fn()
-    configureApi(() => 'refresh-1', setRefresh, logout)
+    const expired = vi.fn()
+    configureApi(expired)
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/auth/refresh')) {
-        return jsonResponse({ access_token: 'token-novo', refresh_token: 'refresh-2' })
+        return jsonResponse({ access_token: 'token-novo', refresh_token: 'nunca-guardar' })
       }
-      // A primeira tentativa de cada recurso expira; a repetição usa o token
-      // renovado e passa.
-      const auth = 'token-novo'
-      return TokenStore.get() === auth
-        ? jsonResponse({ ok: true })
-        : new Response('', { status: 401 })
+      return TokenStore.get() === 'token-novo' ? jsonResponse({ ok: true }) : new Response('', { status: 401 })
     })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -362,58 +353,97 @@ describe('apiFetch — renovação single-flight (A-02)', () => {
 
     expect(a.status).toBe(200)
     expect(b.status).toBe(200)
-    // O ponto do teste: uma renovação só. Sem single-flight seriam duas, e a
-    // segunda apresentaria um refresh token já consumido.
     const refreshCalls = fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/auth/refresh'))
     expect(refreshCalls).toHaveLength(1)
-    expect(setRefresh).toHaveBeenCalledTimes(1)
-    expect(logout).not.toHaveBeenCalled()
+    const init = refreshCalls[0]?.[1] as RequestInit
+    expect(String(refreshCalls[0]?.[0])).toBe('/api/auth/refresh')
+    expect(init.body).toBeUndefined()
+    expect(init.credentials).toBe('same-origin')
+    expect(init.referrerPolicy).toBe('same-origin')
+    expect(new Headers(init.headers).get('X-Mplacas-Auth')).toBe('1')
+    expect(expired).not.toHaveBeenCalled()
+    expect(TokenStore.get()).toBe('token-novo')
   })
 
-  it('renovação rejeitada desloga e não deixa promessa presa para a próxima chamada', async () => {
-    TokenStore.set('token-velho')
-    const logout = vi.fn()
-    configureApi(() => 'refresh-invalido', () => {}, logout)
+  it('toda chamada de dados vai à própria origem com credentials same-origin', async () => {
+    TokenStore.set('t')
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.endsWith('/auth/refresh')) return new Response('', { status: 401 })
-      return new Response('', { status: 401 })
-    })
+    await apiFetch('/plants')
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/plants')
+    expect(init.credentials).toBe('same-origin')
+  })
+
+  it('renovação recusada (401 duas vezes) encerra a sessão e não deixa promessa presa', async () => {
+    TokenStore.set('token-velho')
+    const expired = vi.fn()
+    configureApi(expired)
+
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response('', { status: 401 }))
     vi.stubGlobal('fetch', fetchMock)
 
     const first = await apiFetch('/recurso')
     expect(first.status).toBe(401)
-    expect(logout).toHaveBeenCalled()
+    expect(expired).toHaveBeenCalled()
+    const refreshes = () => fetchMock.mock.calls.filter(([i]) => String(i).endsWith('/auth/refresh')).length
+    // Uma repetição em 401 (outra aba pode ter acabado de rotacionar).
+    expect(refreshes()).toBe(2)
 
-    // Segunda chamada precisa tentar renovar de novo: se a promessa em voo
-    // ficasse em cache, toda requisição seguinte herdaria a falha antiga sem
-    // nunca mais tentar.
-    const antes = fetchMock.mock.calls.filter(([i]) => String(i).endsWith('/auth/refresh')).length
     await apiFetch('/outro-recurso')
-    const depois = fetchMock.mock.calls.filter(([i]) => String(i).endsWith('/auth/refresh')).length
-    expect(depois).toBe(antes + 1)
+    expect(refreshes()).toBe(4)
   })
 
-  it('resposta 200 malformada não grava token inválido e trata como falha', async () => {
+  it('401 seguido de 200 no refresh (outra aba acabou de rotacionar) mantém a sessão', async () => {
     TokenStore.set('token-velho')
-    const setRefresh = vi.fn()
-    const logout = vi.fn()
-    configureApi(() => 'refresh-1', setRefresh, logout)
+    const expired = vi.fn()
+    configureApi(expired)
+    let refreshCount = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/auth/refresh')) {
+        refreshCount += 1
+        return refreshCount === 1 ? new Response('', { status: 401 }) : jsonResponse({ access_token: 'token-novo' })
+      }
+      return TokenStore.get() === 'token-novo' ? jsonResponse({ ok: true }) : new Response('', { status: 401 })
+    }))
+
+    const response = await apiFetch('/recurso')
+
+    expect(response.status).toBe(200)
+    expect(refreshCount).toBe(2)
+    expect(expired).not.toHaveBeenCalled()
+  })
+
+  it('renovação sem rede não desloga: falha a chamada para a tela oferecer nova tentativa', async () => {
+    TokenStore.set('token-velho')
+    const expired = vi.fn()
+    configureApi(expired)
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/auth/refresh')) throw new TypeError('Failed to fetch')
+      return new Response('', { status: 401 })
+    }))
+
+    await expect(apiFetch('/recurso')).rejects.toBeInstanceOf(SessionRefreshUnavailableError)
+    expect(expired).not.toHaveBeenCalled()
+    expect(TokenStore.get()).toBe('token-velho')
+  })
+
+  it('resposta 200 malformada não grava token inválido e trata como sessão encerrada', async () => {
+    TokenStore.set('token-velho')
+    const expired = vi.fn()
+    configureApi(expired)
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      // 200, mas sem os campos do contrato — uma asserção de tipo não existe
-      // em runtime e gravaria `undefined` no TokenStore.
-      if (url.endsWith('/auth/refresh')) return jsonResponse({ token: 'formato-errado' })
+      if (String(input).endsWith('/auth/refresh')) return jsonResponse({ token: 'formato-errado' })
       return new Response('', { status: 401 })
     }))
 
     const response = await apiFetch('/recurso')
 
     expect(response.status).toBe(401)
-    expect(setRefresh).not.toHaveBeenCalled()
-    expect(logout).toHaveBeenCalled()
+    expect(expired).toHaveBeenCalled()
     expect(TokenStore.get()).toBe('token-velho')
   })
 })
@@ -426,7 +456,7 @@ describe('withTimeout / apiFetch — prazo e cancelamento (A-03)', () => {
     vi.restoreAllMocks()
     vi.useRealTimers()
     TokenStore.clear()
-    configureApi(() => null, () => {}, () => {})
+    configureApi(() => {})
   })
 
   it('aborta e sinaliza prazo esgotado quando o servidor nao responde', async () => {

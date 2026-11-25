@@ -34,14 +34,19 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # ADR-102: o frontend chama sempre `/api` (mesma origem) e a Pages Function
+      # em `functions/api/[[path]].ts` repassa ao Render. A origem da API e o
+      # segredo do proxy NÃO passam por aqui: são variáveis do próprio projeto
+      # no Cloudflare Pages (MPLACAS_API_ORIGIN, MPLACAS_PROXY_SHARED_SECRET),
+      # lidas pela Function em tempo de execução. `VITE_API_URL` deixou de ser
+      # usada no build (o build falha se ela estiver no ambiente); a variável do
+      # GitHub continua existindo só para o `watchdog.yml`.
       - name: Validate required configuration
         env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           missing=()
-          [ -n "$VITE_API_URL" ]          || missing+=(VITE_API_URL)
           [ -n "$CLOUDFLARE_API_TOKEN" ]  || missing+=(CLOUDFLARE_API_TOKEN)
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing+=(CLOUDFLARE_ACCOUNT_ID)
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -56,9 +61,18 @@ jobs:
         run: npm run type-check
 
       - name: Build
-        env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
         run: npm run build
+
+      # `wrangler pages deploy dist` só envia Functions da pasta `functions/` do
+      # diretório atual (aqui, `frontend/`). Compilar antes faz o deploy falhar
+      # se a Function quebrar, em vez de publicar o site sem o proxy `/api`.
+      - name: Compile Pages Function
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          test -f "functions/api/[[path]].ts"
+          test -f dist/_routes.json
+          npx wrangler pages functions build --outdir "$RUNNER_TEMP/pages-functions" --output-routes-path "$RUNNER_TEMP/pages-functions-routes.json"
 
       - name: Deploy to Cloudflare Pages
         env:
@@ -68,3 +82,21 @@ jobs:
           npx wrangler pages deploy dist
           --project-name=mplacas-frontend
           --branch=main
+
+      # Confere o proxy publicado. 503 = Function sem MPLACAS_API_ORIGIN ou
+      # MPLACAS_PROXY_SHARED_SECRET no Cloudflare Pages (falha fechada); 502/504
+      # = Render fora ou acordando. Repete porque o plano grátis hiberna.
+      - name: Smoke test do proxy /api
+        run: |
+          for tentativa in 1 2 3; do
+            status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 https://mplacas-frontend.pages.dev/api/health || true)
+            echo "tentativa $tentativa: HTTP $status"
+            [ "$status" = "200" ] && exit 0
+            if [ "$status" = "503" ]; then
+              echo "Proxy sem configuração: defina MPLACAS_API_ORIGIN e MPLACAS_PROXY_SHARED_SECRET (produção) no Cloudflare Pages e faça novo deploy." >&2
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "A API não respondeu pelo proxy /api." >&2
+          exit 1

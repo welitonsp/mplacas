@@ -85,25 +85,25 @@ O Render vai pedir os 8 valores marcados `sync: false`. Use a URL **pooled** do 
 
 Nunca coloque esses valores em arquivo do repositório: **ele é público**.
 
-### 2.3 Apontar o frontend para a nova URL
+### 2.3 Apontar o frontend para a nova URL (proxy `/api`, ADR-102)
 
-O Render publica em `https://mplacas-api-<sufixo>.onrender.com`.
+O Render publica em `https://mplacas-api-<sufixo>.onrender.com`. O navegador **não** chama esse
+endereço: chama `https://mplacas-frontend.pages.dev/api/*`, e a Pages Function
+(`frontend/functions/api/[[path]].ts`) repassa ao Render. Por isso a URL do Render é configurada
+no Cloudflare Pages, não no build:
 
-1. No GitHub, em **Settings → Secrets and variables → Actions → Variables**, edite `VITE_API_URL`
-   com a URL do Render, **sem barra no final e sem caminho** — só o endereço base.
-2. Rode o workflow **Deploy Frontend** (Actions → Deploy Frontend → Run workflow, branch `main`).
+1. Gere o segredo do proxy (≥ 32 bytes) num terminal: `openssl rand -base64 48`.
+2. No Render (serviço da API → Environment), defina `MPLACAS_PROXY_SHARED_SECRET` com esse valor.
+3. No Cloudflare (Workers & Pages → `mplacas-frontend` → Settings → Variables and Secrets,
+   ambiente **Production**): `MPLACAS_API_ORIGIN` = a URL do Render, **sem barra e sem caminho**
+   (tipo texto), e `MPLACAS_PROXY_SHARED_SECRET` = o mesmo segredo (tipo **Secret**).
+4. Rode o workflow **Deploy Frontend**. O passo "Smoke test do proxy /api" falha com instrução
+   se a Function responder 503 (variável faltando).
 
-São **duas** coisas que precisam apontar para a mesma origem: o cliente HTTP e o
-`Content-Security-Policy` que o navegador aplica. Desde a auditoria de 2026-08-26 (achado A-01) as
-duas saem da mesma variável: `frontend/scripts/render-csp.mjs` resolve o marcador `__API_ORIGIN__`
-em `dist/_headers` durante o `npm run build`. **Não escreva a origem à mão no `_headers`** — o
-script falha de propósito se o marcador sumir, e o teste de contrato também.
-
-Antes desse conserto, o `_headers` trazia a origem fixa da API no Google Cloud. Trocar apenas
-`VITE_API_URL` deixava o CSP apontando para o endereço antigo, e o navegador bloqueava **todas** as
-chamadas do dashboard: a tela carregava, o login falhava, e não havia erro de servidor, log de API
-nem CI vermelho para explicar. Se algum dia você vir esse sintoma, abra o console do navegador e
-procure por violação de CSP antes de investigar o backend.
+O CSP é fixo em `connect-src 'self'`; `frontend/scripts/render-csp.mjs` falha o build se alguém
+reintroduzir uma origem externa, ou se `VITE_API_URL` estiver no ambiente do build (ela não é mais
+lida). A variável `VITE_API_URL` do GitHub continua existindo só para o `watchdog.yml`, que checa
+o `/health` do Render diretamente.
 
 Se mudar o domínio do frontend, atualize também `MPLACAS_CORS_ALLOWED_ORIGINS` no `render.yaml` —
 curinga (`*`) é proibido por design.
@@ -202,7 +202,7 @@ alerta, rode com `incluir_pipeline: false`.
 |---|---|
 | Dashboard não carrega, API responde depois de ~1 min | Cold start normal do plano free |
 | Erro de CORS no navegador | `MPLACAS_CORS_ALLOWED_ORIGINS` diferente da URL real do Pages |
-| Tela carrega mas nenhuma chamada completa, console acusa violação de CSP | `connect-src` aponta para outra origem — rodou o build sem `VITE_API_URL` correta (ver § 2.3) |
+| Tela carrega mas toda chamada a `/api/*` responde 503 | Pages Function sem `MPLACAS_API_ORIGIN` ou `MPLACAS_PROXY_SHARED_SECRET` (produção) no Cloudflare Pages — ver § 2.3; após definir, refaça o deploy |
 | Digest parou sem falha visível no Actions | Agendas desabilitadas por 60 dias de inatividade |
 | `smoke` falha com erro de conexão | URL do Neon errada, ou trocada a pooled pela direta |
 | Migração falha por limitação de sessão/DDL | Usou a URL pooled; use a direta recomendada pelo Neon |

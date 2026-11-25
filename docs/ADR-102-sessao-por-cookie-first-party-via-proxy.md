@@ -221,9 +221,17 @@ Em qualquer plataforma: depois do teto de 30 dias desde o login, pede senha de n
 2. **Proxy:** Pages Function em `/api/*` → Render, repassando `Origin`, `Cookie`, `Set-Cookie` e
    `X-Mplacas-Auth`, e acrescentando `X-Mplacas-Client-IP` (do `CF-Connecting-IP`) e
    `X-Mplacas-Proxy-Secret`. Só então configurar `MPLACAS_PROXY_SHARED_SECRET` no Render e no Pages.
-3. **Frontend:** `VITE_API_URL` aponta para `/api`; `credentials: 'include'` nas chamadas de auth;
-   `X-Mplacas-Auth: 1`; ao carregar, tenta um refresh para restaurar a sessão; repete o refresh
-   uma vez em 401 (item 4); para de guardar refresh token em memória; CSP `connect-src 'self'`.
+3. **Frontend:** base fixa `/api` (`VITE_API_URL` aposentada); `credentials: 'same-origin'` (a API
+   é a mesma origem, `include` é desnecessário); `X-Mplacas-Auth: 1`; ao carregar, tenta um
+   refresh para restaurar a sessão; repete o refresh uma vez em 401 (item 4); para de guardar
+   refresh token em memória; CSP `connect-src 'self'`.
+
+   *Implementado junto com a etapa 2 (2026-11-25).* Detalhes no `AUTH_FRONTEND_CONTRACT.md`
+   ("Frontend" e "Proxy e IP do cliente"). Desvio deliberado do texto acima: o proxy **exige**
+   `MPLACAS_PROXY_SHARED_SECRET` (503 sem ele) em vez de só acrescentá-lo quando existir — atrás
+   da Cloudflare, sem o cabeçalho autenticado, todos os clientes chegariam ao Render com IPs da
+   borda e o limite `usuário + IP` viraria limite por usuário, a negação de serviço direcionada
+   descrita no item 6.
 4. **Limpeza:** remover `refresh_token` dos corpos de resposta e o fallback de corpo no
    refresh/logout; avaliar exigir `X-Mplacas-Auth` no login.
 

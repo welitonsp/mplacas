@@ -40,7 +40,7 @@ function formatDate(iso: string): string {
 }
 
 export function InvitePage() {
-  const { adoptSession } = useAuth()
+  const { adoptSession, endServerSession, isAuthenticated } = useAuth()
   const navigate = useNavigate()
   // Lido uma vez só, na primeira renderização: o efeito pode rodar duas vezes
   // em desenvolvimento, e na segunda o fragmento já foi apagado. Fica só aqui
@@ -118,6 +118,10 @@ export function InvitePage() {
     }
     setSaving(true)
     try {
+      // Alguém já logado neste navegador (ex.: o dono testando o próprio
+      // convite): encerra essa sessão no servidor antes, porque o aceite
+      // sobrescreve o cookie e a sessão antiga ficaria órfã, sem revogação.
+      if (isAuthenticated) await endServerSession()
       const response = await acceptInvitation(tokenRef.current, password)
       if (response.status === 429) {
         setError('Muitas tentativas. Espere alguns minutos e tente de novo.')
@@ -138,15 +142,17 @@ export function InvitePage() {
         setError('O sistema não conseguiu concluir agora. Seu convite continua valendo: tente de novo em instantes.')
         return
       }
-      const body = (await response.json()) as { access_token?: unknown; refresh_token?: unknown }
-      if (typeof body.access_token !== 'string' || typeof body.refresh_token !== 'string') {
+      // Só o access token: o refresh token veio no cookie HttpOnly (ADR-102);
+      // se o corpo ainda trouxer um, é ignorado.
+      const body = (await response.json()) as { access_token?: unknown }
+      if (typeof body.access_token !== 'string' || body.access_token === '') {
         setError('Resposta inesperada do servidor. Tente entrar pela tela de login.')
         return
       }
       tokenRef.current = null
       setPassword('')
       setConfirm('')
-      adoptSession(body.access_token, body.refresh_token, stage.preview.username)
+      adoptSession(body.access_token, stage.preview.username)
       navigate(DASHBOARD_ROOT_PATH, { replace: true })
     } catch {
       setError('Não foi possível concluir agora. Verifique a internet e tente de novo.')

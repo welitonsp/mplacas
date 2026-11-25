@@ -77,16 +77,20 @@ async function loginAndClickProbe() {
   fireEvent.click(await screen.findByRole('button', { name: 'logado' }))
 }
 
+// Sem cookie de sessão: o refresh do carregamento responde 401 e o login abre.
 function stubLogin() {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () =>
-      new Response(JSON.stringify({ access_token: 'a1', refresh_token: 'r1' }), { status: 200 }),
+    vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith('/auth/refresh')
+        ? new Response('{}', { status: 401 })
+        : new Response(JSON.stringify({ access_token: 'a1', refresh_token: 'r1' }), { status: 200 }),
     ),
   )
 }
 
 async function submitLogin() {
+  await screen.findByLabelText('Usuário')
   fireEvent.change(screen.getByLabelText('Usuário'), { target: { value: 'demo' } })
   fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'demo-pass' } })
   fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
@@ -194,7 +198,10 @@ describe('LoginPage — anúncio acessível de carregamento (T10)', () => {
     let resolveFetch: (value: Response) => void = () => {}
     vi.stubGlobal(
       'fetch',
-      vi.fn(() => new Promise<Response>((resolve) => { resolveFetch = resolve }))
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).endsWith('/auth/refresh')
+          ? Promise.resolve(new Response('{}', { status: 401 }))
+          : new Promise<Response>((resolve) => { resolveFetch = resolve }))
     )
 
     const { container } = renderLoginPage()
@@ -262,10 +269,11 @@ describe('LoginPage — aviso de sessão encerrada', () => {
     TokenStore.clear()
   })
 
-  it('visitante novo que abriu um link protegido vê só o login, sem "sessão encerrada"', () => {
+  it('visitante novo que abriu um link protegido vê só o login, sem "sessão encerrada"', async () => {
+    stubLogin()
     renderProtected('/dashboard/dinheiro')
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
     expect(screen.queryByText(SESSION_ENDED_TEXT)).not.toBeInTheDocument()
   })
 
@@ -354,8 +362,8 @@ describe('LoginPage — servidor hibernando (plano grátis, ADR-076)', () => {
     vi.useFakeTimers()
     let resolveLogin: (response: Response) => void = () => undefined
     vi.stubGlobal('fetch', vi.fn((url: string) =>
-      url.endsWith('/health')
-        ? Promise.resolve(new Response('{}', { status: 200 }))
+      url.endsWith('/health') || url.endsWith('/auth/refresh')
+        ? Promise.resolve(new Response('{}', { status: url.endsWith('/health') ? 200 : 401 }))
         : new Promise<Response>((resolve) => {
             resolveLogin = resolve
           }),

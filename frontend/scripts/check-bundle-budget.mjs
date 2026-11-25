@@ -214,9 +214,16 @@ const BUDGETS = [
     // Roteador do app (`App.tsx`) com os providers de Auth/Me e o
     // `ProtectedRoute`; baixado em toda visita logo após o entry. Cresce a
     // cada rota nova. medido: 3,18 kB
+    //
+    // Teto revisado de 3,5 para 4,0 kB em 2026-11-25 (ADR-102, sessão que
+    // sobrevive ao recarregar): o empacotador pôs aqui o transporte da sessão
+    // (`lib/session.ts` — refresh pelo cookie, Web Locks entre abas, repetição
+    // em 401, logout) e as telas "Conectando…"/"Tentar de novo" do
+    // `ProtectedRoute`. Medido: 3,28 kB antes → 3,71 kB depois (+0,43 kB).
+    // Folga de ~0,3 kB (regra de margem de ~5-8%).
     name: 'App (rotas + providers)',
     match: /^App-.*\.js$/,
-    limitKb: 3.5,
+    limitKb: 4.0,
   },
   {
     // Cliente HTTP, sessão (`auth.ts`) e `env.ts`. Cresce a cada endpoint

@@ -1,37 +1,12 @@
-// Valida variáveis de ambiente no startup. Falha claramente se ausentes ou inválidas.
-
-function requireEnv(key: string): string {
-  const value = import.meta.env[key]
-  if (!value || typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`Missing required environment variable: ${key}`)
-  }
-  return value.trim()
-}
-
-export const API_URL = (() => {
-  const raw = requireEnv('VITE_API_URL')
-
-  // Validação por `new URL()` em vez de `startsWith('https://')` (auditoria v6,
-  // achado A-14). Prefixo não é forma: `https://` sozinho, `https:// `, ou
-  // `https://?x=1` passam pelo teste de prefixo e não são endereço utilizável.
-  // O erro apareceria só na primeira requisição, longe da causa — enquanto uma
-  // variável de ambiente malformada deve falhar no startup, com mensagem que
-  // aponta o que está errado.
-  let parsed: URL
-  try {
-    parsed = new URL(raw)
-  } catch {
-    throw new Error(`VITE_API_URL is not a valid URL: ${raw}`)
-  }
-
-  if (parsed.hostname === '') {
-    throw new Error(`VITE_API_URL has no hostname: ${raw}`)
-  }
-
-  // Em produção, exigir HTTPS. Fora dela, `http://localhost` é legítimo.
-  if (import.meta.env.PROD && parsed.protocol !== 'https:') {
-    throw new Error(`VITE_API_URL must use HTTPS in production (got ${parsed.protocol})`)
-  }
-
-  return raw.replace(/\/$/, '') // sem trailing slash
-})()
+// Base da API (ADR-102). O navegador só conversa com a própria origem: em
+// produção, a Cloudflare Pages Function `functions/api/[[path]].ts` repassa
+// `/api/*` ao backend no Render; em desenvolvimento, o proxy do `vite dev`
+// (`vite.config.ts`, alvo em `MPLACAS_DEV_API_ORIGIN`) faz o mesmo papel.
+//
+// Por que caminho fixo e não `VITE_API_URL`: o cookie da sessão é
+// `SameSite=Strict` com `Path=/api/auth` e só existe se a API for a mesma
+// origem do site; a CSP é `connect-src 'self'`. Uma URL absoluta de outra
+// origem quebraria as duas coisas sem erro visível. `VITE_API_URL` deixou de
+// ser lida; o build falha se ela ainda estiver definida (`scripts/render-csp.mjs`),
+// para ninguém achar que está configurando algo que não tem efeito.
+export const API_URL = '/api'

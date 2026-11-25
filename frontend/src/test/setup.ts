@@ -18,7 +18,7 @@ afterEach(cleanup)
 // substituem este stub localmente por um mais completo via
 // `vi.stubGlobal('matchMedia', ...)`, restaurado automaticamente por
 // `vi.unstubAllGlobals()` no fim de cada teste.
-if (typeof window.matchMedia !== 'function') {
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   window.matchMedia = vi.fn((query: string) => ({
     matches: false,
     media: query,
@@ -30,3 +30,12 @@ if (typeof window.matchMedia !== 'function') {
     dispatchEvent: vi.fn(),
   })) as unknown as typeof window.matchMedia
 }
+
+// Nenhum teste fala com a rede. Desde a ADR-102 o `AuthProvider` pergunta ao
+// servidor pela sessão (`POST /api/auth/refresh`) ao montar; um teste que não
+// stuba `fetch` cairia no `fetch` real do Node e ficaria pendurado em DNS,
+// prendendo o single-flight do refresh para os testes seguintes do arquivo.
+// Padrão: falha imediata de rede (o app trata como "servidor inalcançável").
+// Quem precisa de resposta stuba `fetch` como sempre (`vi.stubGlobal`), e
+// `vi.unstubAllGlobals()` devolve a este padrão, não ao `fetch` real.
+globalThis.fetch = (() => Promise.reject(new TypeError('rede desligada nos testes'))) as typeof fetch

@@ -14,8 +14,10 @@ vi.mock('../lib/api', () => ({
 }))
 
 const adoptSession = vi.fn()
+const endServerSession = vi.fn(async () => undefined)
+const authState = vi.hoisted(() => ({ isAuthenticated: false }))
 vi.mock('../contexts/AuthContext', () => ({
-  useAuth: () => ({ adoptSession }),
+  useAuth: () => ({ adoptSession, endServerSession, isAuthenticated: authState.isAuthenticated }),
 }))
 
 import { InvitePage } from './InvitePage'
@@ -92,7 +94,35 @@ describe('InvitePage (ADR-093)', () => {
 
     expect(await screen.findByText('painel')).toBeInTheDocument()
     expect(acceptInvitation).toHaveBeenCalledWith(TOKEN, SENHA)
-    expect(adoptSession).toHaveBeenCalledWith('a', 'r', 'rogerio@example.com')
+    // ADR-102: só o access token; o `refresh_token` do corpo é ignorado.
+    expect(adoptSession).toHaveBeenCalledWith('a', 'rogerio@example.com')
+    expect(JSON.stringify(adoptSession.mock.calls)).not.toContain('"r"')
+    expect(endServerSession).not.toHaveBeenCalled()
+  })
+
+  it('com alguém já logado, encerra a sessão antiga no servidor antes do aceite', async () => {
+    authState.isAuthenticated = true
+    try {
+      const order: string[] = []
+      endServerSession.mockImplementationOnce(async () => {
+        order.push('logout')
+      })
+      inspectInvitation.mockResolvedValue(jsonResponse(PREVIEW))
+      acceptInvitation.mockImplementationOnce(async () => {
+        order.push('accept')
+        return jsonResponse({ access_token: 'a', token_type: 'bearer' })
+      })
+      renderAt(`#token=${TOKEN}`)
+      await screen.findByText('Usina do Rogério')
+      fireEvent.change(screen.getByLabelText('Nova senha'), { target: { value: SENHA } })
+      fireEvent.change(screen.getByLabelText('Repita a senha'), { target: { value: SENHA } })
+      fireEvent.click(screen.getByRole('button', { name: 'Criar senha e entrar' }))
+
+      expect(await screen.findByText('painel')).toBeInTheDocument()
+      expect(order).toEqual(['logout', 'accept'])
+    } finally {
+      authState.isAuthenticated = false
+    }
   })
 
   it('falha do servidor no aceite mantém o formulário e o convite', async () => {
