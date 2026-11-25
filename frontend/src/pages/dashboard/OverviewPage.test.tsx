@@ -523,6 +523,29 @@ describe('Início de usina recém-conectada', () => {
     expect(within(box).queryByRole('button')).not.toBeInTheDocument()
   })
 
+  it('integração da marca desativada (409): explica, sem botão e sem repetir a requisição', async () => {
+    freezeToday()
+    asRole('ADMIN')
+    const importProductionHistory = vi.fn(async () => jsonResponse({ detail: 'provider_discontinued' }, 409))
+    const { resetHistoryAutoImportForTests } = await import('../../components/home/HomeHistoryImport')
+    resetHistoryAutoImportForTests()
+    await renderHome({
+      fetchAnomalyHistory: vi.fn(async () => jsonResponse({ detail: 'x' }, 404)),
+      importProductionHistory,
+    })
+    const box = await screen.findByTestId('home-history-import')
+    expect(
+      await within(box).findByText(
+        'A integração com essa marca foi desativada. Seu histórico continua disponível.',
+      ),
+    ).toBeInTheDocument()
+    expect(within(box).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(box).queryByText(/Tente novamente|ShinePhone|Growatt/)).not.toBeInTheDocument()
+    // Espera um pouco para garantir que nada re-dispara sozinho.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(importProductionHistory).toHaveBeenCalledTimes(1)
+  })
+
   it('quem só lê não dispara a importação', async () => {
     freezeToday()
     asRole('READ_ONLY')

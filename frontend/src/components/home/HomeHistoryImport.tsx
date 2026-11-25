@@ -15,12 +15,17 @@ type State =
   | { kind: 'done'; days: number }
   // a marca não libera o histórico desta conta (ADR-098)
   | { kind: 'meter' }
+  // a integração da marca foi desativada (409 `provider_discontinued`): estado
+  // final, sem botão — tentar de novo só repetiria a mesma recusa
+  | { kind: 'discontinued' }
   | { kind: 'error'; message: string; noConnection: boolean }
   | null
 
 // Uma tentativa automática por usina enquanto a aba estiver aberta: voltar ao
 // Início não bate de novo na marca (o servidor também limita).
 const autoTried = new Set<string>()
+
+const DISCONTINUED_MESSAGE = 'A integração com essa marca foi desativada. Seu histórico continua disponível.'
 
 // Só os códigos que a importação devolve. Mantido aqui (e não importado de
 // provider-account-contracts) para o Início não puxar o módulo de conexão
@@ -30,21 +35,27 @@ const IMPORT_ERRORS: Record<string, string> = {
   provider_rate_limited: 'A marca bloqueou novas consultas por um tempo. Espere cerca de uma hora e tente de novo.',
   provider_unavailable: 'A marca não respondeu agora. Tente de novo em alguns minutos.',
   provider_login_failed: 'A marca recusou o usuário ou a senha guardados. Atualize a conexão em Minha usina.',
-  provider_token_failed: 'A Growatt recusou o token guardado. Gere um novo no app ShinePhone e atualize a conexão em Minha usina.',
+  provider_token_failed: 'A marca recusou o acesso guardado desta conexão.',
   provider_account_unreadable: 'Não foi possível ler a conexão guardada. Conecte de novo em Minha usina.',
   provider_login_blocked: 'A marca bloqueou o acesso vindo do nosso servidor — não é a sua senha. Tente mais tarde.',
   history_import_error: 'Não foi possível gravar a produção agora. Tente de novo em instantes.',
   provider_inverter_in_another_plant: 'Algum inversor desta conta já está ligado a outra usina. Fale com o suporte.',
+  provider_discontinued: DISCONTINUED_MESSAGE,
 }
 
-async function importErrorMessage(response: Response): Promise<string> {
-  if (response.status === 403) return 'Só o administrador da conta pode buscar a produção.'
+async function errorCode(response: Response): Promise<string | null> {
   try {
     const code = ((await response.json()) as { detail?: unknown })?.detail
-    if (typeof code === 'string' && code in IMPORT_ERRORS) return IMPORT_ERRORS[code]
+    return typeof code === 'string' ? code : null
   } catch {
-    // corpo sem JSON: mensagem genérica abaixo
+    // corpo sem JSON: mensagem genérica
+    return null
   }
+}
+
+function importErrorMessage(status: number, code: string | null): string {
+  if (status === 403) return 'Só o administrador da conta pode buscar a produção.'
+  if (code !== null && Object.prototype.hasOwnProperty.call(IMPORT_ERRORS, code)) return IMPORT_ERRORS[code]
   return 'Não foi possível buscar a produção agora. Tente novamente.'
 }
 
@@ -66,12 +77,17 @@ export function HomeHistoryImport({ plantId, onImported }: { plantId: string; on
       const response = await importProductionHistory(plantId)
       if (!response.ok) {
         const noConnection = response.status === 404
+        const code = noConnection ? null : await errorCode(response)
+        if (response.status === 409 && code === 'provider_discontinued') {
+          setState({ kind: 'discontinued' })
+          return
+        }
         setState({
           kind: 'error',
           noConnection,
           message: noConnection
             ? 'Esta usina não está conectada a uma marca de inversor.'
-            : await importErrorMessage(response),
+            : importErrorMessage(response.status, code),
         })
         return
       }
@@ -111,7 +127,9 @@ export function HomeHistoryImport({ plantId, onImported }: { plantId: string; on
               ? 'Produção importada. Atualizando o Início…'
               : 'A marca ainda não tem produção registrada para esta usina. A coleta automática segue todos os dias.'
             : state?.kind === 'meter'
-              ? 'A Growatt não libera o histórico desta conta. A partir de agora o sistema lê o total da usina toda madrugada e mostra a produção de cada dia — o primeiro dia aparece em até dois dias.'
+              ? 'A marca não libera o histórico desta conta. A partir de agora o sistema lê o total da usina toda madrugada e mostra a produção de cada dia — o primeiro dia aparece em até dois dias.'
+              : state?.kind === 'discontinued'
+              ? DISCONTINUED_MESSAGE
               : state?.kind === 'error'
               ? state.message
               : 'Busque na marca a produção dos últimos 90 dias, sem esperar a coleta automática.'}
@@ -124,7 +142,10 @@ export function HomeHistoryImport({ plantId, onImported }: { plantId: string; on
           </>
         )}
       </p>
-      {state?.kind !== 'running' && state?.kind !== 'meter' && !(state?.kind === 'error' && state.noConnection) && (
+      {state?.kind !== 'running' &&
+        state?.kind !== 'meter' &&
+        state?.kind !== 'discontinued' &&
+        !(state?.kind === 'error' && state.noConnection) && (
         <button
           type="button"
           onClick={() => void run()}

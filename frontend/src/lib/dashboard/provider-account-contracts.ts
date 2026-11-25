@@ -53,59 +53,48 @@ export function parseProviderAccount(payload: unknown): ProviderAccount {
   }
 }
 
-// Marcas que o cliente pode escolher (ADR-091/092). O rótulo é o nome do app
-// que o dono conhece; o valor é o que o backend espera.
-export type ProviderBrand = 'NEPVIEWER' | 'GROWATT' | 'GROWATT_TOKEN'
+// Marca que o cliente pode escolher ao conectar. Hoje só NEPViewer: a
+// integração Growatt foi encerrada (sem acesso à API oficial) e o backend
+// recusa conexão nova com `provider_unsupported`. `label`: nome da marca nas
+// mensagens ("A NEPViewer recusou..."); `app`: nome do app do celular.
+export type ProviderBrand = 'NEPVIEWER'
 
-// `label`: nome da marca nas mensagens ("A Growatt recusou..."); `option`: o
-// texto do botão de escolha; `mode`: usuário e senha do app, ou token da API
-// oficial (Growatt, ADR-094 — o login por senha passou a ser bloqueado).
 export const PROVIDER_BRANDS: ReadonlyArray<{
   value: ProviderBrand
   label: string
-  option: string
   app: string
-  mode: 'login' | 'token'
-}> = [
-  { value: 'NEPVIEWER', label: 'NEPViewer', option: 'NEPViewer', app: 'NEPViewer', mode: 'login' },
-  {
-    value: 'GROWATT_TOKEN',
-    label: 'Growatt',
-    option: 'Growatt — token (recomendado)',
-    app: 'ShinePhone (Growatt)',
-    mode: 'token',
-  },
-  {
-    value: 'GROWATT',
-    label: 'Growatt',
-    option: 'Growatt — usuário e senha',
-    app: 'ShinePhone (Growatt)',
-    mode: 'login',
-  },
-]
+}> = [{ value: 'NEPVIEWER', label: 'NEPViewer', app: 'NEPViewer' }]
+
+// Nome das marcas que a API ainda pode devolver numa conexão existente. Uma
+// usina conectada pela Growatt continua informando `GROWATT`/`GROWATT_TOKEN`
+// até o operador desativar a conexão; a tela mostra o nome, mas não oferece
+// reconectar nela.
+const PROVIDER_LABELS: Readonly<Record<string, string>> = {
+  NEPVIEWER: 'NEPViewer',
+  GROWATT: 'Growatt',
+  GROWATT_TOKEN: 'Growatt',
+}
 
 export function isGrowatt(provider: string | null | undefined): boolean {
   return provider === 'GROWATT' || provider === 'GROWATT_TOKEN'
 }
 
 export function brandLabel(provider: string | null | undefined): string {
-  return PROVIDER_BRANDS.find((brand) => brand.value === provider)?.label ?? 'fabricante'
+  if (provider == null || !Object.prototype.hasOwnProperty.call(PROVIDER_LABELS, provider)) return 'fabricante'
+  return PROVIDER_LABELS[provider]
 }
 
 // Mensagens por código de erro do backend (`detail`). Nenhuma repete o que o
 // usuário digitou. `{marca}` vira o nome da marca escolhida.
 const ERROR_MESSAGES: Record<string, string> = {
   provider_login_failed: 'A {marca} recusou o usuário ou a senha. Confira e tente de novo.',
-  provider_token_failed: 'A Growatt recusou o token. Gere um novo no app ShinePhone e cole de novo.',
-  provider_token_invalid: 'Cole o token da API gerado no app ShinePhone.',
-  provider_login_blocked:
-    'A {marca} bloqueou o login por usuário e senha vindo do nosso servidor — não é a sua senha. Use a opção “Growatt — token (recomendado)”.',
   provider_login_invalid: 'Informe o usuário do app {marca}.',
   provider_password_invalid: 'Informe a senha do app {marca}.',
   provider_unavailable: 'A {marca} não respondeu agora. Tente de novo em alguns minutos.',
   provider_rate_limited:
     'A {marca} bloqueou novas tentativas por um tempo. Espere cerca de uma hora e tente de novo.',
-  provider_unsupported: 'Esta marca ainda não é aceita.',
+  provider_unsupported: 'Essa marca não é mais suportada. Hoje a MPlacas conecta apenas inversores NEPViewer.',
+  provider_discontinued: 'A integração com essa marca foi desativada. Seu histórico continua disponível.',
   provider_inverter_in_another_plant:
     'Algum inversor desta conta já está ligado a outra usina. Fale com o suporte.',
   provider_account_in_use: 'Esta conta da {marca} já está conectada a outra usina.',
@@ -130,7 +119,7 @@ export async function providerAccountErrorMessage(
   } catch {
     code = undefined
   }
-  if (typeof code === 'string' && code in ERROR_MESSAGES) {
+  if (typeof code === 'string' && Object.prototype.hasOwnProperty.call(ERROR_MESSAGES, code)) {
     return ERROR_MESSAGES[code].split('{marca}').join(brandLabel(provider))
   }
   if (response.status === 404) return 'Usina não encontrada.'
