@@ -7,6 +7,7 @@ import { useModuleTitle } from '../../hooks/useModuleTitle'
 import { parseExecutiveDashboard } from '../../lib/dashboard/contracts'
 import { parseFinancialReturn } from '../../lib/dashboard/financial-return-contracts'
 import { parseInvestorPanel } from '../../lib/dashboard/investor-contracts'
+import { CycleLedgerSection } from '../../components/CycleLedgerSection'
 import { FinancialSection } from '../../components/FinancialSection'
 import { EmptyState } from '../../components/EmptyState'
 import { MetricCardSkeletonGrid } from '../../components/MetricCardSkeletonGrid'
@@ -179,6 +180,14 @@ export function FinancialPage() {
           </Suspense>
         </div>
       )}
+
+      {/* Conta ciclo a ciclo fora do bloco do executivo: não depende dele e o
+          estado vazio ("nenhuma fatura") precisa aparecer mesmo sem ciclo.
+          Vai no próprio módulo (não em chunk à parte): o módulo tem folga e um
+          chunk novo cairia na soma "demais chunks", que já está no teto. */}
+      <div className="mt-6">
+        <CycleLedgerSection plantId={plantId} refreshKey={expansionRefresh} />
+      </div>
 
       {/* Faturas sempre no fim e num ÚNICO ponto de montagem (ADR-083, etapa
           2). Mudar de lugar conforme o executivo carregava remontava a seção

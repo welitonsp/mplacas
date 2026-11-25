@@ -355,6 +355,58 @@ export const monthlyHistoryPayload = {
   ],
 }
 
+// Histórico com os campos de dinheiro por ciclo (`savings_window` incluso),
+// para a "conta, ciclo a ciclo" do módulo Dinheiro. Ordem do backend: do mais
+// antigo ao mais novo.
+export const cycleLedgerPayload = {
+  plant_id: 'plant-1',
+  limit: 12,
+  cycles_returned: 2,
+  cycles: [
+    {
+      reference_month: '2026-06',
+      bill_id: '66666666-6666-6666-6666-666666666666',
+      bill_total_amount_brl: '180.50',
+      estimated_savings_brl: '250.10',
+      savings_unavailable_reason: null,
+      savings_tariff_source: 'DISTRIBUTOR_FULL_TARIFF',
+      savings_gap_cause: null,
+      report_created_at: '2026-07-20T15:00:00+00:00',
+      is_commissioning_month: false,
+      is_before_commissioning: false,
+      superseded_by_rebilling: false,
+    },
+    {
+      reference_month: '2026-07',
+      bill_id: '77777777-7777-7777-7777-777777777777',
+      bill_total_amount_brl: '210.00',
+      estimated_savings_brl: '300.40',
+      savings_unavailable_reason: null,
+      savings_tariff_source: 'DISTRIBUTOR_FULL_TARIFF',
+      savings_gap_cause: null,
+      report_created_at: '2026-08-20T15:00:00+00:00',
+      is_commissioning_month: false,
+      is_before_commissioning: false,
+      superseded_by_rebilling: false,
+    },
+  ],
+  savings_window: {
+    total_estimated_savings_brl: '550.50',
+    cycles_in_window: 2,
+    cycles_with_savings: 2,
+    cycles_without_savings: 0,
+    cycles_excluded_commissioning: 0,
+    cycles_superseded_by_rebilling: 0,
+    commissioning_known: true,
+    first_reference_month: '2026-06',
+    last_reference_month: '2026-07',
+    cycles_with_bill_tariff: 0,
+    cycles_with_outdated_or_partial: 0,
+    total_bill_amount_brl: '390.50',
+    cycles_with_bill_amount: 2,
+  },
+}
+
 // Painel do investidor sem investimento cadastrado — resposta default de
 // `GET /energy/investor/latest` (ADR-079) nos testes do módulo Financeiro.
 export const investorUnavailablePayload = {
