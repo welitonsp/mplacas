@@ -155,7 +155,6 @@ function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndi
   const total = toNumber(indicators.total_amount_brl)
   const energy = toNumber(indicators.bill_energy_component_brl)
   const lighting = toNumber(indicators.public_lighting_brl)
-  const other = total != null && energy != null && lighting != null ? total - energy - lighting : null
   const billTariffWithTaxes = toNumber(indicators.tariff_with_taxes_brl_kwh)
   const billTariffWithoutTaxes = toNumber(indicators.tariff_without_taxes_brl_kwh)
   const savingsTariff = toNumber(indicators.savings_tariff_brl_kwh ?? null)
@@ -206,7 +205,6 @@ function BillDetails({ indicators, referenceMonth }: { indicators: ExecutiveIndi
                 segments={[
                   { label: 'Energia e encargos', value: energy, tone: 'neutral' },
                   { label: 'Iluminação pública', value: lighting, color: 'var(--color-energy-consumption)' },
-                  ...(other != null && other > 0.005 ? [{ label: 'Outros encargos', value: other, tone: 'danger' as const }] : []),
                 ]}
                 total={total}
                 valueFormatter={formatCurrency}

@@ -26,17 +26,19 @@ function ReturnProgress({ result }: { result: FinancialReturnResponse | null }) 
   const roi = toNumber(result.roi_percent)
   if (roi == null) return null
   const reached = isPaybackAlreadyReached(result)
+  // Lucro (só quando positivo) pronto do backend; mesmas casas decimais da aba Dinheiro (0).
+  const netGain = toNumber(result.net_gain_percent)
   return (
     <div className="flex flex-col gap-1.5 border-t border-[var(--color-border)] pt-3">
       <div className="flex justify-between gap-3 text-[13px]">
         <span className="text-[var(--color-text-secondary)]">
-          {reached ? 'Investimento já recuperado' : 'Investimento recuperado até agora'}
+          Já voltou do investimento
         </span>
         <span className="font-semibold tabular-nums text-[var(--color-text-primary)]">{formatNumber(roi, 0)}%</span>
       </div>
       <div
         role="img"
-        aria-label={`${formatNumber(roi, 1)}% do investimento já voltou em economia`}
+        aria-label={`${formatNumber(roi, 0)}% do investimento já voltou em economia`}
         className="h-2 overflow-hidden rounded-full bg-[var(--color-chart-track)]"
       >
         <div className="h-full rounded-full bg-[var(--color-energy-solar)]" style={{ width: `${Math.min(100, Math.max(2, roi))}%` }} />
@@ -44,6 +46,9 @@ function ReturnProgress({ result }: { result: FinancialReturnResponse | null }) 
       <p className="text-xs text-[var(--color-text-secondary)]">
         {`${formatCurrency(result.accumulated_savings_brl)} economizados de ${formatCurrency(result.investment_amount_brl)} investidos`}
       </p>
+      {reached && netGain != null && netGain > 0 && (
+        <p className="text-xs font-semibold text-[var(--color-success-text)]">{`Lucro de ${formatNumber(netGain, 0)}% sobre o investimento`}</p>
+      )}
     </div>
   )
 }

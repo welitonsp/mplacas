@@ -361,6 +361,10 @@ def _serialize_financial_return(result: FinancialReturnResult) -> dict[str, obje
         "cycles_counted": result.cycles_counted,
         "cycles_expected": result.cycles_expected,
         "roi_percent": (str(result.roi_percent) if result.roi_percent is not None else None),
+        "investment_recovered": result.investment_recovered,
+        "net_gain_percent": (
+            str(result.net_gain_percent) if result.net_gain_percent is not None else None
+        ),
         "payback_projection_months": result.payback_projection_months,
         "unavailable_reason": (
             result.unavailable_reason.value if result.unavailable_reason is not None else None
@@ -413,6 +417,8 @@ def _serialize_investor(panel: InvestorPanel) -> dict[str, object]:
         "cycles_counted": panel.cycles_counted,
         "calculation_versions": list(panel.calculation_versions),
         "includes_pre_correction_cycles": panel.includes_pre_correction_cycles,
+        "pre_injection_fix": panel.pre_injection_fix,
+        "bill_tariff_floor": panel.bill_tariff_floor,
         "low_confidence_baseline": panel.low_confidence_baseline,
         "indices": {
             "cdi_12m_per_year": _dec(panel.cdi_12m_per_year),
@@ -443,11 +449,16 @@ def _serialize_investor(panel: InvestorPanel) -> dict[str, object]:
             "payback_discounted_months": projection.payback_discounted_months,
             "lifetime_savings_brl": str(projection.lifetime_savings_brl),
             "wire_b_applied": projection.wire_b_applied,
+            "baseline_cycles": projection.baseline_cycles,
+            "annual_saving_over_investment": str(projection.annual_saving_over_investment),
+            "irr_spread_over_cdi_per_year": _dec(projection.irr_spread_over_cdi_per_year),
             "patrimony": [
                 {
                     "year": point.year,
                     "cdi_path_brl": str(point.cdi_path_brl),
                     "solar_path_brl": str(point.solar_path_brl),
+                    "cdi_path_real_brl": str(point.cdi_path_real_brl),
+                    "solar_path_real_brl": str(point.solar_path_real_brl),
                 }
                 for point in projection.patrimony
             ],
@@ -462,6 +473,7 @@ def _serialize_investor(panel: InvestorPanel) -> dict[str, object]:
             "degradation_per_year": str(premises.degradation_per_year),
             "om_per_year_fraction": str(premises.om_per_year_fraction),
             "inverter_replacement_year": premises.inverter_replacement_year,
+            "inverter_replacement_years": list(premises.inverter_replacement_years),
             "inverter_replacement_fraction": str(premises.inverter_replacement_fraction),
             "long_term_income_tax": str(premises.long_term_income_tax),
         },
@@ -598,6 +610,7 @@ async def latest_expansion_assessment(scoped: ReadPlant) -> dict[str, object]:
             "degradation_per_year": str(premises.degradation_per_year),
             "om_per_year_fraction": str(premises.om_per_year_fraction),
             "inverter_replacement_year": premises.inverter_replacement_year,
+            "inverter_replacement_years": list(premises.inverter_replacement_years),
             "inverter_replacement_fraction": str(premises.inverter_replacement_fraction),
         },
     }

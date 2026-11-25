@@ -217,6 +217,7 @@ def test_investment_not_registered_yields_all_null_derived_fields(
         "cycles_counted",
         "cycles_expected",
         "roi_percent",
+        "net_gain_percent",
         "payback_projection_months",
     ):
         assert body[field] is None, field
@@ -257,12 +258,14 @@ def test_no_consolidated_savings_when_investment_registered_but_no_metrics(
     assert body["unavailable_reason"] == "NO_CONSOLIDATED_SAVINGS"
     assert body["payback_unavailable_reason"] is None
     assert body["cycles_counted"] == 0
-    # cycles_expected still computed: it does not depend on the metric.
-    assert body["cycles_expected"] == 2
+    # cycles_expected still computed: it does not depend on the metric. Conta
+    # só meses posteriores ao da ligação (2024-03): apenas 2024-04 → 1.
+    assert body["cycles_expected"] == 1
     for field in (
         "accumulated_savings_brl",
         "average_monthly_savings_brl",
         "roi_percent",
+        "net_gain_percent",
         "payback_projection_months",
     ):
         assert body[field] is None, field
@@ -281,7 +284,7 @@ def test_insufficient_history_still_shows_roi_only_hides_payback(
         _seed(
             factory,
             investment_amount_brl=Decimal("10000.00"),
-            commissioned_on=date(2024, 1, 1),
+            commissioned_on=date(2023, 12, 1),
         )
     )
     token_a_read, _ = _tokens(org_a, org_b)
@@ -323,7 +326,7 @@ def test_partial_coverage_ignores_legacy_snapshots_but_still_computes(
         _seed(
             factory,
             investment_amount_brl=Decimal("6000.00"),
-            commissioned_on=date(2024, 1, 1),
+            commissioned_on=date(2023, 12, 1),
         )
     )
     token_a_read, _ = _tokens(org_a, org_b)
@@ -381,7 +384,7 @@ def test_payback_already_reached_returns_cycles_counted(
         _seed(
             factory,
             investment_amount_brl=Decimal("600.00"),
-            commissioned_on=date(2024, 1, 1),
+            commissioned_on=date(2023, 12, 1),
         )
     )
     token_a_read, _ = _tokens(org_a, org_b)
@@ -406,6 +409,8 @@ def test_payback_already_reached_returns_cycles_counted(
     assert body["cycles_counted"] == 6
     assert body["accumulated_savings_brl"] == "600.00"
     assert body["roi_percent"] == "100.0"
+    assert body["net_gain_percent"] == "0.0"
+    assert body["investment_recovered"] is True
     assert body["payback_unavailable_reason"] is None
     assert body["payback_projection_months"] == 6
 
@@ -419,7 +424,7 @@ def test_full_response_matches_expected_shape_with_healthy_coverage(
             factory,
             investment_amount_brl=Decimal("1000.00"),
             investment_recorded_on=date(2024, 3, 11),
-            commissioned_on=date(2024, 1, 1),
+            commissioned_on=date(2023, 12, 1),
         )
     )
     token_a_read, _ = _tokens(org_a, org_b)
@@ -453,12 +458,14 @@ def test_full_response_matches_expected_shape_with_healthy_coverage(
         "plant_id": str(PLANT_A),
         "investment_amount_brl": "1000.00",
         "investment_recorded_on": "2024-03-11",
-        "commissioned_on": "2024-01-01",
+        "commissioned_on": "2023-12-01",
         "accumulated_savings_brl": "350.00",
         "average_monthly_savings_brl": "50.00",
         "cycles_counted": 7,
         "cycles_expected": 7,
         "roi_percent": "35.0",
+        "net_gain_percent": "-65.0",
+        "investment_recovered": False,
         "payback_projection_months": 20,
         "unavailable_reason": None,
         "payback_unavailable_reason": None,
@@ -489,7 +496,7 @@ def test_endpoint_never_writes_to_the_database(tenancy_setup, client: TestClient
         _seed(
             factory,
             investment_amount_brl=Decimal("1000.00"),
-            commissioned_on=date(2024, 1, 1),
+            commissioned_on=date(2023, 12, 1),
         )
     )
     token_a_read, _ = _tokens(org_a, org_b)
@@ -506,3 +513,131 @@ def test_endpoint_never_writes_to_the_database(tenancy_setup, client: TestClient
     assert response.json()["unavailable_reason"] == "NO_CONSOLIDATED_SAVINGS"
     after = asyncio.run(_count_snapshots(factory))
     assert after == 0
+
+
+def test_commissioning_month_bill_is_excluded_like_the_investor_panel(
+    tenancy_setup, client: TestClient
+) -> None:
+    """Mesma regra do painel do investidor (`counts_in_savings`): a fatura do
+    mês da ligação é de geração parcial e não entra em soma, contagem,
+    cobertura nem lucro — os dois painéis usam o mesmo conjunto de faturas."""
+    factory = tenancy_setup
+    org_a, org_b = asyncio.run(
+        _seed(
+            factory,
+            investment_amount_brl=Decimal("1000.00"),
+            commissioned_on=date(2024, 1, 15),
+        )
+    )
+    token_a_read, _ = _tokens(org_a, org_b)
+    # 2024-01 (mês da ligação, R$ 999 — deve ser ignorada) e 2024-02..04.
+    for month, value in (
+        ("2024-01", "999.00"),
+        ("2024-02", "100.00"),
+        ("2024-03", "100.00"),
+        ("2024-04", "100.00"),
+    ):
+        asyncio.run(
+            _add_snapshot(
+                factory, plant_id=PLANT_A, reference_month=month, savings_value=value
+            )
+        )
+
+    response = client.get(
+        "/energy/financial-return/latest",
+        headers={"Authorization": f"Bearer {token_a_read}"},
+        params={"plant_id": str(PLANT_A)},
+    )
+
+    body = response.json()
+    assert body["cycles_counted"] == 3
+    assert body["cycles_expected"] == 3
+    assert body["accumulated_savings_brl"] == "300.00"
+    assert body["roi_percent"] == "30.0"
+    # Lucro sobre o investimento: (300 − 1000) ÷ 1000 = −70%.
+    assert body["net_gain_percent"] == "-70.0"
+
+
+def test_net_gain_is_positive_once_the_investment_is_recovered(
+    tenancy_setup, client: TestClient
+) -> None:
+    # R$ 1.510 sobre R$ 1.000: voltou 151%, lucro de 51% (exemplo do painel).
+    factory = tenancy_setup
+    org_a, org_b = asyncio.run(
+        _seed(
+            factory,
+            investment_amount_brl=Decimal("1000.00"),
+            commissioned_on=date(2023, 12, 1),
+        )
+    )
+    token_a_read, _ = _tokens(org_a, org_b)
+    for month in ("2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06", "2024-07"):
+        asyncio.run(
+            _add_snapshot(
+                factory, plant_id=PLANT_A, reference_month=month, savings_value="215.714285"
+            )
+        )
+    response = client.get(
+        "/energy/financial-return/latest",
+        headers={"Authorization": f"Bearer {token_a_read}"},
+        params={"plant_id": str(PLANT_A)},
+    )
+    body = response.json()
+    assert body["roi_percent"] == "151.0"
+    assert body["net_gain_percent"] == "51.0"
+
+
+def test_recovered_flag_has_no_cycle_floor_and_net_gain_is_never_negative_zero(
+    tenancy_setup, client: TestClient
+) -> None:
+    # 3 ciclos (< 6: sem payback projetado) mas economia ≥ investimento:
+    # `investment_recovered` é verdadeiro mesmo assim.
+    factory = tenancy_setup
+    org_a, org_b = asyncio.run(
+        _seed(
+            factory,
+            investment_amount_brl=Decimal("250.00"),
+            commissioned_on=date(2023, 12, 1),
+        )
+    )
+    token_a_read, _ = _tokens(org_a, org_b)
+    for month in ("2024-01", "2024-02", "2024-03"):
+        asyncio.run(
+            _add_snapshot(factory, plant_id=PLANT_A, reference_month=month, savings_value="100.00")
+        )
+    body = client.get(
+        "/energy/financial-return/latest",
+        headers={"Authorization": f"Bearer {token_a_read}"},
+        params={"plant_id": str(PLANT_A)},
+    ).json()
+    assert body["cycles_counted"] == 3
+    assert body["roi_percent"] == "120.0"
+    assert body["investment_recovered"] is True
+    assert body["payback_unavailable_reason"] == "INSUFFICIENT_HISTORY"
+
+
+def test_net_gain_just_below_zero_is_normalized_to_zero(
+    tenancy_setup, client: TestClient
+) -> None:
+    # 999,99 de 1.000,00: ganho −0,001% arredondaria para "-0.0".
+    factory = tenancy_setup
+    org_a, org_b = asyncio.run(
+        _seed(
+            factory,
+            investment_amount_brl=Decimal("100000.00"),
+            commissioned_on=date(2023, 12, 1),
+        )
+    )
+    token_a_read, _ = _tokens(org_a, org_b)
+    asyncio.run(
+        _add_snapshot(
+            factory, plant_id=PLANT_A, reference_month="2024-01", savings_value="99999.99"
+        )
+    )
+    body = client.get(
+        "/energy/financial-return/latest",
+        headers={"Authorization": f"Bearer {token_a_read}"},
+        params={"plant_id": str(PLANT_A)},
+    ).json()
+    assert body["net_gain_percent"] == "0.0"
+    assert body["investment_recovered"] is False

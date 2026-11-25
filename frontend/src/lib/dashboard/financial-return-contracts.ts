@@ -34,6 +34,11 @@ export interface FinancialReturnResponse {
   cycles_counted: number | null
   cycles_expected: number | null
   roi_percent: string | null
+  // (economia acumulada − investimento) ÷ investimento, em %, pronto do backend;
+  // negativo enquanto o investimento não voltou.
+  net_gain_percent: string | null
+  // Economia acumulada ≥ investimento (sem piso de ciclos), calculado no backend.
+  investment_recovered: boolean
   payback_projection_months: number | null
   unavailable_reason: FinancialReturnUnavailableReason | null
   payback_unavailable_reason: FinancialReturnUnavailableReason | null
@@ -101,6 +106,8 @@ export function parseFinancialReturn(payload: unknown): FinancialReturnResponse 
     cycles_counted: nullableNumber(payload, 'cycles_counted'),
     cycles_expected: nullableNumber(payload, 'cycles_expected'),
     roi_percent: nullableString(payload, 'roi_percent'),
+    net_gain_percent: nullableString(payload, 'net_gain_percent'),
+    investment_recovered: payload.investment_recovered === true,
     payback_projection_months: nullableNumber(payload, 'payback_projection_months'),
     unavailable_reason: parseFinancialReturnUnavailableReason(payload.unavailable_reason),
     payback_unavailable_reason: parseFinancialReturnUnavailableReason(
@@ -146,17 +153,12 @@ export function paybackUnavailableMessage(reason: FinancialReturnUnavailableReas
   }
 }
 
-// O backend sinaliza payback já atingido devolvendo `payback_projection_months
-// == cycles_counted` (ver `financial_return_service.py::get_latest_financial_return`,
-// ramo `accumulated_savings_brl >= investment_amount_brl`) — não há um campo booleano
-// dedicado, então o frontend deriva a partir dessa igualdade, documentada aqui para
-// não virar "mágica" sem explicação no componente que a consome.
+// "Já voltou do investimento": campo `investment_recovered` do backend (economia
+// acumulada ≥ investimento, sem o piso de 6 ciclos do payback projetado). Antes
+// isto era derivado da igualdade `payback_projection_months == cycles_counted`,
+// que escondia o fato com menos de 6 ciclos.
 export function isPaybackAlreadyReached(result: FinancialReturnResponse): boolean {
-  return (
-    result.payback_projection_months !== null &&
-    result.cycles_counted !== null &&
-    result.payback_projection_months === result.cycles_counted
-  )
+  return result.investment_recovered
 }
 
 // Cobertura parcial: há menos ciclos consolidados do que meses decorridos desde o
@@ -171,7 +173,14 @@ export function hasPartialCoverage(result: FinancialReturnResponse): boolean {
   )
 }
 
+// Sempre diz em quantos ciclos o retorno se baseia (a mesma regra do painel
+// "Usina × CDI": só meses posteriores ao da ligação); com cobertura parcial,
+// diz também quantos eram esperados.
 export function coverageLabel(result: FinancialReturnResponse): string | null {
-  if (!hasPartialCoverage(result)) return null
-  return `Baseado em ${result.cycles_counted} de ${result.cycles_expected} ciclos com relatório consolidado.`
+  if (result.cycles_counted === null) return null
+  const unit = result.cycles_counted === 1 ? 'ciclo' : 'ciclos'
+  if (hasPartialCoverage(result)) {
+    return `Baseado em ${result.cycles_counted} de ${result.cycles_expected} ciclos com relatório consolidado.`
+  }
+  return `Baseado em ${result.cycles_counted} ${unit} com relatório consolidado.`
 }

@@ -339,3 +339,4 @@ def test_cycle_without_any_production_day_leaves_savings_unavailable() -> None:
     assert without.bill_without_solar_brl is None
     assert partial.estimated_savings_brl is not None
     assert legacy.estimated_savings_brl is not None
+

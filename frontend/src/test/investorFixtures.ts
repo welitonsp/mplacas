@@ -9,6 +9,8 @@ export const investorAvailablePayload = {
   cycles_counted: 1,
   calculation_versions: ['0.3.0'],
   includes_pre_correction_cycles: false,
+  pre_injection_fix: false,
+  bill_tariff_floor: false,
   low_confidence_baseline: true,
   indices: {
     cdi_12m_per_year: '0.1403',
@@ -35,12 +37,20 @@ export const investorAvailablePayload = {
     payback_discounted_months: 57,
     lifetime_savings_brl: '140925.60',
     wire_b_applied: true,
+    baseline_cycles: 1,
+    // 264 × 12 ÷ 11.200 (calculado no backend).
+    annual_saving_over_investment: '0.2829',
+    // TIR − CDI líquido (calculado no backend).
+    irr_spread_over_cdi_per_year: '0.1958',
     patrimony: Array.from({ length: 26 }, (_, year) => year).map((year) => ({
       year,
       cdi_path_brl: String(11200 * 1.1332 ** year),
       // Economia de ~R$ 3.168/ano aplicada no CDI líquido: cruza perto do
       // payback descontado de 57 meses, como no cálculo real.
       solar_path_brl: String((3168 * (1.1332 ** year - 1)) / 0.1332),
+      // Série em dinheiro de hoje (o backend divide pelo IPCA acumulado).
+      cdi_path_real_brl: String((11200 * 1.1332 ** year) / 1.0458 ** year),
+      solar_path_real_brl: String(((3168 * (1.1332 ** year - 1)) / 0.1332) / 1.0458 ** year),
     })),
   },
   premises: {
@@ -49,9 +59,10 @@ export const investorAvailablePayload = {
     tariff_growth_per_year: '0.0458',
     horizon_years: 25,
     degradation_per_year: '0.005',
-    om_per_year_fraction: '0.005',
+    om_per_year_fraction: '0.01',
     inverter_replacement_year: 12,
-    inverter_replacement_fraction: '0.15',
+    inverter_replacement_years: [12, 24],
+    inverter_replacement_fraction: '0.35',
     long_term_income_tax: '0.15',
   },
 }

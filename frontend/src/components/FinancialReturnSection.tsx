@@ -46,6 +46,8 @@ export function FinancialReturnSection({
   // ROI disponível a partir daqui — `payback_unavailable_reason` ainda pode ser
   // não-nulo mesmo com ROI válido (ver ADR-067, Decisão item 5).
   const roiPercent = toNumber(financialReturn.roi_percent)
+  // Lucro = o que sobrou depois de devolver o investimento; pronto do backend.
+  const netGain = toNumber(financialReturn.net_gain_percent ?? null)
   const barPercent = clampPercent(roiPercent ?? 0)
   const coverage = coverageLabel(financialReturn)
   const paybackReached = isPaybackAlreadyReached(financialReturn)
@@ -57,7 +59,7 @@ export function FinancialReturnSection({
   const paybackSupportingText = paybackReached
     ? 'Investimento já recuperado'
     : financialReturn.payback_projection_months !== null
-      ? 'Projeção, mantida a média recente'
+      ? 'Pela média das faturas, sem custos de manutenção e inversor'
       : 'Aguardando histórico suficiente'
 
   return (
@@ -69,11 +71,11 @@ export function FinancialReturnSection({
               Retorno do investimento
             </p>
             <p className="mt-2 text-sm leading-6 text-gray-600">
-              Quanto do CAPEX já voltou em economia consolidada.
+              Quanto do valor investido já voltou em economia calculada a partir das faturas confirmadas.
             </p>
           </div>
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm sm:min-w-40 sm:text-right">
-            <p className="text-xs font-medium text-gray-500">Payback</p>
+            <p className="text-xs font-medium text-gray-500">Payback simples (pela média das faturas)</p>
             <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-gray-950">
               {paybackLabel}
             </p>
@@ -84,9 +86,9 @@ export function FinancialReturnSection({
         <div className="mt-5">
           <div className="flex items-end justify-between gap-3">
             <div>
-              <p className="text-xs font-medium text-gray-500">ROI acumulado</p>
+              <p className="text-xs font-medium text-gray-500">Já voltou do investimento</p>
               <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-gray-950">
-                {formatNumber(roiPercent, 1)}
+                {formatNumber(roiPercent, 0)}
                 <span className="ml-1 text-base font-semibold text-gray-500">%</span>
               </p>
             </div>
@@ -94,6 +96,13 @@ export function FinancialReturnSection({
               Progresso financeiro
             </span>
           </div>
+          {netGain != null && (
+            <p className="mt-2 text-sm font-semibold tabular-nums text-gray-900">
+              {netGain >= 0
+                ? `Lucro sobre o investimento: ${formatNumber(netGain, 0)}%`
+                : `Ainda falta recuperar ${formatNumber(Math.abs(netGain), 0)}% do investimento`}
+            </p>
+          )}
 
           {/* Cor de preenchimento `brand-primary` deliberadamente: é progresso
               financeiro, não estado de saúde. `success` sugeriria "está tudo bem",
@@ -137,8 +146,8 @@ export function FinancialReturnSection({
         </dl>
 
         {/* Rótulo de cobertura: parte do contrato de honestidade do indicador, não
-            um detalhe de UI — sem ele o ROI parece mais completo do que é (ADR-067,
-            Decisão item 7). */}
+            um detalhe de UI — sem ele o retorno parece mais completo do que é
+            (ADR-067, Decisão item 7). Sempre visível: "Baseado em N ciclos". */}
         {coverage && <p className="mt-3 text-xs text-gray-500">{coverage}</p>}
 
         <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3">
@@ -159,7 +168,8 @@ export function FinancialReturnSection({
               {/* Sempre rotulado como PROJEÇÃO, com a premissa visível — nunca uma
                   data certa (ADR-067, Decisão item 7). */}
               <p className="mt-1 text-xs text-gray-500">
-                Projeção, mantida a média de economia dos últimos ciclos.
+                Projeção pela média de economia dos ciclos, sem custos de manutenção e inversor. A projeção com
+                esses custos está em &quot;Usina × CDI&quot;, mais abaixo.
               </p>
             </>
           ) : null}

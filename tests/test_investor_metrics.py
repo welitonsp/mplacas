@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -97,7 +98,12 @@ def test_realized_is_unavailable_when_a_cdi_month_is_missing() -> None:
 
 def test_projection_reproduces_the_documented_example() -> None:
     # Exemplo do documento de diagnóstico: R$ 20 mil, R$ 400/mês, tarifa +6%,
-    # degradação 0,5%, O&M 0,5%, inversor no ano 12, sem Fio B (GD I).
+    # degradação 0,5%, sem Fio B (GD I). Premissas de custo conservadoras
+    # (auditoria 2026-11-25): O&M 1% e inversor a 35% nos anos 12 e 24. Delta
+    # frente às premissas antigas (O&M 0,5%, inversor 15% só no ano 12): TIR
+    # 32,6% → 31,6%, payback simples 47 → 47 meses (a degradação passou a contar
+    # só a partir do mês-âncora, o que compensa os custos novos), payback
+    # contando o CDI 60 → 62 meses.
     result = project(
         investment_brl=Decimal("20000"),
         start_month="2025-09",
@@ -113,6 +119,7 @@ def test_projection_reproduces_the_documented_example() -> None:
     assert result.irr_per_year is not None
     assert Decimal("0.31") < result.irr_per_year < Decimal("0.34")
     assert result.payback_simple_months == 47
+    assert result.payback_discounted_months == 62
     assert result.payback_discounted_months is not None
     assert result.payback_discounted_months > result.payback_simple_months
     ten_years = next(p for p in result.patrimony if p.year == 10)
@@ -260,3 +267,150 @@ def test_npv_sign_matches_the_patrimony_lines_near_break_even() -> None:
         gap = final.solar_path_brl - final.cdi_path_brl
         assert (result.npv_at_cdi_net_brl > 0) == (gap > 0), monthly
         assert (result.payback_discounted_months is not None) == (gap >= 0), monthly
+
+
+def _basic_project(**overrides):  # type: ignore[no-untyped-def]
+    args = dict(
+        investment_brl=Decimal("20000"),
+        start_month="2025-09",
+        commissioned_on=date(2022, 6, 1),
+        savings_by_month={"2025-10": Decimal("400")},
+        compensated_kwh_per_month=None,
+        wire_b_tariff_brl_kwh=None,
+        wire_b_reference_year=None,
+        premises=PREMISES,
+    )
+    args.update(overrides)
+    return project(**args)
+
+
+def test_default_premises_are_the_conservative_ones() -> None:
+    assert PREMISES.om_per_year_fraction == Decimal("0.01")
+    assert PREMISES.inverter_replacement_fraction == Decimal("0.35")
+    assert PREMISES.inverter_replacement_years == (12, 24)
+    assert PREMISES.inverter_replacement_year == 12
+
+
+def test_two_inverter_replacements_cost_more_than_one_or_none() -> None:
+    def irr(years: tuple[int, ...]) -> Decimal:
+        premises = replace(PREMISES, inverter_replacement_years=years)
+        result = _basic_project(premises=premises)
+        assert result is not None and result.irr_per_year is not None
+        return result.irr_per_year
+
+    assert irr((12, 24)) < irr((12,)) < irr(())
+
+
+def test_real_patrimony_is_the_nominal_one_deflated_by_the_ipca_premise() -> None:
+    result = _basic_project()
+    assert result is not None
+    deflator = (1 + PREMISES.ipca_per_year) ** 25
+    last = result.patrimony[-1]
+    assert abs(last.solar_path_real_brl - last.solar_path_brl / deflator) < Decimal("0.02")
+    assert abs(last.cdi_path_real_brl - last.cdi_path_brl / deflator) < Decimal("0.02")
+    assert last.solar_path_real_brl < last.solar_path_brl
+    first = result.patrimony[0]  # ano 0: sem inflação acumulada
+    assert first.cdi_path_real_brl == first.cdi_path_brl == Decimal("20000.00")
+
+
+def test_baseline_uses_only_the_trailing_twelve_months() -> None:
+    savings = {add_months("2025-09", k): Decimal("100") for k in range(1, 9)}
+    savings.update({add_months("2025-09", k): Decimal("200") for k in range(9, 21)})
+    result = _basic_project(savings_by_month=savings)
+    assert result is not None
+    assert result.baseline_cycles == 12
+    assert result.baseline_monthly_savings_brl == Decimal("200.00")  # não 160
+    # 12 × 200 ÷ 20.000 = 12% do investimento por ano.
+    assert result.annual_saving_over_investment == Decimal("0.1200")
+
+
+def test_baseline_with_fewer_than_twelve_months_reports_how_many() -> None:
+    savings = {"2025-10": Decimal("300"), "2025-12": Decimal("100")}  # com buraco
+    result = _basic_project(savings_by_month=savings)
+    assert result is not None
+    assert result.baseline_cycles == 2
+    assert result.baseline_monthly_savings_brl == Decimal("200.00")
+    # Média × 12 ÷ investimento (anualizada, pois faltam meses): 2.400 ÷ 20.000.
+    assert result.annual_saving_over_investment == Decimal("0.1200")
+
+
+def test_wire_b_baseline_is_normalized_to_the_reference_year_share() -> None:
+    # Janela de 2025-10 a 2026-09: 3 meses em 2025 (Fio B 45%) e 9 em 2026 (60%).
+    # Cada mês de 2025 é levado à parcela de 2026 antes da média: a economia de
+    # partida fica abaixo da média simples, sem contar o aumento duas vezes.
+    savings = {add_months("2025-09", k): Decimal("264") for k in range(1, 13)}
+    common = dict(
+        savings_by_month=savings,
+        compensated_kwh_per_month=Decimal("221"),
+        wire_b_tariff_brl_kwh=Decimal("0.175126"),
+        wire_b_reference_year=2026,
+        commissioned_on=date(2025, 9, 1),
+    )
+    result = _basic_project(**common)
+    assert result is not None and result.wire_b_applied
+    # 3 meses × 221 kWh × (0,175126 ÷ 0,60) × (0,60 − 0,45) = R$ 29,03 a menos no total.
+    expected = Decimal("264") - Decimal("221") * (
+        Decimal("0.175126") / Decimal("0.60")
+    ) * Decimal("0.15") * 3 / 12
+    assert abs(result.baseline_monthly_savings_brl - expected) < Decimal("0.01")
+    # A reta "o que realmente foi economizado" não é normalizada:
+    assert result.annual_saving_over_investment == Decimal("0.1584")  # 264×12÷20.000
+
+
+def test_irr_spread_over_cdi_is_computed_from_the_displayed_rates() -> None:
+    result = _basic_project()
+    assert result is not None and result.irr_per_year is not None
+    assert result.irr_spread_over_cdi_per_year == result.irr_per_year - result.cdi_net_per_year
+    never = _basic_project(
+        investment_brl=Decimal("100000"), savings_by_month={"2025-10": Decimal("5")}
+    )
+    assert never is not None and never.irr_spread_over_cdi_per_year is None
+
+
+def test_inverter_cost_at_month_144_is_35_percent_of_investment_inflated_by_ipca() -> None:
+    # Com e sem a troca (só o ano 12), os fluxos são iguais em todos os meses
+    # menos no 144; lá a diferença é exatamente o custo absoluto do inversor.
+    with_inverter = _basic_project(premises=replace(PREMISES, inverter_replacement_years=(12,)))
+    without = _basic_project(premises=replace(PREMISES, inverter_replacement_years=()))
+    assert with_inverter is not None and without is not None
+    expected = Decimal("0.35") * Decimal("20000") * (Decimal("1") + PREMISES.ipca_per_year) ** 12
+    assert abs(without.cash_flows[144] - with_inverter.cash_flows[144] - expected) < Decimal("1e-9")
+    assert without.cash_flows[143] == with_inverter.cash_flows[143]
+    assert without.cash_flows[145] == with_inverter.cash_flows[145]
+
+
+def test_real_series_is_deflated_from_today_not_from_commissioning() -> None:
+    # 24 meses depois da ligação: o patrimônio do ano 2 já está em reais de hoje
+    # (real = nominal); o do ano 0 vale mais em reais de hoje que o nominal.
+    result = _basic_project(months_elapsed=24)
+    assert result is not None
+    by_year = {p.year: p for p in result.patrimony}
+    assert by_year[2].solar_path_real_brl == by_year[2].solar_path_brl
+    assert by_year[2].cdi_path_real_brl == by_year[2].cdi_path_brl
+    inflation = Decimal("1") + PREMISES.ipca_per_year
+    assert abs(by_year[0].cdi_path_real_brl - Decimal("20000") * inflation**2) < Decimal("0.02")
+    deflator = inflation ** (Decimal(25 * 12 - 24) / 12)
+    last = by_year[25]
+    assert abs(last.solar_path_real_brl - last.solar_path_brl / deflator) < Decimal("0.02")
+
+
+def test_degradation_starts_at_the_anchor_month() -> None:
+    # Sem reajuste de tarifa e sem Fio B, a economia do mês seguinte à âncora é
+    # a de partida × (1 − d)^(1/12), não × (1 − d)^(k/12) desde a ligação.
+    premises = replace(PREMISES, tariff_growth_per_year=Decimal("0"))
+    savings = {add_months("2025-09", k): Decimal("100") for k in range(1, 25)}
+    result = _basic_project(savings_by_month=savings, premises=premises)
+    assert result is not None
+    # 24 meses reais (2.400) + 276 projetados: 100 × (1 − d)^(j/12), j = 1..276,
+    # contados a partir da âncora (mês 24), não da ligação.
+    d = Decimal("1") - premises.degradation_per_year
+    expected = sum((Decimal("100") * d ** (Decimal(j) / 12) for j in range(1, 277)), Decimal("0"))
+    assert abs(result.lifetime_savings_brl - Decimal("2400") - expected) < Decimal("0.02")
+
+
+def test_rounding_is_half_up_on_four_decimals() -> None:
+    # 0,12345 deve virar 0,1235 (e não 0,1234 do arredondamento do banqueiro).
+    from mplacas.intelligence.investor_metrics import _q4
+
+    assert _q4(Decimal("0.12345")) == Decimal("0.1235")
+    assert _q4(Decimal("0.12355")) == Decimal("0.1236")

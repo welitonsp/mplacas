@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mplacas.core.authorization import PlantScope, UNRESTRICTED_PLANT_SCOPE
 from mplacas.db.models import Plant
+from mplacas.intelligence.investor_service import commissioning_month, counts_in_savings
 from mplacas.reports.snapshot import MonthlyReportSnapshotRepository
 
 _SAVINGS_METRIC_KEY = "estimated_savings_brl"
@@ -61,20 +62,29 @@ class FinancialReturnResult:
     cycles_counted: int | None
     cycles_expected: int | None
     roi_percent: Decimal | None
+    # (economia acumulada − investimento) ÷ investimento, em %: o lucro real
+    # sobre o investimento. Negativo enquanto o investimento não voltou.
+    net_gain_percent: Decimal | None
+    # Economia acumulada ≥ investimento, sem piso de ciclos (o payback projetado
+    # exige 6 ciclos; o fato de já ter voltado, não). ``False`` se indisponível.
+    investment_recovered: bool
     payback_projection_months: int | None
     unavailable_reason: FinancialReturnUnavailableReason | None
     payback_unavailable_reason: FinancialReturnUnavailableReason | None
 
 
-def _months_between_inclusive(start: date, end_reference_month: str) -> int:
-    """Months from ``start`` to ``end_reference_month`` ("YYYY-MM"), both ends
-    included — matching the definition in ADR-067, Decisão item 5."""
+def _expected_cycles(commissioned_on: date, end_reference_month: str) -> int:
+    """Ciclos esperados: meses ESTRITAMENTE posteriores ao mês da ligação até
+    ``end_reference_month`` ("YYYY-MM"), inclusive. É a mesma regra do painel do
+    investidor (``counts_in_savings``): a fatura do mês da ligação é de geração
+    parcial e não entra na conta nem na cobertura."""
     end_year, end_month = (int(part) for part in end_reference_month.split("-"))
-    return (end_year - start.year) * 12 + (end_month - start.month) + 1
+    return max(0, (end_year - commissioned_on.year) * 12 + (end_month - commissioned_on.month))
 
 
 def _accumulate_savings(
     snapshots: tuple,
+    commissioned_month: str | None = None,
 ) -> tuple[Decimal, int, str | None]:
     """Sum ``estimated_savings_brl`` across ``snapshots``.
 
@@ -84,12 +94,17 @@ def _accumulate_savings(
     snapshots that contributed, and the reference month of the most recent
     snapshot overall (regardless of whether it contributed), used as the
     upper bound for ``cycles_expected``.
+
+    Snapshots do mês da ligação (ou anteriores) ficam fora de tudo, pela regra
+    única ``counts_in_savings`` do painel do investidor (ADR-079).
     """
     accumulated = Decimal("0")
     counted = 0
     latest_reference_month: str | None = None
     for snapshot in snapshots:
         report = snapshot.report
+        if not counts_in_savings(report.reference_month, commissioned_month):
+            continue
         if (
             latest_reference_month is None
             or report.reference_month > latest_reference_month
@@ -142,6 +157,8 @@ async def get_latest_financial_return(
             cycles_counted=None,
             cycles_expected=None,
             roi_percent=None,
+            net_gain_percent=None,
+            investment_recovered=False,
             payback_projection_months=None,
             unavailable_reason=FinancialReturnUnavailableReason.INVESTMENT_NOT_REGISTERED,
             payback_unavailable_reason=None,
@@ -151,11 +168,11 @@ async def get_latest_financial_return(
         session, plant_scope=plant_scope
     ).list_for_plant(plant_id=plant_id)
     accumulated_savings_brl, cycles_counted, latest_reference_month = _accumulate_savings(
-        snapshots
+        snapshots, commissioning_month(commissioned_on)
     )
 
     cycles_expected = (
-        _months_between_inclusive(commissioned_on, latest_reference_month)
+        _expected_cycles(commissioned_on, latest_reference_month)
         if commissioned_on is not None and latest_reference_month is not None
         else None
     )
@@ -171,6 +188,8 @@ async def get_latest_financial_return(
             cycles_counted=0,
             cycles_expected=cycles_expected,
             roi_percent=None,
+            net_gain_percent=None,
+            investment_recovered=False,
             payback_projection_months=None,
             unavailable_reason=FinancialReturnUnavailableReason.NO_CONSOLIDATED_SAVINGS,
             payback_unavailable_reason=None,
@@ -182,6 +201,12 @@ async def get_latest_financial_return(
     roi_percent = (accumulated_savings_brl / investment_amount_brl * 100).quantize(
         Decimal("0.1"), rounding=ROUND_HALF_UP
     )
+
+    net_gain_percent = (
+        (accumulated_savings_brl - investment_amount_brl) / investment_amount_brl * 100
+    ).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    if net_gain_percent == 0:
+        net_gain_percent = Decimal("0.0")  # nunca "-0.0" (ganho negativo minúsculo)
 
     payback_unavailable_reason: FinancialReturnUnavailableReason | None = None
     payback_projection_months: int | None = None
@@ -206,6 +231,8 @@ async def get_latest_financial_return(
         cycles_counted=cycles_counted,
         cycles_expected=cycles_expected,
         roi_percent=roi_percent,
+        net_gain_percent=net_gain_percent,
+        investment_recovered=accumulated_savings_brl >= investment_amount_brl,
         payback_projection_months=payback_projection_months,
         unavailable_reason=None,
         payback_unavailable_reason=payback_unavailable_reason,
