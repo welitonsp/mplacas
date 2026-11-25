@@ -92,6 +92,15 @@ def test_logout_revokes_server_session_best_effort() -> None:
 
     assert "TokenStore.clear()" in frontend
     assert "void revokeSession()" in frontend
+    # Expiração limpa só o local; o revoke no servidor é só do logout voluntário.
+    expire = frontend.split("const expireSession")[1].split("}, [")[0]
+    assert "revokeSession" not in expire
+    # Corrida de identidade (revisão do 8f125df): época da sessão e abertura de
+    # sessão atrás do lock do refresh.
+    assert "markSessionChanged()" in frontend
+    assert "await openSession(" in frontend
+    assert "epoch !== sessionEpoch" in session
+    assert "LOGOUT_LOCK_WAIT_MS = 3_000" in session
     # ADR-102: logout pelo cookie — sem corpo, mesma origem, com o cabeçalho
     # CSRF, e `keepalive` para terminar mesmo com a aba fechando.
     assert "`${API_URL}/auth/logout`" in session

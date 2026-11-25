@@ -81,6 +81,10 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     _onSessionExpired()
     return response
   }
+  // A sessão mudou durante a renovação (logout, login de outra pessoa): a
+  // resposta original fica como está e a chamada NÃO é repetida com token de
+  // outra sessão.
+  if (outcome.kind === 'superseded') return response
   const { accessToken } = outcome
 
   // Repete a chamada original com o token renovado.

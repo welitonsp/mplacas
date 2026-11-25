@@ -32,7 +32,7 @@ const parserPara = (isTSX) => ({
 export default [
   { ignores: ["dist/**", "node_modules/**", "e2e/**", "playwright*.ts", "*.config.ts"] },
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "edge/**/*.ts", "functions/**/*.ts"],
     languageOptions: parserPara(false),
     plugins: { "react-hooks": reactHooks },
     rules: regrasDeHooks,

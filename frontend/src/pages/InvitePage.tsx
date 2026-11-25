@@ -4,6 +4,7 @@ import { BrandMark } from '../components/BrandMark'
 import { LoadingAnnouncement } from '../components/LoadingAnnouncement'
 import { useAuth } from '../contexts/AuthContext'
 import { acceptInvitation, inspectInvitation, warmUpApi } from '../lib/api'
+import { openSession } from '../lib/session'
 import {
   INVITATION_MAX_PASSWORD,
   INVITATION_MIN_PASSWORD,
@@ -40,7 +41,7 @@ function formatDate(iso: string): string {
 }
 
 export function InvitePage() {
-  const { adoptSession, endServerSession, isAuthenticated } = useAuth()
+  const { adoptSession, endServerSession } = useAuth()
   const navigate = useNavigate()
   // Lido uma vez só, na primeira renderização: o efeito pode rodar duas vezes
   // em desenvolvimento, e na segunda o fragmento já foi apagado. Fica só aqui
@@ -118,11 +119,14 @@ export function InvitePage() {
     }
     setSaving(true)
     try {
-      // Alguém já logado neste navegador (ex.: o dono testando o próprio
-      // convite): encerra essa sessão no servidor antes, porque o aceite
-      // sobrescreve o cookie e a sessão antiga ficaria órfã, sem revogação.
-      if (isAuthenticated) await endServerSession()
-      const response = await acceptInvitation(tokenRef.current, password)
+      // Qualquer sessão que este navegador tenha (mesmo de outra aba, mesmo
+      // sem esta aba saber — o cookie é do navegador): encerra no servidor
+      // antes, porque o aceite sobrescreve o cookie e a sessão antiga ficaria
+      // órfã, sem revogação. Sem cookie, o logout é um 204 inofensivo.
+      await endServerSession()
+      const invitationToken = tokenRef.current
+      // Atrás do lock do refresh: o `Set-Cookie` do aceite é o último a chegar.
+      const response = await openSession(() => acceptInvitation(invitationToken, password))
       if (response.status === 429) {
         setError('Muitas tentativas. Espere alguns minutos e tente de novo.')
         return

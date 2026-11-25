@@ -100,6 +100,25 @@ no Cloudflare Pages, não no build:
 4. Rode o workflow **Deploy Frontend**. O passo "Smoke test do proxy /api" falha com instrução
    se a Function responder 503 (variável faltando).
 
+**Checklist do dono depois do primeiro deploy com o proxy:**
+
+- [ ] Os dois smoke tests do workflow passaram (`/api/health` = 200; `POST /api/auth/refresh` sem
+      cookie = 401 — um 403 ali significa `MPLACAS_CORS_ALLOWED_ORIGINS` sem a origem do Pages).
+- [ ] Fazer um login real pelo site e, nos logs do Render, confirmar que **não** aparece
+      `proxy_shared_secret_mismatch` (apareceu = os dois segredos diferem; refaça os passos 2 e 3
+      com o mesmo valor e faça novo deploy do frontend).
+- [ ] F5 no painel continua logado; "Sair" e F5 volta ao login.
+
+**Rollback:** no Cloudflare (Workers & Pages → `mplacas-frontend` → Deployments), abra o deployment
+anterior ao do proxy e use **Rollback to this deployment**. O backend aceita os dois fluxos (token
+no corpo e cookie) até a etapa 4 da ADR-102, então o frontend antigo volta a funcionar sem mexer no
+Render. Para tirar só o IP autenticado, apague `MPLACAS_PROXY_SHARED_SECRET` no Render (o cabeçalho
+passa a ser ignorado) — mas aí o proxy continua exigindo o segredo dele, então só faça isso junto
+com o rollback do Pages.
+
+O `/api` não repassa `X-API-Key` (fica fora da lista de cabeçalhos do proxy, de propósito: a chave
+de API é para integração servidor-a-servidor, que deve chamar o Render direto, nunca pelo navegador).
+
 O CSP é fixo em `connect-src 'self'`; `frontend/scripts/render-csp.mjs` falha o build se alguém
 reintroduzir uma origem externa, ou se `VITE_API_URL` estiver no ambiente do build (ela não é mais
 lida). A variável `VITE_API_URL` do GitHub continua existindo só para o `watchdog.yml`, que checa

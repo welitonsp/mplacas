@@ -15,9 +15,8 @@ vi.mock('../lib/api', () => ({
 
 const adoptSession = vi.fn()
 const endServerSession = vi.fn(async () => undefined)
-const authState = vi.hoisted(() => ({ isAuthenticated: false }))
 vi.mock('../contexts/AuthContext', () => ({
-  useAuth: () => ({ adoptSession, endServerSession, isAuthenticated: authState.isAuthenticated }),
+  useAuth: () => ({ adoptSession, endServerSession }),
 }))
 
 import { InvitePage } from './InvitePage'
@@ -97,12 +96,12 @@ describe('InvitePage (ADR-093)', () => {
     // ADR-102: só o access token; o `refresh_token` do corpo é ignorado.
     expect(adoptSession).toHaveBeenCalledWith('a', 'rogerio@example.com')
     expect(JSON.stringify(adoptSession.mock.calls)).not.toContain('"r"')
-    expect(endServerSession).not.toHaveBeenCalled()
   })
 
-  it('com alguém já logado, encerra a sessão antiga no servidor antes do aceite', async () => {
-    authState.isAuthenticated = true
-    try {
+  // Sempre, não só quando esta aba está logada: o cookie é do navegador e pode
+  // ser de outra aba/pessoa.
+  it('encerra no servidor qualquer sessão do navegador antes do aceite', async () => {
+    {
       const order: string[] = []
       endServerSession.mockImplementationOnce(async () => {
         order.push('logout')
@@ -120,8 +119,6 @@ describe('InvitePage (ADR-093)', () => {
 
       expect(await screen.findByText('painel')).toBeInTheDocument()
       expect(order).toEqual(['logout', 'accept'])
-    } finally {
-      authState.isAuthenticated = false
     }
   })
 

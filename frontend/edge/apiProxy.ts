@@ -45,8 +45,12 @@ export const FORWARDED_REQUEST_HEADERS: readonly string[] = [
   'if-none-match',
   // O backend confere o `Origin` em login, aceite de convite, refresh e logout.
   'origin',
+  // Rastreamento W3C (correlação de logs ponta a ponta); não carrega segredo.
+  'traceparent',
   'x-mplacas-auth',
   'x-request-id',
+  // Fora de propósito: `x-api-key`. A chave de API é para integração
+  // servidor-a-servidor, que chama o Render direto — nunca pelo navegador.
 ]
 
 // Cabeçalhos de resposta que não voltam ao navegador: hop-by-hop, os que o
@@ -147,6 +151,31 @@ export function buildClientResponse(upstream: Response, apiOrigin: string): Resp
   })
 }
 
+// Lê o corpo até `maxBytes`; `null` se passar disso (a leitura é cancelada).
+export async function readBodyLimited(request: Request, maxBytes: number): Promise<ArrayBuffer | undefined | null> {
+  if (request.body === null) return undefined
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined)
+      return null
+    }
+    chunks.push(value)
+  }
+  const merged = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    merged.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return merged.buffer
+}
+
 export async function proxyApiRequest(
   request: Request,
   env: ProxyEnv,
@@ -184,9 +213,11 @@ export async function proxyApiRequest(
       return genericError(413, 'request too large')
     }
     // Corpo lido inteiro: o backend recebe `Content-Length` real (os limites de
-    // upload dele dependem disso) e não há upload em fluxo para manter.
-    body = await request.arrayBuffer()
-    if (body.byteLength > MAX_REQUEST_BODY_BYTES) return genericError(413, 'request too large')
+    // upload dele dependem disso). Lido em pedaços com teto, para um corpo sem
+    // `Content-Length` (chunked) não encher a memória do Worker antes do 413.
+    const limited = await readBodyLimited(request, MAX_REQUEST_BODY_BYTES)
+    if (limited === null) return genericError(413, 'request too large')
+    body = limited
   }
 
   const controller = new AbortController()

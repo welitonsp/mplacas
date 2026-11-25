@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 
-// `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
-// módulo e lança se ausente — não há `.env.local` no ambiente de teste (é
-// valor de configuração de deploy, não segredo versionado).
+// Base da API fixa para o teste. Desde a ADR-102 `env.ts` não valida mais
+// variável nenhuma (a base é sempre `/api`); o mock só torna as URLs
+// esperadas explícitas neste arquivo.
 vi.mock('../env', () => ({
   API_URL: 'https://api.example.test',
 }))
@@ -195,13 +195,13 @@ describe('LoginPage — anúncio acessível de carregamento (T10)', () => {
   })
 
   it('anuncia "Entrando" por uma live region "polite" separada do botão, e volta a ficar em silêncio ao terminar', async () => {
-    let resolveFetch: (value: Response) => void = () => {}
+    let resolveFetch: ((value: Response) => void) | null = null
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) =>
-        String(input).endsWith('/auth/refresh')
-          ? Promise.resolve(new Response('{}', { status: 401 }))
-          : new Promise<Response>((resolve) => { resolveFetch = resolve }))
+        String(input).endsWith('/auth/login')
+          ? new Promise<Response>((resolve) => { resolveFetch = resolve })
+          : Promise.resolve(new Response('{}', { status: 401 })))
     )
 
     const { container } = renderLoginPage()
@@ -223,7 +223,10 @@ describe('LoginPage — anúncio acessível de carregamento (T10)', () => {
     // Caminho de erro (credenciais recusadas) mantém a página montada — evita
     // acoplar este teste ao redirecionamento de login bem-sucedido, que é
     // comportamento de outro conjunto de testes.
-    resolveFetch(new Response(JSON.stringify({ detail: 'unauthorized' }), { status: 401 }))
+    // O login só sai depois da checagem de sessão do carregamento (ADR-102,
+    // `openSession`); espera o pedido existir antes de respondê-lo.
+    await waitFor(() => expect(resolveFetch).not.toBeNull())
+    resolveFetch!(new Response(JSON.stringify({ detail: 'unauthorized' }), { status: 401 }))
 
     await waitFor(() => expect(liveRegion).toHaveTextContent(''))
     expect(screen.getByRole('button', { name: /entrar/i })).toHaveAttribute('aria-busy', 'false')

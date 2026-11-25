@@ -2,7 +2,7 @@
 // Proxy `/api/*` da Pages Function (ADR-102). `fetch` do backend é simulado:
 // nenhum teste sai para a rede, e nenhum segredo real é usado.
 import { describe, expect, it, vi } from 'vitest'
-import { proxyApiRequest, type ProxyEnv } from './apiProxy'
+import { MAX_REQUEST_BODY_BYTES, proxyApiRequest, type ProxyEnv } from './apiProxy'
 
 const ORIGIN = 'https://mplacas-api.example.test'
 const SECRET = 'segredo-de-teste-com-mais-de-32-bytes-0123456789'
@@ -260,5 +260,88 @@ describe('proxyApiRequest — falha fechada', () => {
     )
     for (const spy of spies) expect(spy).not.toHaveBeenCalled()
     vi.restoreAllMocks()
+  })
+})
+
+describe('proxyApiRequest — casos de borda (revisão do 8f125df)', () => {
+  it('corpo sem Content-Length acima de 25 MiB → 413, sem chamar o backend', async () => {
+    const chunk = new Uint8Array(1024 * 1024)
+    let sent = 0
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent > MAX_REQUEST_BODY_BYTES + chunk.byteLength) {
+          controller.close()
+          return
+        }
+        sent += chunk.byteLength
+        controller.enqueue(chunk)
+      },
+    })
+    const request = new Request('https://site.test/api/billing/intake-pdf', {
+      method: 'POST',
+      body: stream,
+      // @ts-expect-error -- `duplex` é exigido pelo Node para corpo em fluxo; a lib DOM não o declara.
+      duplex: 'half',
+    })
+    expect(request.headers.has('content-length')).toBe(false)
+    const fetchMock = upstreamOk()
+
+    const response = await proxyApiRequest(request, ENV, fetchMock)
+
+    expect(response.status).toBe(413)
+    expect(fetchMock).not.toHaveBeenCalled()
+    // Parou de ler logo depois do teto, não consumiu tudo.
+    expect(sent).toBeLessThanOrEqual(MAX_REQUEST_BODY_BYTES + 2 * chunk.byteLength)
+  })
+
+  it('caminho codificado segue codificado e não sai da origem', async () => {
+    const fetchMock = upstreamOk()
+    await proxyApiRequest(new Request('https://site.test/api/energy/cycles/a%2F..%2Fb?plant_id=x%20y'), ENV, fetchMock)
+    const { url } = call(fetchMock)
+    expect(url).toBe(`${ORIGIN}/energy/cycles/a%2F..%2Fb?plant_id=x%20y`)
+    expect(new URL(url).origin).toBe(ORIGIN)
+  })
+
+  it('"/api/../x" normalizado pelo navegador para fora de /api não é repassado', async () => {
+    const fetchMock = upstreamOk()
+    const response = await proxyApiRequest(new Request('https://site.test/api/../admin'), ENV, fetchMock)
+    expect(response.status).toBe(404)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('Location de outra origem passa intacto', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 302, headers: { Location: 'https://outro.example/x' } }))
+    const response = await proxyApiRequest(new Request('https://site.test/api/x'), ENV, fetchMock)
+    expect(response.headers.get('location')).toBe('https://outro.example/x')
+  })
+
+  it('HEAD é repassado como HEAD, sem corpo', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 200 }))
+    const response = await proxyApiRequest(new Request('https://site.test/api/health', { method: 'HEAD' }), ENV, fetchMock)
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(init.method).toBe('HEAD')
+    expect(init.body).toBeUndefined()
+    expect(response.status).toBe(200)
+  })
+
+  it('"/apix" não é o prefixo /api → 404 sem chamar o backend', async () => {
+    const fetchMock = upstreamOk()
+    const response = await proxyApiRequest(new Request('https://site.test/apix/health'), ENV, fetchMock)
+    expect(response.status).toBe(404)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('repassa traceparent e não repassa X-API-Key', async () => {
+    const fetchMock = upstreamOk()
+    await proxyApiRequest(
+      new Request('https://site.test/api/health', {
+        headers: { traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', 'X-API-Key': 'chave' },
+      }),
+      ENV,
+      fetchMock,
+    )
+    const { headers } = call(fetchMock)
+    expect(headers.get('traceparent')).toBe('00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01')
+    expect(headers.has('x-api-key')).toBe(false)
   })
 })

@@ -91,13 +91,30 @@ export type RefreshOutcome =
   // Não deu para saber (rede, prazo, 5xx do proxy/servidor): NÃO manda ao
   // login — a sessão pode estar viva e o servidor só acordando.
   | { kind: 'unreachable' }
+  // A sessão desta aba mudou (login, convite, logout, expiração) enquanto o
+  // refresh rodava: a resposta é de outra identidade/sessão e foi descartada.
+  // Quem pediu não grava nada e não repete a requisição.
+  | { kind: 'superseded' }
+
+// Época da sessão nesta aba. Muda a cada login, adoção de sessão (convite),
+// logout e expiração. Um refresh captura a época quando é pedido; se ela mudou
+// até a resposta chegar, o token recebido é descartado. Sem isto, num
+// computador compartilhado com o cookie de A, o refresh atrasado de A (Render
+// acordando) chegaria depois do login de B e a tela "de B" mostraria dados de A;
+// e um refresh em voo durante o logout deixaria um JWT válido na memória.
+let sessionEpoch = 0
+
+export function markSessionChanged(): void {
+  sessionEpoch += 1
+}
 
 // Duas abas pedindo refresh juntas: o backend tolera a perdedora por 10 s
 // respondendo 401 sem apagar o cookie (ADR-102 § 4). Repetimos uma vez, depois
 // de dar tempo à resposta da vencedora gravar o cookie novo.
 export const REFRESH_RETRY_DELAY_MS = 300
 
-async function refreshOnce(): Promise<RefreshOutcome | 401> {
+async function refreshOnce(epoch: number): Promise<RefreshOutcome | 401> {
+  if (epoch !== sessionEpoch) return { kind: 'superseded' }
   let response: Response
   try {
     // Sem corpo: a credencial é o cookie.
@@ -105,6 +122,7 @@ async function refreshOnce(): Promise<RefreshOutcome | 401> {
   } catch {
     return { kind: 'unreachable' }
   }
+  if (epoch !== sessionEpoch) return { kind: 'superseded' }
   if (response.status === 401) return 401
   if (response.status >= 500 || response.status === 408 || response.status === 429) {
     return { kind: 'unreachable' }
@@ -122,15 +140,17 @@ async function refreshOnce(): Promise<RefreshOutcome | 401> {
   // ignorado de propósito: não é lido nem guardado.
   const accessToken = (payload as { access_token?: unknown } | null)?.access_token
   if (typeof accessToken !== 'string' || accessToken === '') return { kind: 'unauthenticated' }
+  // Conferida de novo logo antes de gravar (o corpo pode ter demorado).
+  if (epoch !== sessionEpoch) return { kind: 'superseded' }
   TokenStore.set(accessToken)
   return { kind: 'ok', accessToken }
 }
 
-async function refreshWithRetry(): Promise<RefreshOutcome> {
-  const first = await refreshOnce()
+async function refreshWithRetry(epoch: number): Promise<RefreshOutcome> {
+  const first = await refreshOnce(epoch)
   if (first !== 401) return first
   await new Promise((resolve) => setTimeout(resolve, REFRESH_RETRY_DELAY_MS))
-  const second = await refreshOnce()
+  const second = await refreshOnce(epoch)
   return second === 401 ? { kind: 'unauthenticated' } : second
 }
 
@@ -139,9 +159,14 @@ async function refreshWithRetry(): Promise<RefreshOutcome> {
 // rotacionado). Sem suporte, vale só o single-flight dentro da aba.
 export const REFRESH_LOCK_NAME = 'mplacas-refresh'
 
-function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+function webLocks(): LockManager | undefined {
   const locks = typeof navigator === 'undefined' ? undefined : navigator.locks
-  if (!locks || typeof locks.request !== 'function') return task()
+  return locks && typeof locks.request === 'function' ? locks : undefined
+}
+
+function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+  const locks = webLocks()
+  if (!locks) return task()
   return locks.request(REFRESH_LOCK_NAME, task) as Promise<T>
 }
 
@@ -151,7 +176,8 @@ let refreshInFlight: Promise<RefreshOutcome> | null = null
 
 export function refreshSession(): Promise<RefreshOutcome> {
   if (refreshInFlight === null) {
-    refreshInFlight = withRefreshLock(refreshWithRetry)
+    const epoch = sessionEpoch
+    refreshInFlight = withRefreshLock(() => refreshWithRetry(epoch))
       .catch((): RefreshOutcome => ({ kind: 'unreachable' }))
       .finally(() => {
         refreshInFlight = null
@@ -160,15 +186,61 @@ export function refreshSession(): Promise<RefreshOutcome> {
   return refreshInFlight
 }
 
+// Abre sessão (login, aceite de convite) depois de qualquer refresh em voo e
+// atrás do mesmo lock: o `Set-Cookie` de quem entra é sempre o último a chegar,
+// e nenhum refresh atrasado da sessão anterior o sobrescreve. A `task` grava a
+// sessão (`markSessionChanged` + `TokenStore.set`) ainda dentro do lock.
+export async function openSession<T>(task: () => Promise<T>): Promise<T> {
+  if (refreshInFlight !== null) await refreshInFlight.catch(() => undefined)
+  return withRefreshLock(task)
+}
+
+// Quanto o logout espera pelo lock (um refresh de outra aba pode estar
+// segurando-o por até um minuto com o Render acordando). Depois disso o pedido
+// sai mesmo assim: sair não pode ficar preso.
+export const LOGOUT_LOCK_WAIT_MS = 3_000
+
+function sendLogout(): Promise<Response> {
+  return fetch(`${API_URL}/auth/logout`, authRequestInit({ method: 'POST', keepalive: true }))
+}
+
+function timeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms)
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), ms)
+  return controller.signal
+}
+
+function isLockWaitAbort(error: unknown): boolean {
+  const name = (error as { name?: unknown } | null)?.name
+  return name === 'AbortError' || name === 'TimeoutError'
+}
+
 // Encerra a sessão no servidor: revoga e apaga o cookie. Melhor esforço — falha
 // de rede não restaura nada localmente. `keepalive` deixa o pedido terminar
-// mesmo se a aba fechar logo em seguida. Passa pelo mesmo lock do refresh para
-// não cruzar com uma rotação de outra aba.
-export function revokeSession(): Promise<void> {
-  return withRefreshLock(() =>
-    fetch(`${API_URL}/auth/logout`, authRequestInit({ method: 'POST', keepalive: true }))
-  ).then(
-    () => undefined,
-    () => undefined
-  )
+// mesmo se a aba fechar logo em seguida. Passa pelo lock do refresh (até
+// `LOGOUT_LOCK_WAIT_MS`) para não cruzar com uma rotação de outra aba.
+export async function revokeSession(): Promise<void> {
+  try {
+    const locks = webLocks()
+    if (!locks) {
+      if (refreshInFlight !== null) {
+        await Promise.race([
+          refreshInFlight.catch(() => undefined),
+          new Promise((resolve) => setTimeout(resolve, LOGOUT_LOCK_WAIT_MS)),
+        ])
+      }
+      await sendLogout()
+      return
+    }
+    try {
+      await locks.request(REFRESH_LOCK_NAME, { signal: timeoutSignal(LOGOUT_LOCK_WAIT_MS) }, sendLogout)
+    } catch (error) {
+      // Só a espera pelo lock estourou: envia sem o lock. Erro do próprio
+      // envio (rede) não é repetido.
+      if (isLockWaitAbort(error)) await sendLogout()
+    }
+  } catch {
+    // melhor esforço
+  }
 }

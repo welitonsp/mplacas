@@ -65,6 +65,19 @@ Decisão vigente: ADR-102 (substitui a ADR-073). Implantação em etapas; o que 
 - `apiFetch` tenta um único refresh após 401 e repete a requisição uma única vez. Refresh recusado
   encerra a sessão local ("sessão encerrada"); refresh inalcançável **não** desloga: a chamada
   falha com `SessionRefreshUnavailableError` e a tela oferece nova tentativa.
+- **Época da sessão** (`markSessionChanged` em `session.ts`): muda a cada login, aceite de convite,
+  logout e expiração. Um refresh captura a época quando é pedido; se ela mudou até a resposta, o
+  token é descartado (não grava no `TokenStore`) e `apiFetch` não repete a requisição. Evita, num
+  computador compartilhado, que o refresh atrasado da sessão de A sobrescreva o login de B, e que
+  um refresh em voo deixe JWT válido na memória depois do logout.
+- **Abrir sessão** (`openSession`): login e aceite de convite esperam o refresh em voo e rodam atrás
+  do mesmo lock `mplacas-refresh`, gravando época e token ainda dentro dele — o `Set-Cookie` de quem
+  entra é sempre o último. O formulário de login pode ser enviado durante "Conectando…"; ele só
+  sai depois da checagem.
+- O aceite de convite sempre chama `POST /auth/logout` antes (o cookie é do navegador, pode ser de
+  outra aba ou pessoa; sem cookie, é um `204` inofensivo).
+- **Expiração** (refresh recusado no meio do uso) limpa só o estado local e **não** chama logout no
+  servidor: isso poderia revogar o token novo que outra aba acabou de receber.
 
 ## Defesa CSRF
 
@@ -82,7 +95,8 @@ Decisão vigente: ADR-102 (substitui a ADR-073). Implantação em etapas; o que 
 
 O frontend primeiro limpa o access token em memória e muda o estado local para desautenticado.
 Envia `POST /auth/logout` sem corpo, com `keepalive`, `credentials: 'same-origin'` e
-`X-Mplacas-Auth: 1` (pelo mesmo lock do refresh); falha de rede não restaura a sessão local. O endpoint é
+`X-Mplacas-Auth: 1`, pelo mesmo lock do refresh, esperando por ele no máximo 3 s (depois envia
+mesmo assim); falha de rede não restaura a sessão local. O endpoint é
 idempotente, sempre responde `204` para token inválido, expirado, já revogado ou válido, e revoga a
 sessão persistida quando consegue autenticar o refresh token. Com o cookie, revoga e responde com o
 cookie apagado (`Max-Age=0`, mesmo `Path` e atributos); **[transitório]** sem cookie, aceita
@@ -103,11 +117,14 @@ decisão explícita da ADR-052.
     de tentativas de login viraria arma contra a vítima).
   - Cabeçalhos repassados (lista fechada): `Accept`, `Accept-Language`, `Authorization`,
     `Content-Type`, `Cookie`, `If-Match`, `If-Modified-Since`, `If-None-Match`, `Origin`,
-    `X-Mplacas-Auth`, `X-Request-Id`. Hop-by-hop, `Referer`, `X-Forwarded-*` e os
+    `traceparent`, `X-Mplacas-Auth`, `X-Request-Id`. `X-API-Key` **não** passa pelo `/api`:
+    integração servidor-a-servidor chama o Render direto. Hop-by-hop, `Referer`, `X-Forwarded-*` e os
     `X-Mplacas-Client-IP`/`X-Mplacas-Proxy-Secret` enviados pelo cliente são descartados.
   - Resposta: status, corpo (em fluxo) e cabeçalhos, com cada `Set-Cookie` preservado separado;
     `Server`, `Via`, `X-Powered-By`, `X-Render-*`, `Rndr-*`, `CF-*` e hop-by-hop não voltam;
     `Location` do próprio backend vira `/api/...`.
+  - Corpo acima de 25 MiB (declarado ou lido em pedaços, com ou sem `Content-Length`) → `413`
+    sem chamar o backend. Caminho fora de `/api` (ex.: `/apix`) → `404`.
   - Backend sem resposta em 58 s → `504` genérico (o cliente desiste em 60 s); falha de conexão →
     `502` genérico. Nenhum log de cabeçalho, cookie, corpo ou segredo.
 - O proxy envia `X-Mplacas-Client-IP` (do `CF-Connecting-IP`) com `X-Mplacas-Proxy-Secret`; o

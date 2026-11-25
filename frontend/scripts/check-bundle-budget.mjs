@@ -219,8 +219,9 @@ const BUDGETS = [
     // sobrevive ao recarregar): o empacotador pôs aqui o transporte da sessão
     // (`lib/session.ts` — refresh pelo cookie, Web Locks entre abas, repetição
     // em 401, logout) e as telas "Conectando…"/"Tentar de novo" do
-    // `ProtectedRoute`. Medido: 3,28 kB antes → 3,71 kB depois (+0,43 kB).
-    // Folga de ~0,3 kB (regra de margem de ~5-8%).
+    // `ProtectedRoute`. Medido: 3,28 kB antes → 3,71 kB depois (+0,43 kB);
+    // 3,74 kB após a revisão do 8f125df (o transporte foi para o chunk `api`,
+    // entrou o `openSession` no login). Folga de ~0,26 kB.
     name: 'App (rotas + providers)',
     match: /^App-.*\.js$/,
     limitKb: 4.0,
@@ -228,9 +229,15 @@ const BUDGETS = [
   {
     // Cliente HTTP, sessão (`auth.ts`) e `env.ts`. Cresce a cada endpoint
     // novo. medido: 2,77 kB
+    //
+    // Teto revisado de 3,0 para 3,4 kB em 2026-11-25 (ADR-102): com o
+    // `InvitePage` também importando `lib/session.ts` (`openSession`), o
+    // empacotador moveu o transporte da sessão para este chunk; somam-se a
+    // época da sessão e o logout com espera limitada pelo lock (revisão do
+    // 8f125df). Medido: 2,79 kB antes da ADR-102 → 3,11 kB (+0,32 kB).
     name: 'api (cliente HTTP + sessão)',
     match: /^api-.*\.js$/,
-    limitKb: 3,
+    limitKb: 3.4,
   },
   {
     // Texto do veredito "placas × distribuidora" e o leitor do histórico

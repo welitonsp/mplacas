@@ -13,9 +13,9 @@ import {
   singlePlant,
 } from '../../test/dashboardFixtures'
 
-// `AuthContext` importa `env.ts`, que valida `VITE_API_URL` no carregamento do
-// módulo — não há `.env.local` no ambiente de teste (ver os demais testes de
-// módulo em `pages/dashboard/*.test.tsx`).
+// Base da API fixa para o teste. Desde a ADR-102 `env.ts` não valida mais
+// variável nenhuma (a base é sempre `/api`); o mock só torna as URLs
+// esperadas explícitas neste arquivo.
 vi.mock('../../env', () => ({
   API_URL: 'https://api.example.test',
 }))

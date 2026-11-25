@@ -1,7 +1,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { configureApi } from '../lib/api'
 import { TokenStore } from '../lib/auth'
-import { authFetch, refreshSession, revokeSession, RequestTimeoutError } from '../lib/session'
+import {
+  authFetch,
+  markSessionChanged,
+  openSession,
+  refreshSession,
+  revokeSession,
+  RequestTimeoutError,
+} from '../lib/session'
 import { SELECTED_PLANT_STORAGE_KEY } from './PlantContext'
 import { safeStorage } from '../lib/storage'
 
@@ -53,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const generation = ++generationRef.current
     setStatus('checking')
     void refreshSession().then((outcome) => {
-      if (generation !== generationRef.current) return
+      if (generation !== generationRef.current || outcome.kind === 'superseded') return
       if (outcome.kind === 'ok') setStatus('authenticated')
       else setStatus(outcome.kind)
     })
@@ -67,77 +74,88 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [checkSession])
 
   // Limpeza local da sessão, sem mexer em `sessionEnded` (quem chama decide).
-  const clearSession = useCallback(() => {
+  // Não fala com o servidor: a expiração usa só isto, porque um logout no
+  // servidor ali poderia revogar o token novo que outra aba acabou de receber.
+  const clearLocal = useCallback(() => {
     generationRef.current += 1
+    // Descarta qualquer refresh em voo: a resposta dele não grava mais nada.
+    markSessionChanged()
     TokenStore.clear()
     // A usina selecionada é estado de sessão (ADR-069, seção 5) — limpa junto
     // do token para não vazar seleção entre logins diferentes no navegador.
     safeStorage.remove(SELECTED_PLANT_STORAGE_KEY)
     setStatus('unauthenticated')
     setUsername(null)
-    // Revoga no servidor e apaga o cookie (`keepalive`, melhor esforço).
-    void revokeSession()
   }, [])
 
+  // Logout voluntário: limpa local e revoga no servidor (apaga o cookie).
   const logout = useCallback(() => {
-    clearSession()
+    clearLocal()
     setSessionEnded(false)
-  }, [clearSession])
+    void revokeSession()
+  }, [clearLocal])
 
   // Chamado pelo api.ts quando a renovação é recusada: a sessão acabou sem o
   // usuário pedir. Vários 401 simultâneos compartilham a mesma renovação e
   // chamam isto em sequência: só a primeira encontra token.
   const expireSession = useCallback(() => {
     if (!TokenStore.get()) return
-    clearSession()
+    clearLocal()
     setSessionEnded(true)
-  }, [clearSession])
+  }, [clearLocal])
 
   configureApi(expireSession)
 
   const login = useCallback(async (name: string, password: string) => {
-    let response: Response
-    try {
-      response = await authFetch('/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: name, password }),
-      })
-    } catch (error) {
-      // Prazo esgotado e falha de conexão pedem ações diferentes: no primeiro
-      // caso o servidor provavelmente está acordando (plano grátis); no
-      // segundo, a rede do usuário ou o servidor estão fora.
-      if (error instanceof RequestTimeoutError) {
+    // Atrás de qualquer refresh em voo e do lock (ver `openSession`): a
+    // resposta de um refresh da sessão anterior nunca chega depois desta.
+    await openSession(async () => {
+      let response: Response
+      try {
+        response = await authFetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: name, password }),
+        })
+      } catch (error) {
+        // Prazo esgotado e falha de conexão pedem ações diferentes: no primeiro
+        // caso o servidor provavelmente está acordando (plano grátis); no
+        // segundo, a rede do usuário ou o servidor estão fora.
+        if (error instanceof RequestTimeoutError) {
+          throw new Error(
+            'O servidor não respondeu a tempo. Ele pode estar iniciando — aguarde um minuto e tente novamente.',
+          )
+        }
         throw new Error(
-          'O servidor não respondeu a tempo. Ele pode estar iniciando — aguarde um minuto e tente novamente.',
+          'Não foi possível conectar ao servidor. Verifique sua internet e tente novamente em instantes.',
         )
       }
-      throw new Error(
-        'Não foi possível conectar ao servidor. Verifique sua internet e tente novamente em instantes.',
-      )
-    }
 
-    if (!response.ok) {
-      const code = response.status
-      if (code === 401) throw new Error('Credenciais inválidas.')
-      if (code === 429) throw new Error('Muitas tentativas. Aguarde e tente novamente.')
-      // Todo 5xx é falha nossa (incidente de 2026-08-21): a mensagem não pode
-      // mandar repetir nem sugerir que o problema é a senha.
-      if (code >= 500) {
-        throw new Error(
-          'O sistema está indisponível no momento. Não é a sua senha — a falha é nossa. Tente mais tarde.',
-        )
+      if (!response.ok) {
+        const code = response.status
+        if (code === 401) throw new Error('Credenciais inválidas.')
+        if (code === 429) throw new Error('Muitas tentativas. Aguarde e tente novamente.')
+        // Todo 5xx é falha nossa (incidente de 2026-08-21): a mensagem não pode
+        // mandar repetir nem sugerir que o problema é a senha.
+        if (code >= 500) {
+          throw new Error(
+            'O sistema está indisponível no momento. Não é a sua senha — a falha é nossa. Tente mais tarde.',
+          )
+        }
+        throw new Error('Erro ao autenticar. Tente novamente.')
       }
-      throw new Error('Erro ao autenticar. Tente novamente.')
-    }
 
-    // Só o access token é lido; o refresh token que o corpo ainda traz (transitório no
-    // backend) é ignorado — a sessão persistente é o cookie HttpOnly.
-    const accessToken = readAccessToken(await response.json().catch(() => null))
-    if (accessToken === null) throw new Error('Erro ao autenticar. Tente novamente.')
+      // Só o access token é lido; o refresh token que o corpo ainda traz
+      // (transitório no backend) é ignorado — a sessão persistente é o cookie.
+      const accessToken = readAccessToken(await response.json().catch(() => null))
+      if (accessToken === null) throw new Error('Erro ao autenticar. Tente novamente.')
+
+      // Ainda dentro do lock: nova época (descarta refresh antigo) e o token.
+      markSessionChanged()
+      TokenStore.set(accessToken)
+    })
 
     generationRef.current += 1
-    TokenStore.set(accessToken)
     setStatus('authenticated')
     setSessionEnded(false)
     setUsername(name)
@@ -145,6 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adoptSession = useCallback((accessToken: string, name: string) => {
     generationRef.current += 1
+    markSessionChanged()
     safeStorage.remove(SELECTED_PLANT_STORAGE_KEY)
     TokenStore.set(accessToken)
     setStatus('authenticated')
