@@ -2,7 +2,7 @@
 
 ## Status
 
-**Substituído pelo ADR-101** (descontinuação da integração Growatt, 2026-11-25).
+**Substituído parcialmente pelo ADR-101: conexão nova encerrada; as conexões existentes seguem até serem desativadas pelo operador.**
 
 **Aceito — 2026-11-02.** Diagnóstico em produção (ADR-097, PRs #271/#272): o token Growatt
 do cliente lê **só** `plant/list`. `plant/energy`, `plant/data`, `plant/details`,

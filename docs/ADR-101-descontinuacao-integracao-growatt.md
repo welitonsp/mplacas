@@ -20,16 +20,18 @@ clássico do app (ADR-092), ambos frágeis e fora do contrato do fabricante. A N
    depois do desligamento), e `provider_plant_claims` (a ser generalizada para uma
    marca só).
 3. **Sequência segura:**
-   1. parar os jobs agendados da Growatt;
-   2. recusar conexões Growatt novas (`CONNECTABLE_PROVIDERS`, esta mudança: 422
-      `provider_unsupported`; `import-history` e `refresh-profile` de conexão existente:
-      409 `provider_discontinued`);
-   3. aviso de "conexão desativada" na tela;
-   4. comando de operador `discontinue-provider`: desativa as conexões existentes e apaga
-      a credencial guardada, com dry-run por padrão;
-   5. só depois, remover o código da Growatt.
-   Até o passo 4, a coleta agendada das conexões que ainda existem continua
-   (`SUPPORTED_PROVIDERS` e `build_client` não mudam nesta etapa).
+   1. recusar conexão nova (`CONNECTABLE_PROVIDERS`; este PR): 422 `provider_unsupported`
+      em PUT, `/connect`, `/connect/preview` e `/connect/confirm`; `import-history` e
+      `refresh-profile` de conexão existente: 409 `provider_discontinued`;
+   2. aviso de "conexão desativada" na tela;
+   3. comando de operador `discontinue-provider` (dry-run por padrão): desativa as conexões
+      existentes e apaga a credencial guardada. Só aí a coleta agendada, a leitura da
+      madrugada e a leitura ao vivo param;
+   4. remover os jobs e o código da Growatt.
+   Até o passo 3, a coleta agendada, o `meter-readings` e
+   `GET /plants/{id}/provider-account/now` continuam funcionando para as conexões
+   existentes (`SUPPORTED_PROVIDERS` e `build_client` não mudam neste PR). O operador pode
+   desativar o workflow `meter-readings` no GitHub a qualquer momento.
 4. **Nunca fazer:** apagar `devices` (a exclusão em cascata leva a produção junto);
    apagar usinas; apagar ou reescrever produção com origem Growatt; apagar linhas de
    `provider_accounts` (desativar e limpar a credencial, sem remover a linha); remover
@@ -44,8 +46,8 @@ código a manter. Histórico dos clientes preservado.
 
 ### Negativas
 
-Clientes Growatt perdem a coleta nova a partir do passo 4 e ficam só com o histórico.
-Há um intervalo entre os passos 2 e 4 em que a conexão existe, mas não aceita
+Clientes Growatt perdem a coleta nova a partir do passo 3 e ficam só com o histórico.
+Há um intervalo entre os passos 1 e 3 em que a conexão existe, mas não aceita
 reimportação nem releitura do cadastro.
 
 ## Validação
@@ -55,5 +57,5 @@ NEPViewer segue passando.
 
 ## Reversibilidade
 
-Até o passo 5, basta voltar `CONNECTABLE_PROVIDERS` a incluir as marcas Growatt. Depois
-do passo 4 as credenciais foram apagadas e os clientes precisariam reconectar.
+Até o passo 3, basta voltar `CONNECTABLE_PROVIDERS` a incluir as marcas Growatt. Depois
+do passo 3 as credenciais foram apagadas e os clientes precisariam reconectar.

@@ -131,7 +131,7 @@ def _parse_body(raw: bytes) -> tuple[str, ProviderLogin]:
     provider = body.get("provider", NEPVIEWER)
     # ADR-101: só a NEPViewer aceita conexão. A recusa vem antes de qualquer
     # leitura de credencial: nada é cifrado, gravado, logado nem enviado à marca.
-    if provider not in _CONNECTABLE:
+    if not isinstance(provider, str) or provider not in _CONNECTABLE:
         raise _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "provider_unsupported")
     login = body.get("login")
     password = body.get("password")

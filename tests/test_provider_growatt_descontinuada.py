@@ -199,6 +199,27 @@ def test_bilhete_growatt_emitido_antes_e_recusado_na_confirmacao(env, provider) 
     assert resposta.json() == {"detail": "provider_unsupported"}
     assert asyncio.run(_registros(factory)) == []
     assert chamadas.verificacoes == [] and chamadas.clientes == []
+    eventos = asyncio.run(_auditoria(factory))
+    assert [e.action for e in eventos] == ["provider_account.verify_failed"]
+    assert eventos[0].details == {"provider": provider, "reason": "provider_unsupported"}
+    for segredo in (SENHA, TOKEN, "rogerio"):
+        assert segredo not in str(eventos[0].details)
+
+
+@pytest.mark.parametrize("provider", [[GROWATT], {"a": 1}, 7, None])
+@pytest.mark.parametrize("rota", ["put", "/plants/connect", "/plants/connect/preview"])
+def test_provider_que_nao_e_texto_da_422_e_nao_500(env, provider, rota) -> None:
+    client, factory, _org, admin, _holder, chamadas = env
+    corpo = {"provider": provider, "login": "x", "password": "y"}
+
+    if rota == "put":
+        resposta = client.put(URL, json=corpo, headers=admin)
+    else:
+        resposta = client.post(rota, json=corpo, headers=admin)
+
+    assert resposta.status_code == 422
+    assert resposta.json() == {"detail": "provider_unsupported"}
+    assert chamadas.verificacoes == [] and chamadas.clientes == []
 
 
 @pytest.mark.parametrize("provider", [GROWATT, GROWATT_TOKEN])
