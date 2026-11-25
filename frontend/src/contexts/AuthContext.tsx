@@ -28,7 +28,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshTokenRef = useRef<string | null>(null)
   const [sessionEnded, setSessionEnded] = useState(false)
 
-  const logout = useCallback(() => {
+  // Limpeza da sessão sem mexer em `sessionEnded` (quem chama decide o flag).
+  const clearSession = useCallback(() => {
     const refreshToken = refreshTokenRef.current
     TokenStore.clear()
     // A usina selecionada é estado de sessão (ADR-069, seção 5) — limpa junto
@@ -37,7 +38,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     safeStorage.remove(SELECTED_PLANT_STORAGE_KEY)
     refreshTokenRef.current = null
     setIsAuthenticated(false)
-    setSessionEnded(false)
     setUsername(null)
 
     if (refreshToken) {
@@ -50,6 +50,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const logout = useCallback(() => {
+    clearSession()
+    setSessionEnded(false)
+  }, [clearSession])
+
   const getRefreshToken = useCallback(() => refreshTokenRef.current, [])
   const setRefreshToken = useCallback((token: string) => {
     refreshTokenRef.current = token
@@ -58,10 +63,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Chamado pelo api.ts quando a renovação é recusada: a sessão acabou sem o
   // usuário pedir. Só conta se havia sessão nesta aba.
   const expireSession = useCallback(() => {
+    // Vários 401 simultâneos compartilham o mesmo refresh recusado e chamam
+    // isto em sequência: só a primeira encontra sessão; as demais não fazem nada.
     const hadSession = !!TokenStore.get() || refreshTokenRef.current !== null
-    logout()
-    if (hadSession) setSessionEnded(true)
-  }, [logout])
+    if (!hadSession) return
+    clearSession()
+    setSessionEnded(true)
+  }, [clearSession])
 
   // Configura o api.ts com as funções do contexto.
   configureApi(getRefreshToken, setRefreshToken, expireSession)

@@ -43,6 +43,40 @@ function renderProtected(entry: string | { pathname: string; state: unknown }) {
   )
 }
 
+function stubExpiringApi() {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/auth/login')) {
+        return new Response(JSON.stringify({ access_token: 'a1', refresh_token: 'r1' }), { status: 200 })
+      }
+      return new Response('{}', { status: 401 }) // dados e /auth/refresh
+    }),
+  )
+}
+
+function renderSessionProbe(onClick: () => void) {
+  function Probe() {
+    const { isAuthenticated } = useAuth()
+    return <button onClick={onClick}>{isAuthenticated ? 'logado' : 'deslogado'}</button>
+  }
+  return render(
+    <MemoryRouter initialEntries={['/login']}>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/dashboard" element={<ProtectedRoute><Probe /></ProtectedRoute>} />
+        </Routes>
+      </AuthProvider>
+    </MemoryRouter>
+  )
+}
+
+async function loginAndClickProbe() {
+  await submitLogin()
+  fireEvent.click(await screen.findByRole('button', { name: 'logado' }))
+}
+
 function stubLogin() {
   vi.stubGlobal(
     'fetch',
@@ -242,41 +276,59 @@ describe('LoginPage — aviso de sessão encerrada', () => {
   })
 
   it('exibe o aviso quando a sessão desta aba expirou (refresh recusado com 401)', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.endsWith('/auth/login')) {
-        return new Response(JSON.stringify({ access_token: 'a1', refresh_token: 'r1' }), { status: 200 })
-      }
-      return new Response('{}', { status: 401 }) // dados e /auth/refresh
-    })
-    vi.stubGlobal('fetch', fetchMock)
+    stubExpiringApi()
+    renderSessionProbe(() => void apiFetch('/plants'))
 
-    function Probe() {
-      const { isAuthenticated } = useAuth()
-      return (
-        <button onClick={() => void apiFetch('/plants')}>
-          {isAuthenticated ? 'logado' : 'deslogado'}
-        </button>
-      )
+    await loginAndClickProbe()
+
+    expect(await screen.findByText(SESSION_ENDED_TEXT)).toBeInTheDocument()
+  })
+
+  it('vários 401 simultâneos (refresh recusado) ainda deixam o aviso', async () => {
+    stubExpiringApi()
+    renderSessionProbe(() => void Promise.all([apiFetch('/a'), apiFetch('/b'), apiFetch('/c')]))
+
+    await loginAndClickProbe()
+
+    expect(await screen.findByText(SESSION_ENDED_TEXT)).toBeInTheDocument()
+  })
+
+  it('logout voluntário e depois rota protegida: sem aviso', async () => {
+    stubExpiringApi()
+    let doLogout: () => void = () => {}
+    function Out() {
+      const { logout } = useAuth()
+      doLogout = logout
+      return <p>dentro</p>
     }
-
     render(
       <MemoryRouter initialEntries={['/login']}>
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/dashboard" element={<ProtectedRoute><Probe /></ProtectedRoute>} />
+            <Route path="/dashboard" element={<ProtectedRoute><Out /></ProtectedRoute>} />
           </Routes>
         </AuthProvider>
       </MemoryRouter>
     )
+    await submitLogin()
+    await screen.findByText('dentro')
+    act(() => doLogout())
 
-    fireEvent.change(screen.getByLabelText('Usuário'), { target: { value: 'demo' } })
-    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'demo-pass' } })
-    fireEvent.click(screen.getByRole('button', { name: /entrar/i }))
-    fireEvent.click(await screen.findByRole('button', { name: 'logado' }))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Entrar no MPlacas' })).toBeInTheDocument()
+    expect(screen.queryByText(SESSION_ENDED_TEXT)).not.toBeInTheDocument()
+  })
 
-    expect(await screen.findByText(SESSION_ENDED_TEXT)).toBeInTheDocument()
+  it('o aviso some depois de um novo login bem-sucedido', async () => {
+    stubExpiringApi()
+    renderSessionProbe(() => void apiFetch('/a'))
+    await loginAndClickProbe()
+    await screen.findByText(SESSION_ENDED_TEXT)
+
+    await submitLogin()
+
+    expect(await screen.findByRole('button', { name: 'logado' })).toBeInTheDocument()
+    expect(screen.queryByText(SESSION_ENDED_TEXT)).not.toBeInTheDocument()
   })
 })
 
@@ -351,6 +403,8 @@ describe('LoginPage — volta para a página aberta', () => {
     ['/login'],
     ['/dashboardx'],
     ['/dashboard/..\\evil'],
+    ['/dashboard/../login'],
+    ['/dashboard/./x'],
   ])('from malicioso %s -> /dashboard', async (pathname) => {
     stubLogin()
     renderProtected({ pathname: '/login', state: { from: { pathname, search: '', hash: '' } } })

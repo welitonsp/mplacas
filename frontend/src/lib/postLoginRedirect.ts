@@ -14,6 +14,7 @@ function isSafeDashboardPath(pathname: unknown): pathname is string {
   if (typeof pathname !== 'string') return false
   if (pathname.startsWith('//')) return false
   if (pathname.includes('\\') || pathname.includes(':')) return false
+  if (pathname.split('/').some((seg) => seg === '.' || seg === '..')) return false
   return (
     pathname === DASHBOARD_ROOT_PATH || pathname.startsWith(`${DASHBOARD_ROOT_PATH}/`)
   )
