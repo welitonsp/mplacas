@@ -38,6 +38,7 @@ describe('InvestorPanelSection', () => {
     })
     expect(screen.getByText('Investimento só no CDI')).toBeInTheDocument()
     expect(screen.getByText('Economias aplicadas no CDI')).toBeInTheDocument()
+    expect(screen.getByText(/último mês com CDI publicado/)).toBeInTheDocument()
   })
 
   it('premissas ficam visíveis, incluindo o Fio B e a base de poucas faturas', () => {

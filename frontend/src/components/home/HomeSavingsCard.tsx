@@ -106,7 +106,7 @@ export function HomeSavingsCard({
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-[var(--color-text-secondary)]">Você pagou</dt>
+                <dt className="text-xs text-[var(--color-text-secondary)]">Valor da fatura</dt>
                 <dd className="text-sm font-semibold tabular-nums text-[var(--color-text-primary)]">{formatCurrency(paid)}</dd>
               </div>
             </dl>

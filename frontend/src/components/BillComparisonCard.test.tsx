@@ -68,10 +68,18 @@ describe('BillComparisonCard', () => {
     expect(screen.getByRole('heading', { name: 'Sua conta com e sem a usina' })).toBeInTheDocument()
     expect(screen.getByText(/R\$\s*264,00/)).toBeInTheDocument()
     expect(screen.getByText('Sem a usina, você pagaria').nextElementSibling?.textContent).toMatch(/334,22/)
-    expect(screen.getByText('Com a usina, você pagou').nextElementSibling?.textContent).toMatch(/70,22/)
+    expect(screen.getByText('Valor da fatura com a usina').nextElementSibling?.textContent).toMatch(/70,22/)
     expect(within(detail('Energia que saiu para a rede')).getByText(/14 kWh passaram do consumo/)).toBeInTheDocument()
     expect(within(detail('Créditos guardados')).getByText(/11,01/)).toBeInTheDocument()
     expect(within(detail('Conferência com a fatura')).getByText(/1,31 de outros itens/)).toBeInTheDocument()
+  })
+
+  it('rotula como "Valor da fatura" (não "pagou"), avisa da iluminação pública e marca a economia como Estimado', () => {
+    render(<BillComparisonCard indicators={base} referenceMonth="2026-09" />)
+
+    expect(screen.queryByText(/você pagou/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Inclui a iluminação pública.')).toBeInTheDocument()
+    expect(screen.getByText('Estimado')).toBeInTheDocument()
   })
 
   it('diferença de centavos aparece como "confere com o valor cobrado"', () => {

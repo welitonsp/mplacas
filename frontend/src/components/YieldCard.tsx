@@ -72,6 +72,11 @@ export function YieldCard({
   // fixa do backend, ver `AnomalyDashboardResponse.
   // yield_atypical_threshold_percent`) cai para "nenhum dia é atípico" em
   // vez de fabricar um limiar ou marcar tudo como atípico.
+  const dataDates = daily.map((d) => d.date).sort()
+  const lastDataDate = dataDates[dataDates.length - 1] ?? null
+  const coveredEnd =
+    period != null && lastDataDate != null && lastDataDate < period.end_date ? lastDataDate : null
+
   const threshold = toNumber(yieldAtypicalThresholdPercent) ?? Infinity
 
   const atypicalDays = daily
@@ -97,9 +102,12 @@ export function YieldCard({
           que o intervalo de calendário e `periodYieldSampleDays` são o mesmo
           número, quando divergem sempre que algum dia do intervalo não
           qualifica para o agregado (mesma armadilha do plano T7b P1). */}
+      {/* O recorte pedido termina "hoje", mas o período COBERTO só vai até o
+          último dia com dado (`daily` só traz dias com produção) — datas ISO
+          comparam lexicograficamente. Sem dias, mostra o recorte pedido. */}
       {period != null && (
         <p className="mt-0.5 text-xs text-gray-500">
-          Período coberto: {formatShortDate(period.start_date)}–{formatShortDate(period.end_date)}
+          Período coberto: {formatShortDate(period.start_date)}–{formatShortDate(coveredEnd ?? period.end_date)}
         </p>
       )}
       <p className="mt-1 text-xs text-gray-500">kWh gerados por kWh/m² de sol recebido</p>

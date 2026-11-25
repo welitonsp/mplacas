@@ -20,20 +20,25 @@ function buildTrend(overrides: Partial<ExecutiveTrend> = {}): ExecutiveTrend {
 }
 
 describe('TrendCard', () => {
-  it('renderiza as 5 métricas de tendência, incluindo o delta do índice de saúde', () => {
+  it('renderiza as métricas de tendência e NÃO mostra o índice de saúde (ADR-083)', () => {
     render(<TrendCard trend={buildTrend()} />)
 
     expect(screen.getByText('Produção')).toBeInTheDocument()
     expect(screen.getByText('Consumo total')).toBeInTheDocument()
     expect(screen.getByText('Energia importada')).toBeInTheDocument()
     expect(screen.getByText('Autossuficiência')).toBeInTheDocument()
-    expect(screen.getByText('Índice de saúde')).toBeInTheDocument()
-    expect(screen.getByText('-5 pts')).toBeInTheDocument()
+    expect(screen.queryByText('Índice de saúde')).not.toBeInTheDocument()
+    expect(screen.queryByText(/pts/)).not.toBeInTheDocument()
   })
 
-  it('mostra o delta do índice de saúde positivo com sinal de mais', () => {
-    render(<TrendCard trend={buildTrend({ metrics: { ...buildTrend().metrics, health_score_delta: 8 } })} />)
+  it('formata o período como mês abreviado, não como AAAA-MM cru', () => {
+    render(
+      <TrendCard
+        trend={buildTrend({ previous_reference_month: '2026-10', current_reference_month: '2026-11' })}
+      />
+    )
 
-    expect(screen.getByText('+8 pts')).toBeInTheDocument()
+    expect(screen.getByText('out/26 → nov/26')).toBeInTheDocument()
+    expect(screen.queryByText(/2026-10/)).not.toBeInTheDocument()
   })
 })
