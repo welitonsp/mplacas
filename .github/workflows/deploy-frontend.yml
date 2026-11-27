@@ -74,14 +74,21 @@ jobs:
           test -f dist/_routes.json
           npx wrangler pages functions build --outdir "$RUNNER_TEMP/pages-functions" --output-routes-path "$RUNNER_TEMP/pages-functions-routes.json"
 
+      # A URL própria do deploy (https://<hash>.mplacas-frontend.pages.dev) vai
+      # para os smokes: assim eles testam exatamente o que acabou de subir, e não
+      # o deploy anterior que ainda responde no domínio de produção.
       - name: Deploy to Cloudflare Pages
+        id: deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: >
-          npx wrangler pages deploy dist
-          --project-name=mplacas-frontend
-          --branch=main
+        run: |
+          set -o pipefail
+          npx wrangler pages deploy dist --project-name=mplacas-frontend --branch=main | tee "$RUNNER_TEMP/wrangler-deploy.log"
+          url=$(grep -oE 'https://[a-z0-9]+\.mplacas-frontend\.pages\.dev' "$RUNNER_TEMP/wrangler-deploy.log" | tail -n 1 || true)
+          [ -n "$url" ] || url=https://mplacas-frontend.pages.dev
+          echo "URL do deploy: $url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
 
       # Confere o proxy publicado. A troca do domínio de produção para o deploy
       # novo leva alguns segundos: até lá o deploy antigo responde (index.html
@@ -90,9 +97,11 @@ jobs:
       # segredo MPLACAS_PROXY_SHARED_SECRET (painel do Pages, Production);
       # 502/504 = Render fora ou acordando. Repete porque o plano grátis hiberna.
       - name: Smoke test do proxy /api
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
         run: |
           for tentativa in $(seq 1 12); do
-            resposta=$(curl -s -D - -o /dev/null --max-time 90 https://mplacas-frontend.pages.dev/api/health || true)
+            resposta=$(curl -s -D - -o /dev/null --max-time 90 "$DEPLOY_URL/api/health" || true)
             status=$(printf '%s' "$resposta" | awk 'NR==1{print $2}')
             tipo=$(printf '%s' "$resposta" | tr -d '\r' | awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}')
             echo "tentativa $tentativa: HTTP $status ($tipo)"
@@ -115,13 +124,15 @@ jobs:
       # origem do Pages não está em MPLACAS_CORS_ALLOWED_ORIGINS no Render (ou o
       # proxy não repassa Origin/Cookie) — todo login de navegador falharia.
       - name: Smoke test do refresh pelo proxy (CSRF/Origin)
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
         run: |
           for tentativa in $(seq 1 8); do
             status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 -X POST \
               -H 'Origin: https://mplacas-frontend.pages.dev' \
               -H 'X-Mplacas-Auth: 1' \
               -H 'Cookie: __Secure-mplacas_rt=smoke-invalido' \
-              https://mplacas-frontend.pages.dev/api/auth/refresh || true)
+              "$DEPLOY_URL/api/auth/refresh" || true)
             echo "POST /api/auth/refresh com cookie inválido: HTTP $status (esperado 401)"
             # 405 = ainda é o deploy antigo (estático); espera a troca.
             [ "$status" = "405" ] || break
